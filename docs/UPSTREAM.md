@@ -178,9 +178,22 @@ Upstream keeps no log file: `/var/log/omarchy-mac-setup.log` is declared but
 never written; the unit's output goes to tty1. `--status` reads the root-only
 conf, so it works only as root; its banner carries colour codes.
 
-**Post-install helpers this tool delegates to:** `omarchy-install-dev-env`,
-`omarchy-install-editor-vscode`, `omarchy-setup-security-sshd`,
-`omarchy-setup-security-sudoless-docker`, `omarchy-pkg-add`.
+**Post-install helpers this tool delegates to**, and what they do (read in the
+`omarchy-mac/omarchy-mac` checkout Omarchy Mac installs, `quattro`):
+
+| Helper | Does | Exit status |
+| --- | --- | --- |
+| `omarchy-pkg-add` | installs packages; skips any with no aarch64 build, with a warning | 0 when it skipped everything; non-zero when pacman fails |
+| `omarchy-install-dev-env <lang>` | rust (rustup), python (mise + uv), node, go (mise), … | 0 for an unknown language, and when a download fails for python or rust |
+| `omarchy-setup-security-sshd` | installs openssh, enables sshd, `ufw limit 22/tcp`, fetches keys from `github.com/<user>.keys` into the invoking user's `authorized_keys`, then turns password login off once a key is authorized | runs every step every time (sshd already running changes nothing); non-zero on a failed step |
+| `omarchy-install-editor-vscode` | `visual-studio-code-bin` via `omarchy-pkg-add`, settings | effectively always 0 |
+| `omarchy-setup-security-sudoless-docker` | adds the user to `docker` after a gum confirmation | 0 when declined |
+
+Because several exit 0 without doing the job, each developer module checks
+the machine afterwards (packages present, the tool on PATH or in
+`~/.cargo/bin`/mise shims, `gh auth status`, sshd running, port 22 listening,
+authorized keys) before reporting success. Omarchy's firewall is ufw with
+`default deny incoming` and no rule for port 22.
 
 Omarchy already installs Docker, `mise`, git, ripgrep, fd, fzf, jq, btop, tmux,
 unzip, Neovim (LazyVim), and runs IP-based timezone detection.

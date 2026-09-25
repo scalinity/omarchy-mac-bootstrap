@@ -77,7 +77,7 @@ assert_eq "$(grep -c 'SHARED_PRED_ID=\$GP_ID' "$REPO/lib/shared.sh")" 1 "the dev
 
 # --- Static: every probe is read-only ----------------------------------------------
 probes=$(grep -h 'sys_cmd ' $CODE | grep -v '^[[:space:]]*#' | grep -o 'sys_cmd [^|)]*' | sed 's/^sys_cmd [^ ]* //' | sort -u)
-bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status)')
+bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |ss -Htln|getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status)')
 assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 
 # --- Static: every mutating command goes through run, and is expected -------------
@@ -148,7 +148,8 @@ done
 assert_eq "$(ls -A "$T_DIR/tmp")" "" "a dry-run download is removed when the run ends"
 assert_eq "$(ls "$T_DIR/state" 2>/dev/null)" "" "dev dry-run keeps no state, log or download"
 assert_contains "$T_OUT" "npm not found" "Codex explains that it needs node first"
-assert_contains "$T_OUT" "Developer setup finished" "every module ran to the end"
+assert_contains "$T_OUT" "1 requested operation needs attention" "every module ran to the end, and Codex without npm is reported as failed, not finished"
+assert_rc "$T_RC" 1 "a preview with a module that cannot run exits non-zero"
 assert_empty_file "$T_DIR/shims.log" "dev dry-run invoked a forbidden command"
 assert_empty_file "$T_DIR/record" "dev dry-run recorded an execution"
 

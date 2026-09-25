@@ -509,6 +509,21 @@ put linux-shared-uid1001/cmd/id_u 1001
 put linux-shared-uid1001/cmd/id_g 1001
 put linux-shared-uid1001/cmd/id_un bob
 
+# The machine after every developer module has done its job: the checks
+# that follow a recorded command read this (OMB_TEST_AFTER).
+linux linux-dev-complete 1000 alex btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 installed
+put linux-dev-complete/cmd/pacman_qq "$(printf '%s\n' base bash git github-cli base-devel curl wget jq ripgrep fd fzf tmux btop tree unzip rsync docker podman podman-compose)"
+printf '%s\n' pacman nmtui curl snapper docker podman code cargo uv node go npm claude codex sshd git gh \
+  omarchy-pkg-add omarchy-install-dev-env omarchy-install-editor-vscode omarchy-setup-security-sshd omarchy-setup-security-sudoless-docker >linux-dev-complete/commands
+put linux-dev-complete/cmd/gh_status "github.com: logged in as alex"
+rm -f linux-dev-complete/cmd/gh_status.rc
+put linux-dev-complete/cmd/git_name Alex
+put linux-dev-complete/cmd/git_email alex@example.com
+put linux-dev-complete/cmd/sshd_active active
+rm -f linux-dev-complete/cmd/sshd_active.rc
+put linux-dev-complete/cmd/ss_listen "LISTEN 0      128          0.0.0.0:22        0.0.0.0:*
+LISTEN 0      128             [::]:22           [::]:*"
+
 # ---------------------------------------------------------------------------
 # `sources --check` responses: current, and drifted.
 

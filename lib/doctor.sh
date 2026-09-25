@@ -313,10 +313,18 @@ lx_doctor() {
   if [ "$LX_SETUP_FINISHING" = 1 ]; then
     doc info "Setup finishing" "the next boot removes $OMS_CONF and the setup unit (upstream's last step)"
   fi
-  case "$(sys_cmd sshd_active systemctl is-active sshd)" in
-    active) doc pass "SSH" "sshd running" ;;
-    *) if [ "${CFG_ssh:-0}" = 1 ]; then doc warn "SSH" "disabled — planned on; ./omarchy-bootstrap dev → ssh"; else doc info "SSH" "disabled"; fi ;;
-  esac
+  # SSH access is separate facts; a running sshd is only one of them.
+  dev_ssh_facts
+  if [ "$DEV_SSH_ACTIVE" = 1 ]; then
+    doc pass "SSH service" "sshd running"
+    if [ "$DEV_SSH_LISTENING" = 1 ]; then doc pass "SSH port" "22 listening"; else doc warn "SSH port" "sshd runs, but nothing listens on port 22"; fi
+    if [ "$DEV_SSH_AUTHORIZED" = 1 ]; then doc pass "SSH keys" "authorized_keys present"; else doc info "SSH keys" "no authorized_keys for $LX_USER"; fi
+    doc info "SSH firewall" "ufw rules are readable only by root: sudo ufw status"
+  elif [ "${CFG_ssh:-0}" = 1 ]; then
+    doc warn "SSH" "disabled — planned on; ./omarchy-bootstrap dev → SSH"
+  else
+    doc info "SSH" "disabled"
+  fi
   [ -n "$LX_PAGESIZE" ] && doc info "Page size" "$LX_PAGESIZE bytes$([ "$LX_PAGESIZE" = 16384 ] && printf ' (16K: some prebuilt binaries assume 4K)')"
   shared_doctor
   doc info "macOS" "remains available through the boot picker (hold power at startup)"
