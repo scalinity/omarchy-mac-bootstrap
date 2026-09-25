@@ -25,7 +25,7 @@ hold before it counts as done. Status lives at the end of each entry.
 - **Verification:** `tests/test-cli.sh`; manual run under `NO_COLOR=1`,
   `TERM=dumb`, `TERM=linux`.
 - **Acceptance:** runs on `/bin/bash` 3.2 with no dependencies.
-- **Status:** planned.
+- **Status:** done.
 
 ## M2 — macOS preflight + storage planner
 
@@ -36,7 +36,7 @@ hold before it counts as done. Status lives at the end of each entry.
   macOS fixtures.
 - **Acceptance:** presets and limits match `SPEC.md` for every fixture; unsafe
   input is rejected with its reason.
-- **Status:** planned.
+- **Status:** done.
 
 ## M3 — Asahi handoff + persistent state
 
@@ -47,7 +47,7 @@ hold before it counts as done. Status lives at the end of each entry.
 - **Verification:** `tests/test-state.sh`, `tests/test-safety.sh` (recorded
   argv, no forbidden commands, dry-run executes nothing).
 - **Acceptance:** Enter alone never launches; dry-run prints `would run`.
-- **Status:** planned.
+- **Status:** done.
 
 ## M4 — Linux detection + Omarchy handoff
 
@@ -58,7 +58,7 @@ hold before it counts as done. Status lives at the end of each entry.
   construction test for the setup flags.
 - **Acceptance:** Omarchy 3 and missing-flag branches are refused; installed and
   in-progress machines are routed away from the handoff.
-- **Status:** planned.
+- **Status:** done.
 
 ## M5 — doctor / status / resume
 
@@ -67,7 +67,7 @@ hold before it counts as done. Status lives at the end of each entry.
   on both OSes; `logs`.
 - **Verification:** doctor over every fixture; exit status non-zero only on FAIL.
 - **Acceptance:** `status` names the next action in every recorded state.
-- **Status:** planned.
+- **Status:** done.
 
 ## M6 — Developer bootstrap
 
@@ -76,7 +76,7 @@ hold before it counts as done. Status lives at the end of each entry.
   GitHub, SSH, AI CLIs, time/locale.
 - **Verification:** dry-run over the Omarchy-installed fixture; recorded argv.
 - **Acceptance:** nothing installs without selection; installed tools are skipped.
-- **Status:** planned.
+- **Status:** done.
 
 ## M7 — Tests, recovery docs, polish
 
@@ -86,4 +86,4 @@ hold before it counts as done. Status lives at the end of each entry.
 - **Verification:** `tests/run.sh` passes on `/bin/bash` 3.2; README commands
   exercised.
 - **Acceptance:** every command in the README behaves as documented.
-- **Status:** planned.
+- **Status:** done.
