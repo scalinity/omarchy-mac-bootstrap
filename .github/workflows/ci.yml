@@ -1,0 +1,63 @@
+# Checks only: nothing here touches a disk. Every test runs against recorded
+# machine fixtures, with shims in front of every disk, boot and package
+# command, and records the commands it would run instead of running them.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux · bash 5 · ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          bash --version | head -1
+          shellcheck --version | head -2
+      - name: Fixtures are what the generator writes
+        run: |
+          tests/fixtures/generate.sh
+          git diff --exit-code -- tests/fixtures
+          test -z "$(git status --porcelain -- tests/fixtures)"
+      - name: Syntax, ShellCheck and every test
+        env:
+          OMB_REQUIRE_SHELLCHECK: "1"
+          # Linux has no plutil: only the macOS plist checks may skip here;
+          # any other skip fails the job.
+          OMB_STRICT_SKIPS: "1"
+          OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
+        run: tests/run.sh
+
+  macos:
+    name: macOS · stock /bin/bash 3.2 · BSD userland
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stock bash is 3.2
+        run: |
+          /bin/bash --version | head -1
+          /bin/bash -c '[ "${BASH_VERSINFO[0]}" = 3 ]'
+      - name: Fixtures are what the generator writes
+        run: |
+          tests/fixtures/generate.sh
+          git diff --exit-code -- tests/fixtures
+          test -z "$(git status --porcelain -- tests/fixtures)"
+      - name: Every test under /bin/bash, with plutil and BSD tools
+        env:
+          # Everything runs on macOS: no skip is allowed.
+          OMB_STRICT_SKIPS: "1"
+        run: tests/run.sh
+      - name: The entrypoint starts under sh and stock bash, touching nothing
+        run: |
+          state=$(mktemp -d)
+          OMB_STATE_DIR=$state/s sh ./omarchy-bootstrap --version
+          OMB_STATE_DIR=$state/s /bin/bash ./omarchy-bootstrap --help --ascii >/dev/null
+          test ! -e "$state/s"

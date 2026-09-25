@@ -31,6 +31,9 @@ if [ -z "${1:-}" ]; then
     "$sc" -S style -e SC2034,SC2154,SC2153 omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/generate.sh || status=1
     "$sc" -x omarchy-bootstrap || status=1
     [ "$status" = 0 ] && echo "  ok"
+  elif [ "${OMB_REQUIRE_SHELLCHECK:-0}" = 1 ]; then
+    echo "shellcheck: required (OMB_REQUIRE_SHELLCHECK=1) but not installed"
+    status=1
   else
     echo "shellcheck: not installed, skipped (set SHELLCHECK=/path/to/shellcheck)"
   fi

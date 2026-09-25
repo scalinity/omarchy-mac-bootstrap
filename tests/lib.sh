@@ -52,8 +52,23 @@ fail() {
   printf '  \033[31mFAIL\033[0m %s\n' "$*"
 }
 skip() {
+  # CI runs with OMB_STRICT_SKIPS=1: a skip is a failure unless it matches
+  # OMB_ALLOWED_SKIP_RE (the Linux job allows only the plutil-bound checks),
+  # so a safety check cannot quietly stop running.
+  if [ "${OMB_STRICT_SKIPS:-0}" = 1 ] && ! printf "%s" "$*" | grep -Eq "${OMB_ALLOWED_SKIP_RE:-^\$^}"; then
+    fail "skipped, and skips are not allowed here: $*"
+    return 0
+  fi
   T_SKIP=$((T_SKIP + 1))
-  printf '  skip %s\n' "$*"
+  printf "  skip %s\n" "$*"
+}
+
+# t_plutil — may macOS plist checks run here? Records a skip when not, so
+# a missing plutil is visible rather than silent.
+t_plutil() {
+  command -v plutil >/dev/null 2>&1 && return 0
+  skip "macOS plist checks in $(basename "$0") (no plutil)"
+  return 1
 }
 
 assert_eq() { if [ "$1" = "$2" ]; then ok; else fail "$3: expected [$2], got [$1]"; fi; }

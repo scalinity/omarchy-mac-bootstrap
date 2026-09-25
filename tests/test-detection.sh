@@ -56,7 +56,7 @@ assert_eq "$(setup_missing_flags "$renamed")" " --user --keymap --resume" "renam
 # --- macOS -------------------------------------------------------------------
 mac_case() { case "$1" in /*) OMB_FIXTURE=$1 ;; *) OMB_FIXTURE="$FIX/$1" ;; esac; mac_detect; CFG_shared=0; mac_plan_compute; }
 
-if command -v plutil >/dev/null 2>&1; then
+if t_plutil; then
   mac_case mac-m1pro-1tb-roomy
   assert_eq "$MAC_APPLE_SILICON" 1 "roomy apple silicon"
   assert_eq "$MAC_MODEL_ID $DEV_TIER" "MacBookPro18,1 supported" "roomy model"
@@ -148,8 +148,6 @@ if command -v plutil >/dev/null 2>&1; then
   assert_rc $? 1 "limits query rejects injected text"
   mac_resize_limits '' >/dev/null
   assert_rc $? 1 "limits query rejects empty"
-else
-  skip "macOS detection (plutil not available on this host)"
 fi
 
 # --- Linux -------------------------------------------------------------------

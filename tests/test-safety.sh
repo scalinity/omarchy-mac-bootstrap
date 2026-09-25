@@ -302,7 +302,7 @@ recheck_after() {
     printf '%s' $?
   )
 }
-if command -v plutil >/dev/null 2>&1; then
+if t_plutil; then
   assert_eq "$(recheck_after "" "")" 0 "an unchanged disk passes the pre-launch recheck"
   assert_eq "$(recheck_after diskutil_info_disk0s3 's#000000000003#000000000009#')" 1 "a changed partition identity stops the launch"
   assert_eq "$(recheck_after diskutil_info_root 's#<integer>700000000000</integer>#<integer>100000000000</integer>#')" 1 "macOS filling up since the plan stops the launch"
