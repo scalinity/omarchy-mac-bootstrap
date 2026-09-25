@@ -140,7 +140,24 @@ assert_rc $? 1 "a fresh ownerless lock is respected"
 touch -t 202601010000 "$scratch/locks/lock"
 state_lock
 assert_rc $? 0 "an old ownerless lock is cleared"
+assert_eq "$(cut -d' ' -f3- "$scratch/locks/lock/owner")" "$(_proc_started $$)" "the lock records when its owner started"
 state_unlock
+# An owner identified by its start time is alive whatever its command line;
+# a live pid with another start time is a reused pid, and its lock is cleared.
+sleep 30 &
+holder=$!
+mkdir "$scratch/locks/lock"
+printf '%s 2026-09-25T00:00:00Z %s\n' "$holder" "$(_proc_started "$holder")" >"$scratch/locks/lock/owner"
+out=$(state_lock 2>&1)
+assert_rc $? 1 "a live owner with its recorded start time is respected"
+printf '%s 2026-09-25T00:00:00Z %s\n' "$holder" "Thu Jan 1 00:00:00 1970" >"$scratch/locks/lock/owner"
+state_lock
+assert_rc $? 0 "a reused pid (another start time) does not hold the lock"
+assert_eq "$(cut -d' ' -f1 "$scratch/locks/lock/owner")" "$$" "and the lock is taken over"
+state_unlock
+kill "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+[ -z "$(find "$scratch/locks" -name 'lock.stale.*')" ] && ok || fail "a cleared lock leaves nothing behind"
 OMB_STATE_DIR=$saved_dir
 state_init
 

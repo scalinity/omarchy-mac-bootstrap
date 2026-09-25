@@ -215,38 +215,58 @@ state_unset() {
 
 STATE_LOCK_HELD=0
 
+# _proc_started PID — when that process started, whitespace squeezed so the
+# recorded and the live value compare exactly.
+_proc_started() { ps -p "$1" -o lstart= 2>/dev/null | awk '{$1 = $1; print}'; }
+
 state_lock() {
-  local l="$OMB_STATE_DIR/lock" pid since cmdline
+  local l="$OMB_STATE_DIR/lock" pid since started live=0 junk p2 s2
   state_dir_ready || return 1
   if ! mkdir "$l" 2>/dev/null; then
     [ -L "$l" ] && {
       _state_refuse "$(tildify "$l") is a symbolic link; refusing to continue."
       return 1
     }
-    read -r pid since 2>/dev/null <"$l/owner"
+    read -r pid since started 2>/dev/null <"$l/owner"
     case "${pid:-}" in '' | *[!0-9]*) pid="" ;; esac
-    cmdline=""
-    [ -n "$pid" ] && cmdline=$(ps -p "$pid" -o command= 2>/dev/null)
-    case "$cmdline" in
-      *omarchy-bootstrap*)
-        ui_fail "Another omarchy-bootstrap run (pid $pid, since ${since:-?}) is using $(tildify "$OMB_STATE_DIR"). Let it finish first."
-        return 1
-        ;;
-    esac
+    # The owner is alive only if that pid is still the process that took the
+    # lock: same start time, or (an owner recorded without one) still this tool.
+    if [ -n "$pid" ] && [ -n "${started:-}" ]; then
+      [ "$(_proc_started "$pid")" = "$started" ] && live=1
+    elif [ -n "$pid" ]; then
+      case "$(ps -p "$pid" -o command= 2>/dev/null)" in *omarchy-bootstrap*) live=1 ;; esac
+    fi
+    if [ "$live" = 1 ]; then
+      ui_fail "Another omarchy-bootstrap run (pid $pid, since ${since:-?}) is using $(tildify "$OMB_STATE_DIR"). Let it finish first."
+      return 1
+    fi
     # An owner that never got recorded may be a run starting right now: only
     # a lock older than a minute counts as abandoned then.
     if [ -z "$pid" ] && [ -z "$(find "$l" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
       ui_fail "Another omarchy-bootstrap run is starting. Try again in a minute."
       return 1
     fi
-    log_event lock "cleared a lock left by a run that is no longer running (pid ${pid:-unknown})"
-    rm -rf "$l"
+    # Move it aside before removing it, and remove it only if it is still the
+    # abandoned lock judged above; a run that took the lock meanwhile keeps it.
+    junk="$l.stale.$$"
+    if mv "$l" "$junk" 2>/dev/null; then
+      p2="" s2=""
+      read -r p2 s2 _ 2>/dev/null <"$junk/owner"
+      if [ "${p2:-}" != "${pid:-}" ] || [ "${s2:-}" != "${since:-}" ] ||
+        { [ -z "$pid" ] && [ -z "$(find "$junk" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }; then
+        mv "$junk" "$l" 2>/dev/null
+        ui_fail "Another omarchy-bootstrap run just took the lock in $(tildify "$OMB_STATE_DIR"). Let it finish first."
+        return 1
+      fi
+      log_event lock "cleared a lock left by a run that is no longer running (pid ${pid:-unknown})"
+      rm -rf "$junk"
+    fi
     mkdir "$l" 2>/dev/null || {
       ui_fail "Could not take the lock in $(tildify "$OMB_STATE_DIR")."
       return 1
     }
   fi
-  printf '%s %s\n' "$$" "$(now_utc)" >"$l/owner" || return 1
+  printf '%s %s %s\n' "$$" "$(now_utc)" "$(_proc_started "$$")" >"$l/owner" || return 1
   STATE_LOCK_HELD=1
 }
 
