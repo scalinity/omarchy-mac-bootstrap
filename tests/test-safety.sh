@@ -157,6 +157,28 @@ t_cli linux-omarchy-installed '8\n1\n\n\n' dev --dry-run
 assert_contains "$T_OUT" "Run the Claude Code installer? [y/N]" "the installer prompt defaults to no"
 assert_not_contains "$T_OUT" "would run  bash" "Enter does not run the downloaded installer"
 
+# --- The Omarchy handoff refuses upstream drift (acceptance criterion 9) -----------------
+token='omb1:enc=1,user=alex,host=omarchy,kmap=us'
+t_cli linux-upstream-drift '\n\nstart\n' resume "$token"
+assert_rc "$T_RC" 1 "the handoff refuses Omarchy 3 on the branch"
+assert_contains "$T_OUT" "now carries Omarchy 3.8.2, not 4.x. Refusing" "the version drift is named"
+assert_not_contains "$T_OUT" "Type start" "no start gate after a version refusal"
+assert_empty_file "$T_DIR/record" "nothing launched on version drift"
+
+fx=$(t_variant linux-upstream-drift)
+printf '4.0.3rc4\n' >"$fx/net/omarchy_version"
+t_cli "$fx" '\n\nstart\n' resume "$token"
+assert_rc "$T_RC" 1 "the handoff refuses a setup script missing a flag"
+assert_contains "$T_OUT" "no longer declares: --keymap" "the missing flag is named"
+assert_empty_file "$T_DIR/record" "nothing launched on flag drift"
+
+fx=$(t_variant linux-alarm-fresh)
+printf '<html>404 Not Found</html>\n' >"$fx/net/omarchy-mac-setup"
+t_cli "$fx" '\n\nstart\n' resume "$token"
+assert_rc "$T_RC" 1 "the handoff refuses a download that is not a bash script"
+assert_contains "$T_OUT" "the download is not a bash script" "the refusal names the reason"
+assert_empty_file "$T_DIR/record" "nothing launched from a non-script"
+
 # --- Existing free space: no resize, and the reviewed size is typed ----------------------
 t_cli mac-m1-free-space "$mac_install_input"
 assert_rc "$T_RC" 0 "free-space install flow completes"
