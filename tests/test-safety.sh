@@ -132,7 +132,9 @@ assert_empty_file "$T_DIR/record" "dev dry-run recorded an execution"
 # --- Dynamic: the exact argv that would execute, recorded not run -----------------------
 t_cli mac-m1pro-1tb-roomy "$mac_install_input"
 rec=$(cat "$T_DIR/record")
-assert_contains "$rec" "pbcopy <<< 745GB" "clipboard gets the macOS size"
+read -r ans_r ans_os <<<"$(t_plan_answers mac-m1pro-1tb-roomy 250 0)"
+assert_contains "$rec" "pbcopy <<< $ans_r" "clipboard gets the exact macOS size ($ans_r)"
+assert_contains "$T_OUT" "New OS size  (Linux gets)      max" "no Shared: Linux takes the freed region"
 assert_contains "$rec" "sh $T_DIR/state/downloads/asahi-alarm-bootstrap.sh-" "installer launched from the downloaded file"
 assert_eq "$(printf '%s\n' "$rec" | grep -c .)" 2 "exactly two recorded actions"
 assert_contains "$(cat "$T_DIR/state/state.env")" "asahi_launched_at=" "launch recorded in state"
@@ -231,7 +233,56 @@ assert_rc "$T_RC" 0 "free-space install flow completes"
 assert_not_contains "$T_OUT" "Resize an existing partition" "no resize step when the space already exists"
 assert_contains "$T_OUT" "macOS is not resized" "the last-stop warning describes free-space mode"
 assert_not_contains "$T_OUT" "its current size" "no nonsense resize wording"
-assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< 250GB" "the clipboard gets the Linux size"
+read -r ans_r ans_os <<<"$(t_plan_answers mac-m1-free-space 250 0)"
+assert_eq "$ans_r" - "free space: no resize answer"
+assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< $ans_os" "the clipboard gets the exact Linux size ($ans_os)"
+
+# --- A changed storage contract blocks the launch; a stale display string does not -------
+fx=$(t_variant mac-m1pro-1tb-roomy)
+printf 'v0.10.0\n' >"$fx/net/asahi_version"
+t_cli "$fx" "$mac_install_input"
+assert_rc "$T_RC" 1 "a different installer version stops the handoff"
+assert_contains "$T_OUT" "storage behaviour may have changed" "the refusal names the contract"
+assert_contains "$(t_flat "$T_OUT")" "not v0.9.2, whose resize and allocation rules" "and the version"
+assert_not_contains "$T_OUT" "When the Asahi Alarm installer asks" "no answer card for an unverified installer"
+assert_empty_file "$T_DIR/record" "nothing launched for an unverified installer"
+fx=$(t_variant mac-m1pro-1tb-roomy)
+sed -i.bak 's/"524288000B", "format"/"1073741824B", "format"/' "$fx/net/asahi_data" && rm -f "$fx/net/asahi_data.bak"
+t_cli "$fx" "$mac_install_input"
+assert_rc "$T_RC" 1 "a changed EFI size stops the handoff"
+assert_contains "$(t_flat "$T_OUT")" "no longer has a 524288000-byte EFI partition" "the EFI drift is named"
+assert_empty_file "$T_DIR/record" "nothing launched on EFI drift"
+rm -f "$fx/net/asahi_data"
+t_cli "$fx" "$mac_install_input"
+assert_contains "$(t_flat "$T_OUT")" "installer_data.json could not be read" "an unreadable OS list stops the handoff"
+assert_empty_file "$T_DIR/record" "nothing launched without the OS list"
+
+# --- The disk is read again right before the launch ------------------------------------------
+# recheck_after CHANGE — plan on a fresh copy of the roomy fixture, apply
+# CHANGE (a sed script on one fixture file) as if the disk changed between
+# the survey and the launch, and print mac_recheck_plan's status.
+recheck_after() {
+  (
+    t_load
+    OMB_FIXTURE=$(t_variant mac-m1pro-1tb-roomy)
+    OMB_STATE_DIR=$(t_tmp)
+    state_init
+    mac_detect
+    CFG_linux=250 CFG_shared=50
+    mac_plan_compute 50
+    plan_layout $((250 * GB))
+    if [ -n "$1" ]; then
+      sed -i.bak "$2" "$OMB_FIXTURE/cmd/$1" && rm -f "$OMB_FIXTURE/cmd/$1.bak"
+    fi
+    mac_recheck_plan >/dev/null 2>&1
+    printf '%s' $?
+  )
+}
+if command -v plutil >/dev/null 2>&1; then
+  assert_eq "$(recheck_after "" "")" 0 "an unchanged disk passes the pre-launch recheck"
+  assert_eq "$(recheck_after diskutil_info_disk0s3 's#000000000003#000000000009#')" 1 "a changed partition identity stops the launch"
+  assert_eq "$(recheck_after diskutil_info_root 's#<integer>700000000000</integer>#<integer>100000000000</integer>#')" 1 "macOS filling up since the plan stops the launch"
+fi
 
 # --- A download that is not the expected bootstrap is refused -----------------------------
 fx=$(t_variant mac-m1pro-1tb-roomy)

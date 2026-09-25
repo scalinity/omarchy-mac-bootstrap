@@ -5,7 +5,7 @@ the commonly quoted install steps. The values the code uses live in
 `lib/sources.sh`; `./omarchy-bootstrap sources --check` compares them with
 upstream on demand.
 
-Verified: 2026-09-24.
+Verified: 2026-09-25.
 
 ## Asahi Alarm
 
@@ -22,44 +22,89 @@ The bootstrap downloads the asahi-installer tarball named by `/latest` and runs
 its `install.sh` under `sudo` and `caffeinate`. The installer asks for the macOS
 admin password itself.
 
-## Asahi installer (v0.9.2, `src/main.py`)
+## Asahi installer (v0.9.2)
 
-| Constant | Value | Effect |
-| --- | --- | --- |
-| `MIN_FREE_OS` | 38 GB | free space kept in the macOS container for upgrades |
-| `STUB_SIZE` | 2.5 GB | the "stub macOS" APFS container that boots Linux |
-| EFI partition | 524 288 000 B | from the OS template |
-| `MIN_INSTALL_FREE` | 10 GB | smallest amount a resize may free |
-| `PART_ALIGN` | 1 MiB | alignment of every size |
-| overhead warning | > 16 GB | `MinimumSizePreferred − (used + 38 GB)`, usually Time Machine snapshots |
+Read at `AsahiLinux/asahi-installer` tag v0.9.2 (`dffbb38`). The Alarm fork
+`asahi-alarm/asahi-alarm-installer` v0.9.2 (`3cfef52`) and the tarball
+`https://asahi-alarm.org/installer-v0.9.2.tar.gz` ship byte-identical
+`src/*.py`; the fork differs only in CI, its bootstrap URLs and a redirect fix.
 
-Units are SI (`psize`: base 1000; `GiB` style for base 1024).
+| Constant | Value | Where | Effect |
+| --- | --- | --- | --- |
+| `MIN_FREE_OS` | 38 GB | `main.py:14` | free space kept in the macOS container for upgrades (1 GB under 150 GiB disks or expert mode; the planner always keeps 38 GB) |
+| `STUB_SIZE` | 2 499 805 184 B | `main.py:11` | `align_down(2.5 GB, PART_ALIGN)`: the "stub macOS" APFS container |
+| EFI partition | 524 288 000 B | `installer_data.json` | the Minimal (BTRFS) template's `"size": "524288000B"` |
+| Root template | 2 209 614 225 B, `expand` | `installer_data.json` | grows to fill the New OS size |
+| `MIN_INSTALL_FREE` | 10 GB | `main.py:19` | a resize must free more than this |
+| `PART_ALIGN` | 1 MiB | `main.py:9` | resize answers align **up**, New OS size aligns **down** |
+| `FREE_THRESHOLD` | 16 MiB | `diskutil.py:21` | smaller gaps are not listed |
+| smallest offered gap | 7 969 177 600 B | `main.py:333` | stub + 2 x template (Minimal, non-expert) |
+| overhead warning | > 16 GB | `main.py:840` | `MinimumSizePreferred − align_up(used + 38 GB)`, usually Time Machine snapshots |
+
+**How sizes are read** (`get_size`, `main.py:146-171`; `psize`, `util.py`):
+a bare number is **bytes**; `GB`/`MB` are SI; a suffix with `i` (`MiB`, `GiB`)
+is binary; `N%` is a share of the total; `min`, and in the free-space flow
+`max`. The tool therefore types every size as a whole number of MiB
+(`711345MiB`), which neither alignment changes.
+
+**Resize** (`action_resize`, `main.py:804-923`): minimum
+`max(align_up(CapacityCeiling − CapacityFree + MIN_FREE_OS), MinimumSizePreferred)`;
+the answer is aligned up; rejected below the minimum, at or above the total,
+or when it frees `MIN_INSTALL_FREE` or less; then
+`diskutil apfs resizeContainer <store> <bytes>` and the menu is shown again.
+
+**Install into free space** (`action_install_into_free`, `main.py:327-364`;
+`OSInstaller.partition_disk`, `osinstall.py:67-110`): gaps are listed one per
+gap, named after the partition before them; one eligible gap is used
+directly, several are offered by number. `max` is the whole gap; the answer
+is aligned down; then `diskutil addPartition <gap predecessor> apfs <name>
+2499805184` (stub, populated before anything else), `diskutil addPartition
+<stub> %EFI% %noformat% 524288000`, and `diskutil addPartition <efi> %Linux%
+%noformat% <rest>`. Each partition starts right after the one before it
+(`man diskutil`: "immediately beyond the end (start + size)"). Separate gaps
+are never combined.
+
+**Exit status:** quitting at the menu, a caught error, a declined warning, a
+refused repair and a finished install all exit 0 (`main.py:1213-1232`). Only
+early guards exit non-zero. The exit status says nothing about what happened;
+the tool re-reads the disk instead.
 
 **Prompts, in order, on a stock disk:**
 
 1. `Choose what to do:` — **r** *Resize an existing partition to make space for
    a new OS* (default when resizable), **f** *Install an OS into free space*
    (default when free space exists), **q** quit. Also **p** (repair an
-   incomplete install), **m** (upgrade m1n1), **7** (*Fix macOS 27 boot picker
-   compatibility*, offered for existing installs).
+   incomplete install), **m** (upgrade m1n1), **v** (rebuild vendor firmware),
+   **7** (*Fix macOS 27 boot picker compatibility*, offered for a stub whose
+   system volume is not marked bootable).
 2. Resize: `Enter the new size for your existing partition:` → **the new macOS
-   size**, e.g. `744GB`, `50%`, or `min`. Minimum shown is
-   `max(used + 38 GB, diskutil MinimumSizePreferred)`.
+   size**. After it, the menu returns with **f** as the default.
 3. `Choose an OS to install` → `Asahi Alarm Minimal (BTRFS)`.
 4. `New OS size` (default `max`) → total Linux allocation including stub and
    EFI.
 5. `OS name` → shown in Startup Options.
 6. Installer ends with a **shutdown** and a 7-step first-boot procedure (hold
    power, choose the new volume, macOS Recovery dialog, authenticate, follow
-   the step-2 prompts).
+   the step-2 prompts). The Alarm bootstrap also asks whether to report the
+   install.
 
 **Difference from the commonly quoted flow:** there is no "Linux storage"
 prompt during a resize install. The value to type first is the new macOS size;
-the Linux size is the remainder, accepted with `max`. The planner computes both.
+the Linux size is the remainder, accepted with `max`, or typed exactly when
+Shared storage follows it. The planner computes both.
 
 The read-only query the installer uses for its floor,
 `diskutil apfs resizeContainer <container> limits -plist`, runs without root and
-takes no action; the planner uses it to predict the same minimum.
+takes no action; the planner uses it to predict the same minimum, and plans no
+resize when it does not answer.
+
+**macOS disk facts the planner reads** (`man diskutil`, macOS 27.0;
+`diskutil info -plist` on an internal Apple SSD): partition offsets
+(`PartitionMapPartitionOffset`, bytes) and GPT unique GUIDs (`DiskUUID`) come
+only from `diskutil info -plist <partition>`; `diskutil list -plist` lists
+partitions in disk order with `Size` and `DiskUUID` but no offsets. Apple SSDs
+use 4096-byte blocks; the GPT's first usable block is 6 (24 576 B) and its
+backup takes the last 20 480 B.
 
 ## Asahi documentation
 

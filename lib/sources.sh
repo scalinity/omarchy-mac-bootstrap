@@ -3,7 +3,7 @@
 # this is the file to change — and `omarchy-bootstrap sources --check` is how
 # to find out that it has. Nothing here is switched automatically.
 
-SOURCES_VERIFIED_ON="2026-09-24"
+SOURCES_VERIFIED_ON="2026-09-25"
 
 # --- Asahi Alarm (macOS side) ------------------------------------------------
 ASAHI_ALARM_INSTALLER_URL="https://asahi-alarm.org/installer-bootstrap.sh"
@@ -14,12 +14,21 @@ ASAHI_ALARM_FIRST_LOGIN="root / root"
 ASAHI_INSTALLER_VERIFIED="v0.9.2"
 ASAHI_MIN_MACOS="13.5"
 
-# asahi-installer src/main.py (v0.9.2)
-ASAHI_MIN_FREE_OS_BYTES=38000000000   # MIN_FREE_OS: kept free for macOS upgrades
-ASAHI_STUB_BYTES=2500000000           # STUB_SIZE: the boot "stub macOS" container
-ASAHI_EFI_BYTES=524288000             # EFI partition in the Alarm templates
-ASAHI_OVERHEAD_WARN_BYTES=16000000000 # installer warns above this overhead
-ASAHI_PART_ALIGN=1048576
+# asahi-installer v0.9.2 (AsahiLinux/asahi-installer dffbb38; the Alarm fork
+# asahi-alarm/asahi-alarm-installer 3cfef52 ships the same src/*.py).
+ASAHI_MIN_FREE_OS_BYTES=38000000000   # main.py MIN_FREE_OS: kept free for macOS upgrades
+ASAHI_STUB_BYTES=2499805184           # main.py STUB_SIZE = align_down(2.5 GB, PART_ALIGN)
+ASAHI_EFI_BYTES=524288000             # installer_data.json: EFI partition "524288000B"
+ASAHI_OVERHEAD_WARN_BYTES=16000000000 # main.py: warns when overhead > 16 GB
+ASAHI_MIN_INSTALL_FREE_BYTES=10000000000 # main.py MIN_INSTALL_FREE: a resize must free more
+ASAHI_PART_ALIGN=1048576              # main.py PART_ALIGN: resize aligns up, OS size aligns down
+ASAHI_GAP_MIN_BYTES=16777216          # diskutil.py FREE_THRESHOLD: smaller gaps are not listed
+ASAHI_INSTALL_MIN_BYTES=7969177600    # smallest gap offered for Minimal (BTRFS): stub + 2 x template
+ASAHI_GPT_ENTRIES_BYTES=16384         # GPT entry array (128 x 128 B) at each end of the disk
+# The storage behaviour the planner's answers depend on. A change to any of
+# the values above, or to the installer version, is a change of contract: the
+# handoff refuses until it is re-verified (sources_contract_check).
+STORAGE_CONTRACT="asahi-installer-v0.9.2:resize-up,os-down,1MiB:stub-2499805184:efi-524288000"
 
 # --- Asahi documentation --------------------------------------------------------
 ASAHI_DOCS_FAQ="https://asahilinux.org/docs/project/faq/"
@@ -45,6 +54,9 @@ OMARCHY_EXPECTED_MAJOR="4"
 OMARCHY_MAC_SETUP_FLAGS="--encrypt --no-encrypt --user --hostname --keymap --status --resume"
 OMARCHY_LINUX_MIN_GB=50
 OMARCHY_LINUX_RECOMMENDED_GB=100
+# The planner holds the Btrfs root itself to the 50 GB minimum, so the Linux
+# allocation (the installer's New OS size) must also cover stub and EFI.
+OMARCHY_ROOT_MIN_BYTES=$((OMARCHY_LINUX_MIN_GB * 1000000000))
 
 # Omarchy Mac's own state signals (bin/omarchy-mac-setup).
 OMS_CONF=/etc/omarchy-mac-setup.conf
@@ -61,6 +73,7 @@ CODEX_NPM_PACKAGE="@openai/codex"
 
 # --- Planning policy (ours, not upstream) -------------------------------------------
 PLAN_DRIFT_MARGIN_BYTES=5000000000    # space macOS may consume between plan and install
+PLAN_PLACEMENT_SLACK_BYTES=16777216   # kept spare after Linux when Shared follows it
 
 # --- Devices -------------------------------------------------------------------------
 # Asahi device list (docs/hw/devices/device-list.md) with the installer's
@@ -211,24 +224,36 @@ sources_check() {
   local v body fails=0
   ui_section "Upstream check" "$(now_utc)"
 
+  # Storage contract: a drift here blocks the Asahi handoff, so it is a FAIL.
   if v=$(sys_net asahi_version "$ASAHI_ALARM_VERSION_URL") && [ -n "$v" ]; then
     v=$(printf '%s' "$v" | clean_version)
     if [ "$v" = "$ASAHI_INSTALLER_VERIFIED" ]; then
       ui_tag pass "Asahi installer" "$v (matches)"
     else
-      ui_tag warn "Asahi installer" "$v, verified $ASAHI_INSTALLER_VERIFIED — re-read src/main.py constants"
+      ui_tag fail "Asahi installer" "$v, verified $ASAHI_INSTALLER_VERIFIED — handoff refuses until src/main.py sizing is re-read"
+      fails=$((fails + 1))
     fi
   else
     ui_tag warn "Asahi installer" "could not reach $ASAHI_ALARM_VERSION_URL"
   fi
 
   if body=$(sys_net asahi_data "$ASAHI_ALARM_DATA_URL") && [ -n "$body" ]; then
-    if printf '%s' "$body" | grep -qF "\"$ASAHI_ALARM_OS_CHOICE\""; then
-      ui_tag pass "OS choice" "$ASAHI_ALARM_OS_CHOICE is offered"
-    else
-      ui_tag fail "OS choice" "$ASAHI_ALARM_OS_CHOICE is no longer in installer_data.json"
-      fails=$((fails + 1))
-    fi
+    storage_contract_ok "$ASAHI_INSTALLER_VERIFIED" "$body"
+    case "$CONTRACT_PROBLEMS" in
+      '')
+        ui_tag pass "OS choice" "$ASAHI_ALARM_OS_CHOICE is offered"
+        ui_tag pass "EFI partition" "$ASAHI_EFI_BYTES bytes, as planned"
+        ;;
+      *"no longer offers"*)
+        ui_tag fail "OS choice" "$ASAHI_ALARM_OS_CHOICE is no longer in installer_data.json — handoff refuses"
+        fails=$((fails + 1))
+        ;;
+      *)
+        ui_tag pass "OS choice" "$ASAHI_ALARM_OS_CHOICE is offered"
+        ui_tag fail "EFI partition" "no longer $ASAHI_EFI_BYTES bytes — handoff refuses"
+        fails=$((fails + 1))
+        ;;
+    esac
   else
     ui_tag warn "OS choice" "could not fetch installer_data.json"
   fi
@@ -300,6 +325,38 @@ sources_check() {
   printf '\n'
   log_event sources "check finished, failures=$fails"
   [ "$fails" = 0 ]
+}
+
+# storage_contract_ok VERSION INSTALLER_DATA_JSON — does upstream still behave
+# the way the storage answers assume? The installer version must be the one
+# whose sizing code was read, and the chosen OS must still have the EFI size
+# the planner reserves. Sets CONTRACT_PROBLEMS (one per line); returns 1 when
+# any holds, and the handoff then refuses rather than guessing.
+storage_contract_ok() {
+  local version=$1 flat seg name
+  CONTRACT_PROBLEMS=""
+  if [ "$version" != "$ASAHI_INSTALLER_VERIFIED" ]; then
+    CONTRACT_PROBLEMS="The installer is ${version:-of unknown version}, not $ASAHI_INSTALLER_VERIFIED, whose resize and allocation rules this tool models."
+  fi
+  flat=$(printf '%s' "$2" | tr -d ' \t\r\n')
+  name=$(printf '%s' "$ASAHI_ALARM_OS_CHOICE" | tr -d ' ')
+  seg=${flat#*"\"name\":\"$name\""}
+  if [ -z "$flat" ]; then
+    CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
+}installer_data.json could not be read, so the OS template's partition sizes are unknown."
+  elif [ "$seg" = "$flat" ]; then
+    CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
+}installer_data.json no longer offers \"$ASAHI_ALARM_OS_CHOICE\"."
+  else
+    # The EFI entry comes before the Linux root in the template.
+    seg=${seg%%\"type\":\"Linux\"*}
+    case "$seg" in
+      *"\"size\":\"${ASAHI_EFI_BYTES}B\""*) ;;
+      *) CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
+}\"$ASAHI_ALARM_OS_CHOICE\" no longer has a ${ASAHI_EFI_BYTES}-byte EFI partition." ;;
+    esac
+  fi
+  [ -z "$CONTRACT_PROBLEMS" ]
 }
 
 # setup_missing_flags SCRIPT_TEXT — prints the flags we use that the setup

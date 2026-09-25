@@ -21,7 +21,7 @@ mac_resize_limits() {
 }
 
 mac_detect() {
-  local hw root store list lim i content size id
+  local hw lim
 
   MAC_ARCH=$(sys_cmd uname_m uname -m)
   MAC_ARM64=$(sys_cmd sysctl_arm64 sysctl -n hw.optional.arm64)
@@ -42,44 +42,14 @@ mac_detect() {
   device_by_model "$MAC_MODEL_ID"
   [ "$MAC_APPLE_SILICON" = 1 ] || DEV_TIER=unsupported
 
-  # Follow / to its APFS container, physical store and whole disk.
-  root=$(sys_cmd diskutil_info_root diskutil info -plist /)
-  MAC_ROOT_VOLUME=$(plist_get "$root" VolumeName)
-  MAC_CONTAINER=$(plist_get "$root" APFSContainerReference)
-  MAC_CONTAINER_SIZE=$(plist_get "$root" APFSContainerSize)
-  MAC_CONTAINER_FREE=$(plist_get "$root" APFSContainerFree)
-  MAC_STORE=$(plist_get "$root" APFSPhysicalStores.0.APFSPhysicalStore)
-  MAC_DISK="" MAC_DISK_INTERNAL=false MAC_DISK_SIZE=0
-  if [ -n "$MAC_STORE" ]; then
-    store=$(sys_cmd "diskutil_info_$MAC_STORE" diskutil info -plist "$MAC_STORE")
-    MAC_DISK=$(plist_get "$store" ParentWholeDisk)
-    MAC_DISK_INTERNAL=$(plist_get "$store" Internal)
-  fi
+  mac_read_container
+  mac_detect_geometry
 
-  MAC_PARTS="" MAC_APPLE_SYS=0 MAC_PART_SUM=0 MAC_ASAHI_PRESENT=0 MAC_OTHER_BYTES=0
-  if [ -n "$MAC_DISK" ]; then
-    list=$(sys_cmd "diskutil_list_$MAC_DISK" diskutil list -plist "$MAC_DISK")
-    MAC_DISK_SIZE=$(plist_get "$list" AllDisksAndPartitions.0.Size)
-    i=0
-    while content=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.Content"); do
-      size=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.Size")
-      id=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.DeviceIdentifier")
-      MAC_PART_SUM=$((MAC_PART_SUM + size))
-      mac_classify_partition "$id" "$content" "$size"
-      MAC_PARTS="$MAC_PARTS$id|$content|$size|$MAC_PART_ROLE
-"
-      i=$((i + 1))
-    done
-  fi
-  MAC_DISK_SIZE=${MAC_DISK_SIZE:-0}
-  MAC_EXISTING_FREE=$((MAC_DISK_SIZE - MAC_PART_SUM))
-  [ "$MAC_EXISTING_FREE" -lt "$GB" ] && MAC_EXISTING_FREE=0
-
-  MAC_LIMIT_PREF=0
+  MAC_LIMIT_PREF=""
   if [ -n "$MAC_CONTAINER" ] && lim=$(mac_resize_limits "$MAC_CONTAINER"); then
     MAC_LIMIT_PREF=$(plist_get "$lim" MinimumSizePreferred)
-    MAC_LIMIT_PREF=${MAC_LIMIT_PREF:-0}
   fi
+  _uint "${MAC_LIMIT_PREF:-}" || MAC_LIMIT_PREF=""
 
   MAC_FILEVAULT=$(sys_cmd fdesetup_isactive fdesetup isactive)
   case " $(sys_cmd id_groups id -Gn) " in *" admin "*) MAC_ADMIN=1 ;; *) MAC_ADMIN=0 ;; esac
@@ -92,14 +62,130 @@ mac_detect() {
     sed -E 's/^([0-9-]{10})-([0-9]{2})([0-9]{2})[0-9]{2}$/\1 \2:\3/')
 }
 
-# mac_classify_partition ID CONTENT SIZE — sets MAC_PART_ROLE and tallies.
-# Stock Apple Silicon disks have three: iBoot system container, the macOS
-# container, and the recovery container. Anything else is an extra OS.
+# mac_read_container — follow / to its APFS container, physical store and
+# whole disk. A second physical store (a Fusion-style container) is not
+# something this tool plans around.
+mac_read_container() {
+  local root store
+  root=$(sys_cmd diskutil_info_root diskutil info -plist /)
+  MAC_ROOT_VOLUME=$(plist_get "$root" VolumeName)
+  MAC_CONTAINER=$(plist_get "$root" APFSContainerReference)
+  MAC_CONTAINER_SIZE=$(plist_get "$root" APFSContainerSize)
+  MAC_CONTAINER_FREE=$(plist_get "$root" APFSContainerFree)
+  MAC_STORE=$(plist_get "$root" APFSPhysicalStores.0.APFSPhysicalStore)
+  MAC_STORES_EXTRA=$(plist_get "$root" APFSPhysicalStores.1.APFSPhysicalStore)
+  MAC_DISK="" MAC_DISK_INTERNAL=false
+  if [ -n "$MAC_STORE" ]; then
+    store=$(sys_cmd "diskutil_info_$MAC_STORE" diskutil info -plist "$MAC_STORE")
+    MAC_DISK=$(plist_get "$store" ParentWholeDisk)
+    MAC_DISK_INTERNAL=$(plist_get "$store" Internal)
+  fi
+}
+
+# mac_recheck_plan — right before the launch: read the disk again, and hold
+# the answers on the card to what the fresh reading gives. Any difference
+# stops the launch; the plan shown is the plan that runs, or nothing does.
+mac_recheck_plan() {
+  local canon ans_r=$PLAN_ANSWER_RESIZE ans_os=$PLAN_ANSWER_OS
+  canon=$(geo_canon)
+  mac_read_container
+  mac_detect_geometry
+  if [ "$GEO_OK" != 1 ] || [ "$(geo_canon)" != "$canon" ]; then
+    ui_fail "The internal disk's partition layout changed since it was surveyed. Nothing was launched; run ./omarchy-bootstrap again."
+    return 1
+  fi
+  mac_plan_compute "${CFG_shared:-0}"
+  plan_layout $((CFG_linux * GB))
+  if [ "$PLAN_OK" != 1 ] || [ "$PLAN_ANSWER_RESIZE" != "$ans_r" ] || [ "$PLAN_ANSWER_OS" != "$ans_os" ]; then
+    ui_fail "macOS's free space changed since the plan was made, and the answers shown no longer hold${PLAN_ERR:+ ($PLAN_ERR)}. Nothing was launched; run ./omarchy-bootstrap again."
+    return 1
+  fi
+  return 0
+}
+
+# mac_detect_geometry — the internal disk as exact extents. Offsets and GPT
+# GUIDs come from `diskutil info -plist` for each partition (the list view
+# has neither), cross-checked against `diskutil list -plist`; anything
+# missing or disagreeing leaves GEO_OK=0 and planning blocked, never guessed.
+# Sets MAC_PARTS ("id|content|size|role|uuid" per partition, disk order),
+# MAC_DISK_SIZE, MAC_DISK_BLOCK, MAC_APPLE_SYS, MAC_OTHER_BYTES,
+# MAC_ASAHI_PRESENT, MAC_OTHER_APFS, MAC_EXISTING_FREE (display only).
+mac_detect_geometry() {
+  local list dinfo info i content size id uuid off lsize luuid label fstype
+  geo_reset
+  MAC_PARTS="" MAC_APPLE_SYS=0 MAC_OTHER_BYTES=0 MAC_ASAHI_PRESENT=0 MAC_OTHER_APFS=""
+  MAC_DISK_SIZE=0 MAC_DISK_BLOCK="" MAC_EXISTING_FREE=0 MAC_STORE_UUID=""
+  if [ -z "$MAC_DISK" ]; then
+    GEO_ERR="the boot volume's physical disk was not found"
+    return 1
+  fi
+  list=$(sys_cmd "diskutil_list_$MAC_DISK" diskutil list -plist "$MAC_DISK")
+  dinfo=$(sys_cmd "diskutil_info_$MAC_DISK" diskutil info -plist "$MAC_DISK")
+  MAC_DISK_SIZE=$(plist_get "$dinfo" Size)
+  MAC_DISK_BLOCK=$(plist_get "$dinfo" DeviceBlockSize)
+  MAC_DISK_MEDIA=$(plist_get "$dinfo" IORegistryEntryName)
+  if ! _uint "${MAC_DISK_SIZE:-}" || [ "$MAC_DISK_SIZE" != "$(plist_get "$list" AllDisksAndPartitions.0.Size)" ]; then
+    GEO_ERR="diskutil list and diskutil info disagree about the size of $MAC_DISK"
+    MAC_DISK_SIZE=0
+  fi
+  i=0
+  while content=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.Content"); do
+    id=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.DeviceIdentifier")
+    lsize=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.Size")
+    luuid=$(plist_get "$list" "AllDisksAndPartitions.0.Partitions.$i.DiskUUID")
+    i=$((i + 1))
+    case "$id" in
+      disk[0-9]*s[0-9]*) ;;
+      *)
+        GEO_ERR=${GEO_ERR:-"partition $((i - 1)) has no device identifier"}
+        continue
+        ;;
+    esac
+    case "$id" in *[!a-z0-9]*) GEO_ERR=${GEO_ERR:-"unexpected device identifier"} && continue ;; esac
+    info=$(sys_cmd "diskutil_info_$id" diskutil info -plist "$id")
+    off=$(plist_get "$info" PartitionMapPartitionOffset)
+    size=$(plist_get "$info" Size)
+    uuid=$(plist_get "$info" DiskUUID)
+    label=$(plist_get "$info" VolumeName)
+    fstype=$(plist_get "$info" FilesystemType)
+    if [ "$size" != "$lsize" ] || [ "$uuid" != "$luuid" ]; then
+      GEO_ERR=${GEO_ERR:-"diskutil list and diskutil info disagree about $id"}
+    fi
+    case "$uuid" in
+      [0-9A-F]*-*-*-*-*) ;;
+      *) GEO_ERR=${GEO_ERR:-"$id has no partition GUID"} ;;
+    esac
+    [ "$id" = "$MAC_STORE" ] && MAC_STORE_UUID=$uuid
+    mac_classify_partition "$id" "$content" "$size" "$uuid" "$fstype"
+    geo_add "$off" "$size" "$uuid" "$content" "$id" "$MAC_PART_ROLE"
+    MAC_PARTS="$MAC_PARTS$id|$content|$size|$MAC_PART_ROLE|$uuid|$label
+"
+  done
+  [ "$i" -gt 0 ] || GEO_ERR=${GEO_ERR:-"no partitions were listed on $MAC_DISK"}
+  geo_finalize "$MAC_DISK_SIZE" "${MAC_DISK_BLOCK:-0}" || return 1
+  local start gsize pred succ
+  while IFS='|' read -r start gsize pred succ; do
+    [ -n "$start" ] && MAC_EXISTING_FREE=$((MAC_EXISTING_FREE + gsize))
+  done <<EOF
+$GEO_GAPS
+EOF
+  return 0
+}
+
+# mac_classify_partition ID CONTENT SIZE UUID FSTYPE — sets MAC_PART_ROLE and
+# tallies. Stock Apple Silicon disks have three partitions: the iBoot system
+# container, the macOS container, and the recovery container. Asahi adds a
+# stub APFS container, an EFI partition and a Linux partition; the one
+# planned Shared partition is recognised by its recorded GUID.
 mac_classify_partition() {
-  local id=$1 content=$2 size=$3
+  local id=$1 content=$2 size=$3 uuid=$4 fstype=${5:-}
   case "$content" in
-    Apple_APFS_ISC | Apple_APFS_Recovery)
-      MAC_PART_ROLE=system
+    Apple_APFS_ISC)
+      MAC_PART_ROLE=isc
+      MAC_APPLE_SYS=$((MAC_APPLE_SYS + size))
+      ;;
+    Apple_APFS_Recovery)
+      MAC_PART_ROLE=recovery
       MAC_APPLE_SYS=$((MAC_APPLE_SYS + size))
       ;;
     Apple_APFS)
@@ -111,6 +197,7 @@ mac_classify_partition() {
         MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
       else
         MAC_PART_ROLE="other-apfs"
+        MAC_OTHER_APFS="$MAC_OTHER_APFS $id"
         MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
       fi
       ;;
@@ -122,6 +209,14 @@ mac_classify_partition() {
     *[Ll]inux* | 0FC63DAF-8483-4772-8E79-3D69D8477DE4)
       MAC_PART_ROLE=linux
       MAC_ASAHI_PRESENT=1
+      MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
+      ;;
+    Microsoft\ Basic\ Data | EBD0A0A2-B9E5-4433-87C0-68B6B72699C7)
+      if [ -n "$uuid" ] && [ "$uuid" = "${SHARED_REC_UUID:-}" ]; then
+        MAC_PART_ROLE=shared
+      else
+        MAC_PART_ROLE="data${fstype:+-$fstype}"
+      fi
       MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
       ;;
     *)
@@ -144,21 +239,72 @@ mac_blockers() {
   ver_ge "${MAC_OS_VERSION:-0}" "$ASAHI_MIN_MACOS" || echo "macOS $MAC_OS_VERSION is older than $ASAHI_MIN_MACOS, which the Asahi Alarm installer requires."
   [ "$MAC_DISK_INTERNAL" = true ] || echo "The boot volume is not on an internal disk (disk ${MAC_DISK:-unknown})."
   [ "$MAC_ADMIN" = 1 ] || echo "$MAC_USER is not an administrator; the installer needs a machine admin."
+  [ -n "${MAC_STORES_EXTRA:-}" ] && echo "The macOS container spans more than one physical store ($MAC_STORE, $MAC_STORES_EXTRA); the installer resizes only single-store containers."
+  # The layout must be known exactly before anything is planned on it.
+  if [ "$GEO_OK" != 1 ]; then
+    echo "The internal disk's partition layout could not be read exactly: $GEO_ERR. Planning needs the position of every partition, so nothing is guessed."
+    return 0
+  fi
+  if [ -n "$MAC_OTHER_APFS" ]; then
+    echo "Another APFS container is on the internal disk ($(printf '%s' "$MAC_OTHER_APFS" | sed 's/^ //')). This tool plans only for a disk with one macOS container; the installer would ask which one to resize."
+  fi
+  [ -n "$PLAN_TOPO_ERR" ] && echo "The macOS container cannot be planned around: $PLAN_TOPO_ERR."
   # Space is a blocker only before an install; after one, the partitions exist.
-  if [ "$MAC_ASAHI_PRESENT" != 1 ] && [ "${PLAN_LINUX_MAX:-0}" -lt "${PLAN_LINUX_MIN:-1}" ]; then
-    printf 'Not enough free space for Linux yet: free about %s in macOS (Omarchy Mac needs %s GB).' \
-      "$(fmt_gb "$PLAN_SHORTFALL")" "$OMARCHY_LINUX_MIN_GB"
-    [ "$PLAN_OVERHEAD_WARN" = 1 ] && printf ' APFS snapshots hold %s; see %s.' "$(fmt_gb "$PLAN_OVERHEAD")" "$ASAHI_TM_CLEANUP"
+  if [ "$MAC_ASAHI_PRESENT" != 1 ] && [ -z "$PLAN_TOPO_ERR" ] && [ "${PLAN_LINUX_MAX:-0}" -lt "${PLAN_LINUX_MIN:-1}" ]; then
+    if [ "$PLAN_LIMITS_KNOWN" != 1 ]; then
+      printf 'diskutil did not report the resize limits of %s, so the installer'"'"'s own minimum for macOS cannot be predicted and no resize is planned on a guess. Restart macOS and try again; if it persists, run First Aid on the container from Recovery.' "${MAC_CONTAINER:-the container}"
+    else
+      printf 'Not enough space for Linux yet: free about %s more in macOS (Linux needs %s in one region).' \
+        "$(fmt_gb "$PLAN_SHORTFALL")" "$(fmt_gb "$PLAN_LINUX_MIN")"
+      [ "$PLAN_OVERHEAD_WARN" = 1 ] && printf ' APFS snapshots hold %s; see %s.' "$(fmt_gb "$PLAN_OVERHEAD")" "$ASAHI_TM_CLEANUP"
+    fi
     printf '\n'
   fi
   return 0
 }
 
-# mac_plan_compute [SHARED_GB] — no reservation unless one is passed: a saved
-# shared area must not shrink the survey, presets or status before the
-# shared question has been answered again in this run.
+# mac_plan_compute [SHARED_GB] — the planner for this disk. No reservation
+# unless one is passed: a saved Shared size must not shrink the survey,
+# presets or status before the Shared question has been answered again.
 mac_plan_compute() {
-  plan_compute "$MAC_DISK_SIZE" "$MAC_CONTAINER_SIZE" "$MAC_CONTAINER_FREE" "$MAC_LIMIT_PREF" "$MAC_EXISTING_FREE" "$(( ${1:-0} * GB ))"
+  plan_init "$MAC_STORE_UUID" "$MAC_CONTAINER_SIZE" "$MAC_CONTAINER_FREE" "$MAC_LIMIT_PREF"
+  plan_compute $(( ${1:-0} * GB ))
+}
+
+# mac_gap_label START — how the installer names a free region: after the
+# partition before it. "the free space after disk0s2".
+mac_gap_label() {
+  local start size pred succ
+  while IFS='|' read -r start size pred succ; do
+    if [ "$start" = "$1" ] && [ -n "$pred" ] && geo_part "$pred"; then
+      printf 'the free space after %s' "$GP_ID"
+      return 0
+    fi
+  done <<EOF
+$GEO_ALLGAPS
+EOF
+  printf 'the free space at %s' "$(fmt_gb "$1")"
+}
+
+# mac_gap_count — MAC_GAP_COUNT: how many free regions the installer will
+# offer at "Install an OS into free space" once any planned resize is done
+# (the region after the container then includes what the resize frees).
+mac_gap_count() {
+  local start size pred succ
+  MAC_GAP_COUNT=1
+  while IFS='|' read -r start size pred succ; do
+    [ -n "$start" ] || continue
+    [ "$start" = "$PLAN_GAP_START" ] && continue
+    [ "$PLAN_MODE" = resize ] && [ "$pred" = "$PLAN_MACOS_UUID" ] && continue
+    [ $((size / MIB * MIB)) -ge "$ASAHI_INSTALL_MIN_BYTES" ] && MAC_GAP_COUNT=$((MAC_GAP_COUNT + 1))
+  done <<EOF
+$GEO_GAPS
+EOF
+}
+
+# mac_gap_label_planned — the planned region as the installer names it.
+mac_gap_label_planned() {
+  if geo_part "$PLAN_GAP_PRED"; then printf 'after %s' "$GP_ID"; else printf 'first'; fi
 }
 
 # ---------------------------------------------------------------------------
@@ -198,16 +344,22 @@ mac_show_survey() {
   ui_kv "macOS" "$MAC_OS_VERSION" "FileVault $([ "$MAC_FILEVAULT" = true ] && echo on || echo off)"
 
   ui_section "Storage" "${MAC_DISK:-?} $G_DOT container ${MAC_CONTAINER:-?} on ${MAC_STORE:-?}"
-  ui_kv "Internal SSD" "$(fmt_gb "$MAC_DISK_SIZE")" "$( [ "$MAC_DISK_INTERNAL" = true ] && echo "internal, boot disk" || echo "NOT internal")"
+  ui_kv "Internal SSD" "$(fmt_gb "$MAC_DISK_SIZE")" "$( [ "$MAC_DISK_INTERNAL" = true ] && echo "internal, boot disk" || echo "NOT internal")${MAC_DISK_BLOCK:+ $G_DOT $MAC_DISK_BLOCK-byte blocks}"
   ui_kv "macOS container" "$(fmt_gb "$MAC_CONTAINER_SIZE")" "$MAC_ROOT_VOLUME"
   ui_kv "Used by macOS" "$(fmt_gb "$PLAN_USED")"
   ui_kv "Free in macOS" "$(fmt_gb "$MAC_CONTAINER_FREE")" "purgeable space not counted"
-  [ "$MAC_EXISTING_FREE" -gt 0 ] && ui_kv "Unpartitioned" "$(fmt_gb "$MAC_EXISTING_FREE")"
+  # Each free region separately: the installer can use only one of them.
+  local gstart gsize gpred gsucc
+  while IFS='|' read -r gstart gsize gpred gsucc; do
+    [ -n "$gstart" ] && ui_kv "Unpartitioned" "$(fmt_gb "$gsize")" "$(mac_gap_label "$gstart")"
+  done <<EOF
+$GEO_GAPS
+EOF
   ui_kv "Required reserve" "$(fmt_gb "$PLAN_RESERVE")" "$(fmt_gb "$ASAHI_MIN_FREE_OS_BYTES") for updates$([ "$PLAN_OVERHEAD" -gt 0 ] && printf ' + %s overhead' "$(fmt_gb "$PLAN_OVERHEAD")") + $(fmt_gb "$PLAN_DRIFT_MARGIN_BYTES") margin"
   if [ "$PLAN_LINUX_MAX" -ge "$PLAN_LINUX_MIN" ]; then
     ui_kv "Safe Linux maximum" "${C_BOLD}$(fmt_gb "$PLAN_LINUX_MAX")${C_RESET}"
   else
-    ui_kv "Safe Linux maximum" "${C_FAIL}$(fmt_gb "$PLAN_LINUX_MAX")${C_RESET}" "below the ${OMARCHY_LINUX_MIN_GB} GB minimum"
+    ui_kv "Safe Linux maximum" "${C_FAIL}$(fmt_gb "$PLAN_LINUX_MAX")${C_RESET}" "below the $(fmt_gb "$PLAN_LINUX_MIN") minimum"
   fi
   ui_strip "$MAC_DISK_SIZE" \
     "mac_used:$PLAN_USED:macOS used $(fmt_gb "$PLAN_USED")" \
@@ -242,24 +394,137 @@ mac_show_survey() {
 
 
 # ---------------------------------------------------------------------------
-# Storage planning
+# Storage planning. Shared first, because it changes how much Linux can have;
+# then Linux. Both go through the same planner on this disk's layout.
 # ---------------------------------------------------------------------------
 
+SHARED_PRESETS_GB="50 100 150 250"
+SHARED_MIN_GB=1
+
+# mac_plan_storage — 0 done, 2 back to the survey, 3 quit.
 mac_plan_storage() {
-  local opts="" line key label bytes desc badge n=0 def=1 rc saved=0
+  local rc
+  while :; do
+    mac_shared_choice
+    rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    mac_linux_size
+    rc=$?
+    # b at the Linux size returns to the Shared question.
+    [ "$rc" = 2 ] && continue
+    return "$rc"
+  done
+}
+
+# mac_shared_max — the largest Shared size (whole GB) that still leaves Linux
+# its minimum in one region; 0 when none does.
+mac_shared_max() {
+  local g
+  mac_plan_compute 0 || {
+    printf 0
+    return 0
+  }
+  g=$(( (PLAN_LINUX_MAX_BYTES - PLAN_LINUX_MIN - PLAN_PLACEMENT_SLACK_BYTES - MIB) / GB ))
+  while [ "$g" -ge "$SHARED_MIN_GB" ] && ! mac_plan_compute "$g"; do
+    g=$((g - 1))
+  done
+  [ "$g" -ge "$SHARED_MIN_GB" ] || g=0
+  printf '%s' "$g"
+}
+
+# mac_shared_choice — sets CFG_shared (0 = none). 0 chosen, 2 back, 3 quit.
+mac_shared_choice() {
+  local saved=${CFG_shared:-0} max g n=1 def=1 rc opts=" 0" skipped=""
   mac_screen plan
-  mac_plan_compute
+  ui_section "Shared storage" "macOS $G_ARROW Linux $G_DOT optional"
+  ui_note "One exFAT partition that both systems can read and write. Its space is set aside now; after Linux is fully installed, this tool creates it from macOS, with its own checks and confirmation."
+  ui_kv "Good for" "datasets, PDFs, media, model files, archives, downloads"
+  ui_kv "Not for" "a Linux home, package databases, Docker storage,"
+  ui_kv "" "Git checkouts that need Unix permissions, symlinks"
+  ui_note "Not encrypted: FileVault and LUKS do not cover it. Not a backup."
+  max=$(mac_shared_max)
+  set -- "None||No Shared partition; move files with Git or cloud sync.|$([ "${CFG_shared:-}" = 0 ] && echo saved)"
+  for g in $SHARED_PRESETS_GB; do
+    if [ "$g" -gt "$max" ]; then
+      skipped="$skipped $g GB"
+      continue
+    fi
+    n=$((n + 1))
+    opts="$opts $g"
+    set -- "$@" "$g GB||$(mac_shared_blurb "$g")|$([ "$g" = "$saved" ] && echo saved)"
+    [ "$g" = "$saved" ] && def=$n
+  done
+  if [ "$saved" -gt 0 ] && [ "$saved" -le "$max" ] && ! printf '%s' " $opts " | grep -q " $saved "; then
+    n=$((n + 1))
+    opts="$opts $saved"
+    set -- "$@" "$saved GB||Your previous choice.|saved"
+    def=$n
+  fi
+  if [ "$max" -ge "$SHARED_MIN_GB" ]; then
+    set -- "$@" "Custom|GB or %|Any size from $SHARED_MIN_GB GB to $max GB.|"
+  fi
+  [ -n "$skipped" ] && ui_note "Not offered:$skipped (Linux would fall below its $(fmt_gb "$PLAN_LINUX_MIN") minimum)."
+  while :; do
+    ui_select "Shared macOS $G_ARROW Linux storage?" "$def" "$@"
+    rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    if [ "$UI_CHOICE" -le "$n" ]; then
+      # shellcheck disable=SC2086 # $opts is a space-separated list by design
+      CFG_shared=$(printf '%s\n' $opts | sed -n "${UI_CHOICE}p")
+      return 0
+    fi
+    mac_custom_shared "$max"
+    rc=$?
+    case "$rc" in 0) return 0 ;; 2) continue ;; *) return "$rc" ;; esac
+  done
+}
+
+mac_shared_blurb() {
+  case "$1" in
+    50) echo "Documents, PDFs, a few datasets." ;;
+    100) echo "Room for media and model files." ;;
+    150) echo "Datasets, models and archives." ;;
+    *) echo "Large datasets, media libraries, archives." ;;
+  esac
+}
+
+# mac_custom_shared MAX_GB — 0 chosen (CFG_shared set), 2 back, 3 quit.
+mac_custom_shared() {
+  local ans bytes g
+  while :; do
+    printf '\n'
+    ui_ask ans "Shared size ${C_DIM}(GB, TB or % of disk; b to go back)${C_RESET}" "" || return 3
+    case "$ans" in b | B) return 2 ;; q | Q) return 3 ;; esac
+    if ! bytes=$(parse_size "$ans" "$MAC_DISK_SIZE"); then
+      ui_fail "$bytes"
+      continue
+    fi
+    g=$((bytes / GB))
+    if [ "$g" -lt "$SHARED_MIN_GB" ] || [ "$g" -gt "$1" ]; then
+      ui_fail "Between $SHARED_MIN_GB and $1 GB fits beside Linux's $(fmt_gb "$PLAN_LINUX_MIN") minimum."
+      continue
+    fi
+    [ $((g * GB)) != "$bytes" ] && ui_info "Shared sizes are whole GB: using $g GB."
+    CFG_shared=$g
+    return 0
+  done
+}
+
+# mac_linux_size — sets CFG_linux beside the chosen Shared size.
+# 0 chosen, 2 back (to the Shared question), 3 quit.
+mac_linux_size() {
+  local line key label bytes desc badge n=0 def=1 rc saved=0 opts=""
+  mac_plan_compute "${CFG_shared:-0}"
   plan_presets
   # A saved size that still fits is the default: Enter keeps the plan.
   if [ -n "${CFG_linux:-}" ] && [ $((CFG_linux * GB)) -ge "$PLAN_LINUX_MIN" ] && [ $((CFG_linux * GB)) -le "$PLAN_LINUX_MAX" ]; then
     saved=$((CFG_linux * GB))
   fi
-  ui_section "Storage" "Linux can have $(fmt_gb "$PLAN_LINUX_MIN")–$(fmt_gb "$PLAN_LINUX_MAX")"
-  ui_note "Sizes are the Linux allocation the installer calls \"New OS size\": the Btrfs root plus $(fmt_gb $((ASAHI_STUB_BYTES + ASAHI_EFI_BYTES))) of boot data. macOS keeps everything else."
+  ui_section "Linux" "$(fmt_gb "$PLAN_LINUX_MIN")–$(fmt_gb "$PLAN_LINUX_MAX")$([ "${CFG_shared:-0}" -gt 0 ] && printf ' beside %s GB Shared' "$CFG_shared")"
+  ui_note "Sizes are the Linux allocation the installer calls \"New OS size\": the Btrfs root plus $(fmt_gb "$PLAN_BOOT") of Asahi boot data. macOS keeps everything else$([ "${CFG_shared:-0}" -gt 0 ] && printf ' that Shared does not need')."
   set --
   if [ "$saved" -gt 0 ] && ! printf '%s' "$PRESETS" | cut -d'|' -f3 | grep -qx "$saved"; then
     n=1
-    def=1
     set -- "Saved plan|$(fmt_gb "$saved")|Your previous choice.|saved"
     opts=" $saved"
   fi
@@ -291,19 +556,23 @@ EOF
     if [ "$UI_CHOICE" != "$n" ]; then
       # shellcheck disable=SC2086 # $opts is a space-separated list by design
       CHOSEN_BYTES=$(printf '%s\n' $opts | sed -n "${UI_CHOICE}p")
-      break
+    else
+      # "b" in the custom prompt returns to this menu.
+      mac_custom_size
+      rc=$?
+      case "$rc" in
+        0) ;;
+        2) continue ;;
+        *) return "$rc" ;;
+      esac
     fi
-    # "b" in the custom prompt returns to this menu, not to the survey.
-    mac_custom_size
-    rc=$?
-    case "$rc" in
-      0) break ;;
-      2) continue ;;
-      *) return "$rc" ;;
-    esac
+    plan_layout "$CHOSEN_BYTES"
+    if [ "$PLAN_OK" = 1 ]; then
+      CFG_linux=$((CHOSEN_BYTES / GB))
+      return 0
+    fi
+    ui_fail "That plan does not hold: $PLAN_ERR."
   done
-  CFG_linux=$(gb_floor "$CHOSEN_BYTES")
-  return 0
 }
 
 mac_custom_size() {
@@ -312,11 +581,14 @@ mac_custom_size() {
     printf '\n'
     ui_ask ans "Linux size ${C_DIM}(GB, TB, % of disk, or max; b to go back)${C_RESET}" "" || return 3
     case "$ans" in b | B) return 2 ;; q | Q) return 3 ;; esac
-    if ! bytes=$(parse_size "$ans"); then
+    if ! bytes=$(parse_size "$ans" "$MAC_DISK_SIZE" "$PLAN_LINUX_MAX"); then
       ui_fail "$bytes"
       continue
     fi
-    bytes=$(($(gb_floor "$bytes") * GB))
+    if [ $((bytes / GB * GB)) != "$bytes" ]; then
+      bytes=$((bytes / GB * GB))
+      ui_info "Linux sizes are whole GB: using $(fmt_gb "$bytes")."
+    fi
     verdict=$(plan_validate "$bytes")
     case "$verdict" in
       error\|*)
@@ -326,9 +598,13 @@ mac_custom_size() {
       warn\|*) ui_warn "${verdict#warn|}" ;;
     esac
     plan_layout "$bytes"
-    ui_kv "Linux" "$(fmt_gb "$bytes")" "$(pct "$bytes" "$PLAN_DISK")% of the disk"
+    if [ "$PLAN_OK" != 1 ]; then
+      ui_fail "That plan does not hold: $PLAN_ERR."
+      continue
+    fi
+    ui_kv "Linux" "$(fmt_gb "$PLAN_LINUX_ACTUAL")" "$(pct "$PLAN_LINUX_ACTUAL" "$PLAN_DISK")% of the disk"
     ui_kv "macOS keeps" "$(fmt_gb "$PLAN_MACOS_NEW")" "$(fmt_gb "$PLAN_MACOS_FREE_AFTER") free inside it"
-    ui_kv "Free in macOS now" "$(fmt_gb "$PLAN_FREE")" "→ $(fmt_gb "$PLAN_MACOS_FREE_AFTER") after"
+    [ "${PLAN_SHARED:-0}" -gt 0 ] && ui_kv "Shared" "$(fmt_gb $((PLAN_SHARED_END - PLAN_SHARED_START)))" "reserved after Linux"
     if ui_yesno "Use $(fmt_gb "$bytes") for Linux?" y; then
       CHOSEN_BYTES=$bytes
       return 0
@@ -336,81 +612,47 @@ mac_custom_size() {
   done
 }
 
-# mac_shared_prompt — optional, default off. Never creates anything.
-mac_shared_prompt() {
-  local rc saved=${CFG_shared:-0} ans max def
-  # Bound the area by what fits beside this Linux size with no reservation.
-  mac_plan_compute
-  max=$(( $(gb_floor $((PLAN_LINUX_MAX - CFG_linux * GB))) ))
-  ui_section "Shared data area" "advanced $G_DOT off by default"
-  if [ "$max" -lt 1 ]; then
-    ui_note "No room for a shared area beside $CFG_linux GB of Linux. Choose a smaller Linux size to leave room for one."
-    CFG_shared=0
-    mac_plan_compute
-    plan_layout "$((CFG_linux * GB))"
-    return 0
-  fi
-  ui_note "A small exFAT partition both systems can read and write — handy for moving files, poor for code (no permissions, no symlinks, case-insensitive). Git or cloud sync is the better default. The Asahi installer has no shared-partition option, so this tool only leaves the space free and writes a post-install plan; it never creates the partition."
-  ui_yesno "Plan a shared area?" "$([ "$saved" -gt 0 ] && echo y || echo n)"
-  rc=$?
-  [ "$rc" = 3 ] && return 3
-  CFG_shared=0
-  if [ "$rc" = 0 ]; then
-    def=32
-    [ "$saved" -gt 0 ] && def=$saved
-    [ "$def" -gt "$max" ] && def=$max
-    while :; do
-      ui_ask ans "Shared size in GB ${C_DIM}(1–$max; b to skip)${C_RESET}" "$def" || return 3
-      case "$ans" in
-        b | B) break ;;
-        q | Q) return 3 ;;
-      esac
-      valid_gb "$ans" || continue
-      if [ "$ans" -lt 1 ] || [ "$ans" -gt "$max" ]; then
-        ui_fail "Between 1 and $max GB fits beside $CFG_linux GB of Linux."
-        continue
-      fi
-      CFG_shared=$ans
-      break
-    done
-  fi
-  mac_plan_compute "$CFG_shared"
-  plan_layout "$((CFG_linux * GB))"
-}
-
+# mac_show_layout — the plan, exactly: every region of the disk afterwards,
+# and the answers that produce it.
 mac_show_layout() {
-  local linux=$((CFG_linux * GB)) shared=$(( ${CFG_shared:-0} * GB )) boot rest
+  local linux=$((CFG_linux * GB)) shared sys unalloc
   mac_plan_compute "${CFG_shared:-0}"
   plan_layout "$linux"
-  boot=$((PLAN_BOOT + MAC_APPLE_SYS + MAC_OTHER_BYTES))
-  rest=$((PLAN_DISK - PLAN_MACOS_NEW - PLAN_ROOT - boot - shared))
-  [ "$rest" -lt 0 ] && rest=0
-  [ "$rest" -lt "$GB" ] && rest=0
-  ui_section "Proposed layout" "estimate"
+  shared=$((PLAN_SHARED_END - PLAN_SHARED_START))
+  sys=$((MAC_APPLE_SYS + MAC_OTHER_BYTES + PLAN_BOOT))
+  unalloc=$((PLAN_DISK - PLAN_MACOS_NEW - PLAN_ROOT - shared - sys))
+  ui_section "Proposed layout" "from this disk's partition map"
+  if [ "$PLAN_OK" != 1 ]; then
+    ui_fail "The saved sizes no longer fit this disk: $PLAN_ERR."
+    return 1
+  fi
   ui_strip "$PLAN_DISK" \
     "mac_used:$PLAN_USED:macOS used" \
     "mac_free:$PLAN_MACOS_FREE_AFTER:macOS free" \
     "linux:$PLAN_ROOT:Linux" \
-    "boot:$boot:boot+system" \
-    "shared:$shared:shared" \
-    "unalloc:$rest:unpartitioned"
+    "shared:$shared:Shared" \
+    "boot:$sys:system" \
+    "unalloc:$unalloc:unallocated"
   printf '\n'
-  ui_kv "macOS / APFS" "$G_APPROX $(fmt_gb "$PLAN_MACOS_NEW")" "used $(fmt_gb "$PLAN_USED") $G_DOT free $(fmt_gb "$PLAN_MACOS_FREE_AFTER")"
-  ui_kv "Linux / Btrfs" "$G_APPROX $(fmt_gb "$PLAN_ROOT")" "root filesystem"
-  ui_kv "Asahi boot data" "$G_APPROX $(fmt_gb "$PLAN_BOOT")" "$(fmt_gb "$ASAHI_STUB_BYTES") stub container + $(fmt_gb "$ASAHI_EFI_BYTES") EFI"
-  ui_kv "Apple system" "$(fmt_gb "$MAC_APPLE_SYS")" "iBoot + recovery, untouched"
-  [ "$shared" -gt 0 ] && ui_kv "Shared (left free)" "$(fmt_gb "$shared")" "exFAT, created later by you"
-  printf '\n   %sLinux receives %s%%%s  %s  macOS retains %s%%  %s  boot/system %s%%\n' \
+  ui_kv "macOS / APFS" "$(fmt_gb "$PLAN_MACOS_NEW")" "used $(fmt_gb "$PLAN_USED") $G_DOT free $(fmt_gb "$PLAN_MACOS_FREE_AFTER")$([ "$PLAN_MODE" = free ] && printf ' %s not resized' "$G_DOT")"
+  ui_kv "Linux" "$(fmt_gb "$PLAN_LINUX_ACTUAL")" "Btrfs root $(fmt_gb "$PLAN_ROOT") + $(fmt_gb "$PLAN_BOOT") Asahi boot data"
+  [ "$shared" -gt 0 ] && ui_kv "Shared / exFAT" "$(fmt_gb "$shared")" "set aside now, created after Linux is installed"
+  ui_kv "System" "$(fmt_gb "$sys")" "Apple iBoot + recovery (untouched), Asahi stub + EFI"
+  ui_kv "Unallocated" "$(fmt_gb "$unalloc")" "partition-table space and alignment$([ "$MAC_EXISTING_FREE" -gt 0 ] && printf ', and free space left as it is')"
+  printf '\n   %sLinux %s%%%s  %s  macOS %s%%%s  %s  system %s%%\n' \
     "$C_LINUX$C_BOLD" "$(pct "$PLAN_LINUX_ACTUAL" "$PLAN_DISK")" "$C_RESET" "$G_DOT" \
-    "$(pct "$PLAN_MACOS_NEW" "$PLAN_DISK")" "$G_DOT" "$(pct "$boot" "$PLAN_DISK")"
-  ui_section "Three different numbers"
-  ui_kv "You request" "Linux $(fmt_gb "$linux")" "the installer's New OS size"
-  ui_kv "Estimated result" "shown above" "rounded; boot data and alignment vary slightly"
+    "$(pct "$PLAN_MACOS_NEW" "$PLAN_DISK")" "$([ "$shared" -gt 0 ] && printf '  %s  Shared %s%%' "$G_DOT" "$(pct "$shared" "$PLAN_DISK")")" "$G_DOT" "$(pct "$sys" "$PLAN_DISK")"
+  ui_section "Exact installer answers" "checked against the layout above"
   if [ "$PLAN_MODE" = resize ]; then
-    ui_kv "Installer creates" "exact sizes" "you type ${PLAN_MACOS_NEW_GB}GB, then $PLAN_OS_SIZE_ANSWER; it aligns to 1 MiB"
-  else
-    ui_kv "Installer creates" "exact sizes" "no resize; you type $PLAN_OS_SIZE_ANSWER into existing free space"
+    ui_kv "New size (macOS)" "$PLAN_ANSWER_RESIZE" "$(fmt_bytes "$PLAN_MACOS_NEW")"
   fi
+  if [ "$PLAN_ANSWER_OS" = max ]; then
+    ui_kv "New OS size" "max" "the freed region, at least $(fmt_bytes "$PLAN_LINUX_ACTUAL")"
+  else
+    ui_kv "New OS size" "$PLAN_ANSWER_OS" "$(fmt_bytes "$PLAN_LINUX_ACTUAL"), at least the $(fmt_gb "$PLAN_LINUX") asked for"
+  fi
+  [ "$shared" -gt 0 ] && ui_kv "Left for Shared" "$(fmt_gb "$shared")" "$(fmt_bytes "$shared"), at least the $(fmt_gb "$PLAN_SHARED") asked for"
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -482,46 +724,8 @@ mac_review() {
 mac_save_plan() {
   cfg_save
   state_stamp planned_at
-  [ "${CFG_shared:-0}" -gt 0 ] && mac_write_shared_plan
+
   return 0
-}
-
-mac_write_shared_plan() {
-  local f="$OMB_STATE_DIR/shared-storage-plan.txt"
-  if [ "$OMB_PERSIST" != 1 ]; then
-    ui_would "write the shared-storage plan to $(tildify "$f")"
-    return 0
-  fi
-  cat >"$f" <<EOF
-Shared data area — post-install plan (not executed by omarchy-bootstrap)
-Planned $(now_utc) for $MAC_MODEL_ID, disk $MAC_DISK.
-
-What was reserved
-  The Asahi installer was told to give Linux ${CFG_linux}GB instead of "max",
-  leaving about ${CFG_shared} GB of unpartitioned space after the Linux partitions.
-
-Why this is manual
-  Asahi documents no installer workflow for a shared partition, and a wrong
-  partition-table edit can make macOS unbootable. Read first:
-  $ASAHI_DOCS_PARTITIONING
-
-Trade-offs of exFAT
-  Readable and writable from both systems; no Unix permissions, no symlinks,
-  case-insensitive, no journaling. Good for media and hand-offs, poor for Git
-  checkouts and build trees.
-
-Steps, from Linux (exfatprogs ships with Omarchy)
-  1. Identify the free region:   lsblk -o NAME,SIZE,TYPE,PARTLABEL /dev/nvme0n1
-                                 sudo parted /dev/nvme0n1 unit GB print free
-  2. Create one partition in that region only, with parted's mkpart, using the
-     start and end printed as "Free Space". Do not touch any other partition,
-     and never Apple_APFS_Recovery (the last partition).
-  3. Restore GPT ordering, as the cheatsheet requires after Linux-side edits:
-     sudo fdisk /dev/nvme0n1   then  x  f  r  w
-  4. Format:  sudo mkfs.exfat -L SHARED /dev/nvme0n1pN
-  5. Verify from macOS:  diskutil list   (the volume appears as SHARED)
-EOF
-  log_event record "shared-storage plan written to $(tildify "$f")"
 }
 
 # ---------------------------------------------------------------------------
@@ -688,7 +892,7 @@ mac_handoff() {
   if [ "$version" = "$ASAHI_INSTALLER_VERIFIED" ]; then
     ui_kv "Fetches installer" "$version" "matches the version this tool was checked against"
   else
-    ui_kv "Fetches installer" "${version:-unknown}" "${C_WARN}checked against $ASAHI_INSTALLER_VERIFIED — prompts may differ${C_RESET}"
+    ui_kv "Fetches installer" "${version:-unknown}" "${C_FAIL}checked against $ASAHI_INSTALLER_VERIFIED${C_RESET}"
   fi
   state_set asahi_bootstrap_url "$FETCH_URL"
   state_set asahi_bootstrap_sha256 "$FETCH_SHA256"
@@ -703,26 +907,47 @@ mac_handoff() {
     printf '\n'
     return 1
   fi
+  # The answers below are computed from the installer's storage behaviour as
+  # verified; a different installer or OS template is a different contract.
+  if ! storage_contract_ok "$version" "$(sys_net asahi_data "$ASAHI_ALARM_DATA_URL")"; then
+    ui_blockers "Refusing: the installer's storage behaviour may have changed." \
+      "$CONTRACT_PROBLEMS
+The sizes this tool would ask you to type were computed for asahi-installer $ASAHI_INSTALLER_VERIFIED. Re-verify upstream (docs/UPSTREAM.md), then update lib/sources.sh."
+    return 1
+  fi
   offer_inspection || {
     printf '\n'
     ui_info "Not launched. Nothing changed."
     return 1
   }
+  mac_plan_compute "${CFG_shared:-0}"
+  plan_layout $((CFG_linux * GB))
+  if [ "$PLAN_OK" != 1 ]; then
+    ui_fail "The saved plan no longer fits this disk: $PLAN_ERR. Nothing was launched; run ./omarchy-bootstrap to plan again."
+    return 1
+  fi
 
-  # The answer card.
-  if [ "$PLAN_MODE" = resize ]; then first_answer="${PLAN_MACOS_NEW_GB}GB"; else first_answer=$PLAN_OS_SIZE_ANSWER; fi
+  # The answer card: exact values, each a whole number of MiB, which the
+  # installer's own alignment leaves unchanged.
+  if [ "$PLAN_MODE" = resize ]; then first_answer=$PLAN_ANSWER_RESIZE; else first_answer=$PLAN_ANSWER_OS; fi
   local n=0
   ui_card_open "When the Asahi Alarm installer asks"
   ui_card_row $((n += 1)) "Press enter to continue" "Enter" "and your macOS password when asked"
   if [ "$PLAN_MODE" = resize ]; then
     ui_card_row $((n += 1)) "Choose what to do" "r" "Resize an existing partition"
-    ui_card_row $((n += 1)) "New size  (macOS keeps)" "${PLAN_MACOS_NEW_GB}GB" "on your clipboard"
+    ui_card_row $((n += 1)) "New size  (macOS keeps)" "$PLAN_ANSWER_RESIZE" "$(fmt_gb "$PLAN_MACOS_NEW"), on your clipboard"
     ui_card_row $((n += 1)) "Continue?" "y" "the Mac may seem frozen; wait"
   fi
   ui_card_row $((n += 1)) "Choose what to do" "f" "Install an OS into free space"
+  mac_gap_count
+  if [ "$MAC_GAP_COUNT" -gt 1 ]; then
+    ui_card_row $((n += 1)) "Choose free space" "$(mac_gap_label_planned)" "the $(fmt_gb $((PLAN_GAP_END - PLAN_GAP_START))) one"
+  fi
   ui_card_row $((n += 1)) "Choose an OS to install" "$ASAHI_ALARM_OS_CHOICE" "type its number"
-  ui_card_row $((n += 1)) "New OS size  (Linux gets)" "$PLAN_OS_SIZE_ANSWER" "$G_APPROX $(fmt_gb "$PLAN_LINUX_ACTUAL") incl. $(fmt_gb $((ASAHI_STUB_BYTES + ASAHI_EFI_BYTES))) boot data"
+  ui_card_row $((n += 1)) "New OS size  (Linux gets)" "$PLAN_ANSWER_OS" "$(fmt_gb "$PLAN_LINUX_ACTUAL") incl. $(fmt_gb "$PLAN_BOOT") boot data"
   ui_card_row $((n += 1)) "OS name" "Enter" "or e.g. Omarchy; shown in Startup Options"
+  ui_card_text "Type each size exactly as shown; MiB values are exact."
+  [ "${PLAN_SHARED:-0}" -gt 0 ] && ui_card_text "Never type max here: the space after Linux is Shared's."
   ui_card_text "Everything else: read it, and follow the installer's own instructions."
   ui_card_close
   if clipboard_copy "$first_answer" && [ "$OMB_DRY_RUN" != 1 ]; then
@@ -733,7 +958,7 @@ mac_handoff() {
 
   local what
   if [ "$PLAN_MODE" = resize ]; then
-    what="resize the macOS container to ${PLAN_MACOS_NEW_GB} GB, create the Linux partitions"
+    what="resize the macOS container to $(fmt_gb "$PLAN_MACOS_NEW") ($PLAN_ANSWER_RESIZE), create the Linux partitions"
   else
     what="create the Linux partitions in the existing free space (macOS is not resized)"
   fi
@@ -746,6 +971,7 @@ mac_handoff() {
     return 1
   fi
 
+  mac_recheck_plan || return 1
   state_unset asahi_exit
   state_must_set asahi_launched_at "$(now_utc)" || return 1
   printf '\n'
@@ -819,9 +1045,6 @@ mac_main() {
         mac_plan_storage
         rc=$?
         case "$rc" in 2) mac_show_survey; step=survey; continue ;; 3) _mac_quit; return 0 ;; esac
-        mac_plan_compute
-        plan_layout "$((CFG_linux * GB))"
-        mac_shared_prompt || { _mac_quit; return 0; }
         step=choices
         ;;
       choices)

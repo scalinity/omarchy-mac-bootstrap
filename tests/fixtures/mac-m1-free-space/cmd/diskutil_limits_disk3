@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict><key>ContainerCurrentSize</key><integer>694662543360</integer><key>CurrentSize</key><integer>694662543360</integer><key>MaximumSize</key><integer>694662543360</integer><key>MinimumSizePreferred</key><integer>334662543360</integer><key>Type</key><string>APFSContainerReference</string></dict>
+<dict><key>ContainerCurrentSize</key><integer>694610464768</integer><key>CurrentSize</key><integer>694610464768</integer><key>MaximumSize</key><integer>694610464768</integer><key>MinimumSizePreferred</key><integer>334610464768</integer><key>Type</key><string>APFSContainerReference</string></dict>
 </plist>

@@ -10,22 +10,83 @@ set -eu
 cd "$(dirname "$0")"
 
 GB=1000000000
-ISC=524288000
-RECOVERY=5368709120
+MIB=1048576
+# A stock 1 TB Apple SSD, as `diskutil info -plist` reports it: 4096-byte
+# blocks, the GPT's first usable block at 24576, its backup in the last 20480
+# bytes, and ISC, the macOS container and Recovery back to back between.
+ISC=576716800
+RECOVERY=5368664064
+GPT_FRONT=24576
+GPT_BACK=20480
+
+# Synthetic GPT GUIDs, one per role.
+U_ISC=4A7B1C2D-0001-4E5F-8A9B-000000000001
+U_MAC=4A7B1C2D-0002-4E5F-8A9B-000000000002
+U_REC=4A7B1C2D-0003-4E5F-8A9B-000000000003
+U_STUB=4A7B1C2D-0004-4E5F-8A9B-000000000004
+U_EFI=4A7B1C2D-0005-4E5F-8A9B-000000000005
+U_ROOT=4A7B1C2D-0006-4E5F-8A9B-000000000006
+U_SHARED=4A7B1C2D-0007-4E5F-8A9B-000000000007
+U_OTHER=4A7B1C2D-0008-4E5F-8A9B-000000000008
 
 plist() {
   printf '<?xml version="1.0" encoding="UTF-8"?>\n'
   printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
   printf '<plist version="1.0">\n%s\n</plist>\n' "$1"
 }
-part() { printf '<dict><key>Content</key><string>%s</string><key>DeviceIdentifier</key><string>%s</string><key>Size</key><integer>%s</integer></dict>' "$1" "$2" "$3"; }
 put() { mkdir -p "$(dirname "$1")"; printf '%s\n' "$2" >"$1"; }
+lines() { printf '%s\n' "$@"; }
+# gbm N — N GB rounded down to whole MiB, the way sizes land on disk.
+gbm() { printf '%s' $(($1 * GB / MIB * MIB)); }
 
-# mac NAME MODEL CHIP ARCH ARM64 MACOS DISK CONTAINER FREE PREF PARTS [MEM]
+# disk FIXTURE DISK_BYTES BLOCK ENTRIES — the internal disk: diskutil list,
+# diskutil info for the whole disk and for every partition, laid out in the
+# order given from the GPT's first usable block. Every value is consistent:
+# partitions + gaps + GPT structures add up to DISK_BYTES exactly.
+#   ENTRIES, one per line:  id:content:size:guid[:volume name[:filesystem]]  or  gap:bytes
+disk() {
+  local d=$1 total=$2 block=$3 entries=$4 off list="" e id content size uuid vol fs
+  off=$((2 * block + 16384))
+  while IFS= read -r e; do
+    [ -n "$e" ] || continue
+    case "$e" in gap:*)
+      off=$((off + ${e#gap:}))
+      continue
+      ;;
+    esac
+    IFS=: read -r id content size uuid vol fs <<EOF
+$e
+EOF
+    list="$list<dict><key>Content</key><string>$content</string><key>DeviceIdentifier</key><string>$id</string><key>DiskUUID</key><string>$uuid</string><key>Size</key><integer>$size</integer>${vol:+<key>VolumeName</key><string>$vol</string>}</dict>"
+    plist "<dict><key>Content</key><string>$content</string><key>DeviceIdentifier</key><string>$id</string><key>DeviceBlockSize</key><integer>$block</integer><key>DiskUUID</key><string>$uuid</string><key>Internal</key><true/><key>MountPoint</key><string>${vol:+/Volumes/$vol}</string><key>ParentWholeDisk</key><string>disk0</string><key>PartitionMapPartition</key><true/><key>PartitionMapPartitionOffset</key><integer>$off</integer><key>Size</key><integer>$size</integer><key>VolumeName</key><string>$vol</string>${fs:+<key>FilesystemType</key><string>$fs</string>}<key>WholeDisk</key><false/></dict>" >"$d/cmd/diskutil_info_$id"
+    off=$((off + size))
+  done <<EOF
+$entries
+EOF
+  plist "<dict><key>AllDisksAndPartitions</key><array><dict><key>Content</key><string>GUID_partition_scheme</string><key>DeviceIdentifier</key><string>disk0</string><key>Size</key><integer>$total</integer><key>Partitions</key><array>$list</array></dict></array></dict>" >"$d/cmd/diskutil_list_disk0"
+  plist "<dict><key>Content</key><string>GUID_partition_scheme</string><key>DeviceBlockSize</key><integer>$block</integer><key>DeviceIdentifier</key><string>disk0</string><key>IORegistryEntryName</key><string>APPLE SSD FIXTURE Media</string><key>Internal</key><true/><key>SMARTStatus</key><string>Verified</string><key>Size</key><integer>$total</integer><key>WholeDisk</key><true/></dict>" >"$d/cmd/diskutil_info_disk0"
+}
+
+INSTALLER_DATA='{"os_list": [
+  {"name": "Asahi Alarm Minimal", "partitions": [{"name": "EFI", "type": "EFI", "size": "524288000B"}, {"name": "Root", "type": "Linux", "size": "2209614225B", "expand": true}]},
+  {"name": "Asahi Alarm Minimal (BTRFS)", "package": "https://asahi-alarm.org/asahi-base-btrfs.zip",
+   "partitions": [{"name": "EFI", "type": "EFI", "size": "524288000B", "format": "fat"}, {"name": "Root", "type": "Linux", "size": "2209614225B", "expand": true}]}
+]}'
+
+# mac NAME MODEL CHIP ARCH ARM64 MACOS FREE PREF DISK_BYTES BLOCK ENTRIES
+# The macOS container is the disk0s2 entry; FREE is its APFS free space and
+# PREF diskutil's MinimumSizePreferred (0: the limits query does not answer).
+# MEM (bytes) may be set in the environment.
 mac() {
-  local d=$1 model=$2 chip=$3 arch=$4 arm64=$5 macos=$6 disk=$7 container=$8 free=$9 pref=${10} parts=${11} mem=${12:-17179869184}
+  local d=$1 model=$2 chip=$3 arch=$4 arm64=$5 macos=$6 free=$7 pref=$8 total=$9 block=${10} entries=${11} mem=${MEM:-17179869184} container
   rm -rf "$d"
   mkdir -p "$d/cmd" "$d/net"
+  while IFS= read -r e; do
+    [ -n "$e" ] || continue
+    case "$e" in disk0s2:*) container=$(printf '%s' "$e" | cut -d: -f3) ;; esac
+  done <<EOF
+$entries
+EOF
   put "$d/cmd/uname_s" Darwin
   put "$d/cmd/uname_m" "$arch"
   put "$d/cmd/id_u" 501
@@ -47,19 +108,20 @@ Kind          : Local"
   put "$d/cmd/git_branch" main
   put "$d/cmd/git_head" 0123456789abcdef0123456789abcdef01234567
   put "$d/cmd/git_pushed" "  origin/main"
+  put "$d/cmd/pmset_batt" "Now drawing from 'AC Power'
+ -InternalBattery-0 (id=1234567)	96%; charged; 0:00 remaining present: true"
   local chipkey=chip_type
   [ "$arm64" = 1 ] || chipkey=cpu_type
   plist "<array><dict><key>_items</key><array><dict><key>machine_name</key><string>MacBook Pro</string><key>machine_model</key><string>$model</string><key>$chipkey</key><string>$chip</string><key>physical_memory</key><string>$((mem / 1073741824)) GB</string></dict></array></dict></array>" >"$d/cmd/hardware_plist"
   plist "<dict><key>VolumeName</key><string>Macintosh HD</string><key>APFSContainerReference</key><string>disk3</string><key>APFSContainerSize</key><integer>$container</integer><key>APFSContainerFree</key><integer>$free</integer><key>APFSPhysicalStores</key><array><dict><key>APFSPhysicalStore</key><string>disk0s2</string></dict></array><key>Internal</key><true/></dict>" >"$d/cmd/diskutil_info_root"
-  plist "<dict><key>DeviceIdentifier</key><string>disk0s2</string><key>ParentWholeDisk</key><string>disk0</string><key>Internal</key><true/></dict>" >"$d/cmd/diskutil_info_disk0s2"
-  plist "<dict><key>DeviceIdentifier</key><string>disk0</string><key>SMARTStatus</key><string>Verified</string><key>Internal</key><true/></dict>" >"$d/cmd/diskutil_info_disk0"
-  plist "<dict><key>AllDisksAndPartitions</key><array><dict><key>Content</key><string>GUID_partition_scheme</string><key>DeviceIdentifier</key><string>disk0</string><key>Size</key><integer>$disk</integer><key>Partitions</key><array>$parts</array></dict></array></dict>" >"$d/cmd/diskutil_list_disk0"
+  disk "$d" "$total" "$block" "$entries"
   if [ "$pref" -gt 0 ]; then
     plist "<dict><key>ContainerCurrentSize</key><integer>$container</integer><key>CurrentSize</key><integer>$container</integer><key>MaximumSize</key><integer>$container</integer><key>MinimumSizePreferred</key><integer>$pref</integer><key>Type</key><string>APFSContainerReference</string></dict>" >"$d/cmd/diskutil_limits_disk3"
   fi
   printf 'pbcopy\nplutil\n' >"$d/commands"
   put "$d/net/asahi_home.reachable" ""
   put "$d/net/asahi_version" v0.9.2
+  put "$d/net/asahi_data" "$INSTALLER_DATA"
   put "$d/net/repo_public.reachable" ""
   cat >"$d/net/asahi-alarm-bootstrap.sh" <<'EOF'
 #!/bin/sh
@@ -70,31 +132,67 @@ exit 0
 EOF
 }
 
-stock_parts() { # CONTAINER
-  printf '%s%s%s' "$(part Apple_APFS_ISC disk0s1 $ISC)" "$(part Apple_APFS disk0s2 "$1")" "$(part Apple_APFS_Recovery disk0s3 $RECOVERY)"
+# stock DISK_BYTES — the three stock partitions, container filling the rest.
+stock() {
+  local c=$(($1 - GPT_FRONT - GPT_BACK - ISC - RECOVERY))
+  printf '%s\n' "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$c:$U_MAC" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC"
 }
 
 D1T=1000555581440
-C1T=$((D1T - ISC - RECOVERY - 40960))          # 994662543360
+C1T=$((D1T - GPT_FRONT - GPT_BACK - ISC - RECOVERY))   # 994610155520
 D512=500277792768
-C512=$((D512 - ISC - RECOVERY - 40960))        # 494384754688
+C512=$((D512 - GPT_FRONT - GPT_BACK - ISC - RECOVERY)) # 494332366848
 
-# 1 TB, plenty free: used 294.66 GB, 2 GB snapshot overhead.
-mac mac-m1pro-1tb-roomy MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $D1T $C1T $((700 * GB)) $((C1T - 700 * GB + 40 * GB)) "$(stock_parts $C1T)"
-# 1 TB, 60 GB free: below the Omarchy minimum.
-mac mac-m1pro-1tb-tight MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $D1T $C1T $((60 * GB)) $((C1T - 60 * GB + 39 * GB)) "$(stock_parts $C1T)"
+# 1 TB M1 Pro, plenty free: used 294.61 GB, 2 GB snapshot overhead.
+mac mac-m1pro-1tb-roomy MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((700 * GB)) $((C1T - 700 * GB + 40 * GB)) $D1T 4096 "$(stock $D1T)"
+# 1 TB, 60 GB free: below what Linux needs.
+mac mac-m1pro-1tb-tight MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((60 * GB)) $((C1T - 60 * GB + 39 * GB)) $D1T 4096 "$(stock $D1T)"
 # 512 GB M2 Air with 20 GB of snapshot overhead.
-mac mac-m2-512 Mac14,2 "Apple M2" arm64 1 15.1 $D512 $C512 $((250 * GB)) $((C512 - 250 * GB + 58 * GB)) "$(stock_parts $C512)" 8589934592
+MEM=8589934592 mac mac-m2-512 Mac14,2 "Apple M2" arm64 1 15.1 $((250 * GB)) $((C512 - 250 * GB + 58 * GB)) $D512 4096 "$(stock $D512)"
 # Intel: unsupported.
-mac mac-intel MacBookPro16,1 "8-Core Intel Core i9" x86_64 0 14.6 $D512 $C512 $((200 * GB)) 0 "$(stock_parts $C512)"
+mac mac-intel MacBookPro16,1 "8-Core Intel Core i9" x86_64 0 14.6 $((200 * GB)) 0 $D512 4096 "$(stock $D512)"
 # M3 Pro: experimental tier.
-mac mac-m3pro-experimental Mac15,6 "Apple M3 Pro" arm64 1 15.1 $D1T $C1T $((600 * GB)) $((C1T - 600 * GB + 40 * GB)) "$(stock_parts $C1T)" 19327352832
-# 300 GB left unpartitioned after the container (e.g. a removed earlier install).
-CFREE=$((D1T - ISC - RECOVERY - 300 * GB - 40960))
-mac mac-m1-free-space MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $D1T $CFREE $((400 * GB)) $((CFREE - 400 * GB + 40 * GB)) "$(stock_parts $CFREE)"
-# Asahi already installed after a 250 GB plan.
-mac mac-asahi-installed MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $D1T $((745 * GB)) $((450 * GB)) $((295 * GB + 40 * GB)) \
-  "$(part Apple_APFS_ISC disk0s1 $ISC)$(part Apple_APFS disk0s2 $((745 * GB)))$(part Apple_APFS disk0s4 2500000000)$(part EFI disk0s5 524288000)$(part 0FC63DAF-8483-4772-8E79-3D69D8477DE4 disk0s6 246637543360)$(part Apple_APFS_Recovery disk0s3 $RECOVERY)"
+MEM=19327352832 mac mac-m3pro-experimental Mac15,6 "Apple M3 Pro" arm64 1 15.1 $((600 * GB)) $((C1T - 600 * GB + 40 * GB)) $D1T 4096 "$(stock $D1T)"
+# 300 GB left unpartitioned right after the container (e.g. a removed install).
+CFREE=$((C1T - $(gbm 300)))
+mac mac-m1-free-space MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((400 * GB)) $((CFREE - 400 * GB + 40 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$CFREE:$U_MAC" "gap:$(gbm 300)" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+# Two separate 75 GB gaps around a 20 GB data partition, and a nearly full
+# macOS that cannot give anything up: 150 GB free in total, 75 GB usable.
+C2G=$((C1T - 2 * $(gbm 75) - $(gbm 20)))
+mac mac-geo-two-gaps MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((40 * GB)) $((C2G - 40 * GB + 39 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$C2G:$U_MAC" "gap:$(gbm 75)" \
+  "disk0s4:Microsoft Basic Data:$(gbm 20):$U_OTHER:DATA:exfat" "gap:$(gbm 75)" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+# A 512-byte-sector disk: the GPT's first usable block is 34, not 6.
+D5=500107862016
+C5=$((D5 - 1024 - 16384 - 512 - 16384 - ISC - RECOVERY))
+mac mac-geo-512-sectors MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((300 * GB)) $((C5 - 300 * GB + 40 * GB)) $D5 512 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$C5:$U_MAC" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+# A second, large APFS container: not a layout this tool plans around.
+CMA=$((C1T - $(gbm 100)))
+mac mac-geo-multi-apfs MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((500 * GB)) $((CMA - 500 * GB + 40 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$CMA:$U_MAC" "disk0s4:Apple_APFS:$(gbm 100):$U_OTHER" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+# Roomy, but diskutil's resize-limits query does not answer.
+mac mac-geo-no-limits MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((700 * GB)) 0 $D1T 4096 "$(stock $D1T)"
+# Roomy, but one partition's offset is missing from diskutil info.
+mac mac-geo-missing-offset MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((700 * GB)) $((C1T - 700 * GB + 40 * GB)) $D1T 4096 "$(stock $D1T)"
+sed -i.bak 's#<key>PartitionMapPartitionOffset</key><integer>[0-9]*</integer>##' mac-geo-missing-offset/cmd/diskutil_info_disk0s3 && rm -f mac-geo-missing-offset/cmd/*.bak
+# Roomy, but diskutil list and diskutil info disagree about the container.
+mac mac-geo-disagree MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((700 * GB)) $((C1T - 700 * GB + 40 * GB)) $D1T 4096 "$(stock $D1T)"
+sed -i.bak "s#<integer>$C1T</integer></dict><dict><key>Content</key><string>Apple_APFS_Recovery#<integer>$((C1T - 4096))</integer></dict><dict><key>Content</key><string>Apple_APFS_Recovery#" mac-geo-disagree/cmd/diskutil_list_disk0 && rm -f mac-geo-disagree/cmd/*.bak
+
+# After the Asahi installer: macOS resized to V for a 250 GB Linux request
+# (what the planner answers for this disk), then stub, EFI and root created
+# from "max", leaving the sub-MiB remainder of the region free.
+V250=744608497664
+OS250=$(((C1T - V250) / MIB * MIB))
+ROOT250=$((OS250 - 2499805184 - 524288000))
+asahi_layout() { # extra entries after the Linux root (e.g. a Shared gap)
+  printf '%s\n' "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$V250:$U_MAC" \
+    "disk0s4:Apple_APFS:2499805184:$U_STUB" "disk0s5:EFI:524288000:$U_EFI" "disk0s6:Linux Filesystem:$ROOT250:$U_ROOT" \
+    "gap:$((C1T - V250 - OS250))" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC"
+}
+mac mac-asahi-installed MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 "$(asahi_layout)"
 
 # ---------------------------------------------------------------------------
 
@@ -220,13 +318,13 @@ setup_fixture_script linux-upstream-drift/net/omarchy-mac-setup '[--encrypt|--no
 # ---------------------------------------------------------------------------
 # `sources --check` responses: current, and drifted.
 
-net_sources() { # DIR ASAHI_VERSION OS_NAME OMARCHY_VERSION BRANCH FAQ README
+net_sources() { # DIR ASAHI_VERSION OS_NAME OMARCHY_VERSION BRANCH FAQ README [EFI_BYTES]
   local d=$1
   mkdir -p "$d/net" "$d/cmd"
   put "$d/cmd/uname_s" Darwin
   put "$d/cmd/id_u" 501
   put "$d/net/asahi_version" "$2"
-  put "$d/net/asahi_data" "{\"os_list\": [{\"name\": \"$3\"}]}"
+  put "$d/net/asahi_data" "{\"os_list\": [{\"name\": \"$3\", \"partitions\": [{\"name\": \"EFI\", \"type\": \"EFI\", \"size\": \"${8:-524288000}B\"}, {\"name\": \"Root\", \"type\": \"Linux\", \"size\": \"2209614225B\", \"expand\": true}]}]}"
   put "$d/net/omarchy_version" "$4"
   put "$d/net/omarchy_api" "{\"full_name\": \"omacom/omarchy-mac\", \"default_branch\": \"$5\"}"
   put "$d/net/asahi_faq" "$6"
@@ -237,5 +335,9 @@ net_sources net-current v0.9.2 "Asahi Alarm Minimal (BTRFS)" 4.0.3rc4 quattro "T
 setup_fixture_script net-current/net/omarchy_setup
 net_sources net-drifted v0.10.0 "Asahi Alarm Minimal" 3.9.0 main "The installer leaves 45GB free" "- At least 60 GB free."
 setup_fixture_script net-drifted/net/omarchy_setup '[--encrypt|--no-encrypt] [--user <name>] [--status]'
+# Current in every way but the EFI size in the OS template: a storage-contract drift.
+rm -rf net-efi-drift
+net_sources net-efi-drift v0.9.2 "Asahi Alarm Minimal (BTRFS)" 4.0.3rc4 quattro "The installer always leaves 38GB of disk space free" "- At least 50 GB free on the internal SSD (100 GB recommended)." 1073741824
+setup_fixture_script net-efi-drift/net/omarchy_setup
 
 echo "fixtures regenerated"

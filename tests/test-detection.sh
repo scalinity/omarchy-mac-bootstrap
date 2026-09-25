@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Detection over fixtures: macOS (plist parsing needs plutil, so those cases
 # run on macOS only) and Linux (runs anywhere).
+# shellcheck disable=SC2015 # ok/fail always return 0
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 t_load
@@ -53,7 +54,7 @@ renamed='# omarchy:args=[--encrypt|--no-encrypt] [--username <name>] [--hostname
 assert_eq "$(setup_missing_flags "$renamed")" " --user --keymap --resume" "renamed flags do not satisfy the originals"
 
 # --- macOS -------------------------------------------------------------------
-mac_case() { OMB_FIXTURE="$FIX/$1"; mac_detect; CFG_shared=0; mac_plan_compute; }
+mac_case() { case "$1" in /*) OMB_FIXTURE=$1 ;; *) OMB_FIXTURE="$FIX/$1" ;; esac; mac_detect; CFG_shared=0; mac_plan_compute; }
 
 if command -v plutil >/dev/null 2>&1; then
   mac_case mac-m1pro-1tb-roomy
@@ -62,16 +63,16 @@ if command -v plutil >/dev/null 2>&1; then
   assert_eq "$MAC_CHIP" "Apple M1 Pro" "chip from system_profiler"
   assert_eq "$MAC_DISK $MAC_DISK_INTERNAL $MAC_STORE $MAC_CONTAINER" "disk0 true disk0s2 disk3" "boot disk derived from /"
   assert_eq "$MAC_DISK_SIZE" 1000555581440 "disk size"
-  assert_eq "$MAC_CONTAINER_SIZE $MAC_CONTAINER_FREE" "994662543360 700000000000" "container size/free"
-  assert_eq "$MAC_APPLE_SYS" $((524288000 + 5368709120)) "Apple system partitions"
+  assert_eq "$MAC_CONTAINER_SIZE $MAC_CONTAINER_FREE" "994610155520 700000000000" "container size/free"
+  assert_eq "$MAC_APPLE_SYS" $((576716800 + 5368664064)) "Apple system partitions"
   assert_eq "$MAC_EXISTING_FREE" 0 "no unpartitioned space"
   assert_eq "$MAC_ASAHI_PRESENT" 0 "no existing install"
-  assert_eq "$MAC_LIMIT_PREF" $((994662543360 - 700000000000 + 40000000000)) "limits parsed"
+  assert_eq "$MAC_LIMIT_PREF" $((994610155520 - 700000000000 + 40000000000)) "limits parsed"
   assert_eq "$MAC_FILEVAULT $MAC_ADMIN $MAC_USER" "true 1 alex" "security facts"
   assert_eq "$MAC_TZ" America/New_York "timezone from /etc/localtime"
   assert_eq "$MAC_TM_LATEST" "2026-09-20 10:15" "latest backup date"
   assert_eq "$(mac_blockers)" "" "roomy has no blockers"
-  assert_eq "$PLAN_LINUX_MAX" $((655 * GB)) "roomy plan"
+  assert_eq "$PLAN_LINUX_MAX" $((654 * GB)) "roomy plan: whole GB of the one region a resize frees"
   assert_eq "$(mac_default_keymap)" us "US layout → us"
   assert_eq "$(mac_default_locale)" en_US.UTF-8 "en_US → en_US.UTF-8"
   MAC_KEYBOARD=com.apple.keylayout.German
@@ -84,8 +85,8 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$(mac_blockers)" "not Apple Silicon" "intel blocked"
 
   mac_case mac-m1pro-1tb-tight
-  assert_contains "$(mac_blockers)" "Not enough free space for Linux yet: free about 34 GB" "tight is blocked on space"
-  assert_eq "$PLAN_SHORTFALL" $((34 * GB)) "tight is short of space"
+  assert_contains "$(mac_blockers)" "Not enough space for Linux yet: free about 39 GB more" "tight is blocked on space"
+  assert_eq "$PLAN_SHORTFALL" $((39 * GB)) "tight is short of space: 54 GB needed, 15 GB possible"
 
   mac_case mac-m2-512
   assert_eq "$DEV_CHIP $PLAN_OVERHEAD_WARN" "M2 1" "512 GB: overhead warning"
@@ -97,7 +98,41 @@ if command -v plutil >/dev/null 2>&1; then
   mac_case mac-asahi-installed
   assert_eq "$MAC_ASAHI_PRESENT" 1 "existing Asahi detected"
   roles=$(printf '%s' "$MAC_PARTS" | cut -d'|' -f4 | tr '\n' ' ')
-  assert_eq "$roles" "system macos asahi-stub efi linux system " "partition roles"
+  assert_eq "$roles" "isc macos asahi-stub efi linux recovery " "partition roles"
+
+  # --- Geometry: exact extents from diskutil info, cross-checked -----------------
+  mac_case mac-m1pro-1tb-roomy
+  assert_eq "$GEO_OK $MAC_DISK_BLOCK" "1 4096" "roomy: layout read exactly, 4096-byte blocks"
+  assert_eq "$(printf '%s' "$GEO_PARTS" | cut -d'|' -f1,2,5 | tr '\n' ' ')" \
+    "24576|576716800|disk0s1 576741376|994610155520|disk0s2 995186896896|5368664064|disk0s3 " "roomy: offsets and sizes from diskutil info"
+  assert_eq "$MAC_STORE_UUID" 4A7B1C2D-0002-4E5F-8A9B-000000000002 "the macOS store is known by its GPT GUID"
+  assert_eq "$GEO_GAPS" "" "roomy: no free gap"
+  mac_case mac-m1-free-space
+  assert_eq "$(printf '%s' "$GEO_GAPS" | grep -c .)" 1 "free-space: one gap"
+  assert_eq "$(printf '%s' "$GEO_GAPS" | cut -d'|' -f2,3)" "299999690752|4A7B1C2D-0002-4E5F-8A9B-000000000002" "free-space: 300 GB right after the container"
+  mac_case mac-geo-two-gaps
+  assert_eq "$(printf '%s' "$GEO_GAPS" | grep -c .)" 2 "two gaps: seen as two regions"
+  [ "$PLAN_LINUX_MAX" -lt $((75 * GB)) ] && ok || fail "two gaps: Linux can have one region's worth, not 150 GB"
+  assert_eq "$(mac_blockers)" "" "two gaps: 74 GB in one region is enough to plan"
+  mac_case mac-geo-512-sectors
+  assert_eq "$GEO_OK $MAC_DISK_BLOCK $GEO_USABLE_START" "1 512 17408" "512-byte sectors: first usable block 34"
+  mac_case mac-geo-missing-offset
+  assert_eq "$GEO_OK" 0 "a missing offset leaves the layout unknown"
+  assert_contains "$(mac_blockers)" "could not be read exactly" "a missing offset blocks planning"
+  mac_case mac-geo-disagree
+  assert_contains "$(mac_blockers)" "diskutil list and diskutil info disagree" "disagreeing views block planning"
+  mac_case mac-geo-multi-apfs
+  assert_contains "$(mac_blockers)" "Another APFS container is on the internal disk (disk0s4)" "a second APFS container blocks planning"
+  mac_case mac-geo-no-limits
+  assert_contains "$(mac_blockers)" "did not report the resize limits of disk3" "unknown resize limits block a resize, with the reason"
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's#<key>Internal</key><true/>#<key>Internal</key><false/>#' "$fx/cmd/diskutil_info_disk0s2" && rm -f "$fx/cmd/"*.bak
+  mac_case "$fx"
+  assert_contains "$(mac_blockers)" "not on an internal disk" "an external boot volume blocks planning"
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's#</array><key>Internal</key>#<dict><key>APFSPhysicalStore</key><string>disk4s2</string></dict></array><key>Internal</key>#' "$fx/cmd/diskutil_info_root" && rm -f "$fx/cmd/"*.bak
+  mac_case "$fx"
+  assert_contains "$(mac_blockers)" "more than one physical store" "a multi-store container blocks planning"
 
   # The resize-limits query refuses anything that is not a disk identifier.
   mac_resize_limits 'disk3; rm -rf /' >/dev/null

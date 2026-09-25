@@ -1,0 +1,1 @@
+{"os_list": [{"name": "Asahi Alarm Minimal (BTRFS)", "partitions": [{"name": "EFI", "type": "EFI", "size": "1073741824B"}, {"name": "Root", "type": "Linux", "size": "2209614225B", "expand": true}]}]}

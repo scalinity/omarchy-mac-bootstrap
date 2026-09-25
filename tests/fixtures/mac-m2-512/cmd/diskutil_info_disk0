@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict><key>DeviceIdentifier</key><string>disk0</string><key>SMARTStatus</key><string>Verified</string><key>Internal</key><true/></dict>
+<dict><key>Content</key><string>GUID_partition_scheme</string><key>DeviceBlockSize</key><integer>4096</integer><key>DeviceIdentifier</key><string>disk0</string><key>IORegistryEntryName</key><string>APPLE SSD FIXTURE Media</string><key>Internal</key><true/><key>SMARTStatus</key><string>Verified</string><key>Size</key><integer>500277792768</integer><key>WholeDisk</key><true/></dict>
 </plist>

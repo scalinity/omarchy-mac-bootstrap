@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict><key>VolumeName</key><string>Macintosh HD</string><key>APFSContainerReference</key><string>disk3</string><key>APFSContainerSize</key><integer>494384754688</integer><key>APFSContainerFree</key><integer>250000000000</integer><key>APFSPhysicalStores</key><array><dict><key>APFSPhysicalStore</key><string>disk0s2</string></dict></array><key>Internal</key><true/></dict>
+<dict><key>VolumeName</key><string>Macintosh HD</string><key>APFSContainerReference</key><string>disk3</string><key>APFSContainerSize</key><integer>494332366848</integer><key>APFSContainerFree</key><integer>250000000000</integer><key>APFSPhysicalStores</key><array><dict><key>APFSPhysicalStore</key><string>disk0s2</string></dict></array><key>Internal</key><true/></dict>
 </plist>

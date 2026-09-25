@@ -135,66 +135,83 @@ if command -v plutil >/dev/null 2>&1; then
   t_cli mac-intel "" status
   assert_contains "$T_OUT" "This Mac cannot continue: This Mac is not Apple Silicon" "status names the blocker"
   t_cli mac-m1pro-1tb-tight "" status
-  assert_contains "$T_OUT" "This Mac cannot continue: Not enough free space for Linux" "status names a space shortfall"
+  assert_contains "$T_OUT" "This Mac cannot continue: Not enough space for Linux" "status names a space shortfall"
   t_cli mac-m1pro-1tb-tight '\n\n' --dry-run
   assert_rc "$T_RC" 1 "a Mac short of space stops"
-  assert_contains "$T_OUT" "free about 34 GB in macOS" "the shortfall is explained in the guided flow"
+  assert_contains "$T_OUT" "free about 39 GB more in macOS" "the shortfall is explained in the guided flow"
   assert_not_contains "$T_OUT" "How much storage" "a Mac short of space never reaches the planner"
+  t_cli mac-geo-two-gaps "" status
+  assert_contains "$T_OUT" "Safe Linux max      74 GB" "two separate gaps are never added together"
 fi
 
-# --- Saved answers are the defaults; a saved reservation never shrinks the survey ------
+# --- Shared is chosen first, and changes what Linux can have ---------------------------
+# Answers, in prompt order: survey Enter; Shared menu; Linux menu; then nine
+# choices (encryption, user, host, keymap, timezone, locale, SSH, GitHub,
+# developer setup) and the review.
+choices='\n\n\n\n\n\n\n\n\n\n'
 if command -v plutil >/dev/null 2>&1; then
-  t_cli mac-m1pro-1tb-roomy '\n5\n300\n\ny\n40\n\n\n\n\n\n\n\n\n\n\n' plan
+  t_cli mac-m1pro-1tb-roomy "\n6\n40\n5\n300\n\n$choices" plan
   st=$(cat "$T_DIR/state/state.env")
-  assert_contains "$st" "cfg_linux=300" "custom size saved"
-  assert_contains "$st" "cfg_shared=40" "shared reservation saved"
+  assert_contains "$st" "cfg_linux=300" "custom Linux size saved"
+  assert_contains "$st" "cfg_shared=40" "custom Shared size saved"
+  assert_contains "$T_OUT" "54 GB–614 GB beside 40 GB Shared" "the Linux range is computed beside the Shared size"
+  assert_contains "$T_OUT" "Shared / exFAT      40 GB" "the layout shows the Shared reservation"
   state_dir=$T_DIR/state
-  T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\n\n' plan
-  assert_contains "$T_OUT" "Safe Linux maximum  655 GB" "the saved reservation does not shrink the survey"
-  assert_contains "$T_OUT" "Saved plan       300 GB" "the saved size is offered"
-  assert_contains "$T_OUT" "Plan a shared area? [Y/n]" "the shared question defaults to the saved answer"
+  T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-m1pro-1tb-roomy "\n\n\n$choices" plan
+  assert_contains "$T_OUT" "Safe Linux maximum  654 GB" "the saved reservation does not shrink the survey"
+  printf "%s\n" "$T_OUT" | grep -Eq "^ +(. )?[0-9]  40 GB +saved$" && ok || fail "the saved Shared size is offered and marked"
+  assert_contains "$T_OUT" "Saved plan       300 GB" "the saved Linux size is offered"
   st=$(cat "$state_dir/state.env")
-  assert_contains "$st" "cfg_linux=300" "Enter keeps the saved size"
-  assert_contains "$st" "cfg_shared=40" "Enter keeps the saved reservation"
+  assert_contains "$st" "cfg_linux=300" "Enter keeps the saved Linux size"
+  assert_contains "$st" "cfg_shared=40" "Enter keeps the saved Shared size"
+
+  # 250 GB of Shared leaves Linux 250 GB less, and the maximum is still valid.
+  t_cli mac-m1pro-1tb-roomy "\n5\n3\n$choices" plan
+  assert_contains "$T_OUT" "54 GB–404 GB beside 250 GB Shared" "250 GB Shared: Linux can have up to 404 GB"
+  st=$(cat "$T_DIR/state/state.env")
+  assert_contains "$st" "cfg_shared=250" "250 GB Shared saved"
+  assert_contains "$st" "cfg_linux=404" "Maximum safe beside Shared saved"
 fi
 
-# --- "b" from the custom size returns to the size menu ----------------------------------
+# --- "b" goes back one step, and every prompt has a way out -------------------------------
 if command -v plutil >/dev/null 2>&1; then
-  t_cli mac-m1pro-1tb-roomy '\n5\nb\n1\n\n\n\n\n\n\n\n\n\n\n\n' plan
+  t_cli mac-m1pro-1tb-roomy "\n\n5\nb\n1\n$choices" plan
   assert_eq "$(printf '%s' "$T_OUT" | grep -c 'How much storage should Linux receive?')" 2 "the size menu is shown again after b"
   assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_linux=100" "a preset can be chosen after backing out of custom"
+  t_cli mac-m1pro-1tb-roomy "\n\nb\n2\n\n$choices" plan
+  assert_eq "$(printf '%s' "$T_OUT" | grep -c 'Shared macOS')" 2 "b at the Linux size returns to the Shared question"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_shared=50" "the Shared answer can be changed after going back"
+  t_cli mac-m1pro-1tb-roomy "\n6\nabc\n08\n700\nb\n\n\n$choices" plan
+  assert_contains "$T_OUT" "is not a size" "invalid Shared sizes explain themselves"
+  assert_contains "$T_OUT" "leading zero" "a leading zero is refused, never read as octal"
+  assert_contains "$T_OUT" "Between 1 and" "a Shared size that leaves Linux too little is refused"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_shared=0" "b then None: no Shared"
+  t_cli mac-m1pro-1tb-roomy '\nq\n' plan
+  assert_contains "$T_OUT" "Nothing on this Mac changed" "q at the Shared question quits"
+  t_cli mac-m1pro-1tb-roomy "\n\n5\n1844674.5TB\n010\nq\n" plan
+  assert_contains "$T_OUT" "is too large" "an overflowing Linux size is refused"
+  assert_contains "$T_OUT" "leading zero" "010 is refused as a Linux size"
 fi
 
-# --- The shared-area prompt always has a way out ------------------------------------------
+# --- Whole macOS flows: Shared through the launch, quit, back, save-and-stop -------------
 if command -v plutil >/dev/null 2>&1; then
-  t_cli mac-m1pro-1tb-roomy '\n4\n\n\n\n\n\n\n\n\n\n\n\n' plan
-  assert_contains "$T_OUT" "No room for a shared area beside 655 GB" "Maximum safe skips the shared question"
-  assert_contains "$T_OUT" "Plan saved" "the plan completes"
-  t_cli mac-m1pro-1tb-roomy '\n\ny\nabc\nb\n\n\n\n\n\n\n\n\n\n\n' plan
-  assert_contains "$T_OUT" "A whole number of GB" "invalid shared sizes explain themselves"
-  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_shared=0" "b skips the shared area"
-  t_cli mac-m1pro-1tb-roomy '\n\ny\nq\n' plan
-  assert_contains "$T_OUT" "Nothing on this Mac changed" "q at the shared size quits"
-fi
-
-# --- Whole macOS flows: shared area, quit, back, save-and-stop, old macOS -----------------
-if command -v plutil >/dev/null 2>&1; then
-  # A 32 GB shared area through to the launch: macOS shrinks by Linux + shared,
-  # the Linux size is typed rather than max, and the post-install plan exists.
-  t_cli mac-m1pro-1tb-roomy '\n\ny\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n'
-  assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< 713GB" "shared area: macOS keeps C - 250 - 32 GB"
-  assert_contains "$T_OUT" "New OS size  (Linux gets)      250GB" "shared area: the Linux size is typed, not max"
-  [ -s "$T_DIR/state/shared-storage-plan.txt" ] && ok || fail "the shared-storage plan is written"
-  assert_contains "$(cat "$T_DIR/state/shared-storage-plan.txt")" "fdisk" "the plan carries the GPT-ordering step"
+  # 50 GB of Shared through to the launch: macOS shrinks by Linux + Shared,
+  # Linux gets an exact size (never max), and the card says so.
+  read -r ans_r ans_os <<<"$(t_plan_answers mac-m1pro-1tb-roomy 250 50)"
+  t_cli mac-m1pro-1tb-roomy "\n2\n\n${choices}yes\n\nlaunch\n"
+  assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< $ans_r" "Shared: the clipboard gets the exact macOS size ($ans_r)"
+  assert_contains "$T_OUT" "New OS size  (Linux gets)      $ans_os" "Shared: the Linux size is exact ($ans_os), not max"
+  assert_contains "$T_OUT" "Never type max here" "Shared: the card warns against max"
+  case "$ans_r$ans_os" in *MiB*MiB) ok ;; *) fail "Shared: both answers are exact MiB ($ans_r $ans_os)" ;; esac
 
   t_cli mac-m1pro-1tb-roomy 'q\n'
   assert_rc "$T_RC" 0 "q at the first prompt exits cleanly"
   assert_contains "$T_OUT" "Nothing on this Mac changed" "q at the first prompt says nothing changed"
 
   t_cli mac-m1pro-1tb-roomy '\nb\nq\n'
-  assert_eq "$(printf '%s' "$T_OUT" | grep -c '▍Machine')" 2 "b at the size menu returns to the survey"
+  assert_eq "$(printf '%s' "$T_OUT" | grep -c '▍Machine')" 2 "b at the Shared question returns to the survey"
 
-  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n4\n'
+  t_cli mac-m1pro-1tb-roomy "\n\n\n\n\n\n\n\n\n\n\n\n4\n"
   assert_contains "$T_OUT" "Plan saved" "Save and stop saves"
   assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_linux=250" "Save and stop records the plan"
   assert_not_contains "$T_OUT" "Type yes" "Save and stop never reaches the backup gate"
@@ -253,8 +270,14 @@ assert_contains "$T_OUT" "quattro" "sources lists the branch"
 t_cli net-current "" sources --check
 assert_rc "$T_RC" 0 "sources --check passes when upstream matches"
 assert_not_contains "$T_OUT" "[FAIL]" "no failures when current"
+assert_contains "$T_OUT" "[PASS] EFI partition" "the storage contract is checked when current"
+t_cli net-efi-drift "" sources --check
+assert_rc "$T_RC" 1 "sources --check fails when the storage contract drifts"
+assert_contains "$T_OUT" "[FAIL] EFI partition" "EFI drift is a failure, not a warning"
+assert_contains "$T_OUT" "[PASS] Asahi installer" "the version still matches in that case"
 t_cli net-drifted "" sources --check
 assert_rc "$T_RC" 1 "sources --check fails on drift"
+assert_contains "$T_OUT" "[FAIL] Asahi installer" "installer version drift is a failure: it blocks the handoff"
 assert_contains "$T_OUT" "v0.10.0, verified v0.9.2" "installer drift"
 assert_contains "$T_OUT" "no longer in installer_data.json" "OS choice drift"
 assert_contains "$T_OUT" "not Omarchy 4" "Omarchy 3 drift"

@@ -117,6 +117,25 @@ t_load() {
   ui_init
 }
 
+# t_flat TEXT — output with wrapped lines joined and callout edges removed,
+# for asserting on a sentence however the terminal width wrapped it.
+t_flat() { printf '%s' "$1" | sed -E 's/^ *(┃|\|) //' | tr '\n' ' ' | tr -s ' '; }
+
+# t_plan_answers FIXTURE LINUX_GB SHARED_GB — what the planner tells the
+# installer for a macOS fixture: "RESIZE_ANSWER OS_ANSWER" ("-" for no
+# resize). The answers themselves are proved in tests/test-storage.sh; CLI
+# tests use this to check the answers reach the card and the clipboard.
+t_plan_answers() {
+  (
+    t_load >/dev/null 2>&1
+    OMB_FIXTURE="$FIX/$1"
+    mac_detect
+    mac_plan_compute "$3"
+    plan_layout $(($2 * GB))
+    printf '%s %s' "${PLAN_ANSWER_RESIZE:--}" "$PLAN_ANSWER_OS"
+  )
+}
+
 t_done() {
   printf '%s: %d passed, %d failed, %d skipped\n' "$1" "$T_PASS" "$T_FAIL" "$T_SKIP"
   [ "$T_FAIL" = 0 ]
