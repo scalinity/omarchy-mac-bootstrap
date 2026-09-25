@@ -1067,9 +1067,15 @@ shared_take_share_code() {
 shared_code_matches() {
   local name start size puuid ptype n=0
   while IFS='|' read -r name start size puuid ptype _; do
-    [ -n "$name" ] && [ "$ptype" = "$SHARED_PARTTYPE" ] || continue
-    [ "$start" -ge "$SH_ROOT_END" ] && [ $((start - SH_ROOT_END)) -lt "$ASAHI_GAP_MIN_BYTES" ] || continue
-    [ "$(guid12 "$puuid")" = "$1" ] && n=$((n + 1))
+    if [ -z "$name" ] || [ "$ptype" != "$SHARED_PARTTYPE" ]; then
+      continue
+    fi
+    if [ "$start" -lt "$SH_ROOT_END" ] || [ $((start - SH_ROOT_END)) -ge "$ASAHI_GAP_MIN_BYTES" ]; then
+      continue
+    fi
+    if [ "$(guid12 "$puuid")" = "$1" ]; then
+      n=$((n + 1))
+    fi
   done <<EOF
 $SH_ROWS
 EOF

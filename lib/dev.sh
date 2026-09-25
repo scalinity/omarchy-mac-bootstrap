@@ -56,7 +56,7 @@ dev_begin() { DEV_OUTCOME="" DEV_DETAIL="" DEV_FAILS="" DEV_DONE_PARTS=""; }
 dev_ok() { DEV_OUTCOME=success DEV_DETAIL=${1:-}; }
 dev_fail() { DEV_OUTCOME=failed DEV_DETAIL=$1; }
 dev_skip() { DEV_OUTCOME=skipped DEV_DETAIL=${1:-}; }
-dev_cancel() { DEV_OUTCOME=cancelled DEV_DETAIL=${1:-}; }
+dev_cancel() { DEV_OUTCOME=cancelled DEV_DETAIL=""; } # the person stopped it: no detail
 dev_satisfied() { DEV_OUTCOME=already-satisfied DEV_DETAIL=${1:-}; }
 dev_part_fail() { DEV_FAILS="$DEV_FAILS${DEV_FAILS:+; }$1"; }
 dev_part_ok() { DEV_DONE_PARTS="$DEV_DONE_PARTS${DEV_DONE_PARTS:+, }$1"; }

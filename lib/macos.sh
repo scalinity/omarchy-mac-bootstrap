@@ -841,12 +841,13 @@ continuation_commands() {
   fi
 }
 
+# mac_reboot_guide — after the installer shuts the Mac down. The boot picker
+# lists the new OS by the name given at the installer's "OS name" prompt.
 mac_reboot_guide() {
-  local name=${1:-$ASAHI_ALARM_OS_CHOICE}
   ui_section "After the installer" "it ends by shutting the Mac down"
   _guide 1 "Wait 25 seconds after the Mac powers off."
   _guide 2 "Press and HOLD the power button once, until \"Loading startup options…\" appears."
-  _guide 3 "Choose \"$name\" (the OS name you gave the installer)."
+  _guide 3 "Choose \"$ASAHI_ALARM_OS_CHOICE\" (the OS name you gave the installer)."
   _guide 4 "A macOS Recovery dialog appears briefly. If asked to \"Select a volume to recover\", choose your normal macOS volume and authenticate."
   _guide 5 "Follow the prompts on the \"Asahi Linux installer\" screen. The Mac then boots Arch."
   _guide 6 "Log in as $ASAHI_ALARM_FIRST_LOGIN."
