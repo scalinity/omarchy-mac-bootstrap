@@ -557,16 +557,29 @@ continuation_commands() {
   else
     slug="<owner>/omarchy-mac-bootstrap"
   fi
+  # Phase 2 runs as root, so it should run the code that made this plan: pin
+  # the commit when the remote has it, and say so when it does not.
+  local sha ref
+  sha=$(sys_cmd git_head git -C "$OMB_HOME" rev-parse HEAD)
+  case "$sha" in *[!0-9a-f]* | '') sha="" ;; esac
+  if [ -n "$sha" ] && [ -n "$(sys_cmd git_pushed git -C "$OMB_HOME" branch -r --contains HEAD)" ]; then
+    ref=$sha
+  else
+    ref=refs/heads/$branch
+    [ -n "$sha" ] && ui_warn "This commit is not on the remote yet; Linux will get the tip of $branch. Push first to pin it."
+  fi
   if [ "$vis" != private ]; then
     printf '   %s%s%s\n' "$C_DIM" "public repository — no git needed:" "$C_RESET"
     ui_cmd "mkdir -p $dest"
-    ui_cmd "curl -fsSL https://github.com/$slug/archive/refs/heads/$branch.tar.gz | tar xz --strip-components=1 -C $dest"
+    ui_cmd "curl -fsSL https://github.com/$slug/archive/$ref.tar.gz | tar xz --strip-components=1 -C $dest"
   fi
   if [ "$vis" != public ]; then
-    printf '   %s%s%s\n' "$C_DIM" "private repository — sign in with a device code:" "$C_RESET"
+    printf '   %s%s%s\n' "$C_DIM" "private repository — sign in with a device code, then sign out again:" "$C_RESET"
     ui_cmd "pacman -Syu --needed git github-cli"
     ui_cmd "gh auth login"
     ui_cmd "gh repo clone $slug $dest -- --branch $branch"
+    [ "$ref" = "$sha" ] && ui_cmd "git -C $dest checkout -q $sha"
+    ui_cmd "gh auth logout"
   fi
   printf '   %s%s%s\n' "$C_DIM" "then continue:" "$C_RESET"
   if [ "$token" = "omb1:" ]; then

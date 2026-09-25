@@ -45,6 +45,8 @@ Kind          : Local"
   put "$d/cmd/tmutil_latest" "/Volumes/Backup Disk/Backups.backupdb/Mac/2026-09-20-101500"
   put "$d/cmd/git_origin" "https://github.com/example/omarchy-mac-bootstrap.git"
   put "$d/cmd/git_branch" main
+  put "$d/cmd/git_head" 0123456789abcdef0123456789abcdef01234567
+  put "$d/cmd/git_pushed" "  origin/main"
   local chipkey=chip_type
   [ "$arm64" = 1 ] || chipkey=cpu_type
   plist "<array><dict><key>_items</key><array><dict><key>machine_name</key><string>MacBook Pro</string><key>machine_model</key><string>$model</string><key>$chipkey</key><string>$chip</string><key>physical_memory</key><string>$((mem / 1073741824)) GB</string></dict></array></dict></array>" >"$d/cmd/hardware_plist"
