@@ -87,6 +87,16 @@ afterwards, and records.
   build multi-line messages with `printf '%s\n' …`.
 - `shellcheck -x omarchy-bootstrap` resolves cross-file variables but reports
   only the entrypoint's findings — lint each file as well.
+- Linux CI runs ShellCheck 0.9.0 (Ubuntu 24.04), which flags what 0.11 lets
+  pass: an optional argument no caller passes (SC2119/SC2120) and
+  `A && B || continue` (SC2015). Write for both: explicit `if`, and no
+  parameter a function never receives.
+- Every macOS fixture is read through Apple's `plutil`, which Linux CI lacks:
+  a test section that drives one goes inside `if t_plutil "<section>"; then`.
+  Ungated, it fails on Linux, or passes there for the wrong reason.
+- Never let `sort` decide the order of text that is shown or compared: glibc's
+  UTF-8 collation ignores punctuation where macOS compares bytes. Keep
+  insertion order and drop duplicates with `awk '!seen[$0]++'`.
 - The Asahi installer ends with a shutdown, so anything the user needs after it
   must be shown before the launch.
 - Linux progress is re-derived from the machine (Omarchy Mac's marker, runtime

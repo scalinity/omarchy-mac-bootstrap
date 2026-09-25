@@ -163,7 +163,10 @@ hold before it counts as done. Status lives at the end of each entry.
 - **Verification:** the suite passes locally under `/bin/bash` 3.2 and bash 5
   with `OMB_STRICT_SKIPS=1`.
 - **Acceptance:** both jobs green on GitHub.
-- **Status:** workflow committed; not yet observed running on GitHub.
+- **Status:** first run on GitHub (run 36198289764, commit 5ce30ae): the
+  macOS job passed with no skips; the Linux job failed on macOS sections not
+  gated on plutil, a locale-dependent conflict order, and ShellCheck 0.9.0
+  findings. Not yet green on both jobs.
 
 ## M14 — Real-hardware qualification
 
