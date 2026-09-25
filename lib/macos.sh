@@ -292,15 +292,24 @@ $PRESETS
 EOF
   n=$((n + 1))
   set -- "$@" "Custom|GB or %|Any size from $(fmt_gb "$PLAN_LINUX_MIN") to $(fmt_gb "$PLAN_LINUX_MAX"), e.g. 300GB or 35%.|"
-  ui_select "How much storage should Linux receive?" "$def" "$@"
-  rc=$?
-  [ "$rc" = 0 ] || return "$rc"
-  if [ "$UI_CHOICE" = "$n" ]; then
-    mac_custom_size || return $?
-  else
-    # shellcheck disable=SC2086 # $opts is a space-separated list by design
-    CHOSEN_BYTES=$(printf '%s\n' $opts | sed -n "${UI_CHOICE}p")
-  fi
+  while :; do
+    ui_select "How much storage should Linux receive?" "$def" "$@"
+    rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    if [ "$UI_CHOICE" != "$n" ]; then
+      # shellcheck disable=SC2086 # $opts is a space-separated list by design
+      CHOSEN_BYTES=$(printf '%s\n' $opts | sed -n "${UI_CHOICE}p")
+      break
+    fi
+    # "b" in the custom prompt returns to this menu, not to the survey.
+    mac_custom_size
+    rc=$?
+    case "$rc" in
+      0) break ;;
+      2) continue ;;
+      *) return "$rc" ;;
+    esac
+  done
   CFG_linux=$(gb_floor "$CHOSEN_BYTES")
   return 0
 }

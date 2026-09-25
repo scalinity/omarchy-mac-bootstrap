@@ -122,6 +122,13 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$st" "cfg_shared=40" "Enter keeps the saved reservation"
 fi
 
+# --- "b" from the custom size returns to the size menu ----------------------------------
+if command -v plutil >/dev/null 2>&1; then
+  t_cli mac-m1pro-1tb-roomy '\n5\nb\n1\n\n\n\n\n\n\n\n\n\n\n\n' plan
+  assert_eq "$(printf '%s' "$T_OUT" | grep -c 'How much storage should Linux receive?')" 2 "the size menu is shown again after b"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_linux=100" "a preset can be chosen after backing out of custom"
+fi
+
 # --- The shared-area prompt always has a way out ------------------------------------------
 if command -v plutil >/dev/null 2>&1; then
   t_cli mac-m1pro-1tb-roomy '\n4\n\n\n\n\n\n\n\n\n\n\n\n' plan
