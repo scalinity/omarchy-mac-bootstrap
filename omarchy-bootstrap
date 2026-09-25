@@ -127,6 +127,9 @@ main() {
     *) [ "${#rest[@]}" = 0 ] || { _usage_error "unexpected argument: ${rest[0]}" ; return 2; } ;;
   esac
 
+  # A sane umask for everything this run creates, and for the installers it
+  # launches: never group- or world-writable, whatever the caller inherited.
+  umask 022
   ui_init
   platform_init
   state_init

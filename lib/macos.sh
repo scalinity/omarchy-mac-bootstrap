@@ -701,6 +701,7 @@ mac_handoff() {
   state_unset asahi_exit
   state_stamp asahi_launched_at
   printf '\n'
+  fetch_unchanged || return 1
   run sh "$FETCH_PATH"
   rc=$?
   [ "$OMB_DRY_RUN" = 1 ] && {

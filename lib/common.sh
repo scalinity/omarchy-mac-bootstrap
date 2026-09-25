@@ -197,7 +197,10 @@ sha256_of() {
 fetch_upstream() {
   local key=$1 url=$2 dir
   dir="$OMB_STATE_DIR/downloads"
-  mkdir -p "$dir" || return 1
+  # Private: nothing else on the machine may swap a script between its
+  # fingerprint and its execution.
+  (umask 077 && mkdir -p "$dir") || return 1
+  chmod 700 "$dir" 2>/dev/null
   FETCH_URL=$url
   FETCH_AT=$(now_utc)
   FETCH_PATH="$dir/$key-$(now_stamp)"
@@ -214,6 +217,15 @@ fetch_upstream() {
   FETCH_SHA256=$(sha256_of "$FETCH_PATH")
   log_event fetch "$url → $(tildify "$FETCH_PATH") size=$FETCH_SIZE sha256=$FETCH_SHA256"
   return 0
+}
+
+# fetch_unchanged — is FETCH_PATH still the file that was fingerprinted? The
+# inspection pager can open an editor, so the check runs right before execution.
+fetch_unchanged() {
+  [ "$(sha256_of "$FETCH_PATH")" = "$FETCH_SHA256" ] && return 0
+  log_event refuse "$FETCH_PATH changed after download (expected sha256 $FETCH_SHA256)"
+  ui_fail "$(tildify "$FETCH_PATH") changed after it was fingerprinted; nothing was run."
+  return 1
 }
 
 # view_file PATH — page a file for inspection with whatever pager exists.

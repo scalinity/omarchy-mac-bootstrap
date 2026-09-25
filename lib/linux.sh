@@ -266,6 +266,7 @@ lx_handoff() {
   state_unset omarchy_setup_exit
   state_stamp omarchy_launched_at
   printf '\n'
+  fetch_unchanged || return 1
   run bash "$FETCH_PATH" "${LX_FLAGS[@]}"
   rc=$?
   if [ "$OMB_DRY_RUN" = 1 ]; then

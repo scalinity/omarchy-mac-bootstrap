@@ -102,6 +102,17 @@ run probe --flag
 assert_eq "$(cat "$OMB_STATE_DIR/running")" "probe --flag" "run exposes the executing command"
 assert_eq "${OMB_RUNNING:-}" "" "the marker clears when the command returns"
 
+# --- Downloads: private directory, re-hashed before execution --------------------------
+OMB_FIXTURE="$FIX/linux-alarm-fresh"
+fetch_upstream omarchy-mac-setup "https://example.invalid/setup"
+assert_eq "$(find "$OMB_STATE_DIR/downloads" -maxdepth 0 -perm 700)" "$OMB_STATE_DIR/downloads" "downloads directory is private"
+fetch_unchanged
+assert_rc $? 0 "untouched download passes the re-hash"
+printf '\n# edited\n' >>"$FETCH_PATH"
+fetch_unchanged >/dev/null
+assert_rc $? 1 "a download edited after fingerprinting is refused"
+unset OMB_FIXTURE
+
 # --- Fixture mode never executes ---------------------------------------------------
 OMB_FIXTURE="$FIX/linux-alarm-fresh"
 run probe --from-fixture >/dev/null
