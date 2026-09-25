@@ -142,6 +142,12 @@ parse_size() {
       ;;
   esac
   int=${in%%.*}
+  # Seven digits is millions of GB; more could wrap 64-bit arithmetic into a
+  # plausible-looking size.
+  if [ "${#int}" -gt 7 ]; then
+    printf '%s' "'$1' is too large"
+    return 1
+  fi
   frac=""
   [ "$in" != "$int" ] && frac=${in#*.}
   int=${int:-0}

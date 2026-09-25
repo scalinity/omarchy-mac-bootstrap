@@ -93,6 +93,11 @@ parse_size '' >/dev/null
 assert_rc $? 1 "empty rejected"
 parse_size -5 >/dev/null
 assert_rc $? 1 "negative rejected"
+for big in 9223372037 1844674407370955 18446744073709551916GB; do
+  parse_size "$big" >/dev/null
+  assert_rc $? 1 "huge value rejected instead of wrapping: $big"
+done
+assert_eq "$(parse_size 9999999)" $((9999999 * GB)) "seven digits still accepted"
 
 assert_contains "$(plan_validate $((20 * GB)))" "error|20 GB is below the 50 GB" "below minimum"
 assert_contains "$(plan_validate $((50 * GB)))" "warn|" "minimum accepted with warning"
