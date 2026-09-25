@@ -39,6 +39,22 @@ T_ENV="OMB_COLOR=always" t_cli mac-m1pro-1tb-roomy "" --help
 assert_contains "$T_OUT" "${ESC}[38;5;209m" "256-colour palette when forced"
 t_cli mac-m1pro-1tb-roomy "" --help --ascii
 assert_eq "$(non_ascii "$T_OUT")" 0 "--ascii output is pure ASCII"
+t_cli mac-m1pro-1tb-roomy "" --help
+assert_contains "$T_OUT" "◒  omarchy·mac bootstrap" "Unicode terminals keep the glyphs"
+if command -v plutil >/dev/null 2>&1; then
+  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n' --ascii --dry-run
+  assert_eq "$(non_ascii "$T_OUT")" 0 "the whole macOS flow is pure ASCII with --ascii"
+fi
+T_ENV="TERM=linux" t_cli linux-alarm-fresh '\n\nstart\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us' --dry-run
+assert_eq "$(non_ascii "$T_OUT")" 0 "the Omarchy handoff on the Linux console is pure ASCII"
+T_ENV="TERM=linux" t_cli linux-omarchy-installed '1 2 3 4 5 6 7 8 9\nq\n' dev --dry-run
+assert_eq "$(non_ascii "$T_OUT")" 0 "the developer menu on the Linux console is pure ASCII"
+for f in linux-omarchy-installed linux-setup-in-progress; do
+  T_ENV="TERM=linux" t_cli "$f" "" doctor
+  assert_eq "$(non_ascii "$T_OUT")" 0 "doctor on the Linux console is pure ASCII ($f)"
+  T_ENV="TERM=linux" t_cli "$f" "" status
+  assert_eq "$(non_ascii "$T_OUT")" 0 "status on the Linux console is pure ASCII ($f)"
+done
 T_ENV="TERM=linux" t_cli linux-alarm-fresh "" doctor
 assert_eq "$(non_ascii "$T_OUT")" 0 "the Linux console gets ASCII"
 T_ENV="LANG=C" t_cli mac-m1pro-1tb-roomy "" --help

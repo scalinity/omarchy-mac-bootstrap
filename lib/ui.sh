@@ -10,6 +10,24 @@
 
 ESC=$(printf '\033')
 
+# _p FORMAT ARGS... — printf for everything shown to the user. When the
+# terminal gets ASCII (--ascii, a non-UTF-8 locale, the Linux VT console where
+# Phase 2 runs), the Unicode punctuation used in messages is mapped to ASCII.
+_p() {
+  if [ "${UI_UNICODE:-0}" = 1 ]; then
+    # shellcheck disable=SC2059 # the format is the caller's, by design
+    printf "$@"
+    return
+  fi
+  local s
+  # shellcheck disable=SC2059
+  s=$(printf "$@"; printf x)
+  s=${s%x}
+  s=${s//—/-} s=${s//–/-} s=${s//→/->} s=${s//≥/>=} s=${s//≈/~}
+  s=${s//…/...} s=${s//·/-} s=${s//⏎/>} s=${s//↑↓/up\/down}
+  printf '%s' "$s"
+}
+
 ui_init() {
   local depth=256 colors
 
@@ -116,7 +134,7 @@ ui_header() {
   local right=$1 title="omarchy${G_DOT}mac bootstrap" pad
   pad=$((UI_W - ${#G_MARK} - 2 - ${#title} - ${#right}))
   [ "$pad" -lt 2 ] && pad=2
-  printf '\n %s%s%s  %s%somarchy%s%s%s%smac bootstrap%s%s%s%s\n' \
+  _p '\n %s%s%s  %s%somarchy%s%s%s%smac bootstrap%s%s%s%s\n' \
     "$C_ACCENT" "$G_MARK" "$C_RESET" \
     "$C_BOLD" "$C_INK" "$C_RESET" "$C_FAINT" "$G_DOT" "$C_RESET$C_BOLD$C_INK" "$C_RESET" \
     "$(_rep ' ' "$pad")" "$C_DIM$right" "$C_RESET"
@@ -141,24 +159,24 @@ ui_rail() {
     first=0
     line="$line$color$glyph $stage$C_RESET"
   done
-  printf ' %s\n' "$line"
+  _p ' %s\n' "$line"
 }
 
 ui_section() {
   local title=$1 right=${2:-} pad
-  printf '\n %s%s%s%s%s%s' "$C_ACCENT" "$G_BAR" "$C_RESET" "$C_BOLD$C_INK" "$title" "$C_RESET"
+  _p '\n %s%s%s%s%s%s' "$C_ACCENT" "$G_BAR" "$C_RESET" "$C_BOLD$C_INK" "$title" "$C_RESET"
   if [ -n "$right" ]; then
     pad=$((UI_W - ${#title} - ${#right} - 1))
     [ "$pad" -lt 2 ] && pad=2
-    printf '%s%s%s%s' "$(_rep ' ' "$pad")" "$C_DIM" "$right" "$C_RESET"
+    _p '%s%s%s%s' "$(_rep ' ' "$pad")" "$C_DIM" "$right" "$C_RESET"
   fi
   printf '\n'
 }
 
 # ui_kv KEY VALUE [NOTE]
 ui_kv() {
-  printf '   %s%-19s%s %s' "$C_DIM" "$1" "$C_RESET" "$2"
-  [ -n "${3:-}" ] && printf '  %s%s%s' "$C_DIM" "$3" "$C_RESET"
+  _p '   %s%-19s%s %s' "$C_DIM" "$1" "$C_RESET" "$2"
+  [ -n "${3:-}" ] && _p '  %s%s%s' "$C_DIM" "$3" "$C_RESET"
   printf '\n'
 }
 
@@ -175,26 +193,26 @@ _ui_status_style() {
 # ui_check STATUS LABEL DETAIL — a compatibility line with a glyph.
 ui_check() {
   _ui_status_style "$1"
-  printf '   %s%s%s %-18s %s%s%s\n' "$UI_C$C_BOLD" "$UI_G" "$C_RESET" "$2" "$C_DIM" "${3:-}" "$C_RESET"
+  _p '   %s%s%s %-18s %s%s%s\n' "$UI_C$C_BOLD" "$UI_G" "$C_RESET" "$2" "$C_DIM" "${3:-}" "$C_RESET"
 }
 
 # ui_tag STATUS LABEL DETAIL — a doctor line: [PASS] label  detail
 ui_tag() {
   _ui_status_style "$1"
-  printf '   %s[%s]%s %-24s %s%s%s\n' "$UI_C$C_BOLD" "$UI_T" "$C_RESET" "$2" "$C_DIM" "${3:-}" "$C_RESET"
+  _p '   %s[%s]%s %-24s %s%s%s\n' "$UI_C$C_BOLD" "$UI_T" "$C_RESET" "$2" "$C_DIM" "${3:-}" "$C_RESET"
 }
 
 # ui_note TEXT — dim, wrapped, indented prose.
 ui_note() {
   printf '%s\n' "$*" | fold -s -w $((UI_W - 4)) | while IFS= read -r l; do
-    printf '   %s%s%s\n' "$C_DIM" "$l" "$C_RESET"
+    _p '   %s%s%s\n' "$C_DIM" "$l" "$C_RESET"
   done
 }
 
 # ui_para TEXT — normal wrapped prose.
 ui_para() {
   printf '%s\n' "$*" | fold -s -w $((UI_W - 4)) | while IFS= read -r l; do
-    printf '   %s\n' "$l"
+    _p '   %s\n' "$l"
   done
 }
 
@@ -209,7 +227,7 @@ ui_callout() {
     linux) color=$C_LINUX ;;
     *) color=$C_INFO ;;
   esac
-  printf '\n   %s%s%s %s%s%s\n' "$color" "$G_EDGE" "$C_RESET" "$C_BOLD" "$title" "$C_RESET"
+  _p '\n   %s%s%s %s%s%s\n' "$color" "$G_EDGE" "$C_RESET" "$C_BOLD" "$title" "$C_RESET"
   local line
   for line in "$@"; do
     ui_callout_body "$style" "$line"
@@ -238,35 +256,35 @@ ui_callout_body() {
     *) color=$C_INFO ;;
   esac
   printf '%s\n' "$2" | fold -s -w $((UI_W - 7)) | while IFS= read -r l; do
-    printf '   %s%s%s %s\n' "$color" "$G_EDGE" "$C_RESET" "$l"
+    _p '   %s%s%s %s\n' "$color" "$G_EDGE" "$C_RESET" "$l"
   done
 }
 
 # ui_cmd COMMAND — a copyable command, visually distinct, never wrapped.
-ui_cmd() { printf '     %s$%s %s%s%s\n' "$C_FAINT" "$C_RESET" "$C_ACCENT" "$*" "$C_RESET"; }
+ui_cmd() { _p '     %s$%s %s%s%s\n' "$C_FAINT" "$C_RESET" "$C_ACCENT" "$*" "$C_RESET"; }
 
-ui_would() { printf '   %s%s would run%s  %s\n' "$C_WARN" "$G_WOULD" "$C_RESET" "$*"; }
+ui_would() { _p '   %s%s would run%s  %s\n' "$C_WARN" "$G_WOULD" "$C_RESET" "$*"; }
 
-ui_ok() { printf '   %s%s%s %s\n' "$C_PASS$C_BOLD" "$G_PASS" "$C_RESET" "$*"; }
-ui_warn() { printf '   %s%s%s %s\n' "$C_WARN$C_BOLD" "$G_WARN" "$C_RESET" "$*"; }
-ui_fail() { printf '   %s%s%s %s\n' "$C_FAIL$C_BOLD" "$G_FAIL" "$C_RESET" "$*"; }
-ui_info() { printf '   %s%s%s %s\n' "$C_INFO" "$G_INFO" "$C_RESET" "$*"; }
+ui_ok() { _p '   %s%s%s %s\n' "$C_PASS$C_BOLD" "$G_PASS" "$C_RESET" "$*"; }
+ui_warn() { _p '   %s%s%s %s\n' "$C_WARN$C_BOLD" "$G_WARN" "$C_RESET" "$*"; }
+ui_fail() { _p '   %s%s%s %s\n' "$C_FAIL$C_BOLD" "$G_FAIL" "$C_RESET" "$*"; }
+ui_info() { _p '   %s%s%s %s\n' "$C_INFO" "$G_INFO" "$C_RESET" "$*"; }
 
 # ui_card_open TITLE / ui_card_row NUM PROMPT ANSWER NOTE / ui_card_close
 # The answer card: what to type into an upstream installer, in order.
 ui_card_open() {
   local rest=$((UI_W - ${#1} - 7))
   [ "$rest" -lt 3 ] && rest=3
-  printf '\n   %s%s%s%s %s%s%s %s%s%s\n' "$C_LINUX" "$G_TOP" "$G_HEAVY" "$G_HEAVY" "$C_BOLD$C_INK" "$1" "$C_RESET" \
+  _p '\n   %s%s%s%s %s%s%s %s%s%s\n' "$C_LINUX" "$G_TOP" "$G_HEAVY" "$G_HEAVY" "$C_BOLD$C_INK" "$1" "$C_RESET" \
     "$C_LINUX" "$(_rep "$G_HEAVY" "$rest")" "$C_RESET"
   printf '   %s%s%s\n' "$C_LINUX" "$G_EDGE" "$C_RESET"
 }
 ui_card_row() {
-  printf '   %s%s%s  %s%-2s%s %-30s %s%-12s%s' "$C_LINUX" "$G_EDGE" "$C_RESET" "$C_DIM" "$1" "$C_RESET" "$2" "$C_BOLD$C_ACCENT" "$3" "$C_RESET"
-  [ -n "${4:-}" ] && printf ' %s%s%s' "$C_DIM" "$4" "$C_RESET"
+  _p '   %s%s%s  %s%-2s%s %-30s %s%-12s%s' "$C_LINUX" "$G_EDGE" "$C_RESET" "$C_DIM" "$1" "$C_RESET" "$2" "$C_BOLD$C_ACCENT" "$3" "$C_RESET"
+  [ -n "${4:-}" ] && _p ' %s%s%s' "$C_DIM" "$4" "$C_RESET"
   printf '\n'
 }
-ui_card_text() { printf '   %s%s%s     %s%s%s\n' "$C_LINUX" "$G_EDGE" "$C_RESET" "$C_DIM" "$1" "$C_RESET"; }
+ui_card_text() { _p '   %s%s%s     %s%s%s\n' "$C_LINUX" "$G_EDGE" "$C_RESET" "$C_DIM" "$1" "$C_RESET"; }
 ui_card_close() {
   printf '   %s%s%s\n' "$C_LINUX" "$G_EDGE" "$C_RESET"
   printf '   %s%s%s%s\n' "$C_LINUX" "$G_BOT" "$(_rep "$G_HEAVY" $((UI_W - 4)))" "$C_RESET"
@@ -323,7 +341,7 @@ ui_strip() {
     legend="$legend$UI_C$UI_S$C_RESET $label    "
   done
   printf '\n   %s%s%s%s%s%s%s\n' "$C_FAINT" "$G_SL" "$C_RESET" "$bar" "$C_FAINT" "$G_SR" "$C_RESET"
-  printf '    %s\n' "$legend"
+  _p '    %s\n' "$legend"
 }
 
 
@@ -355,7 +373,7 @@ _ui_read_key() {
   fi
 }
 
-ui_hint() { printf '   %s%s%s\n' "$C_FAINT" "$*" "$C_RESET"; }
+ui_hint() { _p '   %s%s%s\n' "$C_FAINT" "$*" "$C_RESET"; }
 
 # In line mode the terminal does not echo piped answers; echo them so a
 # transcript reads like the conversation it was.
@@ -374,7 +392,7 @@ ui_select() {
   shift 2
   local count=$# cur=$default
   _ui_clr
-  printf '\n   %s%s%s\n\n' "$C_BOLD" "$prompt" "$C_RESET"
+  _p '\n   %s%s%s\n\n' "$C_BOLD" "$prompt" "$C_RESET"
 
   if ! ui_interactive; then
     _ui_select_render "$cur" "$@"
@@ -456,15 +474,15 @@ _ui_select_render() {
     badge=$(printf '%s' "$opt" | cut -d'|' -f4)
     if [ "$i" = "$cur" ]; then
       ptr="$C_ACCENT$C_BOLD$G_POINT$C_RESET"
-      printf '%s   %s %s%d%s  %s%-16s%s %s%-10s%s' "$UI_CLR" "$ptr" "$C_ACCENT" "$i" "$C_RESET" "$C_BOLD$C_INK" "$label" "$C_RESET" "$C_BOLD" "$value" "$C_RESET"
+      _p '%s   %s %s%d%s  %s%-16s%s %s%-10s%s' "$UI_CLR" "$ptr" "$C_ACCENT" "$i" "$C_RESET" "$C_BOLD$C_INK" "$label" "$C_RESET" "$C_BOLD" "$value" "$C_RESET"
     else
-      printf '%s     %s%d%s  %-16s %-10s' "$UI_CLR" "$C_DIM" "$i" "$C_RESET" "$label" "$value"
+      _p '%s     %s%d%s  %-16s %-10s' "$UI_CLR" "$C_DIM" "$i" "$C_RESET" "$label" "$value"
     fi
-    [ -n "$badge" ] && printf ' %s%s%s' "$C_PASS" "$badge" "$C_RESET"
+    [ -n "$badge" ] && _p ' %s%s%s' "$C_PASS" "$badge" "$C_RESET"
     printf '\n'
     UI_LINES=$((UI_LINES + 1))
     if [ -n "$desc" ]; then
-      printf '%s        %s%s%s\n' "$UI_CLR" "$C_DIM" "$desc" "$C_RESET"
+      _p '%s        %s%s%s\n' "$UI_CLR" "$C_DIM" "$desc" "$C_RESET"
       UI_LINES=$((UI_LINES + 1))
     fi
   done
@@ -483,12 +501,12 @@ ui_multiselect() {
     i=$((i + 1))
     [ "$(printf '%s' "$opt" | cut -d'|' -f3)" = on ] && sel="$sel $i"
   done
-  printf '\n   %s%s%s\n\n' "$C_BOLD" "$prompt" "$C_RESET"
+  _p '\n   %s%s%s\n\n' "$C_BOLD" "$prompt" "$C_RESET"
 
   if ! ui_interactive; then
     _ui_multi_render 0 "$sel" "$@"
     local ans
-    printf '   %snumbers separated by spaces, enter for the marked set, q to quit%s\n   %schoice%s ' "$C_DIM" "$C_RESET" "$C_DIM" "$C_RESET"
+    _p '   %snumbers separated by spaces, enter for the marked set, q to quit%s\n   %schoice%s ' "$C_DIM" "$C_RESET" "$C_DIM" "$C_RESET"
     IFS= read -r ans || return 3
     _ui_echo "$ans"
     case "$ans" in
@@ -547,7 +565,7 @@ _ui_multi_render() {
     case " $sel " in *" $i "*) box="$C_PASS$G_ON$C_RESET" ;; *) box="$C_FAINT$G_OFF$C_RESET" ;; esac
     ptr=" "
     [ "$i" = "$cur" ] && ptr="$C_ACCENT$C_BOLD$G_POINT$C_RESET"
-    printf '%s   %s %s %s%d%s  %-14s %s%s%s\n' "$UI_CLR" "$ptr" "$box" "$C_DIM" "$i" "$C_RESET" "$label" "$C_DIM" "$desc" "$C_RESET"
+    _p '%s   %s %s %s%d%s  %-14s %s%s%s\n' "$UI_CLR" "$ptr" "$box" "$C_DIM" "$i" "$C_RESET" "$label" "$C_DIM" "$desc" "$C_RESET"
     UI_LINES=$((UI_LINES + 1))
   done
   printf '%s\n' "$UI_CLR"
@@ -562,9 +580,9 @@ ui_ask() {
   local __var=$1 __prompt=$2 __default=$3 __validator=${4:-} __ans
   while :; do
     if [ -n "$__default" ]; then
-      printf '   %s %s[%s]%s ' "$__prompt" "$C_DIM" "$__default" "$C_RESET"
+      _p '   %s %s[%s]%s ' "$__prompt" "$C_DIM" "$__default" "$C_RESET"
     else
-      printf '   %s ' "$__prompt"
+      _p '   %s ' "$__prompt"
     fi
     IFS= read -r __ans || return 3
     _ui_echo "$__ans"
@@ -582,7 +600,7 @@ ui_yesno() {
   local prompt=$1 default=$2 ans hint="y/N"
   [ "$default" = y ] && hint="Y/n"
   while :; do
-    printf '   %s %s[%s]%s ' "$prompt" "$C_DIM" "$hint" "$C_RESET"
+    _p '   %s %s[%s]%s ' "$prompt" "$C_DIM" "$hint" "$C_RESET"
     IFS= read -r ans || return 3
     _ui_echo "$ans"
     [ -z "$ans" ] && ans=$default
@@ -600,7 +618,7 @@ ui_yesno() {
 ui_confirm_word() {
   local word=$1 prompt=$2 ans
   while :; do
-    printf '\n   %s  %sType %s%s%s%s to continue, or n to stop:%s ' "$prompt" "$C_DIM" "$C_RESET$C_BOLD$C_ACCENT" "$word" "$C_RESET" "$C_DIM" "$C_RESET"
+    _p '\n   %s  %sType %s%s%s%s to continue, or n to stop:%s ' "$prompt" "$C_DIM" "$C_RESET$C_BOLD$C_ACCENT" "$word" "$C_RESET" "$C_DIM" "$C_RESET"
     IFS= read -r ans || return 1
     _ui_echo "$ans"
     [ "$ans" = "$word" ] && return 0
@@ -613,7 +631,7 @@ ui_confirm_word() {
 
 ui_pause() {
   ui_interactive || return 0
-  printf '\n   %s%s%s ' "$C_DIM" "${1:-Press Enter to continue}" "$C_RESET"
+  _p '\n   %s%s%s ' "$C_DIM" "${1:-Press Enter to continue}" "$C_RESET"
   IFS= read -r _
 }
 
@@ -629,7 +647,7 @@ ui_spin() {
   local pid=$! i=0 n=${#G_SPIN} frame
   while kill -0 "$pid" 2>/dev/null; do
     frame=${G_SPIN:$((i % n)):1}
-    printf '\r   %s%s%s %s%s%s' "$C_ACCENT" "$frame" "$C_RESET" "$C_DIM" "$label" "$C_RESET"
+    _p '\r   %s%s%s %s%s%s' "$C_ACCENT" "$frame" "$C_RESET" "$C_DIM" "$label" "$C_RESET"
     i=$((i + 1))
     sleep 0.08
   done

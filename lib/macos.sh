@@ -598,12 +598,12 @@ continuation_commands() {
     [ -n "$sha" ] && ui_warn "This commit is not on the remote yet; Linux will get the tip of $branch. Push first to pin it."
   fi
   if [ "$vis" != private ]; then
-    printf '   %s%s%s\n' "$C_DIM" "public repository — no git needed:" "$C_RESET"
+    _p '   %s%s%s\n' "$C_DIM" "public repository — no git needed:" "$C_RESET"
     ui_cmd "mkdir -p $dest"
     ui_cmd "curl -fsSL https://github.com/$slug/archive/$ref.tar.gz | tar xz --strip-components=1 -C $dest"
   fi
   if [ "$vis" != public ]; then
-    printf '   %s%s%s\n' "$C_DIM" "private repository — sign in with a device code, then sign out again:" "$C_RESET"
+    _p '   %s%s%s\n' "$C_DIM" "private repository — sign in with a device code, then sign out again:" "$C_RESET"
     ui_cmd "pacman -Syu --needed git github-cli"
     ui_cmd "gh auth login"
     ui_cmd "gh repo clone $slug $dest -- --branch $branch"
@@ -638,10 +638,10 @@ _guide() {
   local n=$1 text=$2 first=1
   printf '%s\n' "$text" | fold -s -w $((UI_W - 9)) | while IFS= read -r l; do
     if [ "$first" = 1 ]; then
-      printf '   %s%2s%s  %s\n' "$C_ACCENT$C_BOLD" "$n" "$C_RESET" "$l"
+      _p '   %s%2s%s  %s\n' "$C_ACCENT$C_BOLD" "$n" "$C_RESET" "$l"
       first=0
     else
-      printf '       %s\n' "$l"
+      _p '       %s\n' "$l"
     fi
   done
 }
