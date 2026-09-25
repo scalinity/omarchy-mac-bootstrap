@@ -203,7 +203,7 @@ lx_handoff() {
   lx_screen omarchy
   ui_section "Omarchy Mac" "$OMARCHY_MAC_REPO $G_DOT $OMARCHY_MAC_BRANCH"
 
-  version=$(sys_net omarchy_version "$OMARCHY_MAC_VERSION_URL" | head -1 | tr -d '[:space:]')
+  version=$(sys_net omarchy_version "$OMARCHY_MAC_VERSION_URL" | clean_version)
   case "$version" in
     "$OMARCHY_EXPECTED_MAJOR".*) ui_ok "Branch $OMARCHY_MAC_BRANCH carries Omarchy $version." ;;
     '')

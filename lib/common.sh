@@ -228,15 +228,21 @@ fetch_unchanged() {
   return 1
 }
 
-# view_file PATH — page a file for inspection with whatever pager exists.
+# view_file PATH — page a file for inspection. Control characters are made
+# visible (cat -v), so a script cannot hide lines with terminal escapes, and
+# the pager reads a pipe, so its edit command cannot change the file on disk.
 view_file() {
   if [ -n "${PAGER:-}" ]; then
-    $PAGER "$1"
+    cat -v "$1" | $PAGER
   elif command -v less >/dev/null 2>&1; then
-    less -R "$1"
+    cat -v "$1" | less
   elif command -v more >/dev/null 2>&1; then
-    more "$1"
+    cat -v "$1" | more
   else
-    cat "$1"
+    cat -v "$1"
   fi
 }
+
+# clean_version — first line of stdin reduced to version characters, so text
+# from the network never carries control codes to the terminal or state.
+clean_version() { head -1 | tr -cd '[:alnum:]._-'; }

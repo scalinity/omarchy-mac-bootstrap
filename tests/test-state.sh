@@ -113,6 +113,13 @@ fetch_unchanged >/dev/null
 assert_rc $? 1 "a download edited after fingerprinting is refused"
 unset OMB_FIXTURE
 
+# --- Inspection shows control characters; versions carry none ------------------------
+printf 'echo visible\n\033[8mrm -rf hidden\033[0m\n' >"$OMB_STATE_DIR/esc-probe"
+shown=$(PAGER="cat" view_file "$OMB_STATE_DIR/esc-probe")
+assert_contains "$shown" '^[[8mrm -rf hidden' "escape codes are shown, not interpreted"
+assert_not_contains "$shown" "$(printf '\033')" "no raw escape reaches the terminal"
+assert_eq "$(printf 'v0.9.2\033[31m\r\nsecond line\n' | clean_version)" "v0.9.231m" "versions lose control codes and extra lines"
+
 # --- Fixture mode never executes ---------------------------------------------------
 OMB_FIXTURE="$FIX/linux-alarm-fresh"
 run probe --from-fixture >/dev/null

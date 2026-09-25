@@ -233,7 +233,7 @@ lx_doctor() {
     partial) doc warn "Omarchy $OMARCHY_EXPECTED_MAJOR" "package present, install unfinished (stale partial state)" ;;
     *) doc info "Omarchy $OMARCHY_EXPECTED_MAJOR" "not installed" ;;
   esac
-  if upstream=$(sys_net omarchy_version "$OMARCHY_MAC_VERSION_URL" | head -1 | tr -d '[:space:]') && [ -n "$upstream" ]; then
+  if upstream=$(sys_net omarchy_version "$OMARCHY_MAC_VERSION_URL" | clean_version) && [ -n "$upstream" ]; then
     if [ -n "$LX_OMARCHY_VERSION" ] && [ "$upstream" != "$LX_OMARCHY_VERSION" ]; then
       doc info "Upstream Omarchy Mac" "$upstream on $OMARCHY_MAC_BRANCH (installed $LX_OMARCHY_VERSION) — 'omarchy update' when ready"
     else

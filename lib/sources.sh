@@ -216,7 +216,7 @@ sources_check() {
   ui_section "Upstream check" "$(now_utc)"
 
   if v=$(sys_net asahi_version "$ASAHI_ALARM_VERSION_URL") && [ -n "$v" ]; then
-    v=$(printf '%s' "$v" | head -1 | tr -d '[:space:]')
+    v=$(printf '%s' "$v" | clean_version)
     if [ "$v" = "$ASAHI_INSTALLER_VERIFIED" ]; then
       ui_tag pass "Asahi installer" "$v (matches)"
     else
@@ -248,7 +248,7 @@ sources_check() {
   fi
 
   if v=$(sys_net omarchy_version "$OMARCHY_MAC_VERSION_URL") && [ -n "$v" ]; then
-    v=$(printf '%s' "$v" | head -1 | tr -d '[:space:]')
+    v=$(printf '%s' "$v" | clean_version)
     case "$v" in
       "$OMARCHY_EXPECTED_MAJOR".*)
         if [ "$v" = "$OMARCHY_MAC_VERIFIED" ]; then
@@ -270,10 +270,10 @@ sources_check() {
     if printf '%s' "$body" | grep -q "\"default_branch\": *\"$OMARCHY_MAC_BRANCH\""; then
       ui_tag pass "Default branch" "$OMARCHY_MAC_BRANCH"
     else
-      v=$(printf '%s' "$body" | sed -n 's/.*"default_branch": *"\([^"]*\)".*/\1/p' | head -1)
+      v=$(printf '%s' "$body" | sed -n 's/.*"default_branch": *"\([^"]*\)".*/\1/p' | head -1 | tr -cd '[:alnum:]._/-')
       ui_tag warn "Default branch" "upstream default is now '$v'; this tool still targets $OMARCHY_MAC_BRANCH"
     fi
-    v=$(printf '%s' "$body" | sed -n 's/.*"full_name": *"\([^"]*\)".*/\1/p' | head -1)
+    v=$(printf '%s' "$body" | sed -n 's/.*"full_name": *"\([^"]*\)".*/\1/p' | head -1 | tr -cd '[:alnum:]._/-')
     [ -n "$v" ] && ui_tag info "Repository home" "$v"
   else
     ui_tag warn "Default branch" "GitHub API unreachable or rate-limited"

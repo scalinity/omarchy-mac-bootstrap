@@ -641,7 +641,7 @@ mac_handoff() {
     ui_fail "Download failed: $ASAHI_ALARM_INSTALLER_URL"
     return 1
   fi
-  version=$(sys_net asahi_version "$ASAHI_ALARM_VERSION_URL" | head -1 | tr -d '[:space:]')
+  version=$(sys_net asahi_version "$ASAHI_ALARM_VERSION_URL" | clean_version)
   asahi_bootstrap_expected "$FETCH_PATH" || shape_ok=0
 
   ui_kv "URL" "$FETCH_URL"
