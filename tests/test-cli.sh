@@ -87,7 +87,7 @@ if command -v plutil >/dev/null 2>&1; then
   t_cli mac-m2-512 "" doctor
   assert_contains "$T_OUT" "[WARN] APFS resize overhead" "snapshot overhead warns"
   t_cli mac-asahi-installed "" doctor
-  assert_contains "$T_OUT" "[INFO] Existing install" "existing install noted"
+  assert_contains "$T_OUT" "[INFO] Asahi install" "an existing install is reported with its state"
 else
   skip "macOS doctor (no plutil)"
 fi
@@ -117,7 +117,7 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$T_OUT" "confirm the backup" "status names the next action"
   assert_contains "$T_OUT" "resume omb1:enc=1,user=alex,host=m1pro" "status shows the token"
   T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-asahi-installed "" resume
-  assert_contains "$T_OUT" "Phase 1 is done" "resume on macOS after install"
+  assert_contains "$(t_flat "$T_OUT")" "partitions are all in place" "resume on macOS after install reports what the disk shows"
   assert_contains "$T_OUT" "https://github.com/example/omarchy-mac-bootstrap/archive/0123456789abcdef0123456789abcdef01234567.tar.gz" "public continuation pinned to the commit"
   assert_contains "$T_OUT" "./omarchy-bootstrap resume omb1:" "token printed after reboot guide"
   # Private repository, commit not pushed: branch tip with a warning, and sign out.

@@ -106,6 +106,26 @@ partitions in disk order with `Size` and `DiskUUID` but no offsets. Apple SSDs
 use 4096-byte blocks; the GPT's first usable block is 6 (24 576 B) and its
 backup takes the last 20 480 B.
 
+## Asahi installer: what an interrupted install leaves
+
+Read at the same v0.9.2 source. The order of work decides what an
+interruption leaves behind, so the tool classifies from the disk:
+
+| Evidence on macOS | State | Repair (`p`) |
+| --- | --- | --- |
+| macOS container smaller than before a recorded launch, freed space free, no stub | resized only (quitting keeps a resize) | not applicable |
+| a stub container, nothing after it | stopped while preparing the stub | refused |
+| stub and EFI, no Linux root | stopped between partitions | refused |
+| all three; stub with fewer than 4 volumes, or without `step2.sh`/`boot.bin` | first stage incomplete | refused: "The existing installation is missing files" (`main.py:435-438`) |
+| all three; stub holds `.IAPhysicalMedia` and `SystemVersion-disabled.plist` | first stage complete, first boot (step 2) not run | offered |
+| all three; `IAPhysicalMedia-disabled.plist` and `SystemVersion.plist` | step 2 has run | not needed |
+
+Repair eligibility is `stub.py` `check_existing_install` (the four files on the
+stub's system volume) and `main.py:1092-1120` (listed when the stub has a
+version and its boot policy lacks `coih`). The stub's files are readable from
+macOS only when its system volume is already mounted; the tool never mounts
+it, and says "unverified" otherwise.
+
 ## Asahi documentation
 
 - FAQ: the installer always leaves 38 GB free for macOS upgrades.
@@ -131,17 +151,32 @@ backup takes the last 20 480 B.
 `--hostname`, `--keymap`, `--status`, `--resume`. Declared in the script's
 `# omarchy:args=` header and parsed in `main()`.
 
-**What the setup does:** asks encrypt/username/hostname (skipped when passed as
-flags), keeps the current console keymap unless `--keymap` is given, creates the
-user with sudo, moves `/boot` onto the EFI partition, encrypts the root in place
-(passphrase chosen at the console), installs Omarchy from `quattro` as the user,
-locks root's password, and resumes itself on each boot through
+**What the setup does** (read at `omacom/omarchy-mac` `quattro` `e77295a`):
+asks encrypt/username/hostname (skipped when passed as flags), keeps the
+current console keymap unless `--keymap` is given, creates the user with sudo,
+moves `/boot` onto the EFI partition, encrypts the root in place (passphrase
+chosen at the console), installs Omarchy from `quattro` as the user, locks
+root's password, and resumes itself on each boot through
 `omarchy-mac-setup.service` on tty1. It refuses Omarchy 3 unless
-`--allow-omarchy3`.
+`--allow-omarchy3`. It touches only the root partition and the EFI partition;
+it never uses or grows unpartitioned space, and creates nothing under `/mnt`.
 
-**Upstream state signals:** `/etc/omarchy-mac-setup.conf` (in progress),
-`/var/lib/omarchy-mac-setup/installed` (done), `/usr/share/omarchy/version`,
-`/var/log/omarchy-mac-setup.log`, `/usr/local/bin/omarchy-mac-setup`.
+**Upstream state signals:**
+
+| Signal | Meaning |
+| --- | --- |
+| `/etc/omarchy-mac-setup.conf` | guided setup in progress (0600, root only); removed on the boot after the marker is written |
+| `/var/lib/omarchy-mac-setup/installed` | install finished (written after encryption has fully finished) |
+| `/usr/share/omarchy/version` + `display-manager.service` as a symlink | installed, for installs before the marker (upstream also wants the `@factory` subvolume) |
+| `omarchy-mac-setup.service` `activating` | running now (a oneshot unit is never `active`) |
+| `/etc/omarchy-btrfs-migrate.conf` | in-place encryption staged; removed by its finish service |
+| `/var/lib/omarchy/btrfs-migrate-done` | the encryption's finish service has run |
+| `cryptsetup luksDump <root partition>` with `online-reencrypt` | re-encryption still pending (root only) |
+| `/usr/local/bin/omarchy-mac-setup` | upstream's own copy; stays after the install |
+
+Upstream keeps no log file: `/var/log/omarchy-mac-setup.log` is declared but
+never written; the unit's output goes to tty1. `--status` reads the root-only
+conf, so it works only as root; its banner carries colour codes.
 
 **Post-install helpers this tool delegates to:** `omarchy-install-dev-env`,
 `omarchy-install-editor-vscode`, `omarchy-setup-security-sshd`,

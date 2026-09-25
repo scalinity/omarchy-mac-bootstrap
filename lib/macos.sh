@@ -964,7 +964,7 @@ The sizes this tool would ask you to type were computed for asahi-installer $ASA
   fi
   ui_callout fail "Last stop before your disk changes." \
     "The installer will ask for your macOS password, $what, then shut the Mac down." \
-    "Its warnings are its own — read them. Quitting at its menu with q changes nothing."
+    "Its warnings are its own — read them. Quitting at its first menu changes nothing; once it has resized macOS, quitting keeps the resize. Either way, this tool reads the disk afterwards and says where things stand."
   if ! ui_confirm_word launch "Run the official Asahi Alarm installer now."; then
     printf '\n'
     ui_info "Not launched. Nothing changed. Run ./omarchy-bootstrap again when ready."
@@ -972,7 +972,13 @@ The sizes this tool would ask you to type were computed for asahi-installer $ASA
   fi
 
   mac_recheck_plan || return 1
+  # What the disk looked like before: the installer's exit status says
+  # nothing (0 for quit, error and success), so the disk is compared instead.
+  local before
+  before=$(geo_canon)
   state_unset asahi_exit
+  state_unset asahi_state
+  state_must_set asahi_prelaunch_macos_size "$PLAN_C" || return 1
   state_must_set asahi_launched_at "$(now_utc)" || return 1
   printf '\n'
   fetch_unchanged || return 1
@@ -985,14 +991,36 @@ The sizes this tool would ask you to type were computed for asahi-installer $ASA
   }
   state_set asahi_exit "$rc"
   printf '\n'
-  if [ "$rc" = 0 ]; then
-    ui_ok "The installer finished."
-    mac_reboot_guide
-  else
-    ui_warn "The installer exited with status $rc. Nothing is assumed to have happened."
-    ui_note "Rerunning is safe: ./omarchy-bootstrap will re-survey the disk, and the installer offers 'p' to repair an incomplete install."
-  fi
-  return "$rc"
+  mac_after_installer "$before" "$rc"
+}
+
+# mac_after_installer LAYOUT_BEFORE EXIT — re-read the disk and say what the
+# installer actually did. Returns 0 when the next step is clear and safe.
+mac_after_installer() {
+  mac_read_container
+  mac_detect_geometry
+  mac_plan_compute
+  asahi_classify
+  state_set asahi_state "$ASAHI_STATE"
+  ui_section "After the installer" "read from the disk, not its exit status ($2)"
+  case "$ASAHI_STATE" in
+    none)
+      if [ "$GEO_OK" = 1 ] && [ "$(geo_canon)" = "$1" ]; then
+        ui_ok "The disk is exactly as it was: the installer changed nothing (it was quit, or stopped before resizing)."
+        ui_note "Run ./omarchy-bootstrap again when ready; the plan is kept."
+        return 0
+      fi
+      ASAHI_STATE=unknown
+      ASAHI_WHY="the partition layout changed, but not in a way the Asahi installer leaves it"
+      ;;
+    installed | pending-first-boot | installed-unverified)
+      ui_ok "Asahi's partitions are in place."
+      ui_note "The installer ends by shutting the Mac down. If it does not within a minute, it stopped after creating them: run ./omarchy-bootstrap again to see where things stand."
+      mac_reboot_guide
+      return 0
+      ;;
+  esac
+  asahi_guidance
 }
 
 # ---------------------------------------------------------------------------
@@ -1023,10 +1051,16 @@ mac_main() {
     ui_blockers "This Mac cannot continue." "$blockers"
     return 1
   fi
-  if [ "$MAC_ASAHI_PRESENT" = 1 ]; then
-    mac_existing_install
-    return 0
-  fi
+  # Where any earlier install stands, from the disk alone.
+  asahi_classify
+  case "$ASAHI_STATE" in
+    none) ;;
+    resized-only) asahi_guidance ;;
+    *)
+      mac_existing_install
+      return
+      ;;
+  esac
   if [ "$DEV_TIER" = experimental ]; then
     ui_callout warn "$DEV_CHIP support is experimental." \
       "The Asahi installer accepts this Mac, but Asahi lists display and USB support as work in progress, and Omarchy Mac documents M1/M2 only."
@@ -1095,31 +1129,33 @@ _mac_quit() {
 }
 
 mac_existing_install() {
-  ui_callout info "Linux partitions already exist on $MAC_DISK." \
-    "This tool will not start a second install. If the new OS is not in Startup Options yet, finish the boot steps below." \
-    "If an install stopped halfway, rerun the Asahi Alarm installer yourself and choose 'p' (repair). On macOS 27, if the Linux entry disappeared from Startup Options, the installer's '7' option fixes it."
-  printf '\n   %sPartitions%s\n' "$C_DIM" "$C_RESET"
-  printf '%s' "$MAC_PARTS" | while IFS='|' read -r id content size role; do
-    [ -n "$id" ] || continue
-    printf '     %-10s %-22s %10s  %s%s%s\n' "$id" "$content" "$(fmt_gb "$size")" "$C_DIM" "$role" "$C_RESET"
-  done
-  mac_reboot_guide
+  asahi_guidance
+  local rc=$?
   printf '\n'
+  return "$rc"
 }
 
 mac_resume() {
   OMB_PHASE=macos
   mac_survey
   mac_screen reboot
-  if [ "$MAC_ASAHI_PRESENT" = 1 ]; then
-    ui_ok "Linux partitions found on $MAC_DISK — Phase 1 is done on this Mac."
-    mac_reboot_guide
-  elif [ -n "$(state_get asahi_launched_at)" ]; then
-    ui_warn "The installer was launched at $(state_get asahi_launched_at), but no Linux partitions are on $MAC_DISK."
-    ui_note "Run ./omarchy-bootstrap to start again; the plan is kept."
-  else
-    ui_info "Phase 1 has not reached the installer yet. Run ./omarchy-bootstrap to continue."
-  fi
+  asahi_classify
+  case "$ASAHI_STATE" in
+    none)
+      if [ -n "$(state_get asahi_launched_at)" ]; then
+        ui_warn "The installer was launched at $(state_get asahi_launched_at), but the disk shows no change from it."
+        ui_note "Run ./omarchy-bootstrap to start again; the plan is kept."
+      else
+        ui_info "Phase 1 has not reached the installer yet. Run ./omarchy-bootstrap to continue."
+      fi
+      ;;
+    installed)
+      asahi_guidance
+      ui_section "Continue on Linux" "boot it, log in, then"
+      continuation_commands
+      ;;
+    *) asahi_guidance ;;
+  esac
   printf '\n'
 }
 

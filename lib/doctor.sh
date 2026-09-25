@@ -104,10 +104,22 @@ mac_doctor() {
   else
     doc fail "Installer reachable" "asahi-alarm.org unreachable"
   fi
-  if [ "$MAC_ASAHI_PRESENT" = 1 ]; then
-    doc info "Existing install" "Linux partitions on $MAC_DISK"
-    ver_ge "${MAC_OS_VERSION:-0}" 27 && doc info "macOS 27" "if Linux vanished from Startup Options, rerun the installer and choose 7"
-  fi
+  asahi_classify
+  case "$ASAHI_STATE" in
+    none) ;;
+    installed) doc pass "Asahi install" "complete: the first boot has run" ;;
+    pending-first-boot) doc info "Asahi install" "first stage complete; boot it to finish (step 2)" ;;
+    installed-unverified) doc info "Asahi install" "partitions in place; first boot not readable from macOS" ;;
+    resized-only) doc info "Asahi install" "macOS resized, no Linux partitions yet: $ASAHI_WHY" ;;
+    early-partial | partitioned-incomplete | first-stage-incomplete)
+      doc fail "Asahi install" "stopped before its first stage finished; repair ('p') refuses this — docs/RECOVERY.md" ;;
+    *) doc fail "Asahi install" "state unclear: $ASAHI_WHY" ;;
+  esac
+  case "$ASAHI_STATE" in
+    installed | pending-first-boot | installed-unverified)
+      ver_ge "${MAC_OS_VERSION:-0}" 27 && doc info "macOS 27" "if Linux vanished from Startup Options, rerun the installer and choose 7"
+      ;;
+  esac
   [ -n "$(state_get cfg_linux)" ] && doc info "Saved plan" "Linux $(state_get cfg_linux) GB $G_DOT $(state_get planned_at)"
   winfo="installer resize failures usually mean APFS damage: run First Aid from Recovery"
   doc info "If a resize fails" "$winfo"
@@ -118,19 +130,29 @@ mac_doctor() {
 mac_next_action() {
   local blockers
   blockers=$(mac_blockers)
+  asahi_classify
   if [ -n "$blockers" ]; then
     printf 'This Mac cannot continue: %s' "$(printf '%s' "$blockers" | head -1)"
-  elif [ "$MAC_ASAHI_PRESENT" = 1 ]; then
-    echo "Boot the new OS from Startup Options, then run ./omarchy-bootstrap resume <token> on Linux (./omarchy-bootstrap resume shows it)."
-  elif [ -n "$(state_get asahi_launched_at)" ]; then
-    echo "The installer was launched but no Linux partitions exist; run ./omarchy-bootstrap to try again."
-  elif [ -n "$(state_get backup_confirmed_at)" ] && [ -n "$(state_get cfg_linux)" ]; then
-    echo "Run ./omarchy-bootstrap: review the saved plan (Enter keeps each answer), then download and launch the Asahi Alarm installer."
-  elif [ -n "$(state_get cfg_linux)" ]; then
-    echo "Run ./omarchy-bootstrap: review the saved plan (Enter keeps each answer), then confirm the backup."
-  else
-    echo "Run ./omarchy-bootstrap to survey this Mac and plan storage."
+    return 0
   fi
+  case "$ASAHI_STATE" in
+    installed) echo "Boot the new OS from Startup Options, then run ./omarchy-bootstrap resume <token> on Linux (./omarchy-bootstrap resume shows it)." ;;
+    pending-first-boot | installed-unverified) echo "Shut down and boot the new OS from Startup Options to finish its first boot (./omarchy-bootstrap resume shows the steps)." ;;
+    early-partial | partitioned-incomplete | first-stage-incomplete) echo "The Asahi installer stopped before finishing its first stage; its partitions must be removed by hand before reinstalling (docs/RECOVERY.md)." ;;
+    resized-only) echo "macOS was resized but no Linux partitions exist: run ./omarchy-bootstrap to install into the freed space." ;;
+    none)
+      if [ -n "$(state_get asahi_launched_at)" ]; then
+        echo "The installer was launched but changed nothing on the disk; run ./omarchy-bootstrap to try again."
+      elif [ -n "$(state_get backup_confirmed_at)" ] && [ -n "$(state_get cfg_linux)" ]; then
+        echo "Run ./omarchy-bootstrap: review the saved plan (Enter keeps each answer), then download and launch the Asahi Alarm installer."
+      elif [ -n "$(state_get cfg_linux)" ]; then
+        echo "Run ./omarchy-bootstrap: review the saved plan (Enter keeps each answer), then confirm the backup."
+      else
+        echo "Run ./omarchy-bootstrap to survey this Mac and plan storage."
+      fi
+      ;;
+    *) echo "The Asahi install's state is unclear ($ASAHI_WHY); nothing should be run until docs/RECOVERY.md has been checked." ;;
+  esac
 }
 
 mac_status() {
@@ -144,7 +166,8 @@ mac_status() {
   mac_screen "$active"
   ui_section "Detected now" "$MAC_MODEL_ID"
   ui_kv "Machine" "${DEV_NAME:-$MAC_CHIP}" "$DEV_TIER"
-  ui_kv "Linux partitions" "$([ "$MAC_ASAHI_PRESENT" = 1 ] && echo "present on $MAC_DISK" || echo none)"
+  asahi_classify
+  ui_kv "Asahi install" "$ASAHI_STATE" "${ASAHI_WHY:-}"
   ui_kv "Safe Linux max" "$(fmt_gb "$PLAN_LINUX_MAX")"
   ui_section "Recorded" "$(tildify "$STATE_FILE")"
   _status_row "Surveyed" surveyed_at
@@ -209,13 +232,18 @@ lx_doctor() {
   else
     doc info "Boot mount" "/boot on the root filesystem (moved only when encrypting)"
   fi
-  if [ "$LX_ROOT_CRYPT" = 1 ]; then
-    doc pass "Encryption" "root is LUKS"
-  elif [ "${CFG_enc:-1}" = 1 ] && [ "$LX_OMARCHY_STATE" != absent ]; then
-    doc warn "Encryption" "requested, root is not encrypted"
-  else
-    doc info "Encryption" "root is not encrypted"
-  fi
+  case "$LX_ENC_STATE" in
+    complete) doc pass "Encryption" "root is LUKS; re-encryption finished" ;;
+    migrating) doc warn "Encryption" "in-place encryption not finished yet; the next boot continues it" ;;
+    unverified) doc info "Encryption" "root is LUKS; whether re-encryption finished needs root to read" ;;
+    *)
+      if [ "${CFG_enc:-1}" = 1 ] && [ "$LX_OMARCHY_STATE" != absent ]; then
+        doc warn "Encryption" "requested, root is not encrypted"
+      else
+        doc info "Encryption" "root is not encrypted"
+      fi
+      ;;
+  esac
 
   case "$LX_OMARCHY_STATE" in
     installed)
@@ -276,8 +304,8 @@ lx_doctor() {
       doc pass "Disk space" "$((avail / 1000000)) GB free on /"
     fi
   fi
-  if [ "$LX_SETUP_CONF" = 1 ] && [ "$LX_OMARCHY_STATE" = installed ]; then
-    doc warn "Setup leftovers" "$OMS_CONF remains on an installed machine"
+  if [ "$LX_SETUP_FINISHING" = 1 ]; then
+    doc info "Setup finishing" "the next boot removes $OMS_CONF and the setup unit (upstream's last step)"
   fi
   case "$(sys_cmd sshd_active systemctl is-active sshd)" in
     active) doc pass "SSH" "sshd running" ;;
@@ -321,12 +349,12 @@ lx_status() {
   lx_screen "$([ "$LX_OMARCHY_STATE" = installed ] && echo dev || echo omarchy)"
   ui_section "Detected now" "read from the machine"
   ui_kv "Omarchy" "$LX_OMARCHY_STATE" "${LX_OMARCHY_VERSION:-}"
-  ui_kv "Root" "${LX_ROOT_FS:-?}$([ "$LX_ROOT_CRYPT" = 1 ] && printf ' on LUKS')" "$LX_ROOT_SRC"
+  ui_kv "Root" "${LX_ROOT_FS:-?}$([ "$LX_ROOT_CRYPT" = 1 ] && printf ' on LUKS')" "$LX_ROOT_SRC $G_DOT encryption $LX_ENC_STATE"
   ui_kv "/boot" "${LX_BOOT_SRC:-on root}"
   ui_kv "Network" "$([ "$LX_ROUTE" = 1 ] && echo "default route" || echo offline)"
   if [ "$LX_SETUP_BIN" = 1 ]; then
     ui_section "omarchy-mac-setup --status" "upstream"
-    sys_cmd setup_status "$OMS_SELF" --status | sed 's/^/   /'
+    lx_upstream_status
   fi
   for f in "$STATE_FILE" "$STATE_SYSTEM_FILE"; do
     [ -f "$f" ] || continue

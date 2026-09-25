@@ -35,6 +35,8 @@ unset _self _link
 . "$OMB_HOME/lib/storage.sh"
 # shellcheck source=lib/macos.sh
 . "$OMB_HOME/lib/macos.sh"
+# shellcheck source=lib/asahi.sh
+. "$OMB_HOME/lib/asahi.sh"
 # shellcheck source=lib/linux.sh
 . "$OMB_HOME/lib/linux.sh"
 # shellcheck source=lib/doctor.sh

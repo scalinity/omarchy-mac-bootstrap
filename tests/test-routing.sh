@@ -7,17 +7,12 @@
 . "$(dirname "$0")/lib.sh"
 echo "test-routing"
 
-# Variants for lifecycle states the base fixtures do not cover.
-fx_active=$(t_variant linux-setup-in-progress)
-printf 'activating\n' >"$fx_active/cmd/unit_active"
-rm -f "$fx_active/cmd/unit_active.rc"
-fx_partial=$(t_variant linux-alarm-fresh)
-mkdir -p "$fx_partial/root/usr/share/omarchy"
-printf '4.0.3rc4\n' >"$fx_partial/root/usr/share/omarchy/version"
-
-LINUX_STATES="linux-alarm-fresh linux-alarm-offline linux-setup-in-progress $fx_active $fx_partial linux-omarchy-installed"
+# Every lifecycle state the fixtures describe, on both systems.
+LINUX_STATES="linux-alarm-fresh linux-alarm-offline linux-setup-in-progress linux-setup-active linux-omarchy-partial
+linux-encrypt-staged linux-encrypt-reencrypting linux-omarchy-finishing linux-omarchy-installed"
 MAC_STATES=""
-command -v plutil >/dev/null 2>&1 && MAC_STATES="mac-m1pro-1tb-roomy mac-m1pro-1tb-tight mac-asahi-installed mac-m1-free-space"
+command -v plutil >/dev/null 2>&1 && MAC_STATES="mac-m1pro-1tb-roomy mac-m1pro-1tb-tight mac-m1-free-space mac-geo-two-gaps
+mac-asahi-resized-only mac-asahi-stub-only mac-asahi-no-root mac-asahi-pending mac-asahi-installed mac-asahi-complete mac-asahi-two-stubs"
 
 _fx_path() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$FIX" "$1" ;; esac; }
 _name() { basename "$1"; }
@@ -76,7 +71,7 @@ for fx in $LINUX_STATES; do
   assert_not_contains "$T_OUT" "Choose what to set up" "plan on $n: never opens the developer menu"
   assert_not_contains "$T_OUT" "Refused:" "plan on $n: routing never reaches run at all"
 done
-t_cli "$fx_active" '' plan
+t_cli linux-setup-active '' plan
 assert_contains "$T_OUT" "plan changes nothing now" "plan while setup runs explains itself"
 t_cli linux-omarchy-installed '' plan
 assert_contains "$T_OUT" "nothing left to plan" "plan on an installed machine explains itself"

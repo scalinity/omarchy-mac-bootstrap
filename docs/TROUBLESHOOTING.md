@@ -23,7 +23,7 @@ Start with `./omarchy-bootstrap doctor` and `./omarchy-bootstrap logs`.
 | "must run as root" | Phase 2 needs root on the minimal image | Log in as `root` / `root` |
 | "carries Omarchy 3.x" | The branch changed upstream | `sources --check`; decide deliberately before editing `lib/sources.sh` |
 | "no longer declares: --keymap" | The setup script's flags changed | Same: re-verify upstream, then update `OMARCHY_MAC_SETUP_FLAGS` |
-| Setup "in progress" but nothing happens | The unit ran and stopped | `./omarchy-bootstrap resume` as root, or check `/var/log/omarchy-mac-setup.log` |
+| Setup "in progress" but nothing happens | The unit ran and stopped | `./omarchy-bootstrap resume` as root; upstream prints to tty1 only (Ctrl+Alt+F1) and keeps no log file |
 | SSH stopped working after Omarchy | Omarchy's firewall blocks port 22 | `./omarchy-bootstrap dev` → SSH, or `omarchy-setup-security-sshd` |
 | A prebuilt CLI crashes at start | 16 KiB pages on Asahi | Prefer the vendor's arm64 build or a from-source install |
 | `pacman` lock warning in doctor | A stale `db.lck` | Only if no pacman is running: `sudo rm /var/lib/pacman/db.lck` |

@@ -6,7 +6,8 @@
 . "$(dirname "$0")/lib.sh"
 echo "test-safety"
 
-CODE="$REPO/omarchy-bootstrap $REPO/lib/common.sh $REPO/lib/ui.sh $REPO/lib/state.sh $REPO/lib/sources.sh $REPO/lib/storage.sh $REPO/lib/macos.sh $REPO/lib/linux.sh $REPO/lib/doctor.sh $REPO/lib/dev.sh"
+# Every module, so a new one is scanned without anyone remembering to add it.
+CODE="$REPO/omarchy-bootstrap $(printf '%s ' "$REPO"/lib/*.sh)"
 
 # Code lines: no comments, no heredoc bodies. raw_lines keeps quoted text,
 # because a command substitution inside quotes still executes; code_lines
@@ -59,7 +60,7 @@ assert_eq "$n" 1 "the limits query is present in code, not only in a comment"
 
 # --- Static: every probe is read-only ----------------------------------------------
 probes=$(grep -h 'sys_cmd ' $CODE | grep -v '^[[:space:]]*#' | grep -o 'sys_cmd [^|)]*' | sed 's/^sys_cmd [^ ]* //' | sort -u)
-bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |ip route|systemctl is-active |getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|localectl list-locales|"\$OMS_SELF" --status|gh auth status)')
+bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |cryptsetup luksDump |ip route|systemctl is-active |getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|localectl list-locales|"\$OMS_SELF" --status|gh auth status)')
 assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 
 # --- Static: every mutating command goes through run, and is expected -------------

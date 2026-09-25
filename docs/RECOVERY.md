@@ -12,23 +12,61 @@ tool says so.
 
 ## The Asahi installer stopped or failed
 
-- **Quit at its menu (`q`)** — nothing changed.
-- **Resize failed** — the installer reports it; it is usually pre-existing APFS
-  damage. Boot Recovery (hold power → Options), run Disk Utility First Aid on
-  the macOS volume and container, then run `./omarchy-bootstrap` again.
-- **Stopped after partitioning** — Linux partitions exist but the OS may be
-  incomplete. `./omarchy-bootstrap` detects the partitions and will not start a
-  second install. Run the Asahi Alarm installer yourself
-  (`curl https://asahi-alarm.org/installer-bootstrap.sh | sh`, or re-run the
-  saved copy in the state directory's `downloads/`) and choose **p** — *Repair
-  an incomplete installation*.
+The installer exits 0 whether it finished, was quit or hit an error, so its
+exit status says nothing. When it returns, this tool reads the disk again and
+compares it with the layout recorded just before the launch. `./omarchy-bootstrap`
+and `./omarchy-bootstrap status` do the same on any later run.
+
+| What the disk shows | What happened | The way forward |
+| --- | --- | --- |
+| exactly the layout before the launch | quit at its first menu, or stopped before resizing | nothing to recover; run `./omarchy-bootstrap` again |
+| macOS smaller, the freed space free, no new partitions | resized, then quit or stopped | quitting does not undo a resize; `./omarchy-bootstrap` plans an install into the freed space (the installer's **f**, no second resize) |
+| a stub container only, or stub and EFI without a Linux partition | stopped while creating partitions | see *Removing an unfinished install* |
+| all three partitions, but the stub lacks the installer's first-stage files | stopped before the first stage finished | see *Removing an unfinished install* |
+| all three, first stage complete, first boot not run | normal after the installer's shutdown | boot the new OS from Startup Options (hold power) to finish step 2 |
+| all three, the stub not readable from macOS | first boot status unknown from macOS | boot the new OS; if it does not reach the "Asahi Linux installer" screen, rerun the installer (below) |
+| anything else | unclear | the tool stops; compare `./omarchy-bootstrap status` with this page before running anything |
+
+**Repair (`p`)** is offered by the installer only when its first stage
+finished: the stub must hold `step2.sh`, `boot.bin` and its install markers.
+For an earlier interruption it prints "The existing installation is missing
+files … please delete the partitions manually and reinstall from scratch".
+Run the Asahi Alarm installer yourself to use it
+(`curl https://asahi-alarm.org/installer-bootstrap.sh | sh`, or re-run the
+saved copy in the state directory's `downloads/`).
+
+**Resize failed** — the installer reports it; it is usually pre-existing APFS
+damage. Boot Recovery (hold power → Options), run Disk Utility First Aid on
+the macOS volume and container, then run `./omarchy-bootstrap` again.
+
+### Removing an unfinished install
+
+This tool never deletes partitions. When the installer's repair refuses, the
+partitions it created must be removed by hand, from macOS, as the
+[Asahi partitioning cheatsheet](https://asahilinux.org/docs/sw/partitioning-cheatsheet/)
+describes:
+
+1. Make macOS the startup disk (System Settings › General › Startup Disk).
+2. `diskutil list` — find the partitions `./omarchy-bootstrap status` names:
+   the small stub APFS container right after the macOS container, then the
+   EFI partition, then the Linux partition. Device numbers are not stable;
+   check sizes and order every time.
+3. `sudo diskutil apfs deleteContainer <stub, e.g. disk0s4>`
+4. `sudo diskutil eraseVolume free free <EFI partition>` and the same for the
+   Linux partition, if they exist.
+5. `diskutil apfs resizeContainer <macOS container, e.g. disk0s2> 0` grows
+   macOS into the free space directly after it (it stops at the next
+   partition).
+
+Never touch `Apple_APFS_Recovery` or `Apple_APFS_ISC`. Then run
+`./omarchy-bootstrap` again.
 
 ## First boot went wrong
 
 - **Bootloop, or "macOS needs to be reinstalled"** — the power-button sequence
   was not followed exactly. Fully shut down, wait, press and *hold* once, choose
-  the new volume. If still stuck, hold power, boot macOS, re-run the installer
-  and choose **p**.
+  the new volume. If still stuck, boot macOS and run `./omarchy-bootstrap`: it
+  reads which stage the install reached and whether the installer's **p** applies.
 - **Linux missing from Startup Options after a macOS 27 upgrade** — re-run the
   Asahi Alarm installer from macOS and choose **7** — *Fix macOS 27 boot picker
   compatibility*.
@@ -43,9 +81,11 @@ next boot through `omarchy-mac-setup.service` on tty1.
 - **Resume now** — as root: `./omarchy-bootstrap resume` (offers
   `omarchy-mac-setup --resume` when the unit is idle), or run
   `omarchy-mac-setup --resume` directly.
-- **Its log** — `/var/log/omarchy-mac-setup.log`.
+- **Its output** — on tty1 only (Ctrl+Alt+F1); upstream keeps no log file.
 - **Interrupted encryption** — upstream documents the in-place encryption as
-  safe to interrupt; the next boot resumes it.
+  safe to interrupt; the next boot resumes it. `./omarchy-bootstrap doctor`
+  reports it as not finished while `/etc/omarchy-btrfs-migrate.conf` exists or
+  (as root) the LUKS header still carries `online-reencrypt`.
 - **Boots to `grub rescue>`** — `/boot` was on the root when it was encrypted.
   Follow Omarchy Mac's `docs/btrfs.md`.
 - **Stop the guided run** without undoing anything — `omarchy-mac-setup --abort`.

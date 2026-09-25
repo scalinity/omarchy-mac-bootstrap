@@ -194,6 +194,73 @@ asahi_layout() { # extra entries after the Linux root (e.g. a Shared gap)
 }
 mac mac-asahi-installed MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 "$(asahi_layout)"
 
+# The stub container's volumes, as `diskutil apfs list -plist` shows them,
+# and its system volume's mount point (empty: not mounted).
+# apfs_list FIXTURE STUB_ID NVOL [MOUNTPOINT]
+apfs_list() {
+  local d=$1 stub=$2 n=$3 mp=${4:-} vols="" i role name
+  i=0
+  for role in System Data Preboot Recovery; do
+    i=$((i + 1))
+    [ "$i" -le "$n" ] || break
+    if [ "$n" = 1 ]; then
+      vols="$vols<dict><key>DeviceIdentifier</key><string>disk4s$i</string><key>Name</key><string>Omarchy</string><key>Roles</key><array/></dict>"
+    else
+      name=Omarchy
+      [ "$role" = Data ] && name="Omarchy - Data"
+      vols="$vols<dict><key>DeviceIdentifier</key><string>disk4s$i</string><key>Name</key><string>$name</string><key>Roles</key><array><string>$role</string></array></dict>"
+    fi
+  done
+  plist "<dict><key>Containers</key><array><dict><key>ContainerReference</key><string>disk3</string><key>DesignatedPhysicalStore</key><string>disk0s2</string><key>Volumes</key><array><dict><key>DeviceIdentifier</key><string>disk3s1</string><key>Name</key><string>Macintosh HD</string><key>Roles</key><array><string>System</string></array></dict></array></dict><dict><key>ContainerReference</key><string>disk4</string><key>DesignatedPhysicalStore</key><string>$stub</string><key>Volumes</key><array>$vols</array></dict></array></dict>" >"$d/cmd/diskutil_apfs_list"
+  plist "<dict><key>DeviceIdentifier</key><string>disk4s1</string><key>MountPoint</key><string>$mp</string><key>VolumeName</key><string>Omarchy</string></dict>" >"$d/cmd/diskutil_info_disk4s1"
+}
+# stub_files FIXTURE MOUNTPOINT pending|complete [missing-file]
+stub_files() {
+  local r="$1/root$2" app="$1/root$2/Finish Installation.app/Contents/Resources"
+  mkdir -p "$app" "$r/System/Library/CoreServices"
+  : >"$app/step2.sh"
+  : >"$app/boot.bin"
+  if [ "$3" = pending ]; then
+    : >"$r/.IAPhysicalMedia"
+    : >"$r/System/Library/CoreServices/SystemVersion-disabled.plist"
+  else
+    : >"$r/IAPhysicalMedia-disabled.plist"
+    : >"$r/System/Library/CoreServices/SystemVersion.plist"
+  fi
+  [ -n "${4:-}" ] && rm -f "$app/$4"
+  return 0
+}
+apfs_list mac-asahi-installed disk0s4 4
+# Resized, then the installer quit: the freed space is free, no stub.
+mac mac-asahi-resized-only MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$V250:$U_MAC" "gap:$((C1T - V250))" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+# Stopped after creating the stub.
+mac mac-asahi-stub-only MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$V250:$U_MAC" "disk0s4:Apple_APFS:2499805184:$U_STUB" "gap:$((C1T - V250 - 2499805184))" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+apfs_list mac-asahi-stub-only disk0s4 4
+# Stopped after the EFI partition.
+mac mac-asahi-no-root MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$V250:$U_MAC" "disk0s4:Apple_APFS:2499805184:$U_STUB" "disk0s5:EFI:524288000:$U_EFI" "gap:$((C1T - V250 - 2499805184 - 524288000))" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+apfs_list mac-asahi-no-root disk0s4 4
+# All three partitions; the stub was created but never prepared (one volume).
+mac mac-asahi-unprepared MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 "$(asahi_layout)"
+apfs_list mac-asahi-unprepared disk0s4 1
+# First stage complete, first boot not yet run; the stub's volume is mounted.
+mac mac-asahi-pending MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 "$(asahi_layout)"
+apfs_list mac-asahi-pending disk0s4 4 /Volumes/Omarchy
+stub_files mac-asahi-pending /Volumes/Omarchy pending
+# Step 2 has run.
+mac mac-asahi-complete MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 "$(asahi_layout)"
+apfs_list mac-asahi-complete disk0s4 4 /Volumes/Omarchy
+stub_files mac-asahi-complete /Volumes/Omarchy complete
+# Interrupted before boot.bin: the installer's repair refuses this.
+mac mac-asahi-files-missing MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 "$(asahi_layout)"
+apfs_list mac-asahi-files-missing disk0s4 4 /Volumes/Omarchy
+stub_files mac-asahi-files-missing /Volumes/Omarchy pending boot.bin
+# Two stub containers: not one install.
+mac mac-asahi-two-stubs MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 \
+  "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$V250:$U_MAC" "disk0s4:Apple_APFS:2499805184:$U_STUB" "disk0s7:Apple_APFS:2499805184:$U_OTHER" "gap:$((C1T - V250 - 2 * 2499805184))" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
+
 # ---------------------------------------------------------------------------
 
 setup_fixture_script() { # PATH [ARGS-HEADER]
@@ -233,6 +300,17 @@ linux() {
     put "$d/cmd/findmnt_boot.rc" 1
   fi
   put "$d/cmd/lsblk_root_type" "$([ "$crypt" = 1 ] && echo crypt || echo part)"
+  if [ "$crypt" = 1 ]; then
+    put "$d/cmd/lsblk_root_backing" "$rootsrc crypt
+/dev/nvme0n1p6 part
+/dev/nvme0n1 disk"
+    put "$d/cmd/luks_dump" "LUKS header information
+Version:       	2
+Requirements:	(no flags)"
+  else
+    put "$d/cmd/lsblk_root_backing" "$rootsrc part
+/dev/nvme0n1 disk"
+  fi
   if [ "$route" = 1 ]; then
     put "$d/cmd/ip_route" "default via 192.168.1.1 dev wlan0 proto dhcp metric 600
 192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.20"
@@ -274,6 +352,8 @@ SETUP_USER=alex"
       ;;
     installed)
       put "$d/root/var/lib/omarchy-mac-setup/installed" 2026-09-22T10:00:00Z
+      put "$d/root/var/lib/omarchy/btrfs-migrate-done" ""
+      put "$d/root/usr/local/bin/omarchy-mac-setup" "#!/bin/bash"
       put "$d/root/usr/share/omarchy/version" 4.0.3rc4
       mkdir -p "$d/root/etc/systemd/system"
       ln -sf /usr/lib/systemd/system/sddm.service "$d/root/etc/systemd/system/display-manager.service"
@@ -314,6 +394,28 @@ linux linux-omarchy-installed 1000 alex btrfs /dev/mapper/root /dev/nvme0n1p5 vf
 linux linux-upstream-drift 0 root btrfs /dev/nvme0n1p6 "" "" 0 1 absent
 put linux-upstream-drift/net/omarchy_version 3.8.2
 setup_fixture_script linux-upstream-drift/net/omarchy-mac-setup '[--encrypt|--no-encrypt] [--user <name>] [--hostname <name>] [--status] [--resume]'
+
+# Lifecycle states the base fixtures do not cover.
+# omarchy-mac-setup running right now on tty1 (a oneshot unit is "activating").
+linux linux-setup-active 0 root btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 progress
+put linux-setup-active/cmd/unit_active activating
+rm -f linux-setup-active/cmd/unit_active.rc
+# Omarchy's package present, install unfinished, no setup conf.
+linux linux-omarchy-partial 0 root btrfs /dev/nvme0n1p6 "" "" 0 1 absent
+put linux-omarchy-partial/root/usr/share/omarchy/version 4.0.3rc4
+# Installed, and the conf still present until the next boot finishes it.
+linux linux-omarchy-finishing 1000 alex btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 installed
+put linux-omarchy-finishing/root/etc/omarchy-mac-setup.conf "WANT_ENCRYPT=1
+SETUP_USER=alex"
+# Encryption staged for the next boot: root still plain, migrate conf present.
+linux linux-encrypt-staged 0 root btrfs /dev/nvme0n1p6 /dev/nvme0n1p5 vfat 0 1 progress
+put linux-encrypt-staged/root/etc/omarchy-btrfs-migrate.conf "MODE=encrypt
+PARTUUID=4a7b1c2d-0006-4e5f-8a9b-000000000006"
+# Booted with the re-encryption still pending (after a failed worker run).
+linux linux-encrypt-reencrypting 0 root btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 progress
+put linux-encrypt-reencrypting/cmd/luks_dump "LUKS header information
+Version:       	2
+Requirements:	online-reencrypt"
 
 # ---------------------------------------------------------------------------
 # `sources --check` responses: current, and drifted.

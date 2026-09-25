@@ -35,10 +35,13 @@ lx_detect() {
   sys_cmd ip_route ip route | grep -q '^default ' && LX_ROUTE=1
   LX_USER=$(sys_cmd id_un id -un)
 
-  # Omarchy Mac's own signals (see bin/omarchy-mac-setup: omarchy_is_installed).
+  # Omarchy Mac's own signals (bin/omarchy-mac-setup install_complete: the
+  # marker, or Omarchy's version file with display-manager.service as a
+  # symlink; upstream also wants the @factory subvolume, which only root's
+  # btrfs tooling can see).
   [ -f "$(sys_path "$OMS_MARKER")" ] && marker=1
   [ -f "$(sys_path "$OMARCHY_RUNTIME_VERSION")" ] && runtime=1
-  { [ -L "$(sys_path "$OMARCHY_DISPLAY_MANAGER")" ] || [ -e "$(sys_path "$OMARCHY_DISPLAY_MANAGER")" ]; } && display=1
+  [ -L "$(sys_path "$OMARCHY_DISPLAY_MANAGER")" ] && display=1
   LX_OMARCHY_VERSION=""
   [ "$runtime" = 1 ] && LX_OMARCHY_VERSION=$(head -1 "$(sys_path "$OMARCHY_RUNTIME_VERSION")")
   LX_SETUP_CONF=0
@@ -55,11 +58,74 @@ lx_detect() {
   else
     LX_OMARCHY_STATE=absent
   fi
+  # Upstream writes the marker, then removes its conf and unit on the next
+  # boot (step_done): both present means "installed, finishing".
+  LX_SETUP_FINISHING=0
+  [ "$LX_OMARCHY_STATE" = installed ] && [ "$LX_SETUP_CONF" = 1 ] && LX_SETUP_FINISHING=1
+  lx_detect_encryption
 
   LX_PAGESIZE=$(sys_cmd pagesize getconf PAGESIZE)
   LX_KEYMAP=$(sed -n 's/^KEYMAP=//p' "$(sys_path /etc/vconsole.conf)" 2>/dev/null | tr -d '"' | head -1)
   LX_TZ=$(sys_cmd timezone timedatectl show -p Timezone --value)
   LX_LANG=$(sed -n 's/^LANG=//p' "$(sys_path /etc/locale.conf)" 2>/dev/null | head -1)
+}
+
+# lx_detect_encryption — LX_ENC_STATE, from Omarchy Mac's own signals
+# (bin/omarchy-mac-setup root_is_encrypted, bin/omarchy-system-btrfs-migrate):
+#   none        root is not a LUKS device and no migration is staged
+#   migrating   a migration is staged (/etc/omarchy-btrfs-migrate.conf), or
+#               root's LUKS header still carries the online-reencrypt flag
+#   complete    root is LUKS, and the header (read as root) has no
+#               reencrypt flag, or the migration's finish marker exists
+#   unverified  root is LUKS, but neither can be read from this account
+lx_detect_encryption() {
+  local staged=0 done_marker=0
+  [ -f "$(sys_path "$OMS_MIGRATE_CONF")" ] && staged=1
+  [ -f "$(sys_path "$OMS_MIGRATE_DONE")" ] && done_marker=1
+  LX_ROOT_BACKING=$(sys_cmd lsblk_root_backing lsblk -nsplo NAME,TYPE "$LX_ROOT_SRC" | awk '$2 == "part" {print $1; exit}')
+  case "$LX_ROOT_BACKING" in /dev/[a-z]*) ;; *) LX_ROOT_BACKING="" ;; esac
+  LX_REENCRYPT=""
+  if [ "$LX_ROOT_CRYPT" = 1 ] && [ "$OMB_UID" = 0 ] && [ -n "$LX_ROOT_BACKING" ]; then
+    if sys_cmd luks_dump cryptsetup luksDump "$LX_ROOT_BACKING" | grep -q 'online-reencrypt'; then
+      LX_REENCRYPT=1
+    else
+      LX_REENCRYPT=0
+    fi
+  fi
+  if [ "$staged" = 1 ] || [ "$LX_REENCRYPT" = 1 ]; then
+    LX_ENC_STATE=migrating
+  elif [ "$LX_ROOT_CRYPT" = 1 ] && { [ "$LX_REENCRYPT" = 0 ] || [ "$done_marker" = 1 ]; }; then
+    LX_ENC_STATE=complete
+  elif [ "$LX_ROOT_CRYPT" = 1 ]; then
+    LX_ENC_STATE=unverified
+  else
+    LX_ENC_STATE=none
+  fi
+}
+
+# lx_setup_complete — is Omarchy Mac's work entirely finished, so nothing of
+# its own is still changing the disk? Installed, its conf and unit gone,
+# nothing running, no migration staged, and encryption finished if it was
+# asked for. LX_INCOMPLETE_WHY says what is still outstanding.
+lx_setup_complete() {
+  LX_INCOMPLETE_WHY=""
+  if [ "$LX_OMARCHY_STATE" != installed ]; then
+    LX_INCOMPLETE_WHY="Omarchy is not installed yet ($LX_OMARCHY_STATE)"
+  elif [ "$LX_SETUP_CONF" = 1 ]; then
+    LX_INCOMPLETE_WHY="omarchy-mac-setup is finishing; one more boot removes its setup files"
+  else
+    case "$LX_UNIT_STATE" in
+      active | activating) LX_INCOMPLETE_WHY="omarchy-mac-setup is running now on tty1" ;;
+    esac
+  fi
+  if [ -z "$LX_INCOMPLETE_WHY" ]; then
+    case "$LX_ENC_STATE" in
+      migrating) LX_INCOMPLETE_WHY="the in-place encryption has not finished" ;;
+      unverified) LX_INCOMPLETE_WHY="root is encrypted, but whether re-encryption finished can only be read as root" ;;
+      none) [ "${CFG_enc:-0}" = 1 ] && LX_INCOMPLETE_WHY="encryption was chosen, but root is not encrypted" ;;
+    esac
+  fi
+  [ -z "$LX_INCOMPLETE_WHY" ]
 }
 
 lx_is_arch() {
@@ -275,16 +341,27 @@ lx_handoff() {
   state_set omarchy_setup_exit "$rc"
   if [ "$rc" != 0 ]; then
     ui_warn "omarchy-mac-setup exited with status $rc."
-    ui_note "Its log is $OMS_LOG. './omarchy-bootstrap status' shows where the machine is; upstream resumes from the machine's state."
+    ui_note "Its output is on tty1 (Ctrl+Alt+F1); upstream keeps no log file. './omarchy-bootstrap status' shows where the machine is; upstream resumes from the machine's state."
   fi
   return "$rc"
 }
 
+# lx_upstream_status — omarchy-mac-setup --status, as root only: its conf is
+# readable only by root and, as another user, it cannot read the LUKS header
+# either. Its colour codes are removed so the Linux console stays plain.
+lx_upstream_status() {
+  [ "$LX_SETUP_BIN" = 1 ] || return 0
+  if [ "$OMB_UID" != 0 ]; then
+    ui_note "Upstream's own view needs root:"
+    ui_cmd "sudo $OMS_SELF --status"
+    return 0
+  fi
+  sys_cmd setup_status "$OMS_SELF" --status | sed "s/$ESC\[[0-9;]*m//g" | tr -cd '[:print:]\n' | sed 's/^/   /'
+}
+
 lx_in_progress() {
   ui_section "Omarchy Mac setup in progress" "$OMS_CONF"
-  if [ "$LX_SETUP_BIN" = 1 ]; then
-    sys_cmd setup_status "$OMS_SELF" --status | sed 's/^/   /'
-  fi
+  lx_upstream_status
   case "$LX_UNIT_STATE" in
     active | activating)
       ui_info "It is running right now on tty1 — press Ctrl+Alt+F1 to watch it. Nothing to do here."

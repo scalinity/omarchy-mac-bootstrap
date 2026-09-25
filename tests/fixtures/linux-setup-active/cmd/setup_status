@@ -1,0 +1,9 @@
+
+=== Omarchy Mac setup status ===
+
+  root            /dev/mapper/root (encrypted)
+  /boot           /dev/nvme0n1p5
+  omarchy         not installed
+  encryption      done
+  hostname        omarchy
+  next step       omarchy

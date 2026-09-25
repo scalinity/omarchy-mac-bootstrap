@@ -63,7 +63,10 @@ OMS_CONF=/etc/omarchy-mac-setup.conf
 OMS_SELF=/usr/local/bin/omarchy-mac-setup
 OMS_UNIT=omarchy-mac-setup.service
 OMS_MARKER=/var/lib/omarchy-mac-setup/installed
-OMS_LOG=/var/log/omarchy-mac-setup.log
+# The in-place encryption (bin/omarchy-system-btrfs-migrate): staged config,
+# removed by its finish service, which then writes the done marker.
+OMS_MIGRATE_CONF=/etc/omarchy-btrfs-migrate.conf
+OMS_MIGRATE_DONE=/var/lib/omarchy/btrfs-migrate-done
 OMARCHY_RUNTIME_VERSION=/usr/share/omarchy/version
 OMARCHY_DISPLAY_MANAGER=/etc/systemd/system/display-manager.service
 
