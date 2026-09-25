@@ -698,6 +698,7 @@ mac_handoff() {
     return 1
   fi
 
+  state_unset asahi_exit
   state_stamp asahi_launched_at
   printf '\n'
   run sh "$FETCH_PATH"

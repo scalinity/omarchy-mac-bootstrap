@@ -6,7 +6,9 @@ forward. `./omarchy-bootstrap status` tells you which case you are in.
 ## Before the installer launched
 
 Nothing on the disk changed. Run `./omarchy-bootstrap` again; the saved plan is
-offered as a starting point. Ctrl-C at any prompt stops without side effects.
+offered as a starting point. Ctrl-C at any of this tool's prompts stops without side
+effects; Ctrl-C inside a launched installer interrupts that installer, and the
+tool says so.
 
 ## The Asahi installer stopped or failed
 

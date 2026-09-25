@@ -95,4 +95,11 @@ assert_not_contains "$log" abc123 "token value masked"
 assert_not_contains "$log" opensesame "passphrase value masked"
 assert_contains "$log" "[redacted]" "mask marker present"
 
+# --- run marks what is executing, for an honest Ctrl-C message ------------------
+probe() { printf '%s' "${OMB_RUNNING:-}" >"$OMB_STATE_DIR/running"; }
+OMB_DRY_RUN=0
+run probe --flag
+assert_eq "$(cat "$OMB_STATE_DIR/running")" "probe --flag" "run exposes the executing command"
+assert_eq "${OMB_RUNNING:-}" "" "the marker clears when the command returns"
+
 t_done test-state

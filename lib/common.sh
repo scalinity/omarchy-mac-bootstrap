@@ -163,8 +163,10 @@ run() {
     log_event exit "0 (recorded by test harness, not executed)"
     return 0
   fi
+  OMB_RUNNING=$argv
   "$@"
   local rc=$?
+  OMB_RUNNING=""
   log_event exit "$rc"
   return "$rc"
 }

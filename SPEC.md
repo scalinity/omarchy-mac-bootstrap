@@ -300,7 +300,8 @@ a warning; the decoded values are shown for confirmation before use.
 | Linux entry missing after a macOS 27 upgrade | Doctor points to installer option **7** |
 | No network on Linux | Launch `nmtui`; recheck |
 | Omarchy Mac interrupted | Upstream resumes on boot; `status` shows upstream status; `resume` runs `--resume` when the unit is idle |
-| Ctrl-C anywhere | Exit, record nothing further, report that nothing destructive ran |
+| Ctrl-C at a prompt | Exit; nothing destructive ran |
+| Ctrl-C while a launched command runs | Report that it was interrupted and may have made changes; `status` re-derives where the machine is |
 
 ## Security boundaries
 

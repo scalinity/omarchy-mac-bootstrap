@@ -263,6 +263,7 @@ lx_handoff() {
     return 1
   fi
   cfg_save
+  state_unset omarchy_setup_exit
   state_stamp omarchy_launched_at
   printf '\n'
   run bash "$FETCH_PATH" "${LX_FLAGS[@]}"

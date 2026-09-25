@@ -76,8 +76,15 @@ _help_row() { printf '     %s%-20s%s %s%s%s\n' "$C_BOLD" "$1" "$C_RESET" "$C_DIM
 
 on_interrupt() {
   ui_cursor_restore
-  printf '\n\n   %sStopped.%s Nothing destructive ran.\n\n' "$C_BOLD" "$C_RESET"
-  log_event stop "interrupted by user"
+  # bash runs this trap after the foreground command exits, so a command that
+  # was executing when Ctrl-C arrived may already have changed the machine.
+  if [ -n "${OMB_RUNNING:-}" ]; then
+    printf '\n\n   %sStopped while running:%s %s\n   It may have made changes. ./omarchy-bootstrap status shows where things are.\n\n' "$C_BOLD" "$C_RESET" "$OMB_RUNNING"
+    log_event stop "interrupted by user while running: $OMB_RUNNING"
+  else
+    printf '\n\n   %sStopped.%s Nothing destructive ran.\n\n' "$C_BOLD" "$C_RESET"
+    log_event stop "interrupted by user"
+  fi
   exit 130
 }
 
