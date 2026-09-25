@@ -82,6 +82,11 @@ assert_contains "$TOKEN_WARNINGS" "ignored user" "invalid user reported"
 assert_contains "$TOKEN_WARNINGS" "ignored host" "invalid host reported"
 assert_contains "$TOKEN_WARNINGS" "unknown field 'colour'" "unknown field reported"
 
+( cd "$OMB_STATE_DIR" && touch glob-a glob-b && token_decode "omb1:user=alex,*" && printf '%s' "$TOKEN_WARNINGS" >"$OMB_STATE_DIR/tw" )
+assert_not_contains "$(cat "$OMB_STATE_DIR/tw")" "glob-a" "token fields are not filename-expanded"
+assert_contains "$(cat "$OMB_STATE_DIR/tw")" "unknown field '*'" "a literal * is reported as itself"
+case $- in *f*) fail "token_decode left noglob on" ;; *) ok ;; esac
+
 token_decode "hello"
 assert_rc $? 1 "non-token rejected"
 token_decode "omb1:"

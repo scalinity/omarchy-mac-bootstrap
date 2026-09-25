@@ -215,7 +215,9 @@ token_decode() {
       return 1
       ;;
   esac
-  local IFS=,
+  # Split on commas only: no filename expansion of a field such as '*'.
+  local IFS=, glob_was_on=0
+  case $- in *f*) ;; *) glob_was_on=1 && set -f ;; esac
   for pair in $body; do
     k=${pair%%=*}
     v=${pair#*=}
@@ -234,5 +236,6 @@ token_decode() {
     eval "CFG_$k=\$v"
     ok=$((ok + 1))
   done
+  [ "$glob_was_on" = 1 ] && set +f
   [ "$ok" -gt 0 ]
 }
