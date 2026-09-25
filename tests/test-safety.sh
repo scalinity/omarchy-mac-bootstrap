@@ -122,6 +122,10 @@ t_cli linux-alarm-fresh '\n\n\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=
 rec=$(cat "$T_DIR/record")
 assert_eq "$rec" "" "Enter at the start gate starts nothing"
 
+t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\nq\nlaunch\n'
+assert_contains "$T_OUT" "Not launched. Nothing changed." "q at the inspection prompt quits"
+assert_empty_file "$T_DIR/record" "q at the inspection prompt launches nothing"
+
 # --- A download that is not the expected bootstrap is refused -----------------------------
 fx=$(t_variant mac-m1pro-1tb-roomy)
 printf '<html><body>Please sign in to the Wi-Fi</body></html>\n' >"$fx/net/asahi-alarm-bootstrap.sh"

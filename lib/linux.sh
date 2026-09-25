@@ -235,9 +235,11 @@ lx_handoff() {
   state_set omarchy_setup_fetched_at "$FETCH_AT"
   state_set omarchy_version_target "$version"
 
-  if ui_yesno "Inspect the script before running it?" n; then
-    view_file "$FETCH_PATH"
-  fi
+  offer_inspection || {
+    printf '\n'
+    ui_info "Not started. Nothing changed."
+    return 1
+  }
 
   lx_setup_flags
   ui_card_open "What omarchy-mac-setup does next"

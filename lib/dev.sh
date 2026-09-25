@@ -290,7 +290,7 @@ dev_run_ai() {
         ui_kv "SHA-256" "$FETCH_SHA256"
         ui_kv "Saved to" "$(tildify "$FETCH_PATH")"
         state_set claude_install_sha256 "$FETCH_SHA256"
-        ui_yesno "Inspect it first?" n && view_file "$FETCH_PATH"
+        offer_inspection || continue
         ui_yesno "Run the Claude Code installer?" y && fetch_unchanged && run bash "$FETCH_PATH"
         ;;
       2)

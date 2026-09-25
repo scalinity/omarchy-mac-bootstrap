@@ -667,9 +667,11 @@ mac_handoff() {
     printf '\n'
     return 1
   fi
-  if ui_yesno "Inspect the script before running it?" n; then
-    view_file "$FETCH_PATH"
-  fi
+  offer_inspection || {
+    printf '\n'
+    ui_info "Not launched. Nothing changed."
+    return 1
+  }
 
   # The answer card.
   if [ "$PLAN_MODE" = resize ]; then first_answer="${PLAN_MACOS_NEW_GB}GB"; else first_answer=$PLAN_OS_SIZE_ANSWER; fi

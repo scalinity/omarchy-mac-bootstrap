@@ -243,6 +243,17 @@ view_file() {
   fi
 }
 
+# offer_inspection — offer to read FETCH_PATH before it runs. Returns 0 to
+# continue, 3 when the user quits.
+offer_inspection() {
+  ui_yesno "Inspect the script before running it?" n
+  case $? in
+    0) view_file "$FETCH_PATH" ;;
+    3) return 3 ;;
+  esac
+  return 0
+}
+
 # clean_version — first line of stdin reduced to version characters, so text
 # from the network never carries control codes to the terminal or state.
 clean_version() { head -1 | tr -cd '[:alnum:]._-'; }
