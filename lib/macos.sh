@@ -753,8 +753,14 @@ mac_handoff() {
 
   mac_reboot_guide
 
+  local what
+  if [ "$PLAN_MODE" = resize ]; then
+    what="resize the macOS container to ${PLAN_MACOS_NEW_GB} GB, create the Linux partitions"
+  else
+    what="create the Linux partitions in the existing free space (macOS is not resized)"
+  fi
   ui_callout fail "Last stop before your disk changes." \
-    "The installer will ask for your macOS password, resize the macOS container to ${PLAN_MACOS_NEW_GB:-its current size} GB, create the Linux partitions, then shut the Mac down." \
+    "The installer will ask for your macOS password, $what, then shut the Mac down." \
     "Its warnings are its own — read them. Quitting at its menu with q changes nothing."
   if ! ui_confirm_word launch "Run the official Asahi Alarm installer now."; then
     printf '\n'

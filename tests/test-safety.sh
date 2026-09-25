@@ -126,6 +126,14 @@ t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\nq\nlaunch\n'
 assert_contains "$T_OUT" "Not launched. Nothing changed." "q at the inspection prompt quits"
 assert_empty_file "$T_DIR/record" "q at the inspection prompt launches nothing"
 
+# --- Existing free space: no resize, and the reviewed size is typed ----------------------
+t_cli mac-m1-free-space "$mac_install_input"
+assert_rc "$T_RC" 0 "free-space install flow completes"
+assert_not_contains "$T_OUT" "Resize an existing partition" "no resize step when the space already exists"
+assert_contains "$T_OUT" "macOS is not resized" "the last-stop warning describes free-space mode"
+assert_not_contains "$T_OUT" "its current size" "no nonsense resize wording"
+assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< 250GB" "the clipboard gets the Linux size"
+
 # --- A download that is not the expected bootstrap is refused -----------------------------
 fx=$(t_variant mac-m1pro-1tb-roomy)
 printf '<html><body>Please sign in to the Wi-Fi</body></html>\n' >"$fx/net/asahi-alarm-bootstrap.sh"

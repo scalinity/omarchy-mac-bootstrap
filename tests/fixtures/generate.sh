@@ -89,6 +89,9 @@ mac mac-m2-512 Mac14,2 "Apple M2" arm64 1 15.1 $D512 $C512 $((250 * GB)) $((C512
 mac mac-intel MacBookPro16,1 "8-Core Intel Core i9" x86_64 0 14.6 $D512 $C512 $((200 * GB)) 0 "$(stock_parts $C512)"
 # M3 Pro: experimental tier.
 mac mac-m3pro-experimental Mac15,6 "Apple M3 Pro" arm64 1 15.1 $D1T $C1T $((600 * GB)) $((C1T - 600 * GB + 40 * GB)) "$(stock_parts $C1T)" 19327352832
+# 300 GB left unpartitioned after the container (e.g. a removed earlier install).
+CFREE=$((D1T - ISC - RECOVERY - 300 * GB - 40960))
+mac mac-m1-free-space MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $D1T $CFREE $((400 * GB)) $((CFREE - 400 * GB + 40 * GB)) "$(stock_parts $CFREE)"
 # Asahi already installed after a 250 GB plan.
 mac mac-asahi-installed MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $D1T $((745 * GB)) $((450 * GB)) $((295 * GB + 40 * GB)) \
   "$(part Apple_APFS_ISC disk0s1 $ISC)$(part Apple_APFS disk0s2 $((745 * GB)))$(part Apple_APFS disk0s4 2500000000)$(part EFI disk0s5 524288000)$(part 0FC63DAF-8483-4772-8E79-3D69D8477DE4 disk0s6 246637543360)$(part Apple_APFS_Recovery disk0s3 $RECOVERY)"
