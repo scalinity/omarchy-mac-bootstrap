@@ -13,10 +13,12 @@ permissions:
 jobs:
   linux:
     name: Linux · bash 5 · ShellCheck
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to a new release on GitHub's schedule, which
+    # would change bash, coreutils and ShellCheck under this suite unannounced.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tools
         run: |
           bash --version | head -1
@@ -40,7 +42,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Stock bash is 3.2
         run: |
           /bin/bash --version | head -1
