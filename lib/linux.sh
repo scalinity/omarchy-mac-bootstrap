@@ -160,8 +160,12 @@ lx_choices() {
     ui_kv "Hostname" "$CFG_host"
     ui_kv "Keymap" "$CFG_kmap" "the disk passphrase is typed with this layout"
     printf '\n'
-    if ui_yesno "Use these?" y; then return 0; fi
-    [ $? = 3 ] && return 3
+    # Read the status directly: after `if …; fi` with no else, $? is 0.
+    ui_yesno "Use these?" y
+    case $? in
+      0) return 0 ;;
+      3) return 3 ;;
+    esac
   fi
   printf '\n'
   d=$([ "${CFG_enc:-1}" = 0 ] && echo n || echo y)

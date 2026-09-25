@@ -126,6 +126,11 @@ t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\nq\nlaunch\n'
 assert_contains "$T_OUT" "Not launched. Nothing changed." "q at the inspection prompt quits"
 assert_empty_file "$T_DIR/record" "q at the inspection prompt launches nothing"
 
+t_cli linux-alarm-fresh 'q\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
+assert_contains "$T_OUT" "Stopped. Nothing changed." "q at 'Use these?' quits"
+assert_not_contains "$T_OUT" "Encrypt [Y/n]" "q at 'Use these?' does not re-ask every choice"
+assert_empty_file "$T_DIR/record" "q at 'Use these?' starts nothing"
+
 # --- Existing free space: no resize, and the reviewed size is typed ----------------------
 t_cli mac-m1-free-space "$mac_install_input"
 assert_rc "$T_RC" 0 "free-space install flow completes"
