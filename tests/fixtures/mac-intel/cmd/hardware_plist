@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array><dict><key>_items</key><array><dict><key>machine_name</key><string>MacBook Pro</string><key>machine_model</key><string>MacBookPro16,1</string><key>cpu_type</key><string>8-Core Intel Core i9</string><key>physical_memory</key><string>16 GB</string></dict></array></dict></array>
+</plist>

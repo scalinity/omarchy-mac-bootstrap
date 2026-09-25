@@ -1,0 +1,6 @@
+#!/bin/bash
+# FIXTURE — a stand-in for omarchy-mac-setup. Never executed by tests.
+# omarchy:summary=Guided end-to-end Omarchy Mac install
+# omarchy:args=[--encrypt|--no-encrypt] [--user <name>] [--status]
+echo "fixture"
+exit 0
