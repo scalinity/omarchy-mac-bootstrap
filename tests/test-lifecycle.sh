@@ -11,7 +11,7 @@ t_load
 LC_STATE=$(t_tmp)
 
 # --- macOS: classification of every interruption point -----------------------------
-if t_plutil; then
+if t_plutil "Asahi interruption classification"; then
   OMB_STATE_DIR=$LC_STATE
   state_init
   state_set asahi_prelaunch_macos_size 994610155520
@@ -45,7 +45,7 @@ if t_plutil; then
 fi
 
 # --- macOS: the guided flow in each state --------------------------------------------
-if t_plutil; then
+if t_plutil "the guided flow in each Asahi state"; then
   for fx in mac-asahi-stub-only mac-asahi-no-root mac-asahi-unprepared mac-asahi-files-missing; do
     t_cli "$fx" '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n'
     flat=$(t_flat "$T_OUT")
@@ -82,7 +82,7 @@ if t_plutil; then
 fi
 
 # --- macOS: after the installer returns, the disk is read again -------------------------
-if t_plutil; then
+if t_plutil "reading the disk after the installer"; then
   t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n'
   assert_contains "$T_OUT" "read from the disk, not its exit status" "the installer's exit status is not trusted"
   assert_contains "$(t_flat "$T_OUT")" "The disk is exactly as it was" "an unchanged disk is reported as unchanged"

@@ -55,7 +55,7 @@ t_cli mac-m1pro-1tb-roomy "" --help --ascii
 assert_eq "$(non_ascii "$T_OUT")" 0 "--ascii output is pure ASCII"
 t_cli mac-m1pro-1tb-roomy "" --help
 assert_contains "$T_OUT" "◒  omarchy·mac bootstrap" "Unicode terminals keep the glyphs"
-if t_plutil; then
+if t_plutil "the ASCII install dry run"; then
   t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n' --ascii --dry-run
   assert_eq "$(non_ascii "$T_OUT")" 0 "the whole macOS flow is pure ASCII with --ascii"
 fi
@@ -75,7 +75,7 @@ T_ENV="LANG=C" t_cli mac-m1pro-1tb-roomy "" --help
 assert_eq "$(non_ascii "$T_OUT")" 0 "a non-UTF-8 locale gets ASCII"
 
 # --- Doctor ----------------------------------------------------------------------
-if t_plutil; then
+if t_plutil "doctor on a Mac"; then
   t_cli mac-m1pro-1tb-roomy "" doctor
   assert_rc "$T_RC" 0 "doctor passes on a supported Mac"
   assert_contains "$T_OUT" "[PASS] Apple Silicon" "doctor PASS line"
@@ -101,7 +101,7 @@ t_cli linux-setup-in-progress "" doctor
 assert_contains "$T_OUT" "guided setup paused" "paused upstream setup surfaced"
 
 # --- Plan → status → token (macOS) ---------------------------------------------------
-if t_plutil; then
+if t_plutil "plan, status and resume token on a Mac"; then
   t_cli mac-m1pro-1tb-roomy '\n\n\n\n\nm1pro\n\n\n\n\n\n\n\n' plan
   assert_contains "$T_OUT" "Plan saved" "plan saves"
   assert_empty_file "$T_DIR/record" "plan runs nothing"
@@ -129,7 +129,7 @@ if t_plutil; then
   assert_not_contains "$T_OUT" "checkout -q" "no pin when the commit is not on the remote"
 fi
 
-if t_plutil; then
+if t_plutil "status on unsupported, tight and fragmented Macs"; then
   t_cli mac-intel "" status
   assert_contains "$T_OUT" "This Mac cannot continue: This Mac is not Apple Silicon" "status names the blocker"
   t_cli mac-m1pro-1tb-tight "" status
@@ -147,7 +147,7 @@ fi
 # choices (encryption, user, host, keymap, timezone, locale, SSH, GitHub,
 # developer setup) and the review.
 choices='\n\n\n\n\n\n\n\n\n\n'
-if t_plutil; then
+if t_plutil "custom Shared and Linux sizes"; then
   t_cli mac-m1pro-1tb-roomy "\n6\n40\n5\n300\n\n$choices" plan
   st=$(cat "$T_DIR/state/state.env")
   assert_contains "$st" "cfg_linux=300" "custom Linux size saved"
@@ -172,7 +172,7 @@ if t_plutil; then
 fi
 
 # --- "b" goes back one step, and every prompt has a way out -------------------------------
-if t_plutil; then
+if t_plutil "going back and quitting"; then
   t_cli mac-m1pro-1tb-roomy "\n\n5\nb\n1\n$choices" plan
   assert_eq "$(printf '%s' "$T_OUT" | grep -c 'How much storage should Linux receive?')" 2 "the size menu is shown again after b"
   assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_linux=100" "a preset can be chosen after backing out of custom"
@@ -192,7 +192,7 @@ if t_plutil; then
 fi
 
 # --- Whole macOS flows: Shared through the launch, quit, back, save-and-stop -------------
-if t_plutil; then
+if t_plutil "whole macOS flows"; then
   # 50 GB of Shared through to the launch: macOS shrinks by Linux + Shared,
   # Linux gets an exact size (never max), and the card says so.
   read -r ans_r ans_os <<<"$(t_plan_answers mac-m1pro-1tb-roomy 250 50)"
@@ -223,7 +223,7 @@ if t_plutil; then
 fi
 
 # --- An optional choice can be cleared ----------------------------------------------------
-if t_plutil; then
+if t_plutil "clearing an optional choice"; then
   t_cli mac-m1pro-1tb-roomy '\n\n\n\n\nm1pro\n\n\n\n\noctocat\n\n\n' plan
   assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_gh=octocat" "GitHub user saved"
   state_dir=$T_DIR/state

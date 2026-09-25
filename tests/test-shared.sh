@@ -43,7 +43,7 @@ token_decode "omb2:user=alex,plan=NOTHEX00,shared=010"
 assert_contains "$TOKEN_WARNINGS" "ignored plan" "a malformed plan digest is ignored"
 assert_contains "$TOKEN_WARNINGS" "ignored shared" "a leading-zero size is ignored"
 
-if t_plutil; then
+if t_plutil "the macOS Shared plan and creation"; then
   # --- The plan record ---------------------------------------------------------------------
   sd=$(t_tmp)
   T_ENV="OMB_STATE_DIR=$sd" t_cli mac-m1pro-1tb-roomy "\n4\n\n$choices" plan

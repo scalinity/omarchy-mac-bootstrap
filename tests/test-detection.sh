@@ -56,7 +56,7 @@ assert_eq "$(setup_missing_flags "$renamed")" " --user --keymap --resume" "renam
 # --- macOS -------------------------------------------------------------------
 mac_case() { case "$1" in /*) OMB_FIXTURE=$1 ;; *) OMB_FIXTURE="$FIX/$1" ;; esac; mac_detect; CFG_shared=0; mac_plan_compute; }
 
-if t_plutil; then
+if t_plutil "macOS detection and planning"; then
   mac_case mac-m1pro-1tb-roomy
   assert_eq "$MAC_APPLE_SILICON" 1 "roomy apple silicon"
   assert_eq "$MAC_MODEL_ID $DEV_TIER" "MacBookPro18,1 supported" "roomy model"

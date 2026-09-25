@@ -12,7 +12,7 @@ LINUX_STATES="linux-alarm-fresh linux-alarm-offline linux-setup-in-progress linu
 linux-encrypt-staged linux-encrypt-reencrypting linux-omarchy-finishing linux-omarchy-installed
 linux-shared-absent linux-shared-present linux-shared-ready linux-shared-conflict linux-shared-wrong-fs linux-shared-uid1001"
 MAC_STATES=""
-t_plutil && MAC_STATES="mac-m1pro-1tb-roomy mac-m1pro-1tb-tight mac-m1-free-space mac-geo-two-gaps
+t_plutil "macOS states in the purity matrix" && MAC_STATES="mac-m1pro-1tb-roomy mac-m1pro-1tb-tight mac-m1-free-space mac-geo-two-gaps
 mac-asahi-resized-only mac-asahi-stub-only mac-asahi-no-root mac-asahi-pending mac-asahi-installed mac-asahi-complete mac-asahi-two-stubs
 mac-geo-512-sectors mac-geo-multi-apfs mac-geo-no-limits mac-geo-missing-offset mac-geo-disagree mac-shared-reserved mac-shared-created"
 

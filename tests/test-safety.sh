@@ -105,13 +105,15 @@ assert_eq "$hits" "" "sudo only ever runs through run"
 
 # --- Dynamic: dry-run executes nothing ------------------------------------------------
 mac_install_input='\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n'
-t_cli mac-m1pro-1tb-roomy "$mac_install_input" --dry-run
-assert_rc "$T_RC" 0 "mac dry-run completes"
-assert_contains "$T_OUT" "would run  sh " "mac dry-run shows the installer command"
-assert_contains "$T_OUT" "the installer was not launched" "mac dry-run says so"
-assert_empty_file "$T_DIR/shims.log" "mac dry-run invoked a forbidden command"
-assert_empty_file "$T_DIR/record" "mac dry-run recorded an execution"
-assert_eq "$(ls "$T_DIR/state/state.env" 2>/dev/null)" "" "mac dry-run wrote no state"
+if t_plutil "the macOS dry run executes nothing"; then
+  t_cli mac-m1pro-1tb-roomy "$mac_install_input" --dry-run
+  assert_rc "$T_RC" 0 "mac dry-run completes"
+  assert_contains "$T_OUT" "would run  sh " "mac dry-run shows the installer command"
+  assert_contains "$T_OUT" "the installer was not launched" "mac dry-run says so"
+  assert_empty_file "$T_DIR/shims.log" "mac dry-run invoked a forbidden command"
+  assert_empty_file "$T_DIR/record" "mac dry-run recorded an execution"
+  assert_eq "$(ls "$T_DIR/state/state.env" 2>/dev/null)" "" "mac dry-run wrote no state"
+fi
 
 t_cli linux-alarm-fresh '\n\nstart\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us' --dry-run
 assert_rc "$T_RC" 0 "linux dry-run completes"
@@ -154,16 +156,18 @@ assert_empty_file "$T_DIR/shims.log" "dev dry-run invoked a forbidden command"
 assert_empty_file "$T_DIR/record" "dev dry-run recorded an execution"
 
 # --- Dynamic: the exact argv that would execute, recorded not run -----------------------
-t_cli mac-m1pro-1tb-roomy "$mac_install_input"
-rec=$(cat "$T_DIR/record")
-read -r ans_r ans_os <<<"$(t_plan_answers mac-m1pro-1tb-roomy 250 0)"
-assert_contains "$rec" "pbcopy <<< $ans_r" "clipboard gets the exact macOS size ($ans_r)"
-assert_contains "$T_OUT" "New OS size  (Linux gets)      max" "no Shared: Linux takes the freed region"
-assert_contains "$rec" "sh $T_DIR/state/downloads/asahi-alarm-bootstrap.sh-" "installer launched from the downloaded file"
-assert_eq "$(printf '%s\n' "$rec" | grep -c .)" 2 "exactly two recorded actions"
-assert_contains "$(cat "$T_DIR/state/state.env")" "asahi_launched_at=" "launch recorded in state"
-assert_contains "$(cat "$T_DIR/state/state.env")" "asahi_bootstrap_sha256=" "checksum recorded in state"
-assert_empty_file "$T_DIR/shims.log" "record mode invoked a forbidden command"
+if t_plutil "the recorded macOS launch"; then
+  t_cli mac-m1pro-1tb-roomy "$mac_install_input"
+  rec=$(cat "$T_DIR/record")
+  read -r ans_r ans_os <<<"$(t_plan_answers mac-m1pro-1tb-roomy 250 0)"
+  assert_contains "$rec" "pbcopy <<< $ans_r" "clipboard gets the exact macOS size ($ans_r)"
+  assert_contains "$T_OUT" "New OS size  (Linux gets)      max" "no Shared: Linux takes the freed region"
+  assert_contains "$rec" "sh $T_DIR/state/downloads/asahi-alarm-bootstrap.sh-" "installer launched from the downloaded file"
+  assert_eq "$(printf '%s\n' "$rec" | grep -c .)" 2 "exactly two recorded actions"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "asahi_launched_at=" "launch recorded in state"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "asahi_bootstrap_sha256=" "checksum recorded in state"
+  assert_empty_file "$T_DIR/shims.log" "record mode invoked a forbidden command"
+fi
 
 t_cli linux-alarm-fresh '\n\nstart\n' resume 'omb1:enc=0,user=alex,host=omarchy,kmap=de'
 rec=$(cat "$T_DIR/record")
@@ -172,24 +176,28 @@ assert_contains "$rec" "--no-encrypt --user alex --hostname omarchy --keymap de"
 assert_empty_file "$T_DIR/shims.log" "linux record mode invoked a forbidden command"
 
 # --- Gates: Enter alone, or the wrong word, never launches --------------------------------
-t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n'
-rec=$(cat "$T_DIR/record")
-assert_eq "$rec" "" "Enter through every prompt launches nothing"
-assert_contains "$T_OUT" "Stopped before anything changed" "backup gate holds on Enter"
-assert_not_contains "$(cat "$T_DIR/state/state.env" 2>/dev/null)" "asahi_launched_at" "no launch recorded"
+if t_plutil "the macOS backup and launch gates"; then
+  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n'
+  rec=$(cat "$T_DIR/record")
+  assert_eq "$rec" "" "Enter through every prompt launches nothing"
+  assert_contains "$T_OUT" "Stopped before anything changed" "backup gate holds on Enter"
+  assert_not_contains "$(cat "$T_DIR/state/state.env" 2>/dev/null)" "asahi_launched_at" "no launch recorded"
 
-t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nyes\ny\nLAUNCH\nn\n'
-rec=$(cat "$T_DIR/record")
-assert_not_contains "$rec" "sh " "the wrong word at the launch gate launches nothing"
-assert_contains "$T_OUT" 'only the exact word "launch" continues' "launch gate explains itself"
+  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nyes\ny\nLAUNCH\nn\n'
+  rec=$(cat "$T_DIR/record")
+  assert_not_contains "$rec" "sh " "the wrong word at the launch gate launches nothing"
+  assert_contains "$T_OUT" 'only the exact word "launch" continues' "launch gate explains itself"
+fi
 
 t_cli linux-alarm-fresh '\n\n\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
 rec=$(cat "$T_DIR/record")
 assert_eq "$rec" "" "Enter at the start gate starts nothing"
 
-t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\nq\nlaunch\n'
-assert_contains "$T_OUT" "Not launched. Nothing changed." "q at the inspection prompt quits"
-assert_empty_file "$T_DIR/record" "q at the inspection prompt launches nothing"
+if t_plutil "q at the macOS inspection prompt"; then
+  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\nyes\nq\nlaunch\n'
+  assert_contains "$T_OUT" "Not launched. Nothing changed." "q at the inspection prompt quits"
+  assert_empty_file "$T_DIR/record" "q at the inspection prompt launches nothing"
+fi
 
 t_cli linux-alarm-fresh 'q\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
 assert_contains "$T_OUT" "Stopped. Nothing changed." "q at 'Use these?' quits"
@@ -204,12 +212,14 @@ assert_not_contains "$T_OUT" "would run  bash" "Enter does not run the downloade
 # --- A change the tool cannot record does not happen -------------------------------------
 # state.env replaced by something that is not a plain file: every record
 # fails, and the backup gate, which must be recorded, stops the run.
-pre=$(t_tmp)
-mkdir "$pre/state.env"
-T_ENV="OMB_STATE_DIR=$pre" t_cli mac-m1pro-1tb-roomy "$mac_install_input"
-assert_rc "$T_RC" 1 "an unrecordable run stops"
-assert_contains "$T_OUT" "stopping before anything changes" "and says why"
-assert_empty_file "$T_DIR/record" "an unrecordable run launches nothing"
+if t_plutil "an unrecordable macOS run"; then
+  pre=$(t_tmp)
+  mkdir "$pre/state.env"
+  T_ENV="OMB_STATE_DIR=$pre" t_cli mac-m1pro-1tb-roomy "$mac_install_input"
+  assert_rc "$T_RC" 1 "an unrecordable run stops"
+  assert_contains "$T_OUT" "stopping before anything changes" "and says why"
+  assert_empty_file "$T_DIR/record" "an unrecordable run launches nothing"
+fi
 
 # --- One recording run at a time -----------------------------------------------------------
 pre=$(t_tmp)
@@ -252,34 +262,38 @@ assert_contains "$T_OUT" "the download is not a bash script" "the refusal names 
 assert_empty_file "$T_DIR/record" "nothing launched from a non-script"
 
 # --- Existing free space: no resize, and the reviewed size is typed ----------------------
-t_cli mac-m1-free-space "$mac_install_input"
-assert_rc "$T_RC" 0 "free-space install flow completes"
-assert_not_contains "$T_OUT" "Resize an existing partition" "no resize step when the space already exists"
-assert_contains "$T_OUT" "macOS is not resized" "the last-stop warning describes free-space mode"
-assert_not_contains "$T_OUT" "its current size" "no nonsense resize wording"
-read -r ans_r ans_os <<<"$(t_plan_answers mac-m1-free-space 250 0)"
-assert_eq "$ans_r" - "free space: no resize answer"
-assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< $ans_os" "the clipboard gets the exact Linux size ($ans_os)"
+if t_plutil "the free-space install flow"; then
+  t_cli mac-m1-free-space "$mac_install_input"
+  assert_rc "$T_RC" 0 "free-space install flow completes"
+  assert_not_contains "$T_OUT" "Resize an existing partition" "no resize step when the space already exists"
+  assert_contains "$T_OUT" "macOS is not resized" "the last-stop warning describes free-space mode"
+  assert_not_contains "$T_OUT" "its current size" "no nonsense resize wording"
+  read -r ans_r ans_os <<<"$(t_plan_answers mac-m1-free-space 250 0)"
+  assert_eq "$ans_r" - "free space: no resize answer"
+  assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< $ans_os" "the clipboard gets the exact Linux size ($ans_os)"
+fi
 
 # --- A changed storage contract blocks the launch; a stale display string does not -------
-fx=$(t_variant mac-m1pro-1tb-roomy)
-printf 'v0.10.0\n' >"$fx/net/asahi_version"
-t_cli "$fx" "$mac_install_input"
-assert_rc "$T_RC" 1 "a different installer version stops the handoff"
-assert_contains "$T_OUT" "storage behaviour may have changed" "the refusal names the contract"
-assert_contains "$(t_flat "$T_OUT")" "not v0.9.2, whose resize and allocation rules" "and the version"
-assert_not_contains "$T_OUT" "When the Asahi Alarm installer asks" "no answer card for an unverified installer"
-assert_empty_file "$T_DIR/record" "nothing launched for an unverified installer"
-fx=$(t_variant mac-m1pro-1tb-roomy)
-sed -i.bak 's/"524288000B", "format"/"1073741824B", "format"/' "$fx/net/asahi_data" && rm -f "$fx/net/asahi_data.bak"
-t_cli "$fx" "$mac_install_input"
-assert_rc "$T_RC" 1 "a changed EFI size stops the handoff"
-assert_contains "$(t_flat "$T_OUT")" "no longer has a 524288000-byte EFI partition" "the EFI drift is named"
-assert_empty_file "$T_DIR/record" "nothing launched on EFI drift"
-rm -f "$fx/net/asahi_data"
-t_cli "$fx" "$mac_install_input"
-assert_contains "$(t_flat "$T_OUT")" "installer_data.json could not be read" "an unreadable OS list stops the handoff"
-assert_empty_file "$T_DIR/record" "nothing launched without the OS list"
+if t_plutil "storage-contract drift"; then
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  printf 'v0.10.0\n' >"$fx/net/asahi_version"
+  t_cli "$fx" "$mac_install_input"
+  assert_rc "$T_RC" 1 "a different installer version stops the handoff"
+  assert_contains "$T_OUT" "storage behaviour may have changed" "the refusal names the contract"
+  assert_contains "$(t_flat "$T_OUT")" "not v0.9.2, whose resize and allocation rules" "and the version"
+  assert_not_contains "$T_OUT" "When the Asahi Alarm installer asks" "no answer card for an unverified installer"
+  assert_empty_file "$T_DIR/record" "nothing launched for an unverified installer"
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's/"524288000B", "format"/"1073741824B", "format"/' "$fx/net/asahi_data" && rm -f "$fx/net/asahi_data.bak"
+  t_cli "$fx" "$mac_install_input"
+  assert_rc "$T_RC" 1 "a changed EFI size stops the handoff"
+  assert_contains "$(t_flat "$T_OUT")" "no longer has a 524288000-byte EFI partition" "the EFI drift is named"
+  assert_empty_file "$T_DIR/record" "nothing launched on EFI drift"
+  rm -f "$fx/net/asahi_data"
+  t_cli "$fx" "$mac_install_input"
+  assert_contains "$(t_flat "$T_OUT")" "installer_data.json could not be read" "an unreadable OS list stops the handoff"
+  assert_empty_file "$T_DIR/record" "nothing launched without the OS list"
+fi
 
 # --- The disk is read again right before the launch ------------------------------------------
 # recheck_after CHANGE — plan on a fresh copy of the roomy fixture, apply
@@ -302,28 +316,32 @@ recheck_after() {
     printf '%s' $?
   )
 }
-if t_plutil; then
+if t_plutil "the pre-launch recheck"; then
   assert_eq "$(recheck_after "" "")" 0 "an unchanged disk passes the pre-launch recheck"
   assert_eq "$(recheck_after diskutil_info_disk0s3 's#000000000003#000000000009#')" 1 "a changed partition identity stops the launch"
   assert_eq "$(recheck_after diskutil_info_root 's#<integer>700000000000</integer>#<integer>100000000000</integer>#')" 1 "macOS filling up since the plan stops the launch"
 fi
 
 # --- A download that is not the expected bootstrap is refused -----------------------------
-fx=$(t_variant mac-m1pro-1tb-roomy)
-printf '<html><body>Please sign in to the Wi-Fi</body></html>\n' >"$fx/net/asahi-alarm-bootstrap.sh"
-t_cli "$fx" "$mac_install_input"
-assert_rc "$T_RC" 1 "wrong-shape bootstrap stops the handoff"
-assert_contains "$T_OUT" "Refusing: this is not the Asahi Alarm bootstrap" "refusal explains itself"
-assert_not_contains "$T_OUT" "When the Asahi Alarm installer asks" "no answer card after a refusal"
-assert_empty_file "$T_DIR/record" "nothing launched from a wrong-shape download"
+if t_plutil "a wrong-shape bootstrap"; then
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  printf '<html><body>Please sign in to the Wi-Fi</body></html>\n' >"$fx/net/asahi-alarm-bootstrap.sh"
+  t_cli "$fx" "$mac_install_input"
+  assert_rc "$T_RC" 1 "wrong-shape bootstrap stops the handoff"
+  assert_contains "$T_OUT" "Refusing: this is not the Asahi Alarm bootstrap" "refusal explains itself"
+  assert_not_contains "$T_OUT" "When the Asahi Alarm installer asks" "no answer card after a refusal"
+  assert_empty_file "$T_DIR/record" "nothing launched from a wrong-shape download"
+fi
 
 # --- Blocked machines stop before planning ------------------------------------------------
-t_cli mac-intel '\n\n\n' --dry-run
-assert_rc "$T_RC" 1 "Intel stops"
-assert_not_contains "$T_OUT" "How much storage" "Intel never reaches the planner"
-t_cli mac-asahi-installed '\n\n\n'
-assert_contains "$T_OUT" "will not start a second install" "existing install is not reinstalled"
-assert_not_contains "$T_OUT" "How much storage" "existing install never reaches the planner"
+if t_plutil "blocked Macs"; then
+  t_cli mac-intel '\n\n\n' --dry-run
+  assert_rc "$T_RC" 1 "Intel stops"
+  assert_not_contains "$T_OUT" "How much storage" "Intel never reaches the planner"
+  t_cli mac-asahi-installed '\n\n\n'
+  assert_contains "$T_OUT" "will not start a second install" "existing install is not reinstalled"
+  assert_not_contains "$T_OUT" "How much storage" "existing install never reaches the planner"
+fi
 t_cli linux-omarchy-installed 'n\n'
 assert_contains "$T_OUT" "Omarchy is installed" "installed Omarchy is recognised"
 assert_empty_file "$T_DIR/record" "installed Omarchy triggers nothing"

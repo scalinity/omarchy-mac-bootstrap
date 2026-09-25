@@ -63,11 +63,13 @@ skip() {
   printf "  skip %s\n" "$*"
 }
 
-# t_plutil — may macOS plist checks run here? Records a skip when not, so
-# a missing plutil is visible rather than silent.
+# t_plutil [SECTION] — may macOS plist checks run here? Every macOS fixture is
+# read through Apple's plutil, so a section that drives one is gated by this.
+# Records a skip naming the section when plutil is absent (Linux), so what did
+# not run is visible rather than silent.
 t_plutil() {
   command -v plutil >/dev/null 2>&1 && return 0
-  skip "macOS plist checks in $(basename "$0") (no plutil)"
+  skip "macOS plist checks in $(basename "$0")${1:+: $1} (no plutil)"
   return 1
 }
 
