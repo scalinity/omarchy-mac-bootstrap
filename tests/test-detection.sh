@@ -29,6 +29,8 @@ hdr='# omarchy:args=[--encrypt|--no-encrypt] [--user <name>] [--hostname <name>]
 assert_eq "$(setup_missing_flags "$hdr")" "" "all flags declared"
 assert_eq "$(setup_missing_flags '# omarchy:args=[--encrypt|--no-encrypt] [--user <name>] [--hostname <name>] [--status] [--resume]')" " --keymap" "missing --keymap detected"
 assert_eq "$(setup_missing_flags 'nothing here')" " --encrypt --no-encrypt --user --hostname --keymap --status --resume" "no header: everything missing"
+renamed='# omarchy:args=[--encrypt|--no-encrypt] [--username <name>] [--hostname <name>] [--keymap-layout <name>] [--status] [--resume-from <x>]'
+assert_eq "$(setup_missing_flags "$renamed")" " --user --keymap --resume" "renamed flags do not satisfy the originals"
 
 # --- macOS -------------------------------------------------------------------
 mac_case() { OMB_FIXTURE="$FIX/$1"; mac_detect; CFG_shared=0; mac_plan_compute; }

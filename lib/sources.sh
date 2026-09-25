@@ -309,11 +309,14 @@ sources_check() {
 # setup_missing_flags SCRIPT_TEXT — prints the flags we use that the setup
 # script's "# omarchy:args=" header no longer declares.
 setup_missing_flags() {
-  local header flag missing=""
+  local header words flag missing=""
   header=$(printf '%s\n' "$1" | grep -m1 '^# omarchy:args=')
+  # Whole words only: a renamed flag (--username, --keymap-layout) must not
+  # count as the one this tool passes.
+  words=" $(printf '%s' "${header#\# omarchy:args=}" | sed 's/[][|]/ /g') "
   for flag in $OMARCHY_MAC_SETUP_FLAGS; do
-    case "$header" in
-      *"$flag]"* | *"$flag "* | *"$flag|"* | *"[$flag"*) ;;
+    case "$words" in
+      *" $flag "*) ;;
       *) missing="$missing $flag" ;;
     esac
   done
