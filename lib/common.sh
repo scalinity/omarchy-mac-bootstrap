@@ -58,7 +58,7 @@ sys_net() {
     cat "$OMB_FIXTURE/net/$key"
     return 0
   fi
-  curl -fsSL --proto '=https' --max-time 20 "$url" 2>/dev/null
+  curl -fsSL --proto '=https' --tlsv1.2 --max-time 20 "$url" 2>/dev/null
 }
 
 # sys_reachable KEY URL — can we reach an HTTPS endpoint?
@@ -68,7 +68,7 @@ sys_reachable() {
     [ -f "$OMB_FIXTURE/net/$key" ] || [ -f "$OMB_FIXTURE/net/$key.reachable" ]
     return
   fi
-  curl -fsSI --proto '=https' --max-time 8 "$url" >/dev/null 2>&1
+  curl -fsSI --proto '=https' --tlsv1.2 --max-time 8 "$url" >/dev/null 2>&1
 }
 
 # ---------------------------------------------------------------------------
