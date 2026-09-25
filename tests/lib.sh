@@ -22,6 +22,14 @@ omarchy-setup-security-sudoless-docker gh ssh-keygen npm timedatectl localectl g
 
 t_tmp() { mktemp -d "$TMP_ROOT/t.XXXXXX"; }
 
+# t_variant BASE — a throwaway copy of a fixture to modify; prints its path.
+t_variant() {
+  local d
+  d=$(t_tmp)
+  cp -R "$FIX/$1/." "$d/"
+  printf '%s' "$d"
+}
+
 t_shims() {
   local dir=$1/shims name
   mkdir -p "$dir"
@@ -67,7 +75,11 @@ t_cli() {
   local shims
   shims=$(t_shims "$T_DIR")
   local fx=""
-  [ -n "$fixture" ] && fx="$FIX/$fixture"
+  case "$fixture" in
+    '') ;;
+    /*) fx=$fixture ;;
+    *) fx="$FIX/$fixture" ;;
+  esac
   # shellcheck disable=SC2086 # T_ENV is a list of assignments by design
   T_OUT=$(printf '%b' "$input" | env -i \
     PATH="$shims:/usr/bin:/bin:/usr/sbin:/sbin" \

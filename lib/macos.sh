@@ -659,11 +659,15 @@ mac_handoff() {
   state_set asahi_bootstrap_fetched_at "$FETCH_AT"
   state_set asahi_installer_version "${version:-unknown}"
 
+  # Drift is reported, never followed: the same rule as the Linux handoff.
   if [ "$shape_ok" = 0 ]; then
-    ui_callout warn "This script does not have the shape this tool expects." \
-      "It should be a /bin/sh script that fetches the installer and $ASAHI_ALARM_DATA_URL. Read it before deciding."
-    view_file "$FETCH_PATH"
-  elif ui_yesno "Inspect the script before running it?" n; then
+    ui_callout fail "Refusing: this is not the Asahi Alarm bootstrap this tool was checked against." \
+      "It should be a /bin/sh script that fetches the installer and $ASAHI_ALARM_DATA_URL (a captive-portal page or an upstream change would both land here)." \
+      "Read $(tildify "$FETCH_PATH") and run 'omarchy-bootstrap sources --check' before changing lib/sources.sh."
+    printf '\n'
+    return 1
+  fi
+  if ui_yesno "Inspect the script before running it?" n; then
     view_file "$FETCH_PATH"
   fi
 

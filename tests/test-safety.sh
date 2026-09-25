@@ -122,6 +122,15 @@ t_cli linux-alarm-fresh '\n\n\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=
 rec=$(cat "$T_DIR/record")
 assert_eq "$rec" "" "Enter at the start gate starts nothing"
 
+# --- A download that is not the expected bootstrap is refused -----------------------------
+fx=$(t_variant mac-m1pro-1tb-roomy)
+printf '<html><body>Please sign in to the Wi-Fi</body></html>\n' >"$fx/net/asahi-alarm-bootstrap.sh"
+t_cli "$fx" "$mac_install_input"
+assert_rc "$T_RC" 1 "wrong-shape bootstrap stops the handoff"
+assert_contains "$T_OUT" "Refusing: this is not the Asahi Alarm bootstrap" "refusal explains itself"
+assert_not_contains "$T_OUT" "When the Asahi Alarm installer asks" "no answer card after a refusal"
+assert_empty_file "$T_DIR/record" "nothing launched from a wrong-shape download"
+
 # --- Blocked machines stop before planning ------------------------------------------------
 t_cli mac-intel '\n\n\n' --dry-run
 assert_rc "$T_RC" 1 "Intel stops"
