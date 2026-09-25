@@ -106,7 +106,7 @@ assert_eq "$(plan_validate $((100 * GB)))" ok "recommended is ok"
 assert_eq "$(plan_validate $((655 * GB)))" ok "maximum is ok"
 v=$(plan_validate $((656 * GB)))
 assert_contains "$v" "error|" "above maximum rejected"
-assert_contains "$v" "38 GB for updates" "rejection explains the reserve"
+assert_contains "$v" "$(fmt_gb "$ASAHI_MIN_FREE_OS_BYTES") for updates + 2 GB snapshot overhead + $(fmt_gb "$PLAN_DRIFT_MARGIN_BYTES") margin" "rejection explains the reserve from the constants"
 assert_contains "$v" "at most 655 GB" "rejection names the maximum"
 
 # --- Existing free space and the shared reservation ---------------------------

@@ -105,7 +105,7 @@ mac_classify_partition() {
     Apple_APFS)
       if [ "$id" = "$MAC_STORE" ]; then
         MAC_PART_ROLE=macos
-      elif [ "$size" -lt 5000000000 ]; then
+      elif [ "$size" -lt $((ASAHI_STUB_BYTES * 2)) ]; then
         MAC_PART_ROLE="asahi-stub"
         MAC_ASAHI_PRESENT=1
         MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
@@ -203,7 +203,7 @@ mac_show_survey() {
   ui_kv "Used by macOS" "$(fmt_gb "$PLAN_USED")"
   ui_kv "Free in macOS" "$(fmt_gb "$MAC_CONTAINER_FREE")" "purgeable space not counted"
   [ "$MAC_EXISTING_FREE" -gt 0 ] && ui_kv "Unpartitioned" "$(fmt_gb "$MAC_EXISTING_FREE")"
-  ui_kv "Required reserve" "$(fmt_gb "$PLAN_RESERVE")" "38 GB for updates$([ "$PLAN_OVERHEAD" -gt 0 ] && printf ' + %s overhead' "$(fmt_gb "$PLAN_OVERHEAD")") + 5 GB margin"
+  ui_kv "Required reserve" "$(fmt_gb "$PLAN_RESERVE")" "$(fmt_gb "$ASAHI_MIN_FREE_OS_BYTES") for updates$([ "$PLAN_OVERHEAD" -gt 0 ] && printf ' + %s overhead' "$(fmt_gb "$PLAN_OVERHEAD")") + $(fmt_gb "$PLAN_DRIFT_MARGIN_BYTES") margin"
   if [ "$PLAN_LINUX_MAX" -ge "$PLAN_LINUX_MIN" ]; then
     ui_kv "Safe Linux maximum" "${C_BOLD}$(fmt_gb "$PLAN_LINUX_MAX")${C_RESET}"
   else
@@ -268,7 +268,7 @@ mac_plan_storage() {
     saved=$((CFG_linux * GB))
   fi
   ui_section "Storage" "Linux can have $(fmt_gb "$PLAN_LINUX_MIN")–$(fmt_gb "$PLAN_LINUX_MAX")"
-  ui_note "Sizes are the Linux allocation the installer calls \"New OS size\": the Btrfs root plus 3 GB of boot data. macOS keeps everything else."
+  ui_note "Sizes are the Linux allocation the installer calls \"New OS size\": the Btrfs root plus $(fmt_gb $((ASAHI_STUB_BYTES + ASAHI_EFI_BYTES))) of boot data. macOS keeps everything else."
   set --
   if [ "$saved" -gt 0 ] && ! printf '%s' "$PRESETS" | cut -d'|' -f3 | grep -qx "$saved"; then
     n=1
@@ -412,7 +412,7 @@ mac_show_layout() {
   printf '\n'
   ui_kv "macOS / APFS" "$G_APPROX $(fmt_gb "$PLAN_MACOS_NEW")" "used $(fmt_gb "$PLAN_USED") $G_DOT free $(fmt_gb "$PLAN_MACOS_FREE_AFTER")"
   ui_kv "Linux / Btrfs" "$G_APPROX $(fmt_gb "$PLAN_ROOT")" "root filesystem"
-  ui_kv "Asahi boot data" "$G_APPROX $(fmt_gb "$PLAN_BOOT")" "2.5 GB stub container + 0.5 GB EFI"
+  ui_kv "Asahi boot data" "$G_APPROX $(fmt_gb "$PLAN_BOOT")" "$(fmt_gb "$ASAHI_STUB_BYTES") stub container + $(fmt_gb "$ASAHI_EFI_BYTES") EFI"
   ui_kv "Apple system" "$(fmt_gb "$MAC_APPLE_SYS")" "iBoot + recovery, untouched"
   [ "$shared" -gt 0 ] && ui_kv "Shared (left free)" "$(fmt_gb "$shared")" "exFAT, created later by you"
   printf '\n   %sLinux receives %s%%%s  %s  macOS retains %s%%  %s  boot/system %s%%\n' \
@@ -743,7 +743,7 @@ mac_handoff() {
   fi
   ui_card_row $((n += 1)) "Choose what to do" "f" "Install an OS into free space"
   ui_card_row $((n += 1)) "Choose an OS to install" "$ASAHI_ALARM_OS_CHOICE" "type its number"
-  ui_card_row $((n += 1)) "New OS size  (Linux gets)" "$PLAN_OS_SIZE_ANSWER" "$G_APPROX $(fmt_gb "$PLAN_LINUX_ACTUAL") incl. 3 GB boot data"
+  ui_card_row $((n += 1)) "New OS size  (Linux gets)" "$PLAN_OS_SIZE_ANSWER" "$G_APPROX $(fmt_gb "$PLAN_LINUX_ACTUAL") incl. $(fmt_gb $((ASAHI_STUB_BYTES + ASAHI_EFI_BYTES))) boot data"
   ui_card_row $((n += 1)) "OS name" "Enter" "or e.g. Omarchy; shown in Startup Options"
   ui_card_text "Everything else: read it, and follow the installer's own instructions."
   ui_card_close

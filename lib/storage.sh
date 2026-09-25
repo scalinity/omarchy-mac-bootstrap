@@ -174,10 +174,10 @@ plan_validate() {
   if [ "$b" -lt "$PLAN_LINUX_MIN" ]; then
     printf 'error|%s is below the %s GB Omarchy Mac needs.' "$(fmt_gb "$b")" "$OMARCHY_LINUX_MIN_GB"
   elif [ "$b" -gt "$PLAN_LINUX_MAX" ]; then
-    printf 'error|%s leaves macOS too little room: it must keep %s used + 38 GB for updates%s + 5 GB margin, so Linux can have at most %s.' \
-      "$(fmt_gb "$b")" "$(fmt_gb "$PLAN_USED")" \
+    printf 'error|%s leaves macOS too little room: it must keep %s used + %s for updates%s + %s margin, so Linux can have at most %s.' \
+      "$(fmt_gb "$b")" "$(fmt_gb "$PLAN_USED")" "$(fmt_gb "$ASAHI_MIN_FREE_OS_BYTES")" \
       "$([ "$PLAN_OVERHEAD" -gt 0 ] && printf ' + %s snapshot overhead' "$(fmt_gb "$PLAN_OVERHEAD")")" \
-      "$(fmt_gb "$PLAN_LINUX_MAX")"
+      "$(fmt_gb "$PLAN_DRIFT_MARGIN_BYTES")" "$(fmt_gb "$PLAN_LINUX_MAX")"
   elif [ "$b" -lt "$PLAN_LINUX_REC" ]; then
     printf 'warn|%s works, but Omarchy Mac recommends %s GB.' "$(fmt_gb "$b")" "$OMARCHY_LINUX_RECOMMENDED_GB"
   else
