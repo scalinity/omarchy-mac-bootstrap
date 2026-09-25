@@ -29,6 +29,18 @@ hdr='# omarchy:args=[--encrypt|--no-encrypt] [--user <name>] [--hostname <name>]
 assert_eq "$(setup_missing_flags "$hdr")" "" "all flags declared"
 assert_eq "$(setup_missing_flags '# omarchy:args=[--encrypt|--no-encrypt] [--user <name>] [--hostname <name>] [--status] [--resume]')" " --keymap" "missing --keymap detected"
 assert_eq "$(setup_missing_flags 'nothing here')" " --encrypt --no-encrypt --user --hostname --keymap --status --resume" "no header: everything missing"
+script=$OMB_STATE_DIR/setup-probe
+for shebang in '#!/bin/bash' '#!/usr/bin/env bash'; do
+  printf '%s\n%s\n' "$shebang" "$hdr" >"$script"
+  setup_script_ok "$script"
+  assert_rc $? 0 "setup script accepted with $shebang"
+done
+printf '#!/bin/sh\n%s\n' "$hdr" >"$script"
+setup_script_ok "$script"
+assert_rc $? 1 "a non-bash setup script is refused"
+printf '<html>404</html>\n' >"$script"
+setup_script_ok "$script"
+assert_rc $? 1 "an HTML page is refused"
 renamed='# omarchy:args=[--encrypt|--no-encrypt] [--username <name>] [--hostname <name>] [--keymap-layout <name>] [--status] [--resume-from <x>]'
 assert_eq "$(setup_missing_flags "$renamed")" " --user --keymap --resume" "renamed flags do not satisfy the originals"
 

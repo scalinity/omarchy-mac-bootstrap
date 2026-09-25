@@ -186,7 +186,7 @@ lx_setup_flags() {
 # setup_script_ok FILE — refuses a download that is not the setup script or
 # no longer declares the flags this tool passes.
 setup_script_ok() {
-  head -1 "$1" | grep -q '^#!/bin/bash' || {
+  head -1 "$1" | grep -Eq '^#![[:space:]]*(/usr)?/bin/(env[[:space:]]+)?bash([[:space:]]|$)' || {
     SETUP_REFUSAL="the download is not a bash script"
     return 1
   }
