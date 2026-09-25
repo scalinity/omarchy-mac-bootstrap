@@ -159,8 +159,12 @@ M_raw   = align_up(U + 38 GB, 1 MiB)          # installer's own floor
 M_inst  = max(M_raw, P)                        # installer's minimum new macOS size
 O       = M_inst − M_raw                       # snapshot / pending-update overhead
 M_floor = M_inst + 5 GB                        # drift margin between planning and running
-Linux_max = floor_GB(C − M_floor + E − S)
+Linux_max = floor_GB(max(C − M_floor − S, E − S))
 ```
+
+Pre-existing space `E` is counted only when it can hold the Linux install on
+its own: a resize frees space right after the macOS container, which may or
+may not sit next to `E`, so the two are never added together.
 
 - `Linux_max < 50 GB` → blocked; report how much must be freed in macOS.
 - `O > 16 GB` → warn (Time Machine local snapshots or a pending macOS update),
@@ -185,8 +189,10 @@ Handoff values for a Linux allocation `A` (the installer's "New OS size", which
 includes the 2.5 GB stub and 0.5 GB EFI):
 
 - `E ≥ A + S` → no resize. Choose **f** and enter `A` at *New OS size*.
-- otherwise → choose **r**, enter `macOS_new = ceil_GB(C − (A + S − E))` at
-  *New size*; then **f** and `max` (or `A` when `S > 0`, leaving `S` free).
+- otherwise → choose **r**, enter `macOS_new = ceil_GB(C − A − S)` at
+  *New size*; then **f** and `max` when `S = 0` and `E = 0`. Otherwise enter
+  `A`: the freed region can merge with space already beside the container,
+  and `max` would then give Linux more than was reviewed.
 
 Displayed layout separates three things: the **request** (`A`), the
 **estimate** (macOS ≈ `macOS_new`, Btrfs root ≈ `A − 3 GB`, stub 2.5 GB,
@@ -348,7 +354,7 @@ flowchart TD
 `lib/common.sh` provides the only seam to the system: `sys_cmd NAME CMD…` and
 `sys_path PATH`. With `OMB_FIXTURE` set they read `fixtures/<name>/cmd/NAME` and
 `fixtures/<name>/root/PATH`, which is how every detector is tested on any host.
-`run`/`run_interactive` are the only paths to mutating commands; with
+`run` is the only path to mutating commands; with
 `OMB_TEST_RECORD` set they record argv and execute nothing.
 
 ## Acceptance criteria

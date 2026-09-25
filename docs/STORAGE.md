@@ -43,7 +43,8 @@ For a Linux allocation A:
 ```text
 A + S ≤ E  →  no resize:  choose f, type "<A>GB"
 otherwise  →  choose r, type "<ceil_GB(C − A − S)>GB", then f and "max"
-                                                  (or "<A>GB" when S > 0)
+                                        (or "<A>GB" when S > 0 or E > 0: the freed
+                                         region may merge with space beside it)
 ```
 
 `38 GB`, `2.5 GB`, `0.5 GB`, `1 MiB` and the 16 GB warning come from

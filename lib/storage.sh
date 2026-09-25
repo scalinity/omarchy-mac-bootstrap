@@ -194,9 +194,11 @@ plan_layout() {
     PLAN_MACOS_NEW=$((PLAN_MACOS_NEW_GB * GB))
   fi
   PLAN_FREED=$((PLAN_CONTAINER - PLAN_MACOS_NEW))
-  # "max" takes the whole freed region; a number leaves the rest free (shared
-  # plan) or picks a slice of pre-existing free space.
-  if [ "$PLAN_MODE" = resize ] && [ "$PLAN_SHARED" = 0 ]; then
+  # "max" takes the whole free region. The region a resize frees can merge
+  # with unpartitioned space already next to the container, so "max" is used
+  # only when there is none; otherwise the reviewed size is typed, and the
+  # rest stays free (shared plan, or pre-existing space).
+  if [ "$PLAN_MODE" = resize ] && [ "$PLAN_SHARED" = 0 ] && [ "$PLAN_EXISTING" = 0 ]; then
     PLAN_OS_SIZE_ANSWER="max"
     PLAN_LINUX_ACTUAL=$PLAN_FREED
   else

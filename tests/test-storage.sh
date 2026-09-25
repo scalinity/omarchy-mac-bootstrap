@@ -110,6 +110,14 @@ plan_layout $((250 * GB))
 assert_eq "$PLAN_MODE" free "fits in existing free space"
 assert_eq "$PLAN_OS_SIZE_ANSWER" 250GB "free space install types the size"
 assert_eq "$PLAN_MACOS_NEW" "$C1T" "macOS untouched"
+# Existing space smaller than the request: resize, and type the reviewed size,
+# because the freed region may merge with the existing gap.
+plan_compute $D1T $C1T $((700 * GB)) $((C1T - 700 * GB + 40 * GB)) $((100 * GB)) 0
+plan_layout $((250 * GB))
+assert_eq "$PLAN_MODE" resize "existing space too small: resize"
+assert_eq "$PLAN_MACOS_NEW_GB" 745 "macOS shrinks by the full request"
+assert_eq "$PLAN_OS_SIZE_ANSWER" 250GB "the reviewed size is typed, not max"
+assert_eq "$PLAN_LINUX_ACTUAL" $((250 * GB)) "Linux gets exactly what was reviewed"
 plan_compute $D1T $C1T $((700 * GB)) $((C1T - 700 * GB + 40 * GB)) 0 $((32 * GB))
 assert_eq "$PLAN_LINUX_MAX" $((623 * GB)) "shared space reduces the maximum"
 plan_layout $((250 * GB))
