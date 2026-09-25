@@ -122,6 +122,18 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$st" "cfg_shared=40" "Enter keeps the saved reservation"
 fi
 
+# --- The shared-area prompt always has a way out ------------------------------------------
+if command -v plutil >/dev/null 2>&1; then
+  t_cli mac-m1pro-1tb-roomy '\n4\n\n\n\n\n\n\n\n\n\n\n\n' plan
+  assert_contains "$T_OUT" "No room for a shared area beside 655 GB" "Maximum safe skips the shared question"
+  assert_contains "$T_OUT" "Plan saved" "the plan completes"
+  t_cli mac-m1pro-1tb-roomy '\n\ny\nabc\nb\n\n\n\n\n\n\n\n\n\n\n' plan
+  assert_contains "$T_OUT" "A whole number of GB" "invalid shared sizes explain themselves"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_shared=0" "b skips the shared area"
+  t_cli mac-m1pro-1tb-roomy '\n\ny\nq\n' plan
+  assert_contains "$T_OUT" "Nothing on this Mac changed" "q at the shared size quits"
+fi
+
 # --- An optional choice can be cleared ----------------------------------------------------
 if command -v plutil >/dev/null 2>&1; then
   t_cli mac-m1pro-1tb-roomy '\n\n\n\n\nm1pro\n\n\n\n\noctocat\n\n\n' plan

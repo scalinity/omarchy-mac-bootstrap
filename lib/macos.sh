@@ -337,25 +337,41 @@ mac_custom_size() {
 
 # mac_shared_prompt — optional, default off. Never creates anything.
 mac_shared_prompt() {
+  local rc saved=${CFG_shared:-0} ans max def
+  # Bound the area by what fits beside this Linux size with no reservation.
+  mac_plan_compute
+  max=$(( $(gb_floor $((PLAN_LINUX_MAX - CFG_linux * GB))) ))
   ui_section "Shared data area" "advanced $G_DOT off by default"
+  if [ "$max" -lt 1 ]; then
+    ui_note "No room for a shared area beside $CFG_linux GB of Linux. Choose a smaller Linux size to leave room for one."
+    CFG_shared=0
+    mac_plan_compute
+    plan_layout "$((CFG_linux * GB))"
+    return 0
+  fi
   ui_note "A small exFAT partition both systems can read and write — handy for moving files, poor for code (no permissions, no symlinks, case-insensitive). Git or cloud sync is the better default. The Asahi installer has no shared-partition option, so this tool only leaves the space free and writes a post-install plan; it never creates the partition."
-  local rc saved=${CFG_shared:-0}
   ui_yesno "Plan a shared area?" "$([ "$saved" -gt 0 ] && echo y || echo n)"
   rc=$?
   [ "$rc" = 3 ] && return 3
+  CFG_shared=0
   if [ "$rc" = 0 ]; then
-    local ans max=$((PLAN_LINUX_MAX - PLAN_LINUX))
+    def=32
+    [ "$saved" -gt 0 ] && def=$saved
+    [ "$def" -gt "$max" ] && def=$max
     while :; do
-      ui_ask ans "Shared size in GB" "$([ "$saved" -gt 0 ] && echo "$saved" || echo 32)" valid_gb || return 3
-      if [ $((ans * GB)) -gt "$max" ] || [ "$ans" -lt 1 ]; then
-        ui_fail "Between 1 and $(gb_floor "$max") GB fits beside $(fmt_gb "$PLAN_LINUX") of Linux."
+      ui_ask ans "Shared size in GB ${C_DIM}(1–$max; b to skip)${C_RESET}" "$def" || return 3
+      case "$ans" in
+        b | B) break ;;
+        q | Q) return 3 ;;
+      esac
+      valid_gb "$ans" || continue
+      if [ "$ans" -lt 1 ] || [ "$ans" -gt "$max" ]; then
+        ui_fail "Between 1 and $max GB fits beside $CFG_linux GB of Linux."
         continue
       fi
       CFG_shared=$ans
       break
     done
-  else
-    CFG_shared=0
   fi
   mac_plan_compute "$CFG_shared"
   plan_layout "$((CFG_linux * GB))"

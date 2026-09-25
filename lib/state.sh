@@ -160,8 +160,16 @@ valid_ghuser() {
   return 1
 }
 
-valid_bool() { case "$1" in 0 | 1) return 0 ;; esac; return 1; }
-valid_gb() { case "$1" in '' | *[!0-9]*) return 1 ;; esac; return 0; }
+valid_bool() {
+  case "$1" in 0 | 1) return 0 ;; esac
+  printf '   %s\n' "0 or 1."
+  return 1
+}
+valid_gb() {
+  case "$1" in '' | *[!0-9]*) ;; *) return 0 ;; esac
+  printf '   %s\n' "A whole number of GB, such as 32."
+  return 1
+}
 
 # cfg_field_ok KEY VALUE — the one rule for every choice, whichever way it
 # arrives (answers, state.env, a resume token). 0 valid, 1 invalid, 2 unknown.
