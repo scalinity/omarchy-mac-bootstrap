@@ -136,7 +136,8 @@ log_event() {
   [ -n "${OMB_STATE_DIR:-}" ] || return 0
   mkdir -p "$(log_dir)" 2>/dev/null || return 0
   msg=$(printf '%s' "$msg" | tr '\n' ' ' |
-    sed -E 's/((pass(word|phrase)?|secret|token|credential)[A-Za-z_]*[=:][[:space:]]*)[^[:space:]]+/\1[redacted]/Ig')
+    sed -E -e 's/(bearer[[:space:]]+)[^[:space:]]+/\1[redacted]/Ig' \
+      -e 's/((pass(word|phrase)?|secret|token|credential|api[_-]?key|authorization)[A-Za-z_-]*([=:]|[[:space:]])+)[^[:space:]]+/\1[redacted]/Ig')
   printf '%s [%s] %-6s %s\n' "$(now_utc)" "$OMB_PHASE" "$level" "$msg" >>"$(log_file)" 2>/dev/null
 }
 

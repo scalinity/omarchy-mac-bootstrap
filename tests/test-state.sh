@@ -123,6 +123,13 @@ assert_not_contains "$log" hunter2 "password value masked"
 assert_not_contains "$log" abc123 "token value masked"
 assert_not_contains "$log" opensesame "passphrase value masked"
 assert_contains "$log" "[redacted]" "mask marker present"
+log_event exec "tool PASSWORD pw-space --password pw-flag api_key=k-eq API-KEY: k-colon Authorization: Bearer t-bearer"
+log=$(cat "$(log_file)")
+for s in pw-space pw-flag k-eq k-colon t-bearer; do
+  assert_not_contains "$log" "$s" "masked: $s"
+done
+log_event record "cfg_user=alex"
+assert_contains "$(cat "$(log_file)")" "cfg_user=alex" "ordinary values are not masked"
 
 # --- run marks what is executing, for an honest Ctrl-C message ------------------
 probe() { printf '%s' "${OMB_RUNNING:-}" >"$OMB_STATE_DIR/running"; }
