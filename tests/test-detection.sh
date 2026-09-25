@@ -76,7 +76,7 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$(mac_blockers)" "not Apple Silicon" "intel blocked"
 
   mac_case mac-m1pro-1tb-tight
-  assert_eq "$(mac_blockers)" "" "tight has no hardware blocker"
+  assert_contains "$(mac_blockers)" "Not enough free space for Linux yet: free about 34 GB" "tight is blocked on space"
   assert_eq "$PLAN_SHORTFALL" $((34 * GB)) "tight is short of space"
 
   mac_case mac-m2-512

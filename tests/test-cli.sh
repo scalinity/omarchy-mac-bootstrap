@@ -104,6 +104,12 @@ fi
 if command -v plutil >/dev/null 2>&1; then
   t_cli mac-intel "" status
   assert_contains "$T_OUT" "This Mac cannot continue: This Mac is not Apple Silicon" "status names the blocker"
+  t_cli mac-m1pro-1tb-tight "" status
+  assert_contains "$T_OUT" "This Mac cannot continue: Not enough free space for Linux" "status names a space shortfall"
+  t_cli mac-m1pro-1tb-tight '\n\n' --dry-run
+  assert_rc "$T_RC" 1 "a Mac short of space stops"
+  assert_contains "$T_OUT" "free about 34 GB in macOS" "the shortfall is explained in the guided flow"
+  assert_not_contains "$T_OUT" "How much storage" "a Mac short of space never reaches the planner"
 fi
 
 # --- Saved answers are the defaults; a saved reservation never shrinks the survey ------

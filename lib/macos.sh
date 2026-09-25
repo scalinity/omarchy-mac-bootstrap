@@ -144,6 +144,13 @@ mac_blockers() {
   ver_ge "${MAC_OS_VERSION:-0}" "$ASAHI_MIN_MACOS" || echo "macOS $MAC_OS_VERSION is older than $ASAHI_MIN_MACOS, which the Asahi Alarm installer requires."
   [ "$MAC_DISK_INTERNAL" = true ] || echo "The boot volume is not on an internal disk (disk ${MAC_DISK:-unknown})."
   [ "$MAC_ADMIN" = 1 ] || echo "$MAC_USER is not an administrator; the installer needs a machine admin."
+  # Space is a blocker only before an install; after one, the partitions exist.
+  if [ "$MAC_ASAHI_PRESENT" != 1 ] && [ "${PLAN_LINUX_MAX:-0}" -lt "${PLAN_LINUX_MIN:-1}" ]; then
+    printf 'Not enough free space for Linux yet: free about %s in macOS (Omarchy Mac needs %s GB).' \
+      "$(fmt_gb "$PLAN_SHORTFALL")" "$OMARCHY_LINUX_MIN_GB"
+    [ "$PLAN_OVERHEAD_WARN" = 1 ] && printf ' APFS snapshots hold %s; see %s.' "$(fmt_gb "$PLAN_OVERHEAD")" "$ASAHI_TM_CLEANUP"
+    printf '\n'
+  fi
   return 0
 }
 
@@ -816,13 +823,6 @@ EOF
   if [ "$MAC_ASAHI_PRESENT" = 1 ]; then
     mac_existing_install
     return 0
-  fi
-  if [ "$PLAN_LINUX_MAX" -lt "$PLAN_LINUX_MIN" ]; then
-    ui_callout fail "Not enough free space for Linux yet." \
-      "Free about $(fmt_gb "$PLAN_SHORTFALL") in macOS (Omarchy Mac needs ${OMARCHY_LINUX_MIN_GB} GB)." \
-      "$([ "$PLAN_OVERHEAD_WARN" = 1 ] && printf 'APFS snapshots hold %s; see %s.' "$(fmt_gb "$PLAN_OVERHEAD")" "$ASAHI_TM_CLEANUP")"
-    printf '\n'
-    return 1
   fi
   if [ "$DEV_TIER" = experimental ]; then
     ui_callout warn "$DEV_CHIP support is experimental." \
