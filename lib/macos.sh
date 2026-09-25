@@ -424,7 +424,8 @@ mac_choices() {
   ui_ask CFG_loc "Locale" "${CFG_loc:-$(mac_default_locale)}" valid_locale || return 3
   d=$([ "${CFG_ssh:-0}" = 1 ] && echo y || echo n)
   if ui_yesno "Enable SSH after install?" "$d"; then CFG_ssh=1; else [ $? = 3 ] && return 3; CFG_ssh=0; fi
-  ui_ask CFG_gh "GitHub user whose public SSH keys to offer later ${C_DIM}(optional)${C_RESET}" "${CFG_gh:-}" valid_ghuser || return 3
+  ui_ask CFG_gh "GitHub user whose public SSH keys to offer later ${C_DIM}(optional; - clears it)${C_RESET}" "${CFG_gh:-}" valid_ghuser || return 3
+  [ "$CFG_gh" = "-" ] && CFG_gh=""
   d=$([ "${CFG_dev:-1}" = 0 ] && echo n || echo y)
   if ui_yesno "Offer the developer setup once Omarchy is installed?" "$d"; then CFG_dev=1; else [ $? = 3 ] && return 3; CFG_dev=0; fi
   return 0

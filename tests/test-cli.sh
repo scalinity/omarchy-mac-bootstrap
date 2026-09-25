@@ -106,6 +106,16 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$T_OUT" "This Mac cannot continue: This Mac is not Apple Silicon" "status names the blocker"
 fi
 
+# --- An optional choice can be cleared ----------------------------------------------------
+if command -v plutil >/dev/null 2>&1; then
+  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\nm1pro\n\n\n\n\noctocat\n\n\n' plan
+  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_gh=octocat" "GitHub user saved"
+  state_dir=$T_DIR/state
+  T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n-\n\n\n' plan
+  assert_not_contains "$(cat "$state_dir/state.env")" "cfg_gh=" "'-' clears the saved GitHub user"
+  assert_contains "$(cat "$state_dir/state.env")" "cfg_host=m1pro" "other choices are kept"
+fi
+
 # --- Linux status and plan -------------------------------------------------------------
 t_cli linux-setup-in-progress "" status
 assert_contains "$T_OUT" "omarchy-mac-setup --status" "status includes upstream status"

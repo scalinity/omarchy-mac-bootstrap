@@ -96,7 +96,8 @@ cfg_save() {
   local k v
   for k in $CFG_KEYS; do
     eval "v=\${CFG_$k:-}"
-    [ -n "$v" ] && state_set "cfg_$k" "$v"
+    # An emptied choice is removed, so a cleared optional answer stays cleared.
+    if [ -n "$v" ]; then state_set "cfg_$k" "$v"; else state_unset "cfg_$k"; fi
   done
   return 0
 }
@@ -153,9 +154,9 @@ valid_locale() {
 }
 
 valid_ghuser() {
-  [ -z "$1" ] && return 0
+  case "$1" in "" | -) return 0 ;; esac
   _whole "$1" '^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$' && return 0
-  printf '   %s\n' "A GitHub username (letters, digits, hyphens), or leave empty."
+  printf '   %s\n' "A GitHub username (letters, digits, hyphens); empty to skip, - to clear."
   return 1
 }
 
@@ -172,7 +173,7 @@ cfg_field_ok() {
     kmap) valid_keymap "$2" ;;
     tz) valid_tz "$2" ;;
     loc) valid_locale "$2" ;;
-    gh) valid_ghuser "$2" ;;
+    gh) [ "$2" != "-" ] && valid_ghuser "$2" ;;
     linux | shared) valid_gb "$2" ;;
     *) return 2 ;;
   esac >/dev/null
