@@ -81,6 +81,8 @@ bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|s
 assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 
 # --- Static: every mutating command goes through run, and is expected -------------
+# Lists compared against a literal are sorted in byte order (LC_ALL=C), so the
+# comparison holds under any host locale.
 runs=$(code_lines | grep -oE '(^|[[:space:];&|(])run [^;|&]*' | sed -E 's/^[[:space:];&|(]*run //' | awk '{print $1}' | sort -u | tr '\n' ' ')
 for cmd in $runs; do
   case "$cmd" in
@@ -93,12 +95,12 @@ for cmd in $runs; do
 done
 quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
 assert_eq "$quoted" 'run "$OMS_SELF" --resume' "the only indirect command through run is omarchy-mac-setup --resume"
-sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | sort -u | tr '\n' ';')
+sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | LC_ALL=C sort -u | tr '\n' ';')
 assert_eq "$sudos" "run sudo cp -p;run sudo diskutil addPartition;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, the Shared mount, and the one Shared creation"
-assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | sort -u | tr '\n' ';')" \
+assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
   'run sudo cp -p /etc/fstab /etc/fstab.omarchy-bootstrap.bak;run sudo install -d -m 0755 -o root -g root "$SHARED_MNT";run sudo install -m 0644 -o root -g root "$tmp" /etc/fstab.omarchy-bootstrap.new;run sudo mv -f /etc/fstab.omarchy-bootstrap.new /etc/fstab;' \
   "privileged file changes are exactly the Shared mount point and the managed fstab"
-assert_eq "$(grep -hoE 'run sudo systemctl [^&]*' $CODE | sed 's/ *$//' | sort -u | tr '\n' ';')" \
+assert_eq "$(grep -hoE 'run sudo systemctl [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
   'run sudo systemctl daemon-reload;run sudo systemctl start "$SHARED_UNIT";' "systemctl only reloads and starts the Shared automount"
 hits=$(code_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E '(^[[:space:]]*|[;&|({!][[:space:]]*|\$\([[:space:]]*|(then|do|else|if|exec|command|env|xargs)[[:space:]]+)sudo[[:space:]]')
 assert_eq "$hits" "" "sudo only ever runs through run"

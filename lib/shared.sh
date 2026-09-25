@@ -830,9 +830,13 @@ shared_fstab_line() {
 }
 
 # shared_fstab_scan — FS_MANAGED: the line under our marker; FS_CONFLICTS:
-# other active lines about this partition or /mnt/shared.
+# other active lines about this partition or /mnt/shared, one per line.
+# Problems inside the block this tool claims come first (a foreign line under
+# its marker, a second marker), then the rest in file order; the first line
+# is the one shown. Duplicates are dropped by exact bytes, never by the
+# locale's collation, so every platform reports the same first conflict.
 shared_fstab_scan() {
-  local f line prev="" dev mp marks=0 lower
+  local f line prev="" dev mp marks=0 lower own=""
   FS_MANAGED="" FS_CONFLICTS="" FS_UNREADABLE=0
   SH_UID=${SH_UID:-$(sys_cmd id_u id -u)} SH_GID=${SH_GID:-$(sys_cmd id_g id -g)}
   f=$(sys_path /etc/fstab)
@@ -849,7 +853,7 @@ shared_fstab_scan() {
         FS_MANAGED=$line
         continue
       fi
-      FS_CONFLICTS="$FS_CONFLICTS(under this tool's marker) $line
+      own="$own(under this tool's marker) $line
 "
     fi
     if [ "$line" = "$SHARED_FSTAB_MARK" ]; then
@@ -894,9 +898,9 @@ shared_fstab_scan() {
     [ "$mp" = "$SHARED_MNT" ] && FS_CONFLICTS="$FS_CONFLICTS$line
 "
   done <"$f"
-  [ "$marks" -gt 1 ] && FS_CONFLICTS="${FS_CONFLICTS}$marks copies of this tool's marker
+  [ "$marks" -gt 1 ] && own="$own$marks copies of this tool's marker
 "
-  FS_CONFLICTS=$(printf '%s' "$FS_CONFLICTS" | sort -u)
+  FS_CONFLICTS=$(printf '%s%s' "$own" "$FS_CONFLICTS" | awk '!seen[$0]++')
 }
 
 # shared_completion_code — what macOS needs to know Linux has finished.

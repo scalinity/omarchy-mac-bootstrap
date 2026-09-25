@@ -337,6 +337,21 @@ managed=$(tail -2 "$fx/root/etc/fstab")
 printf '%s\n' "$managed" >>"$fx/root/etc/fstab"
 t_cli "$fx" "" shared
 assert_contains "$(t_flat "$T_OUT")" "2 copies of this tool's marker" "a duplicated managed entry is a conflict"
+# The conflict inside this tool's own block is reported first, then the rest
+# in file order, each once, whatever the locale: glibc's en_US.UTF-8 collation
+# ignores punctuation, so a sorted list led with "LABEL=..." on Linux only.
+fx=$(t_variant linux-shared-present)
+printf '%s\nLABEL=Shared /mnt/shared exfat defaults 0 0\nLABEL=Shared /mnt/shared exfat defaults 0 0\n' "$SHARED_FSTAB_MARK" >>"$fx/root/etc/fstab"
+for loc in C C.UTF-8 en_US.UTF-8; do
+  got=$(
+    export LC_ALL=$loc
+    OMB_FIXTURE=$fx SH_UID=1000 SH_GID=1000 SH_PARTUUID="" SH_FSUUID="" SH_NAME=""
+    shared_fstab_scan
+    printf '%s' "$FS_CONFLICTS"
+  ) 2>/dev/null
+  assert_eq "$got" "(under this tool's marker) LABEL=Shared /mnt/shared exfat defaults 0 0
+LABEL=Shared /mnt/shared exfat defaults 0 0" "LC_ALL=$loc: this tool's block first, then file order, each once"
+done
 fx=$(t_variant linux-shared-present)
 mkdir -p "$fx/root/mnt/shared"
 printf 'x\n' >"$fx/root/mnt/shared/stray-file"
