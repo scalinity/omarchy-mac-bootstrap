@@ -114,6 +114,14 @@ t_cli linux-alarm-fresh '\nalex\nm1pro\n\n' plan
 assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_user=alex" "linux plan saves choices"
 assert_empty_file "$T_DIR/record" "linux plan runs nothing"
 
+# --- A resume token is recorded as used (the key must pass the secret-name filter) -------
+t_cli linux-alarm-fresh '\n\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
+st=$(cat "$T_DIR/state/state.env")
+assert_contains "$st" "phase1_choices_loaded_at=" "token use is recorded"
+assert_not_contains "$(cat "$T_DIR"/state/logs/*.log)" "refuse" "no state key was refused"
+T_ENV="OMB_STATE_DIR=$T_DIR/state" t_cli linux-alarm-fresh "" status
+assert_not_contains "$T_OUT" "Token loaded        not used" "status reports the token as used"
+
 # --- Root → user hand-off through the system state file --------------------------------
 fx=$(t_variant linux-omarchy-installed)
 mkdir -p "$fx/root/var/lib/omarchy-mac-bootstrap"

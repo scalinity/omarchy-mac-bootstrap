@@ -334,7 +334,7 @@ lx_status() {
     seen=1
     ui_section "Recorded" "$(tildify "$f")"
     ui_kv "Choices" "$(state_get cfg_user '' "$f")@$(state_get cfg_host '' "$f") $G_DOT encrypt $(state_get cfg_enc '' "$f")"
-    ui_kv "Token loaded" "$(state_get token_loaded_at 'not used' "$f")"
+    ui_kv "Token loaded" "$(state_get phase1_choices_loaded_at 'not used' "$f")"
     ui_kv "Setup launched" "$(state_get omarchy_launched_at 'not yet' "$f")"
     [ -n "$(state_get omarchy_setup_sha256 '' "$f")" ] && ui_kv "Setup SHA-256" "$(state_get omarchy_setup_sha256 '' "$f")"
     [ -n "$(state_get dev_last_run_at '' "$f")" ] && ui_kv "Developer setup" "$(state_get dev_modules '' "$f")" "$(state_get dev_last_run_at '' "$f")"

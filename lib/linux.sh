@@ -347,7 +347,7 @@ $TOKEN_WARNINGS
 EOF
     if [ "$ok" = 0 ]; then
       ui_ok "Phase 1 choices loaded: ${CFG_user:-?}@${CFG_host:-?}, encryption $([ "${CFG_enc:-1}" = 1 ] && echo on || echo off), Linux ${CFG_linux:-?} GB."
-      state_stamp token_loaded_at
+      state_stamp phase1_choices_loaded_at
     else
       ui_warn "Token not usable; you will be asked instead."
     fi
