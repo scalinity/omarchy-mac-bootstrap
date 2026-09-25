@@ -105,9 +105,25 @@ t_cli linux-setup-in-progress 'resume\n' --dry-run
 assert_contains "$T_OUT" "would run  /usr/local/bin/omarchy-mac-setup --resume" "in-progress dry-run shows upstream resume"
 assert_empty_file "$T_DIR/shims.log" "in-progress dry-run invoked a forbidden command"
 
-t_cli linux-omarchy-installed '1 2 3 4 5 6 7 8 9\n1 2 3 4\n2\ny\nAlex\nalex@example.com\n\n\n\ny\n1 2\n\n\n' dev --dry-run
-assert_contains "$T_OUT" "would run  omarchy-pkg-add" "dev dry-run shows package installs"
-assert_contains "$T_OUT" "would run  omarchy-install-dev-env rust" "dev dry-run delegates languages to Omarchy"
+# Answers, in prompt order: modules 1-9; languages 1-4; containers 2 (Podman);
+# VS Code y; git name and email; gh setup-git Enter; key generation Enter;
+# enable SSH y; AI CLIs 1 2; inspect Enter; run the Claude installer y.
+t_cli linux-omarchy-installed '1 2 3 4 5 6 7 8 9\n1 2 3 4\n2\ny\nAlex\nalex@example.com\n\n\ny\n1 2\n\ny\n' dev --dry-run
+for expected in \
+  "omarchy-pkg-add github-cli wget tree rsync" \
+  "omarchy-install-dev-env rust" "omarchy-install-dev-env python" \
+  "omarchy-install-dev-env node" "omarchy-install-dev-env go" \
+  "omarchy-pkg-add podman podman-compose" \
+  "omarchy-install-editor-vscode" \
+  "git config --global user.name Alex" \
+  "gh auth login" "gh auth setup-git" \
+  "ssh-keygen -t ed25519" \
+  "omarchy-setup-security-sshd" \
+  "bash $T_DIR/state/downloads/claude-code-install.sh-"; do
+  assert_contains "$T_OUT" "would run  $expected" "dev module ran: $expected"
+done
+assert_contains "$T_OUT" "npm not found" "Codex explains that it needs node first"
+assert_contains "$T_OUT" "Developer setup finished" "every module ran to the end"
 assert_empty_file "$T_DIR/shims.log" "dev dry-run invoked a forbidden command"
 assert_empty_file "$T_DIR/record" "dev dry-run recorded an execution"
 
