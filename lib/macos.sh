@@ -488,7 +488,7 @@ mac_save_plan() {
 
 mac_write_shared_plan() {
   local f="$OMB_STATE_DIR/shared-storage-plan.txt"
-  if [ "$OMB_DRY_RUN" = 1 ]; then
+  if [ "$OMB_PERSIST" != 1 ]; then
     ui_would "write the shared-storage plan to $(tildify "$f")"
     return 0
   fi

@@ -5,9 +5,17 @@
 # fixture instead; every command that changes the machine goes through run so
 # dry-run and the test recorder can intercept it. Nothing else touches either.
 
-OMB_VERSION="0.1.0"
+OMB_VERSION="0.2.0"
 OMB_DRY_RUN=${OMB_DRY_RUN:-0}
 OMB_PHASE=${OMB_PHASE:-init}
+# What this invocation may do, set once by the entrypoint from the command:
+#   OMB_INTENT  act | plan | read — only "act" may reach run or a download.
+#   OMB_PERSIST 1 | 0 — 0 for read-only commands and --dry-run: no state
+#               directory, no state, no log, no retained download.
+# Never read from the environment: a caller cannot widen what a command does.
+OMB_INTENT=act
+OMB_PERSIST=1
+OMB_CMD=""
 
 # ---------------------------------------------------------------------------
 # The system seam
@@ -129,12 +137,18 @@ tildify() {
 log_dir() { printf '%s/logs' "$OMB_STATE_DIR"; }
 log_file() { printf '%s/omarchy-bootstrap-%s.log' "$(log_dir)" "$(date -u +%Y%m%d)"; }
 
+# log_event LEVEL MESSAGE — appends to today's log. Read-only commands and
+# dry runs keep no log: a preview leaves nothing behind.
 log_event() {
-  local level=$1
+  local level=$1 dir
   shift
   local msg="$*"
-  [ -n "${OMB_STATE_DIR:-}" ] || return 0
-  mkdir -p "$(log_dir)" 2>/dev/null || return 0
+  [ "$OMB_PERSIST" = 1 ] && [ -n "${OMB_STATE_DIR:-}" ] || return 0
+  state_dir_ready 2>/dev/null || return 0
+  dir=$(log_dir)
+  [ -L "$dir" ] && return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  [ -L "$(log_file)" ] && return 0
   msg=$(printf '%s' "$msg" | tr '\n' ' ' |
     sed -E -e 's/(bearer[[:space:]]+)[^[:space:]]+/\1[redacted]/Ig' \
       -e 's/((pass(word|phrase)?|secret|token|credential|api[_-]?key|authorization)[A-Za-z_-]*([=:]|[[:space:]])+)[^[:space:]]+/\1[redacted]/Ig')
@@ -153,6 +167,13 @@ log_event() {
 run() {
   local argv
   argv=$(quote_argv "$@")
+  # plan, status, doctor, sources and logs never change the machine. Reaching
+  # here from one of them is a routing mistake; refuse instead of trusting it.
+  if [ "$OMB_INTENT" != act ]; then
+    log_event refuse "'${OMB_CMD:-this command}' does not execute: $argv"
+    ui_fail "Refused: '${OMB_CMD:-this command}' never changes the machine (it reached: $argv)."
+    return 1
+  fi
   if [ "$OMB_DRY_RUN" = 1 ]; then
     log_event dryrun "$argv"
     ui_would "$argv"
@@ -191,22 +212,48 @@ sha256_of() {
   fi
 }
 
+# omb_tmp_init — this run's private scratch directory ($OMB_TMP), created on
+# first use in the current shell and removed by omb_cleanup when the run ends.
+omb_tmp_init() {
+  [ -n "${OMB_TMP:-}" ] && [ -d "$OMB_TMP" ] && return 0
+  OMB_TMP=$(mktemp -d "${TMPDIR:-/tmp}/omarchy-bootstrap.XXXXXX") || return 1
+}
+
+# omb_cleanup — on exit: drop the scratch directory and release our lock.
+omb_cleanup() {
+  case "${OMB_TMP:-}" in
+    */omarchy-bootstrap.*) rm -rf "$OMB_TMP" ;;
+  esac
+}
+
 # fetch_upstream KEY URL
-# Downloads URL into the state directory's downloads/ and sets FETCH_PATH,
-# FETCH_URL, FETCH_AT, FETCH_SIZE, FETCH_SHA256. Downloading changes nothing on
-# the machine, so it also happens in dry-run: seeing the fingerprint is the point.
+# Downloads URL and sets FETCH_PATH, FETCH_URL, FETCH_AT, FETCH_SIZE,
+# FETCH_SHA256. A real run keeps the file in the state directory's downloads/
+# for provenance; a dry run downloads into the scratch directory, which is
+# removed on exit — seeing the fingerprint is the point, keeping it is not.
 fetch_upstream() {
   local key=$1 url=$2 dir
-  dir="$OMB_STATE_DIR/downloads"
-  # Private: nothing else on the machine may swap a script between its
-  # fingerprint and its execution.
-  (umask 077 && mkdir -p "$dir") || return 1
-  chmod 700 "$dir" 2>/dev/null
+  [ "$OMB_INTENT" = act ] || return 1
+  if [ "$OMB_PERSIST" = 1 ]; then
+    state_dir_ready || return 1
+    dir="$OMB_STATE_DIR/downloads"
+    [ -L "$dir" ] && return 1
+    # Private: nothing else on the machine may swap a script between its
+    # fingerprint and its execution.
+    (umask 077 && mkdir -p "$dir") || return 1
+    chmod 700 "$dir" 2>/dev/null
+  else
+    omb_tmp_init || return 1
+    dir=$OMB_TMP
+  fi
   FETCH_URL=$url
   FETCH_AT=$(now_utc)
-  FETCH_PATH="$dir/$key-$(now_stamp)"
+  FETCH_PATH=$(mktemp "$dir/$key-$(now_stamp).XXXXXX") || return 1
   if [ -n "${OMB_FIXTURE:-}" ]; then
-    [ -f "$OMB_FIXTURE/net/$key" ] || return 7
+    [ -f "$OMB_FIXTURE/net/$key" ] || {
+      rm -f "$FETCH_PATH"
+      return 7
+    }
     cp "$OMB_FIXTURE/net/$key" "$FETCH_PATH" || return 1
   else
     curl -fsSL --proto '=https' --tlsv1.2 --max-time 120 -o "$FETCH_PATH" "$url" || {

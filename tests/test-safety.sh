@@ -119,9 +119,11 @@ for expected in \
   "gh auth login" "gh auth setup-git" \
   "ssh-keygen -t ed25519" \
   "omarchy-setup-security-sshd" \
-  "bash $T_DIR/state/downloads/claude-code-install.sh-"; do
+  "bash $T_DIR/tmp/omarchy-bootstrap."; do
   assert_contains "$T_OUT" "would run  $expected" "dev module ran: $expected"
 done
+assert_eq "$(ls -A "$T_DIR/tmp")" "" "a dry-run download is removed when the run ends"
+assert_eq "$(ls "$T_DIR/state" 2>/dev/null)" "" "dev dry-run keeps no state, log or download"
 assert_contains "$T_OUT" "npm not found" "Codex explains that it needs node first"
 assert_contains "$T_OUT" "Developer setup finished" "every module ran to the end"
 assert_empty_file "$T_DIR/shims.log" "dev dry-run invoked a forbidden command"

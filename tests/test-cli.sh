@@ -16,7 +16,7 @@ assert_rc "$T_RC" 0 "--help exits 0"
 while IFS='|' read -r cmd desc; do
   if printf '%s\n' "$T_OUT" | grep -Eq "^ +$cmd +$desc"; then ok; else fail "help row for $cmd"; fi
 done <<'EOF'
-plan|survey \+ storage plan \+ choices; changes nothing
+plan|survey \+ storage plan \+ choices; saves them, runs nothing
 install|run the current phase end to end
 resume \[token\]|continue after a reboot
 status|where this machine is, and what comes next
@@ -24,12 +24,12 @@ doctor|read-only health checks
 dev|optional developer setup
 sources \[--check\]|upstream URLs and versions
 logs|log location and recent entries
---dry-run|show every step; run nothing
+--dry-run|show every step; change nothing, keep nothing
 --no-color|plain output
 --ascii|ASCII glyphs only
 EOF
 t_cli mac-m1pro-1tb-roomy "" --version
-assert_eq "$T_OUT" "omarchy-bootstrap 0.1.0" "--version"
+assert_eq "$T_OUT" "omarchy-bootstrap 0.2.0" "--version"
 t_cli mac-m1pro-1tb-roomy "" frobnicate
 assert_rc "$T_RC" 2 "unknown command exits 2"
 assert_contains "$T_OUT" "Unknown command: frobnicate" "unknown command named"
@@ -263,8 +263,12 @@ assert_contains "$T_OUT" "missing: --hostname --keymap --resume" "flag drift"
 assert_contains "$T_OUT" "FAQ no longer mentions 38GB" "reserve drift"
 
 # --- Logs ------------------------------------------------------------------------------------
-t_cli linux-alarm-fresh "" logs
+# A recording run leaves a log; logs itself is read-only and adds nothing.
+t_cli linux-alarm-fresh '\nalex\nm1pro\n\n' plan
+state_dir=$T_DIR/state
+T_ENV="OMB_STATE_DIR=$state_dir" t_cli linux-alarm-fresh "" logs
 assert_contains "$T_OUT" "omarchy-bootstrap-" "logs names the log file"
-assert_contains "$T_OUT" "cmd=logs" "logs shows the run just made"
+assert_contains "$T_OUT" "cmd=plan" "logs shows the earlier recording run"
+assert_not_contains "$(cat "$state_dir"/logs/*.log)" "cmd=logs" "logs does not log itself"
 
 t_done test-cli

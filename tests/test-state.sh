@@ -50,11 +50,12 @@ for k in wifi_password sudo_pass gh_token luks_passphrase recovery_key api_secre
 done
 assert_not_contains "$(cat "$STATE_FILE")" "wifi_password" "refused key not written"
 
-# --- Dry run records nothing ---------------------------------------------------
-OMB_DRY_RUN=1
+# --- A non-recording run (dry run, read-only command) records nothing ----------
+OMB_PERSIST=0
 state_set dry_key 1
-OMB_DRY_RUN=0
-assert_eq "$(state_get dry_key)" "" "dry-run does not write state"
+assert_rc $? 0 "a non-recording run's state_set succeeds without writing"
+OMB_PERSIST=1
+assert_eq "$(state_get dry_key)" "" "a non-recording run does not write state"
 
 # --- Choices -------------------------------------------------------------------
 CFG_enc=1 CFG_user=alex CFG_host=m1pro CFG_kmap=us CFG_tz=Europe/Berlin CFG_loc=de_DE.UTF-8 CFG_ssh=1 CFG_gh=octocat CFG_linux=250 CFG_shared=0 CFG_dev=1

@@ -81,10 +81,12 @@ t_cli() {
     /*) fx=$fixture ;;
     *) fx="$FIX/$fixture" ;;
   esac
+  mkdir -p "$T_DIR/tmp"
   # shellcheck disable=SC2086 # T_ENV is a list of assignments by design
   T_OUT=$(printf '%b' "$input" | env -i \
     PATH="$shims:/usr/bin:/bin:/usr/sbin:/sbin" \
     HOME="$T_DIR/home" \
+    TMPDIR="$T_DIR/tmp" \
     LANG=en_US.UTF-8 \
     TERM=dumb \
     OMB_STATE_DIR="$T_DIR/state" \
@@ -95,6 +97,16 @@ t_cli() {
     "$T_BASH" "$REPO/omarchy-bootstrap" "$@" 2>&1)
   T_RC=$?
   touch "$T_DIR/shims.log" "$T_DIR/record"
+}
+
+# t_snapshot DIR — every path under DIR with a checksum for each file, so a
+# before/after comparison shows any file created, removed, or changed.
+t_snapshot() {
+  [ -e "$1" ] || {
+    echo "(absent)"
+    return 0
+  }
+  (cd "$1" && find . -print | sort && find . -type f -exec cksum {} + | sort)
 }
 
 # Load the libraries into this shell for unit tests (main is not run).

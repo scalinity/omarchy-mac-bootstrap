@@ -2,6 +2,9 @@
 # Persistent, non-secret progress: state.env (key=value, parsed, never sourced)
 # and the resume token that carries Phase 1 choices across the reboot.
 
+# state_init — works out where state lives; creates nothing. The directory is
+# made on the first write (state_dir_ready), so a read-only command or a dry
+# run never leaves one behind.
 state_init() {
   if [ -z "${OMB_STATE_DIR:-}" ]; then
     if [ "$OMB_PLATFORM" = linux ] && [ "$OMB_UID" = 0 ]; then
@@ -13,6 +16,13 @@ state_init() {
   STATE_FILE="$OMB_STATE_DIR/state.env"
   # The record a root run of Phase 2 leaves for the later non-root run.
   STATE_SYSTEM_FILE=$(sys_path /var/lib/omarchy-mac-bootstrap/state.env)
+  return 0
+}
+
+# state_dir_ready — the state directory, made on the first write of a
+# recording run. Read-only commands and dry runs never get one.
+state_dir_ready() {
+  [ "$OMB_PERSIST" = 1 ] || return 1
   mkdir -p "$OMB_STATE_DIR" 2>/dev/null
 }
 
@@ -40,7 +50,8 @@ state_key_allowed() {
   return 0
 }
 
-# state_set KEY VALUE — atomic rewrite; skipped (and logged) in dry-run.
+# state_set KEY VALUE — atomic rewrite. Read-only commands and dry runs
+# record nothing.
 state_set() {
   local key=$1 value=$2 tmp
   if ! state_key_allowed "$key"; then
@@ -48,11 +59,8 @@ state_set() {
     return 1
   fi
   value=$(printf '%s' "$value" | tr -d '\r\n')
-  if [ "$OMB_DRY_RUN" = 1 ]; then
-    log_event dryrun "would record $key=$value"
-    return 0
-  fi
-  mkdir -p "$OMB_STATE_DIR" || return 1
+  [ "$OMB_PERSIST" = 1 ] || return 0
+  state_dir_ready || return 1
   tmp="$STATE_FILE.tmp.$$"
   { [ -f "$STATE_FILE" ] && grep -v "^$key=" "$STATE_FILE"; printf '%s=%s\n' "$key" "$value"; } >"$tmp" &&
     mv "$tmp" "$STATE_FILE"
@@ -62,8 +70,8 @@ state_set() {
 state_stamp() { state_set "$1" "$(now_utc)"; }
 
 state_unset() {
+  [ "$OMB_PERSIST" = 1 ] || return 0
   [ -f "$STATE_FILE" ] || return 0
-  [ "$OMB_DRY_RUN" = 1 ] && return 0
   local tmp="$STATE_FILE.tmp.$$"
   grep -v "^$1=" "$STATE_FILE" >"$tmp"
   mv "$tmp" "$STATE_FILE"

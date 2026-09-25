@@ -50,16 +50,16 @@ usage() {
   printf '     %somarchy-bootstrap%s %s[command] [flags]%s\n' "$C_ACCENT" "$C_RESET" "$C_DIM" "$C_RESET"
   ui_section "Commands"
   _help_row "(no command)" "guided flow: continues from wherever this machine is"
-  _help_row "plan" "survey + storage plan + choices; changes nothing"
+  _help_row "plan" "survey + storage plan + choices; saves them, runs nothing"
   _help_row "install" "run the current phase end to end"
   _help_row "resume [token]" "continue after a reboot (Linux: paste the Phase 1 token)"
-  _help_row "status" "where this machine is, and what comes next"
+  _help_row "status" "where this machine is, and what comes next (read-only)"
   _help_row "doctor" "read-only health checks"
   _help_row "dev" "optional developer setup (Linux, after Omarchy)"
-  _help_row "sources [--check]" "upstream URLs and versions; --check compares live"
-  _help_row "logs" "log location and recent entries"
+  _help_row "sources [--check]" "upstream URLs and versions; --check compares live (read-only)"
+  _help_row "logs" "log location and recent entries (read-only)"
   ui_section "Flags"
-  _help_row "--dry-run" "show every step; run nothing that changes the machine"
+  _help_row "--dry-run" "show every step; change nothing, keep nothing"
   _help_row "--no-color" "plain output (also: NO_COLOR=1)"
   _help_row "--ascii" "ASCII glyphs only"
   _help_row "-h, --help" "this help"
@@ -131,17 +131,32 @@ main() {
   # launches: never group- or world-writable, whatever the caller inherited.
   umask 022
   ui_init
-  platform_init
-  state_init
-  trap on_interrupt INT TERM
-  trap ui_cursor_restore EXIT
-
-  OMB_PHASE=$OMB_PLATFORM
-  log_event start "omarchy-bootstrap $OMB_VERSION cmd=${cmd:-default} os=$OMB_OS uid=$OMB_UID dry_run=$OMB_DRY_RUN${OMB_FIXTURE:+ fixture=$(basename "$OMB_FIXTURE")}"
-
+  # Help and version touch nothing: no probes, no state directory, no log.
   case "$cmd" in
     help) usage && return 0 ;;
     version) printf 'omarchy-bootstrap %s\n' "$OMB_VERSION" && return 0 ;;
+  esac
+
+  # Intent is decided from the command alone, before anything looks at where
+  # the machine is: a read-only or planning command can never be routed into
+  # an action by the machine's state (run and fetch_upstream enforce it).
+  OMB_CMD=${cmd:-default}
+  case "$cmd" in
+    status | doctor | sources | logs) OMB_INTENT=read OMB_PERSIST=0 ;;
+    plan) OMB_INTENT=plan ;;
+    *) OMB_INTENT=act ;;
+  esac
+  [ "$OMB_DRY_RUN" = 1 ] && OMB_PERSIST=0
+
+  platform_init
+  state_init || return 1
+  trap on_interrupt INT TERM
+  trap 'ui_cursor_restore; omb_cleanup' EXIT
+
+  OMB_PHASE=$OMB_PLATFORM
+  log_event start "omarchy-bootstrap $OMB_VERSION cmd=$OMB_CMD intent=$OMB_INTENT os=$OMB_OS uid=$OMB_UID dry_run=$OMB_DRY_RUN${OMB_FIXTURE:+ fixture=$(basename "$OMB_FIXTURE")}"
+
+  case "$cmd" in
     sources) cmd_sources ${rest[@]+"${rest[@]}"} ; return ;;
     logs) cmd_logs ; return ;;
     doctor) cmd_doctor ; return ;;

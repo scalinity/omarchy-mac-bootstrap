@@ -318,6 +318,32 @@ lx_installed() {
   printf '\n'
 }
 
+# lx_plan — the Linux side of `plan`: review and save the Omarchy Mac
+# choices. Never resumes, launches, or configures anything; once Omarchy's
+# setup has started, its choices are fixed and there is nothing to plan.
+lx_plan() {
+  case "$LX_OMARCHY_STATE" in
+    installed)
+      ui_info "Omarchy is installed; there is nothing left to plan on this side."
+      ui_note "Developer setup: ./omarchy-bootstrap dev. Where things stand: ./omarchy-bootstrap status."
+      printf '\n'
+      return 0
+      ;;
+    in-progress)
+      ui_info "omarchy-mac-setup is part-way through with the choices it started with; plan changes nothing now."
+      ui_note "./omarchy-bootstrap status shows its progress; ./omarchy-bootstrap resume continues it."
+      printf '\n'
+      return 0
+      ;;
+  esac
+  lx_choices || return 0
+  cfg_save
+  printf '\n'
+  ui_ok "Choices saved$([ "$OMB_DRY_RUN" = 1 ] && printf ' (dry run: not written)'). Run ./omarchy-bootstrap to continue."
+  printf '\n'
+  return 0
+}
+
 # lx_main MODE [TOKEN]
 lx_main() {
   local mode=$1 token=${2:-} blockers line
@@ -356,6 +382,13 @@ EOF
     return 1
   fi
 
+  # Planning is decided before the machine's state picks an action: plan only
+  # ever reviews and saves choices, whatever state the install is in.
+  if [ "$mode" = plan ]; then
+    lx_plan
+    return
+  fi
+
   case "$LX_OMARCHY_STATE" in
     installed)
       lx_installed
@@ -370,15 +403,6 @@ EOF
         "omarchy-mac-setup reads the machine and redoes only the unfinished steps; running it again is the upstream-supported path."
       ;;
   esac
-
-  if [ "$mode" = plan ]; then
-    lx_choices || return 0
-    cfg_save
-    printf '\n'
-    ui_ok "Choices saved$([ "$OMB_DRY_RUN" = 1 ] && printf ' (dry run: not written)'). Run ./omarchy-bootstrap to continue."
-    printf '\n'
-    return 0
-  fi
 
   if [ "$OMB_UID" != 0 ]; then
     if [ "$OMB_DRY_RUN" = 1 ]; then
