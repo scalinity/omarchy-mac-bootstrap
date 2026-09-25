@@ -9,7 +9,6 @@ SOURCES_VERIFIED_ON="2026-09-24"
 ASAHI_ALARM_INSTALLER_URL="https://asahi-alarm.org/installer-bootstrap.sh"
 ASAHI_ALARM_VERSION_URL="https://asahi-alarm.org/latest"
 ASAHI_ALARM_DATA_URL="https://asahi-alarm.org/installer_data.json"
-ASAHI_ALARM_HOME="https://asahi-alarm.org/"
 ASAHI_ALARM_OS_CHOICE="Asahi Alarm Minimal (BTRFS)"
 ASAHI_ALARM_FIRST_LOGIN="root / root"
 ASAHI_INSTALLER_VERIFIED="v0.9.2"
@@ -19,7 +18,6 @@ ASAHI_MIN_MACOS="13.5"
 ASAHI_MIN_FREE_OS_BYTES=38000000000   # MIN_FREE_OS: kept free for macOS upgrades
 ASAHI_STUB_BYTES=2500000000           # STUB_SIZE: the boot "stub macOS" container
 ASAHI_EFI_BYTES=524288000             # EFI partition in the Alarm templates
-ASAHI_MIN_INSTALL_FREE_BYTES=10000000000
 ASAHI_OVERHEAD_WARN_BYTES=16000000000 # installer warns above this overhead
 ASAHI_PART_ALIGN=1048576
 

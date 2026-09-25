@@ -776,10 +776,9 @@ mac_handoff() {
 # ---------------------------------------------------------------------------
 
 mac_survey() {
-  if ui_interactive; then
-    printf '\n'
-    ui_spin "Surveying this Mac (read-only)" true
-  fi
+  # mac_detect sets globals, so it cannot run under a spinner's background
+  # subshell; say what is happening before the few seconds it takes.
+  ui_interactive && _p '\n   %s%s%s\n' "$C_DIM" "Surveying this Mac (read-only)…" "$C_RESET"
   mac_detect
   MAC_ONLINE=0
   ui_spin "Checking internet" sys_reachable asahi_home "$ASAHI_ALARM_VERSION_URL" && MAC_ONLINE=1
