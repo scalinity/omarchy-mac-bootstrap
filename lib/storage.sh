@@ -157,7 +157,8 @@ parse_size() {
 # ---------------------------------------------------------------------------
 
 geo_reset() {
-  GEO_PARTS="" GEO_ERR="" GEO_OK=0
+  GEO_PARTS="" GEO_ERR="" GEO_OK=0 GEO_GAPS="" GEO_ALLGAPS="" GEO_DISK_SIZE=0 GEO_BLOCK=0
+  GEO_USABLE_START=0 GEO_USABLE_END=0
 }
 
 # geo_add OFFSET SIZE UUID CONTENT ID ROLE — one partition. A value that is

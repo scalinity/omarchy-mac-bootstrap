@@ -134,6 +134,15 @@ if command -v plutil >/dev/null 2>&1; then
   mac_case "$fx"
   assert_contains "$(mac_blockers)" "more than one physical store" "a multi-store container blocks planning"
 
+  # Through the real entrypoint (set -u): an unreadable layout stops with
+  # its reason instead of failing on an unset variable.
+  for fx in mac-geo-missing-offset mac-geo-disagree; do
+    t_cli "$fx" "\n\n"
+    assert_rc "$T_RC" 1 "$fx stops"
+    assert_contains "$T_OUT" "could not be read exactly" "$fx says why"
+    assert_not_contains "$T_OUT" "unbound variable" "$fx does not crash"
+  done
+
   # The resize-limits query refuses anything that is not a disk identifier.
   mac_resize_limits 'disk3; rm -rf /' >/dev/null
   assert_rc $? 1 "limits query rejects injected text"
