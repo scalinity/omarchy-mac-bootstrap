@@ -331,9 +331,7 @@ lx_main() {
   cfg_load
   # A root run of Phase 2 leaves its record where a later user run can read it.
   if [ "$OMB_UID" != 0 ] && [ -f "$STATE_SYSTEM_FILE" ] && [ -z "$(state_get cfg_user)" ]; then
-    for line in $CFG_KEYS; do
-      eval "CFG_$line=\$(state_get cfg_$line \"\${CFG_$line:-}\" \"\$STATE_SYSTEM_FILE\")"
-    done
+    cfg_load "$STATE_SYSTEM_FILE"
   fi
   log_event survey "board=$LX_BOARD soc=$LX_SOC os=$LX_OS_ID root=$LX_ROOT_FS crypt=$LX_ROOT_CRYPT route=$LX_ROUTE online=$LX_ONLINE omarchy=$LX_OMARCHY_STATE version=$LX_OMARCHY_VERSION"
 

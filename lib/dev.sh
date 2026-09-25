@@ -93,10 +93,7 @@ dev_main() {
   [ -n "${LX_ARCH:-}" ] || lx_detect
   cfg_load
   if [ -z "${CFG_user:-}" ] && [ -f "$STATE_SYSTEM_FILE" ]; then
-    local k
-    for k in $CFG_KEYS; do
-      eval "CFG_$k=\$(state_get cfg_$k \"\${CFG_$k:-}\" \"\$STATE_SYSTEM_FILE\")"
-    done
+    cfg_load "$STATE_SYSTEM_FILE"
   fi
   lx_screen dev
   if [ "$LX_OMARCHY_STATE" != installed ]; then

@@ -76,10 +76,19 @@ state_unset() {
 
 CFG_KEYS="enc user host kmap tz loc ssh gh linux shared dev"
 
+# cfg_load [FILE] — loads saved choices (default: this run's state file). A
+# value is applied only if it passes cfg_field_ok: state is data, and values
+# such as cfg_shared later reach shell arithmetic, which evaluates subscripts.
 cfg_load() {
-  local k
+  local file=${1:-$STATE_FILE} k v
   for k in $CFG_KEYS; do
-    eval "CFG_$k=\$(state_get cfg_$k \"\${CFG_$k:-}\")"
+    v=$(state_get "cfg_$k" "" "$file")
+    [ -n "$v" ] || continue
+    if cfg_field_ok "$k" "$v"; then
+      eval "CFG_$k=\$v"
+    else
+      log_event refuse "ignored invalid saved value cfg_$k in $file"
+    fi
   done
 }
 
@@ -136,6 +145,22 @@ valid_ghuser() {
 valid_bool() { case "$1" in 0 | 1) return 0 ;; esac; return 1; }
 valid_gb() { case "$1" in '' | *[!0-9]*) return 1 ;; esac; return 0; }
 
+# cfg_field_ok KEY VALUE — the one rule for every choice, whichever way it
+# arrives (answers, state.env, a resume token). 0 valid, 1 invalid, 2 unknown.
+cfg_field_ok() {
+  case "$1" in
+    enc | ssh | dev) valid_bool "$2" ;;
+    user) valid_username "$2" ;;
+    host) valid_hostname "$2" ;;
+    kmap) valid_keymap "$2" ;;
+    tz) valid_tz "$2" ;;
+    loc) valid_locale "$2" ;;
+    gh) valid_ghuser "$2" ;;
+    linux | shared) valid_gb "$2" ;;
+    *) return 2 ;;
+  esac >/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # Resume token — readable, hand-typeable, whitelisted fields only.
 #   omb1:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,...
@@ -177,20 +202,17 @@ token_decode() {
     k=${pair%%=*}
     v=${pair#*=}
     [ "$pair" = "$k" ] && v=""
-    case "$k" in
-      enc | ssh) valid_bool "$v" >/dev/null || { _tw "ignored $k: expected 0 or 1"; continue; } ;;
-      user) valid_username "$v" >/dev/null || { _tw "ignored user: '$v' is not a valid username"; continue; } ;;
-      host) valid_hostname "$v" >/dev/null || { _tw "ignored host: '$v' is not a valid hostname"; continue; } ;;
-      kmap) valid_keymap "$v" >/dev/null || { _tw "ignored kmap: '$v'"; continue; } ;;
-      tz) valid_tz "$v" >/dev/null || { _tw "ignored tz: '$v'"; continue; } ;;
-      loc) valid_locale "$v" >/dev/null || { _tw "ignored loc: '$v'"; continue; } ;;
-      gh) valid_ghuser "$v" >/dev/null || { _tw "ignored gh: '$v'"; continue; } ;;
-      linux) valid_gb "$v" || { _tw "ignored linux: '$v'"; continue; } ;;
+    case " $TOKEN_FIELDS " in
+      *" $k "*) ;;
       *)
         _tw "ignored unknown field '$k'"
         continue
         ;;
     esac
+    if ! cfg_field_ok "$k" "$v"; then
+      _tw "ignored $k: '$v' is not a valid value"
+      continue
+    fi
     eval "CFG_$k=\$v"
     ok=$((ok + 1))
   done

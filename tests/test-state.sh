@@ -30,6 +30,19 @@ state_get probe >/dev/null
 cfg_load
 [ ! -e "$OMB_STATE_DIR/pwned" ] && ok || fail "a stored value was executed"
 
+# Saved values reach shell arithmetic; an invalid one must never be applied.
+state_set cfg_shared 'a[$(touch "'"$OMB_STATE_DIR"'/pwned-arith")]'
+state_set cfg_linux 'x[$(touch "'"$OMB_STATE_DIR"'/pwned-arith")]'
+CFG_shared=0 CFG_linux=250
+cfg_load
+: $(( ${CFG_shared:-0} * 2 )) $(( ${CFG_linux:-0} * 2 ))
+[ ! -e "$OMB_STATE_DIR/pwned-arith" ] && ok || fail "a saved value executed through arithmetic"
+assert_eq "$CFG_shared $CFG_linux" "0 250" "invalid saved values are dropped, not applied"
+assert_contains "$(cat "$(log_file)")" "ignored invalid saved value cfg_shared" "the refusal is logged"
+state_unset cfg_shared
+state_unset cfg_linux
+assert_eq "$(cfg_field_ok nonsense x; echo $?)" 2 "unknown choice keys are reported as unknown"
+
 # --- Keys that could hold secrets are refused --------------------------------
 for k in wifi_password sudo_pass gh_token luks_passphrase recovery_key api_secret github_credential Bad-Key ''; do
   state_set "$k" x 2>/dev/null
