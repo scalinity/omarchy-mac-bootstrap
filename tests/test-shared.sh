@@ -95,8 +95,8 @@ if t_plutil; then
   assert_contains "$flat" "completion code matches this disk" "the right code is accepted"
   assert_contains "$T_OUT" "Partition before    disk0s6" "the partition before is shown"
   assert_contains "$T_OUT" "Partition after     disk0s3" "the partition after is shown"
-  assert_eq "$(cat "$T_DIR/record")" "diskutil addPartition disk0s6 ExFAT Shared $(( (995186896896 / 1048576 * 1048576) - $(sed -n 's/^shared_start=//p' "$d/shared-intent.env") ))" \
-    "exactly one command: addPartition after the Linux root, the planned bytes"
+  assert_eq "$(cat "$T_DIR/record")" "sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" \
+    "exactly one command: addPartition after the Linux root, the planned size in whole MiB"
   assert_contains "$flat" "Shared storage created: disk0s7" "the result is checked and reported"
   st=$(cat "$d/state.env")
   assert_contains "$st" "shared_uuid=$U_SHARED" "its GUID is recorded"
@@ -136,7 +136,7 @@ if t_plutil; then
   assert_contains "$(t_flat "$T_OUT")" "no partition was created. The disk is as it was; it is safe to try again" "and says it is safe to retry"
   assert_not_contains "$(cat "$d/state.env")" "shared_uuid=" "nothing is recorded as created"
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create --dry-run
-  assert_contains "$T_OUT" "would run  diskutil addPartition disk0s6 ExFAT Shared" "a dry run shows the command"
+  assert_contains "$T_OUT" "would run  sudo diskutil addPartition disk0s6 ExFAT Shared" "a dry run shows the command"
   assert_empty_file "$T_DIR/record" "a dry run creates nothing"
   # On battery below half: stop before the gates.
   fx=$(t_variant mac-shared-reserved)
@@ -208,6 +208,34 @@ if t_plutil; then
   d=$(with_receipt)
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create
   assert_contains "$(t_flat "$T_OUT")" "reported success, but no new partition is on the disk" "success with no new partition is not believed"
+
+  # A partition entry diskutil lists but this tool cannot read: the rest of
+  # the map is never taken for free space.
+  fx=$(variant mac-shared-reserved "diskutil_list_disk0:s#<key>Content</key><string>EFI</string>##")
+  expect_blocked "a partition entry without Content" "$fx" "diskutil lists 6 partitions on disk0, and 3 could be read"
+  # A key the parser would otherwise hand to eval is not a field.
+  d=$(fresh_state)
+  sed -i.bak 's/^mode=/mode macos_after=/' "$d/shared-intent.env" && rm -f "$d/shared-intent.env.bak"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "" shared
+  assert_contains "$T_OUT" "line this tool did not write" "a key with a space is refused"
+  assert_not_contains "$T_OUT" "command not found" "and never evaluated"
+  # A dry run with the completion code typed in shows the exact command: the
+  # code counts for the run although nothing is recorded.
+  d=$(fresh_state)
+  before=$(t_snapshot "$d")
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "$done_code\nyes\ncreate\n" shared create --dry-run
+  assert_contains "$T_OUT" "would run  sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "a dry run with a typed code shows the command"
+  assert_not_contains "$(t_flat "$T_OUT")" "The disk changed since it was shown" "the typed code survives the re-read"
+  assert_empty_file "$T_DIR/record" "a dry run with a typed code creates nothing"
+  assert_eq "$(t_snapshot "$d")" "$before" "and records nothing"
+  # The free region is larger than planned (Linux was made smaller): Shared
+  # keeps its planned size, and the difference is pointed out.
+  fx=$(variant mac-shared-reserved "diskutil_info_disk0s6:s#<integer>$ROOTS</integer>#<integer>$((ROOTS - 10000000000 / 4096 * 4096))</integer>#" \
+    "diskutil_list_disk0:s#<integer>$ROOTS</integer>#<integer>$((ROOTS - 10000000000 / 4096 * 4096))</integer>#")
+  d=$(with_receipt)
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$fx" "\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "earlier than planned" "a smaller Linux root is pointed out"
+  assert_contains "$T_OUT" "sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "and Shared keeps its planned size"
 fi
 
 # --- Linux: the completion code, and activation ----------------------------------------------
@@ -267,10 +295,48 @@ t_cli linux-shared-wrong-fs "$share\nmount\n" shared activate
 assert_contains "$(t_flat "$T_OUT")" "never formats a partition that exists" "the wrong filesystem is refused, never formatted"
 assert_empty_file "$T_DIR/record" "the wrong filesystem: nothing runs"
 t_cli linux-shared-present "$(code_make ombshare 1a2b3c4d 4A7B1C2D-0009-4E5F-8A9B-000000000009)\nmount\n" shared activate
-assert_contains "$(t_flat "$T_OUT")" "is not on this disk" "a code naming another partition is refused"
+assert_contains "$(t_flat "$T_OUT")" "No Basic Data partition right after the Linux root has that GUID" "a code naming another partition is refused"
 assert_empty_file "$T_DIR/record" "the wrong PARTUUID: nothing runs"
+assert_not_contains "$(cat "$T_DIR/state/state.env" 2>/dev/null)" "shared_id12=" "and a code naming nothing here is never saved"
 t_cli linux-shared-present "$(code_make ombshare 99999999 "$U_SHARED")\n\n" shared activate
 assert_contains "$T_OUT" "belongs to a different plan" "a code from another plan is refused"
+# A saved code that names nothing on this disk asks again instead of locking
+# activation out.
+d=$(t_tmp)
+printf 'shared_id12=4a7b1c2d0009\n' >"$d/state.env"
+chmod 600 "$d/state.env"
+T_ENV="OMB_STATE_DIR=$d" t_cli linux-shared-present "$share\nmount\n" shared activate
+assert_contains "$(t_flat "$T_OUT")" "names no partition here" "a stale saved code is set aside"
+assert_contains "$(cat "$T_DIR/record")" "sudo mv -f /etc/fstab.omarchy-bootstrap.new /etc/fstab" "and the right code typed then activates"
+assert_contains "$(cat "$d/state.env")" "shared_id12=4a7b1c2d0007" "the right code replaces it"
+# /etc/fstab this tool cannot read is never replaced.
+fx=$(t_variant linux-shared-present)
+chmod 000 "$fx/root/etc/fstab"
+t_cli "$fx" "$share\nmount\n" shared activate
+chmod 644 "$fx/root/etc/fstab"
+assert_contains "$(t_flat "$T_OUT")" "/etc/fstab cannot be read here" "an unreadable fstab blocks"
+assert_empty_file "$T_DIR/record" "an unreadable fstab: nothing runs"
+# Entries for the same partition in other spellings are still conflicts.
+fx=$(t_variant linux-shared-present)
+printf 'PARTUUID=4A7B1C2D-0007-4E5F-8A9B-000000000007 /media/shared exfat defaults 0 0\n' >>"$fx/root/etc/fstab"
+t_cli "$fx" "$share\nmount\n" shared activate
+assert_contains "$(t_flat "$T_OUT")" "already has an entry" "an uppercase PARTUUID entry is a conflict"
+assert_empty_file "$T_DIR/record" "an uppercase PARTUUID entry: nothing runs"
+fx=$(t_variant linux-shared-present)
+printf '/dev/nvme0n1p7 /mnt/shared/ exfat defaults 0 0\n' >>"$fx/root/etc/fstab"
+t_cli "$fx" "$share\nmount\n" shared activate
+assert_contains "$(t_flat "$T_OUT")" "already has an entry" "a device-path entry with a trailing slash is a conflict"
+# The marker is ours only with our line under it, and only once.
+fx=$(t_variant linux-shared-present)
+printf '%s\nLABEL=Shared /mnt/shared exfat defaults 0 0\n' "# omarchy-bootstrap: Shared storage (managed; see ./omarchy-bootstrap shared)" >>"$fx/root/etc/fstab"
+t_cli "$fx" "$share\nmount\n" shared activate
+assert_contains "$(t_flat "$T_OUT")" "(under this tool's marker)" "a foreign line under the marker is a conflict"
+assert_empty_file "$T_DIR/record" "a foreign line under the marker: nothing runs"
+fx=$(t_variant linux-shared-ready)
+managed=$(tail -2 "$fx/root/etc/fstab")
+printf '%s\n' "$managed" >>"$fx/root/etc/fstab"
+t_cli "$fx" "" shared
+assert_contains "$(t_flat "$T_OUT")" "2 copies of this tool's marker" "a duplicated managed entry is a conflict"
 fx=$(t_variant linux-shared-present)
 mkdir -p "$fx/root/mnt/shared"
 printf 'x\n' >"$fx/root/mnt/shared/stray-file"

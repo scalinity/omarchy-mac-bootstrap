@@ -290,7 +290,8 @@ Detailed in `docs/SHARED.md`. Summary:
   size, Asahi's three partitions in order, one free region after the root at
   least the planned size, nothing else new, Linux's code accepted, power.
   Typed `yes` and `create`; the disk read again and matched; the start
-  recorded; `diskutil addPartition <Linux root> ExFAT Shared <bytes>`; then
+  recorded; `sudo diskutil addPartition <Linux root> ExFAT Shared <bytes>`, the
+  planned size in whole MiB at the region's start (the rest stays free); then
   every earlier partition byte-identical and exactly one new exFAT Basic Data
   partition inside the region, or a stop. Reruns reconcile, never recreate.
 - **Activation (Linux)** as the everyday user: found by the code's GUID (or the

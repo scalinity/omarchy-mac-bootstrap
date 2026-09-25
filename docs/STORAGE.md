@@ -116,9 +116,9 @@ model of the installer and checks these on its result.
 ## Reading the layout
 
 The review shows each region exactly: macOS (used and free inside it), Linux
-(root + boot data), Shared, system (Apple's iBoot and recovery containers,
+(root + boot data), Shared (the size asked for, in whole MiB: what is created), system (Apple's iBoot and recovery containers,
 untouched, plus the Asahi stub and EFI), and unallocated (partition-table
-space, alignment, and free regions left as they are). Below it, the installer
+space, alignment, the spare after Shared, and free regions left as they are). Below it, the installer
 answers and their byte values.
 
 ## Shared storage

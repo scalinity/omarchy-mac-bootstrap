@@ -174,7 +174,8 @@ hold before it counts as done. Status lives at the end of each entry.
   planned answers, and the resulting layout compared with the plan record;
   macOS, Recovery and Linux each boot; encryption confirmed finished; back on
   macOS, `shared` shows `awaiting-macos-creation`; Shared created; the
-  partition checked with `diskutil info`; back on Linux, `shared activate`;
+  partition checked with `diskutil info` against the size and start the
+  command showed, and written to from macOS; back on Linux, `shared activate`;
   a file over 4 GB copied and hashed macOS → Linux and back; clean reboots
   between the systems; the mount persists; `./omarchy-bootstrap` rerun on both
   systems changes nothing.

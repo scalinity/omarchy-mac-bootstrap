@@ -23,7 +23,7 @@ afterwards, and records.
   user confirmation, it may create the one planned Shared cross-OS partition
   inside the previously reserved free region. It never deletes, resizes,
   reformats, or generically edits arbitrary partitions. That creation is the
-  single `run diskutil addPartition` in `lib/shared.sh`;
+  single `run sudo diskutil addPartition` in `lib/shared.sh`;
   `tests/test-safety.sh` pins it behind both typed gates, a fresh read of the
   disk and the fail-closed record.
 - **Stock bash 3.2 everywhere**, because the entrypoint must start on a fresh

@@ -111,7 +111,7 @@ mac_recheck_plan() {
 # MAC_DISK_SIZE, MAC_DISK_BLOCK, MAC_APPLE_SYS, MAC_OTHER_BYTES,
 # MAC_ASAHI_PRESENT, MAC_OTHER_APFS, MAC_EXISTING_FREE (display only).
 mac_detect_geometry() {
-  local list dinfo info i content size id uuid off lsize luuid label fstype
+  local list dinfo info i content size id uuid off lsize luuid label fstype count
   geo_reset
   MAC_PARTS="" MAC_APPLE_SYS=0 MAC_OTHER_BYTES=0 MAC_ASAHI_PRESENT=0 MAC_OTHER_APFS=""
   MAC_DISK_SIZE=0 MAC_DISK_BLOCK="" MAC_EXISTING_FREE=0 MAC_STORE_UUID=""
@@ -148,6 +148,12 @@ mac_detect_geometry() {
     uuid=$(plist_get "$info" DiskUUID)
     label=$(plist_get "$info" VolumeName)
     fstype=$(plist_get "$info" FilesystemType)
+    # Sizes reach shell arithmetic, which evaluates array subscripts: only a
+    # canonical number goes further.
+    if ! _uint "$off" || ! _uint "$size"; then
+      GEO_ERR=${GEO_ERR:-"diskutil gave no usable offset or size for $id"}
+      continue
+    fi
     if [ "$size" != "$lsize" ] || [ "$uuid" != "$luuid" ]; then
       GEO_ERR=${GEO_ERR:-"diskutil list and diskutil info disagree about $id"}
     fi
@@ -162,6 +168,12 @@ mac_detect_geometry() {
 "
   done
   [ "$i" -gt 0 ] || GEO_ERR=${GEO_ERR:-"no partitions were listed on $MAC_DISK"}
+  # The loop stops at the first entry without Content; the array length says
+  # whether that was the end.
+  count=$(plist_get "$list" AllDisksAndPartitions.0.Partitions)
+  if [ "$i" -gt 0 ] && [ "$count" != "$i" ]; then
+    GEO_ERR=${GEO_ERR:-"diskutil lists ${count:-an unknown number of} partitions on $MAC_DISK, and $i could be read"}
+  fi
   geo_finalize "$MAC_DISK_SIZE" "${MAC_DISK_BLOCK:-0}" || return 1
   local start gsize pred succ
   while IFS='|' read -r start gsize pred succ; do
@@ -175,8 +187,8 @@ EOF
 # mac_classify_partition ID CONTENT SIZE UUID FSTYPE — sets MAC_PART_ROLE and
 # tallies. Stock Apple Silicon disks have three partitions: the iBoot system
 # container, the macOS container, and the recovery container. Asahi adds a
-# stub APFS container, an EFI partition and a Linux partition; the one
-# planned Shared partition is recognised by its recorded GUID.
+# stub APFS container, an EFI partition and a Linux partition. Shared is a
+# Basic Data partition (data-exfat); lib/shared.sh decides whether it is ours.
 mac_classify_partition() {
   local id=$1 content=$2 size=$3 uuid=$4 fstype=${5:-}
   case "$content" in
@@ -212,11 +224,7 @@ mac_classify_partition() {
       MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
       ;;
     Microsoft\ Basic\ Data | EBD0A0A2-B9E5-4433-87C0-68B6B72699C7)
-      if [ -n "$uuid" ] && [ "$uuid" = "${SHARED_REC_UUID:-}" ]; then
-        MAC_PART_ROLE=shared
-      else
-        MAC_PART_ROLE="data${fstype:+-$fstype}"
-      fi
+      MAC_PART_ROLE="data${fstype:+-$fstype}"
       MAC_OTHER_BYTES=$((MAC_OTHER_BYTES + size))
       ;;
     *)
@@ -604,7 +612,7 @@ mac_custom_size() {
     fi
     ui_kv "Linux" "$(fmt_gb "$PLAN_LINUX_ACTUAL")" "$(pct "$PLAN_LINUX_ACTUAL" "$PLAN_DISK")% of the disk"
     ui_kv "macOS keeps" "$(fmt_gb "$PLAN_MACOS_NEW")" "$(fmt_gb "$PLAN_MACOS_FREE_AFTER") free inside it"
-    [ "${PLAN_SHARED:-0}" -gt 0 ] && ui_kv "Shared" "$(fmt_gb $((PLAN_SHARED_END - PLAN_SHARED_START)))" "reserved after Linux"
+    [ "${PLAN_SHARED:-0}" -gt 0 ] && ui_kv "Shared" "$(fmt_gb $(( (PLAN_SHARED + MIB - 1) / MIB * MIB )))" "reserved after Linux"
     if ui_yesno "Use $(fmt_gb "$bytes") for Linux?" y; then
       CHOSEN_BYTES=$bytes
       return 0
@@ -618,7 +626,10 @@ mac_show_layout() {
   local linux=$((CFG_linux * GB)) shared sys unalloc
   mac_plan_compute "${CFG_shared:-0}"
   plan_layout "$linux"
-  shared=$((PLAN_SHARED_END - PLAN_SHARED_START))
+  # Shared is created at the size asked for, in whole MiB; the rest of the
+  # region after Linux stays free.
+  shared=0
+  [ "${PLAN_SHARED:-0}" -gt 0 ] && shared=$(( (PLAN_SHARED + MIB - 1) / MIB * MIB ))
   sys=$((MAC_APPLE_SYS + MAC_OTHER_BYTES + PLAN_BOOT))
   unalloc=$((PLAN_DISK - PLAN_MACOS_NEW - PLAN_ROOT - shared - sys))
   ui_section "Proposed layout" "from this disk's partition map"
@@ -638,7 +649,7 @@ mac_show_layout() {
   ui_kv "Linux" "$(fmt_gb "$PLAN_LINUX_ACTUAL")" "Btrfs root $(fmt_gb "$PLAN_ROOT") + $(fmt_gb "$PLAN_BOOT") Asahi boot data"
   [ "$shared" -gt 0 ] && ui_kv "Shared / exFAT" "$(fmt_gb "$shared")" "set aside now, created after Linux is installed"
   ui_kv "System" "$(fmt_gb "$sys")" "Apple iBoot + recovery (untouched), Asahi stub + EFI"
-  ui_kv "Unallocated" "$(fmt_gb "$unalloc")" "partition-table space and alignment$([ "$MAC_EXISTING_FREE" -gt 0 ] && printf ', and free space left as it is')"
+  ui_kv "Unallocated" "$(fmt_gb "$unalloc")" "partition-table space, alignment$([ "$shared" -gt 0 ] && printf ', the spare after Shared')$([ "$MAC_EXISTING_FREE" -gt 0 ] && printf ', free space left as it is')"
   printf '\n   %sLinux %s%%%s  %s  macOS %s%%%s  %s  system %s%%\n' \
     "$C_LINUX$C_BOLD" "$(pct "$PLAN_LINUX_ACTUAL" "$PLAN_DISK")" "$C_RESET" "$G_DOT" \
     "$(pct "$PLAN_MACOS_NEW" "$PLAN_DISK")" "$([ "$shared" -gt 0 ] && printf '  %s  Shared %s%%' "$G_DOT" "$(pct "$shared" "$PLAN_DISK")")" "$G_DOT" "$(pct "$sys" "$PLAN_DISK")"
@@ -651,7 +662,7 @@ mac_show_layout() {
   else
     ui_kv "New OS size" "$PLAN_ANSWER_OS" "$(fmt_bytes "$PLAN_LINUX_ACTUAL"), at least the $(fmt_gb "$PLAN_LINUX") asked for"
   fi
-  [ "$shared" -gt 0 ] && ui_kv "Left for Shared" "$(fmt_gb "$shared")" "$(fmt_bytes "$shared"), at least the $(fmt_gb "$PLAN_SHARED") asked for"
+  [ "$shared" -gt 0 ] && ui_kv "Left after Linux" "$(fmt_gb $((PLAN_SHARED_END - PLAN_SHARED_START)))" "Shared takes $(fmt_bytes "$shared") of it; the rest stays free"
   return 0
 }
 

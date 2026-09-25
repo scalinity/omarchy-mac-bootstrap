@@ -29,7 +29,7 @@ Linux    Omarchy Mac installs, moves /boot, encrypts in place (its own reboots)
          once all of that has finished: a completion code (ombdone-...)
 reboot
 macOS    ./omarchy-bootstrap: type the completion code; the disk is checked;
-         type yes (backup) and create; one diskutil addPartition; the result is checked
+         type yes (backup) and create; one sudo diskutil addPartition; the result is checked
          a Shared code (ombshare-...) is shown
 reboot
 Linux    ./omarchy-bootstrap shared activate: type the Shared code; type mount;
@@ -102,8 +102,13 @@ and `create`. Then it reads the disk again; any difference stops it. Then,
 and only then:
 
 ```bash
-diskutil addPartition <the Linux root, e.g. disk0s6> ExFAT Shared <bytes>
+sudo diskutil addPartition <the Linux root, e.g. disk0s6> ExFAT Shared <bytes>
 ```
+
+`<bytes>` is the planned size rounded up to a whole MiB, placed at the
+region's first MiB boundary; the rest of the region stays free, which leaves
+diskutil room for its own alignment. `sudo` asks for your password, because
+diskutil must own the internal disk to change its partition map.
 
 Afterwards the disk is read again and must show every earlier partition
 unchanged and exactly one new partition, inside the region, of type
@@ -202,8 +207,10 @@ eraseVolume free free <Shared's id>`, then grow macOS again.
 ## What still needs checking on the real Mac
 
 These follow Apple's and upstream's documentation and have been exercised
-only against recorded disk layouts: that `diskutil addPartition` places the
-partition at the start of the region without an extra alignment gap; that
+only against recorded disk layouts: that `sudo diskutil addPartition` with an
+exact byte count creates exactly that size at the start of the region,
+without an extra alignment gap or booter partition; that macOS mounts the
+new volume writable for your everyday user although root created it; that
 Apple SSD GPT entries are renumbered but not reordered in a way that
 confuses the Asahi boot chain; that macOS mounts the new volume as expected;
 and that Omarchy's udiskie does not also mount Shared under `/run/media`

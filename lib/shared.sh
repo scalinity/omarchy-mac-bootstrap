@@ -4,8 +4,9 @@
 # installed, and mounted persistently on Linux by its GPT partition GUID.
 #
 # This is the one disk change this tool makes itself, and it is narrow:
-#   diskutil addPartition <the Linux root> ExFAT Shared <bytes>
-# into the free region reserved for it, only after the whole disk has been
+#   sudo diskutil addPartition <the Linux root> ExFAT Shared <bytes>
+# with the planned size in whole MiB, at the start of the free region
+# reserved for it, only after the whole disk has been
 # read again and matched against the plan, and the person has typed
 # "create". The plan file and the codes typed between the systems are input
 # to that check, never a substitute for it. Nothing here deletes, resizes,
@@ -111,6 +112,7 @@ shared_intent_load() {
   while IFS= read -r line; do
     k=${line%%=*} v=${line#*=}
     [ "$line" = "$k" ] && { ok=0; break; }
+    case $k in "" | *[!a-z_]*) ok=0; break ;; esac
     if [ "$k" = digest ]; then
       INT_digest=$v
       continue
@@ -276,7 +278,7 @@ EOF
   fi
   _shared_other_partitions || return 0
   _shared_other_gaps || return 0
-  if [ $(( SHARED_GAP_END / MIB * MIB - (SHARED_GAP_START + MIB - 1) / MIB * MIB )) -lt "$INT_shared_request" ]; then
+  if [ $(( SHARED_GAP_END / MIB * MIB - (SHARED_GAP_START + MIB - 1) / MIB * MIB )) -lt $(( (INT_shared_request + MIB - 1) / MIB * MIB )) ]; then
     _blocked "the free region after Linux is $(fmt_gb $((SHARED_GAP_END - SHARED_GAP_START))), smaller than the $(fmt_gb "$INT_shared_request") reserved"
     return 0
   fi
@@ -284,7 +286,8 @@ EOF
     _blocked "the recorded Shared partition $(state_get shared_uuid) is no longer on the disk"
     return 0
   fi
-  if shared_receipt_ok "$(state_get shared_linux_done)"; then
+  # A code typed this run counts too: a dry run records nothing.
+  if shared_receipt_ok "${SHARED_TYPED_RECEIPT:-$(state_get shared_linux_done)}"; then
     SHARED_STATE=awaiting-macos-creation
     SHARED_WHY="Linux is completely installed; $(fmt_gb $((SHARED_GAP_END - SHARED_GAP_START))) is free after it"
   else
@@ -366,7 +369,10 @@ _shared_other_gaps() {
   done <<EOF
 $(intent_parts)
 EOF
-  _geo_walk "$before" "$GEO_DISK_SIZE" "$GEO_BLOCK" || return 0
+  if ! _geo_walk "$before" "$GEO_DISK_SIZE" "$GEO_BLOCK"; then
+    _blocked "the layout the plan recorded cannot be read back ($W_ERR)"
+    return 1
+  fi
   while IFS='|' read -r start gsize pred succ; do
     [ -n "$start" ] || continue
     [ "$start" = "$SHARED_GAP_START" ] && continue
@@ -421,20 +427,33 @@ shared_power_ok() {
   return 1
 }
 
-# shared_region — the exact bytes to create: the reserved free region,
-# trimmed to MiB boundaries. Sets SH_START, SH_END, SH_SIZE.
+# shared_region — the exact bytes to create: the planned size in whole MiB,
+# from the region's first MiB boundary. The rest of the region stays free,
+# which leaves diskutil room for its own alignment. Sets SH_START, SH_SIZE,
+# SH_END (where it should end) and SH_ROOM (the region's last MiB boundary).
 shared_region() {
   SH_START=$(( (SHARED_GAP_START + MIB - 1) / MIB * MIB ))
-  SH_END=$(( SHARED_GAP_END / MIB * MIB ))
-  SH_SIZE=$((SH_END - SH_START))
+  SH_SIZE=$(( (INT_shared_request + MIB - 1) / MIB * MIB ))
+  SH_END=$((SH_START + SH_SIZE))
+  SH_ROOM=$(( SHARED_GAP_END / MIB * MIB ))
+}
+
+# shared_succ_label — what the partition after the region is, from the disk.
+shared_succ_label() {
+  [ -n "$SHARED_SUCC_ID" ] || return 0
+  geo_part "$INT_region_succ" || return 0
+  case "$GP_ROLE" in
+    recovery) printf 'Apple recovery, untouched' ;;
+    *) printf '%s, untouched' "$GP_CONTENT" ;;
+  esac
 }
 
 shared_mac_summary() {
   ui_kv "Physical disk" "$MAC_DISK" "$(fmt_gb "$MAC_DISK_SIZE")${MAC_DISK_MEDIA:+ $G_DOT $MAC_DISK_MEDIA}"
-  ui_kv "Shared interval" "$(fmt_bytes "$SH_START")" "to $(fmt_bytes "$SH_END")"
-  ui_kv "Shared size" "$(fmt_gb "$SH_SIZE")" "$(fmt_bytes "$SH_SIZE"); $(fmt_gb "$INT_shared_request") planned"
+  ui_kv "Shared interval" "$(fmt_bytes "$SH_START")" "to $(fmt_bytes "$SH_END"); $(fmt_gb $((SHARED_GAP_END - SH_END))) after it stays free"
+  ui_kv "Shared size" "$(fmt_gb "$SH_SIZE")" "$(fmt_bytes "$SH_SIZE"); the $(fmt_gb "$INT_shared_request") planned, in whole MiB"
   ui_kv "Partition before" "$SHARED_PRED_ID" "Linux root $(guid12 "$SHARED_PRED_UUID")"
-  ui_kv "Partition after" "${SHARED_SUCC_ID:-end of disk}" "$([ -n "$SHARED_SUCC_ID" ] && echo "Apple recovery, untouched")"
+  ui_kv "Partition after" "${SHARED_SUCC_ID:-end of disk}" "$(shared_succ_label)"
   ui_kv "Filesystem" "$SHARED_FS_MAC, named $SHARED_LABEL" "empty; not encrypted"
 }
 
@@ -477,15 +496,18 @@ shared_create_flow() {
   # Only a verified region with Linux's code accepted goes further.
   [ "$SHARED_STATE" = awaiting-macos-creation ] || return 1
   shared_region
-  if [ "$SH_SIZE" -lt "$INT_shared_request" ]; then
-    ui_fail "The region is $(fmt_bytes "$SH_SIZE"), less than the $(fmt_bytes "$INT_shared_request") planned. Nothing was created."
+  if [ "$SH_END" -gt "$SH_ROOM" ]; then
+    ui_fail "The region has room for $(fmt_bytes $((SH_ROOM - SH_START))), less than the $(fmt_bytes "$SH_SIZE") planned. Nothing was created."
     return 1
   fi
   shared_power_ok || return 1
   ui_section "Create Shared storage" "the one disk change this tool makes"
   shared_mac_summary
-  ui_section "Command"
-  ui_cmd "diskutil addPartition $SHARED_PRED_ID $SHARED_FS_MAC $SHARED_LABEL $SH_SIZE"
+  if [ "$SHARED_GAP_START" -lt "$INT_shared_start" ]; then
+    ui_warn "Linux ends $(fmt_gb $((INT_shared_start - SHARED_GAP_START))) earlier than planned (the installer was given a smaller size). Shared is created at its planned size; the difference stays free."
+  fi
+  ui_section "Command" "sudo asks for your password; diskutil needs it for the internal disk"
+  ui_cmd "sudo diskutil addPartition $SHARED_PRED_ID $SHARED_FS_MAC $SHARED_LABEL $SH_SIZE"
   ui_callout warn "This adds one partition in free space, right after the Linux root." \
     "It does not resize, move, erase or reformat anything else. Before it runs, the whole disk is read again and must match what is shown here exactly." \
     "Shared is plain exFAT: FileVault and LUKS do not cover it, and it is not a backup."
@@ -517,7 +539,7 @@ shared_create_flow() {
   state_must_set shared_create_region "$SH_START-$SH_END" || return 1
   before=$(geo_canon)
   printf '\n'
-  run diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"
+  run sudo diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"
   rc=$?
   if [ "$OMB_DRY_RUN" = 1 ]; then
     printf '\n'
@@ -550,6 +572,7 @@ shared_take_receipt() {
       ui_fail "That code was made on a different Linux partition than the one on this disk."
     else
       state_must_set shared_linux_done "$code" || return 1
+      SHARED_TYPED_RECEIPT=$code
       SHARED_STATE=awaiting-macos-creation
       ui_ok "Linux's completion code matches this disk."
       return 0
@@ -691,10 +714,14 @@ EOF
 shared_lx_state() {
   local want=${CFG_shared:-0} id12 name start size puuid ptype fs label fsuuid n=0 near=0
   SHARED_STATE=off SHARED_WHY="" SH_NEED_CODE=0 SH_NAME="" SH_PARTUUID="" SH_SIZE=0 SH_FSUUID="" SH_LABEL=""
+  local from=state
   id12=$(state_get shared_id12)
   # With the record lost, the entry this tool wrote in /etc/fstab still names
   # the partition it set up; it is checked like any other identity.
-  [ -n "$id12" ] || id12=$(shared_fstab_managed_id12)
+  if [ -z "$id12" ]; then
+    id12=$(shared_fstab_managed_id12)
+    from=fstab
+  fi
   if [ "$want" = 0 ] && [ -z "$id12" ]; then
     return 0
   fi
@@ -710,6 +737,10 @@ shared_lx_state() {
   # Another definition of /mnt/shared (or of a volume named Shared) blocks
   # before anything else: the tool edits only the entry it wrote.
   shared_fstab_scan
+  if [ "$FS_UNREADABLE" = 1 ]; then
+    _blocked "/etc/fstab cannot be read here, so this tool cannot tell what it would be changing"
+    return 0
+  fi
   if [ -n "$FS_CONFLICTS" ]; then
     _blocked "/etc/fstab already has an entry for $SHARED_MNT or this partition that this tool did not write: $(printf '%s' "$FS_CONFLICTS" | head -1)"
     return 0
@@ -736,6 +767,13 @@ EOF
     fi
     return 0
   fi
+  if [ "$n" != 1 ] && [ "$from" = state ] && [ "$near" -gt 0 ]; then
+    # A saved code that names nothing here (a stale or mistyped one): ask
+    # for the code again rather than stay stuck on it.
+    SHARED_STATE=awaiting-linux-activation SH_NEED_CODE=1
+    SHARED_WHY="the saved Shared code ($id12...) names no partition here; type the code macOS showed"
+    return 0
+  fi
   if [ "$n" != 1 ]; then
     _blocked "the partition macOS created ($id12...) is not on this disk ($n match)"
     return 0
@@ -753,6 +791,10 @@ EOF
     return 0
   fi
   shared_fstab_scan
+  if [ "$FS_UNREADABLE" = 1 ]; then
+    _blocked "/etc/fstab cannot be read here, so this tool cannot tell what it would be changing"
+    return 0
+  fi
   if [ -n "$FS_CONFLICTS" ]; then
     _blocked "/etc/fstab already has an entry for this partition or for $SHARED_MNT that this tool did not write: $(printf '%s' "$FS_CONFLICTS" | head -1)"
     return 0
@@ -790,15 +832,29 @@ shared_fstab_line() {
 # shared_fstab_scan — FS_MANAGED: the line under our marker; FS_CONFLICTS:
 # other active lines about this partition or /mnt/shared.
 shared_fstab_scan() {
-  local f line prev="" dev mp
-  FS_MANAGED="" FS_CONFLICTS=""
+  local f line prev="" dev mp marks=0 lower
+  FS_MANAGED="" FS_CONFLICTS="" FS_UNREADABLE=0
   SH_UID=${SH_UID:-$(sys_cmd id_u id -u)} SH_GID=${SH_GID:-$(sys_cmd id_g id -g)}
   f=$(sys_path /etc/fstab)
-  [ -f "$f" ] || return 0
-  while IFS= read -r line; do
+  [ -e "$f" ] || return 0
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+    FS_UNREADABLE=1
+    return 0
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
     if [ "$prev" = "$SHARED_FSTAB_MARK" ]; then
-      FS_MANAGED=$line
       prev=""
+      # The line under the marker is ours only if it has our shape.
+      if printf '%s' "$line" | grep -Eq "^PARTUUID=[0-9a-f-]+ $SHARED_MNT exfat "; then
+        FS_MANAGED=$line
+        continue
+      fi
+      FS_CONFLICTS="$FS_CONFLICTS(under this tool's marker) $line
+"
+    fi
+    if [ "$line" = "$SHARED_FSTAB_MARK" ]; then
+      marks=$((marks + 1))
+      prev=$line
       continue
     fi
     prev=$line
@@ -808,17 +864,38 @@ shared_fstab_scan() {
     set -- $line
     set +f
     dev=${1:-} mp=${2:-}
-    case "$(printf '%s' "$dev" | tr 'A-F' 'a-f')" in
-      "partuuid=$SH_PARTUUID" | "/dev/disk/by-partuuid/$SH_PARTUUID" | "/dev/$SH_NAME") FS_CONFLICTS="$FS_CONFLICTS$line
-" ;;
+    lower=$(printf '%s' "$dev" | tr -d "\"'" | tr '[:upper:]' '[:lower:]')
+    mp=${mp%/}
+    case "$lower" in
+      "label=$(printf '%s' "$SHARED_LABEL" | tr '[:upper:]' '[:lower:]')" | "partlabel=shared" | "/dev/disk/by-label/shared" | "/dev/disk/by-partlabel/shared")
+        FS_CONFLICTS="$FS_CONFLICTS$line
+"
+        continue
+        ;;
     esac
-    [ -n "$SH_FSUUID" ] && [ "$dev" = "UUID=$SH_FSUUID" ] && FS_CONFLICTS="$FS_CONFLICTS$line
+    if [ -n "$SH_PARTUUID" ]; then
+      case "$lower" in
+        "partuuid=$SH_PARTUUID" | "/dev/disk/by-partuuid/$SH_PARTUUID" | "/dev/$SH_NAME")
+          FS_CONFLICTS="$FS_CONFLICTS$line
 "
-    [ "$dev" = "LABEL=$SHARED_LABEL" ] && FS_CONFLICTS="$FS_CONFLICTS$line
+          continue
+          ;;
+      esac
+    fi
+    if [ -n "$SH_FSUUID" ]; then
+      case "$lower" in
+        "uuid=$(printf '%s' "$SH_FSUUID" | tr '[:upper:]' '[:lower:]')" | "/dev/disk/by-uuid/$(printf '%s' "$SH_FSUUID" | tr '[:upper:]' '[:lower:]')")
+          FS_CONFLICTS="$FS_CONFLICTS$line
 "
+          continue
+          ;;
+      esac
+    fi
     [ "$mp" = "$SHARED_MNT" ] && FS_CONFLICTS="$FS_CONFLICTS$line
 "
   done <"$f"
+  [ "$marks" -gt 1 ] && FS_CONFLICTS="${FS_CONFLICTS}$marks copies of this tool's marker
+"
   FS_CONFLICTS=$(printf '%s' "$FS_CONFLICTS" | sort -u)
 }
 
@@ -906,10 +983,24 @@ shared_activate_flow() {
   omb_tmp_init || return 1
   tmp="$OMB_TMP/fstab"
   cur=$(sys_path /etc/fstab)
-  {
-    [ -f "$cur" ] && awk -v m="$SHARED_FSTAB_MARK" 'skip {skip = 0; next} $0 == m {skip = 1; next} {print}' "$cur"
-    printf '%s\n%s\n' "$SHARED_FSTAB_MARK" "$(shared_fstab_line)"
-  } >"$tmp" || return 1
+  # The new file is the old one, every line kept, plus the managed pair —
+  # built in two checked steps and proved before anything replaces it.
+  if [ ! -f "$cur" ] || [ ! -r "$cur" ]; then
+    ui_fail "/etc/fstab is missing or cannot be read; nothing was changed."
+    return 1
+  fi
+  awk '{print}' "$cur" >"$tmp" || {
+    ui_fail "Could not copy /etc/fstab; nothing was changed."
+    return 1
+  }
+  printf '%s\n%s\n' "$SHARED_FSTAB_MARK" "$(shared_fstab_line)" >>"$tmp" || return 1
+  local old_lines
+  old_lines=$(awk 'END {print NR}' "$cur")
+  if [ "$(awk 'END {print NR}' "$tmp")" != $((old_lines + 2)) ] ||
+    ! head -n "$old_lines" "$tmp" | cmp -s - <(awk '{print}' "$cur"); then
+    ui_fail "The new /etc/fstab would not keep every existing line; nothing was changed."
+    return 1
+  fi
   printf '\n'
   run sudo install -d -m 0755 -o root -g root "$SHARED_MNT" &&
     run sudo cp -p /etc/fstab /etc/fstab.omarchy-bootstrap.bak &&
@@ -957,12 +1048,28 @@ shared_take_share_code() {
       ui_fail "That is not a Shared code, or a character was mistyped."
     elif [ -n "${CFG_plan:-}" ] && [ "$CODE_PLAN" != "$CFG_plan" ]; then
       ui_fail "That code belongs to a different plan ($CODE_PLAN, this one is $CFG_plan)."
+    elif [ "$(shared_code_matches "$CODE_ID12")" != 1 ]; then
+      ui_fail "No Basic Data partition right after the Linux root has that GUID; check the code macOS showed."
     else
       state_must_set shared_id12 "$CODE_ID12" || return 1
       return 0
     fi
     code=""
   done
+}
+
+# shared_code_matches ID12 — how many Basic Data partitions right after the
+# Linux root carry that GUID prefix (after shared_lx_scan).
+shared_code_matches() {
+  local name start size puuid ptype n=0
+  while IFS='|' read -r name start size puuid ptype _; do
+    [ -n "$name" ] && [ "$ptype" = "$SHARED_PARTTYPE" ] || continue
+    [ "$start" -ge "$SH_ROOT_END" ] && [ $((start - SH_ROOT_END)) -lt "$ASAHI_GAP_MIN_BYTES" ] || continue
+    [ "$(guid12 "$puuid")" = "$1" ] && n=$((n + 1))
+  done <<EOF
+$SH_ROWS
+EOF
+  printf '%s' "$n"
 }
 
 shared_lx_macos_next() {
