@@ -1,0 +1,4 @@
+# Libraries are sourced by omarchy-bootstrap; check the whole program with
+#   shellcheck -x omarchy-bootstrap
+source-path=SCRIPTDIR
+external-sources=true
