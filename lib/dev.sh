@@ -7,15 +7,21 @@
 DEV_MODULES="core languages containers editor git github ssh ai time"
 DEV_CORE_PKGS="git github-cli base-devel curl wget jq ripgrep fd fzf tmux btop tree unzip rsync"
 
-dev_installed_pkgs() {
-  [ -n "${DEV_PKGS_CACHE:-}" ] || DEV_PKGS_CACHE=$(sys_cmd pacman_qq pacman -Qq)
-  printf '%s\n' "$DEV_PKGS_CACHE"
-}
-
+# dev_core_missing — core packages not yet installed. One pacman -Qq per call,
+# matched in the shell: a fresh list, since dev_run_core may just have
+# installed some, and no pipeline to lose a cached value in a subshell.
 dev_core_missing() {
-  local p out=""
+  local p out="" have
+  have="
+$(sys_cmd pacman_qq pacman -Qq)
+"
   for p in $DEV_CORE_PKGS; do
-    dev_installed_pkgs | grep -qx "$p" || out="$out $p"
+    case "$have" in
+      *"
+$p
+"*) ;;
+      *) out="$out $p" ;;
+    esac
   done
   printf '%s' "${out# }"
 }

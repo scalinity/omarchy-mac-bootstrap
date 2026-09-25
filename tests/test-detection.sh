@@ -129,6 +129,20 @@ lx_case linux-omarchy-installed
 assert_eq "$LX_OMARCHY_STATE $LX_OMARCHY_VERSION" "installed 4.0.3rc4" "installed from upstream marker"
 assert_eq "$LX_PAGESIZE" 16384 "page size"
 
+# --- Developer core tools: one package query per check --------------------------------
+OMB_FIXTURE="$FIX/linux-omarchy-installed"
+probe_count=0
+eval "orig_$(declare -f sys_cmd)"
+sys_cmd() {
+  [ "$1" = pacman_qq ] && printf 'x\n' >>"$OMB_STATE_DIR/qq-calls"
+  orig_sys_cmd "$@"
+}
+: >"$OMB_STATE_DIR/qq-calls"
+assert_eq "$(dev_core_missing)" "github-cli wget tree rsync" "missing core packages"
+probe_count=$(wc -l <"$OMB_STATE_DIR/qq-calls" | tr -d ' ')
+assert_eq "$probe_count" 1 "pacman -Qq runs once per check, not once per package"
+eval "$(declare -f orig_sys_cmd | sed '1s/orig_sys_cmd/sys_cmd/')"
+
 # --- Command construction for the Omarchy handoff ------------------------------
 CFG_enc=1 CFG_user=alex CFG_host=m1pro CFG_kmap=uk
 lx_setup_flags
