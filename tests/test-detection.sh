@@ -24,6 +24,14 @@ assert_eq "$DEV_TIER" unsupported "unknown model is unsupported"
 device_by_board j414c
 assert_eq "$DEV_MODEL $DEV_CHIP" "Mac14,5 M2 Max" "board lookup"
 
+# --- Field splitting used by menus and the device table --------------------------
+_split4 "Balanced|250 GB|desc|recommended"
+assert_eq "$F1/$F2/$F3/$F4" "Balanced/250 GB/desc/recommended" "four fields"
+_split4 "Custom|GB or %|Any size.|"
+assert_eq "$F1/$F2/$F3/$F4" "Custom/GB or %/Any size./" "empty last field"
+_split4 "rust|installed"
+assert_eq "$F1/$F2/$F3/$F4" "rust/installed//" "missing fields are empty"
+
 # --- Setup flag check -----------------------------------------------------------
 hdr='# omarchy:args=[--encrypt|--no-encrypt] [--user <name>] [--hostname <name>] [--keymap <name>] [--repo <owner/repo>] [--status] [--resume] [--abort]'
 assert_eq "$(setup_missing_flags "$hdr")" "" "all flags declared"

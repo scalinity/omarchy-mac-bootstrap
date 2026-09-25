@@ -117,6 +117,18 @@ _ui_glyphs() {
   fi
 }
 
+# _split4 "a|b|c|d" — sets F1..F4 (missing trailing fields are empty) with
+# parameter expansion only: menus redraw on every keypress, and a cut
+# pipeline per field per option was a visible lag.
+_split4() {
+  local r=$1 i
+  F1="" F2="" F3="" F4=""
+  for i in 1 2 3 4; do
+    eval "F$i=\${r%%|*}"
+    case "$r" in *'|'*) r=${r#*|} ;; *) return 0 ;; esac
+  done
+}
+
 # repeat CHAR N
 _rep() {
   local out="" i=0
@@ -468,10 +480,8 @@ _ui_select_render() {
   UI_LINES=0
   for opt in "$@"; do
     i=$((i + 1))
-    label=$(printf '%s' "$opt" | cut -d'|' -f1)
-    value=$(printf '%s' "$opt" | cut -d'|' -f2)
-    desc=$(printf '%s' "$opt" | cut -d'|' -f3)
-    badge=$(printf '%s' "$opt" | cut -d'|' -f4)
+    _split4 "$opt"
+    label=$F1 value=$F2 desc=$F3 badge=$F4
     if [ "$i" = "$cur" ]; then
       ptr="$C_ACCENT$C_BOLD$G_POINT$C_RESET"
       _p '%s   %s %s%d%s  %s%-16s%s %s%-10s%s' "$UI_CLR" "$ptr" "$C_ACCENT" "$i" "$C_RESET" "$C_BOLD$C_INK" "$label" "$C_RESET" "$C_BOLD" "$value" "$C_RESET"
@@ -499,7 +509,8 @@ ui_multiselect() {
   _ui_clr
   for opt in "$@"; do
     i=$((i + 1))
-    [ "$(printf '%s' "$opt" | cut -d'|' -f3)" = on ] && sel="$sel $i"
+    _split4 "$opt"
+    [ "$F3" = on ] && sel="$sel $i"
   done
   _p '\n   %s%s%s\n\n' "$C_BOLD" "$prompt" "$C_RESET"
 
@@ -560,8 +571,8 @@ _ui_multi_render() {
   UI_LINES=0
   for opt in "$@"; do
     i=$((i + 1))
-    label=$(printf '%s' "$opt" | cut -d'|' -f1)
-    desc=$(printf '%s' "$opt" | cut -d'|' -f2)
+    _split4 "$opt"
+    label=$F1 desc=$F2
     case " $sel " in *" $i "*) box="$C_PASS$G_ON$C_RESET" ;; *) box="$C_FAINT$G_OFF$C_RESET" ;; esac
     ptr=" "
     [ "$i" = "$cur" ] && ptr="$C_ACCENT$C_BOLD$G_POINT$C_RESET"

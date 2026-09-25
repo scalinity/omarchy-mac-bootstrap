@@ -139,10 +139,8 @@ soc_tier() {
 }
 
 _device_set() {
-  DEV_MODEL=$(printf '%s' "$1" | cut -d'|' -f1)
-  DEV_BOARD=$(printf '%s' "$1" | cut -d'|' -f2)
-  DEV_SOC=$(printf '%s' "$1" | cut -d'|' -f3)
-  DEV_NAME=$(printf '%s' "$1" | cut -d'|' -f4)
+  _split4 "$1"
+  DEV_MODEL=$F1 DEV_BOARD=$F2 DEV_SOC=$F3 DEV_NAME=$F4
   DEV_CHIP=$(soc_chip "$DEV_SOC")
   DEV_TIER=$(soc_tier "$DEV_SOC")
 }

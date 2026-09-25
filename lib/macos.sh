@@ -266,10 +266,8 @@ mac_plan_storage() {
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     n=$((n + 1))
-    key=$(printf '%s' "$line" | cut -d'|' -f1)
-    label=$(printf '%s' "$line" | cut -d'|' -f2)
-    bytes=$(printf '%s' "$line" | cut -d'|' -f3)
-    desc=$(printf '%s' "$line" | cut -d'|' -f4)
+    _split4 "$line"
+    key=$F1 label=$F2 bytes=$F3 desc=$F4
     badge=""
     if [ "$key" = "$PRESET_DEFAULT" ]; then
       badge="recommended"
