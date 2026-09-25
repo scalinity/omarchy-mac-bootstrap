@@ -163,6 +163,36 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$T_OUT" "Nothing on this Mac changed" "q at the shared size quits"
 fi
 
+# --- Whole macOS flows: shared area, quit, back, save-and-stop, old macOS -----------------
+if command -v plutil >/dev/null 2>&1; then
+  # A 32 GB shared area through to the launch: macOS shrinks by Linux + shared,
+  # the Linux size is typed rather than max, and the post-install plan exists.
+  t_cli mac-m1pro-1tb-roomy '\n\ny\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n'
+  assert_contains "$(cat "$T_DIR/record")" "pbcopy <<< 713GB" "shared area: macOS keeps C - 250 - 32 GB"
+  assert_contains "$T_OUT" "New OS size  (Linux gets)      250GB" "shared area: the Linux size is typed, not max"
+  [ -s "$T_DIR/state/shared-storage-plan.txt" ] && ok || fail "the shared-storage plan is written"
+  assert_contains "$(cat "$T_DIR/state/shared-storage-plan.txt")" "fdisk" "the plan carries the GPT-ordering step"
+
+  t_cli mac-m1pro-1tb-roomy 'q\n'
+  assert_rc "$T_RC" 0 "q at the first prompt exits cleanly"
+  assert_contains "$T_OUT" "Nothing on this Mac changed" "q at the first prompt says nothing changed"
+
+  t_cli mac-m1pro-1tb-roomy '\nb\nq\n'
+  assert_eq "$(printf '%s' "$T_OUT" | grep -c '▍Machine')" 2 "b at the size menu returns to the survey"
+
+  t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n4\n'
+  assert_contains "$T_OUT" "Plan saved" "Save and stop saves"
+  assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_linux=250" "Save and stop records the plan"
+  assert_not_contains "$T_OUT" "Type yes" "Save and stop never reaches the backup gate"
+  assert_empty_file "$T_DIR/record" "Save and stop runs nothing"
+
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  printf '13.4\n' >"$fx/cmd/sw_vers"
+  t_cli "$fx" '\n' --dry-run
+  assert_rc "$T_RC" 1 "macOS older than 13.5 stops"
+  assert_contains "$T_OUT" "older than 13.5" "the macOS version blocker is named"
+fi
+
 # --- An optional choice can be cleared ----------------------------------------------------
 if command -v plutil >/dev/null 2>&1; then
   t_cli mac-m1pro-1tb-roomy '\n\n\n\n\nm1pro\n\n\n\n\noctocat\n\n\n' plan

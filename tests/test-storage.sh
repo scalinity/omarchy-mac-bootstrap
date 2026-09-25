@@ -129,6 +129,13 @@ plan_layout $((250 * GB))
 assert_eq "$PLAN_MACOS_NEW_GB" 713 "macOS shrinks for Linux + shared"
 assert_eq "$PLAN_OS_SIZE_ANSWER" 250GB "shared plan types the Linux size, leaving the rest free"
 
+# --- Version comparison (macOS minimum) ------------------------------------------------
+for pair in "13.5 13.5 0" "13.10 13.5 0" "14 13.5 0" "27.0 13.5 0" "13.4.1 13.5 1" "13 13.5 1" "12.7 13.5 1" "13.5.1 13.5 0"; do
+  set -- $pair
+  ver_ge "$1" "$2"
+  assert_rc $? "$3" "ver_ge $1 >= $2"
+done
+
 # --- Formatting -------------------------------------------------------------------
 assert_eq "$(fmt_gb $((250 * GB)))" "250 GB" "whole GB"
 assert_eq "$(fmt_gb $C1T)" "994.7 GB" "one decimal"
