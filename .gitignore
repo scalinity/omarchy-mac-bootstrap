@@ -1,0 +1,6 @@
+# Test scratch output
+tests/.tmp/
+# Editor and OS noise
+.DS_Store
+*.swp
+*~
