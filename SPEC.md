@@ -322,8 +322,14 @@ a warning; the decoded values are shown for confirmation before use.
 - No secret is read by this tool. Passwords, passphrases and tokens are typed
   into upstream programs (`sudo`, the Asahi installer, `omarchy-mac-setup`,
   `gh`, `ssh-keygen`) directly on the terminal.
-- Upstream scripts are downloaded to a file, fingerprinted, optionally
-  inspected, then executed; never piped into a shell.
+- Upstream scripts are downloaded to a private (0700) directory,
+  fingerprinted, optionally inspected (control characters shown, not
+  interpreted), re-hashed immediately before execution, then executed; never
+  piped into a shell. A download that is not the expected script is refused
+  on both systems.
+- Unknown flags and malformed `OMB_DRY_RUN` values stop the run, so a
+  mistyped `--dry-run` never becomes a real run. Test seams (`OMB_FIXTURE`,
+  `OMB_TEST_RECORD`) are refused as root, and fixture mode never executes.
 
 ## Upstream dependency strategy
 

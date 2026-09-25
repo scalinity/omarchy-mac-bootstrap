@@ -34,6 +34,11 @@ upstream installers own every change to disks and the OS.
   `SOURCES_VERIFIED_ON` in the same commit. Drift is reported, never followed.
 - **Destructive launches sit behind typed words** (`yes`, `launch`, `start`,
   `resume`, `experimental`); defaults only ever lead to safe outcomes.
+- **Every choice passes `cfg_field_ok`**, whether it arrives as an answer, a
+  `state.env` value, or a token field: saved values reach shell arithmetic,
+  which evaluates array subscripts.
+- **Print user-visible text through the `ui_*` helpers or `_p`**, so the Linux
+  VT console, where Phase 2 runs, stays pure ASCII.
 - **State and logs stay non-secret.** `state_set` refuses secret-shaped keys;
   `run` logs argv and exit code, never output. Nothing in this tool reads a
   password — upstream programs prompt for their own.
@@ -46,7 +51,10 @@ upstream installers own every change to disks and the OS.
   `__`-prefixed locals (see `ui_ask`); bash's dynamic scoping otherwise lets a
   local shadow the caller's variable.
 - Decoders that set globals (`token_decode`) run in the current shell; command
-  substitution would discard what they set.
+  substitution would discard what they set. The same holds for anything in a
+  pipeline stage.
+- Read a prompt's 0/2/3 status with `case $?` right after the call: after an
+  `if …; fi` with no `else`, `$?` is 0.
 - `shellcheck -x omarchy-bootstrap` resolves cross-file variables but reports
   only the entrypoint's findings — lint each file as well.
 - The Asahi installer ends with a shutdown, so anything the user needs after it

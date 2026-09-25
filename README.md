@@ -138,17 +138,19 @@ mkdir -p /opt/omarchy-mac-bootstrap
 curl -fsSL https://github.com/scalinity/omarchy-mac-bootstrap/archive/refs/heads/main.tar.gz \
   | tar xz --strip-components=1 -C /opt/omarchy-mac-bootstrap
 
-# private repository (device-code sign-in)
+# private repository (device-code sign-in, signed out again afterwards)
 pacman -Syu --needed git github-cli
 gh auth login
 gh repo clone scalinity/omarchy-mac-bootstrap /opt/omarchy-mac-bootstrap
+gh auth logout
 
 cd /opt/omarchy-mac-bootstrap
 ./omarchy-bootstrap resume 'omb1:enc=1,user=…'     # the token from Phase 1
 ```
 
-Phase 1 prints the right variant for your repository and the exact token.
-Without a token it simply asks.
+Phase 1 prints the right variant for your repository and the exact token,
+pinned to the commit that made the plan when that commit is on GitHub (push
+before launching to get the pin). Without a token it simply asks.
 
 It checks the network (offering `nmtui`), confirms your choices, verifies that
 the `quattro` branch carries Omarchy 4 and that `omarchy-mac-setup` still

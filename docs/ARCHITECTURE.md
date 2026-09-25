@@ -61,8 +61,10 @@ spans both systems (`survey · plan · asahi · reboot · omarchy · dev`), sect
 bars, and the disk strip as the planning centrepiece. Colour carries meaning —
 steel for macOS, coral for Linux, violet for boot/system, mint/amber/rose for
 pass/warn/fail — and degrades 256 → 16 → none, Unicode → ASCII. The Linux VT
-console always gets ASCII. Menus take arrows, digits, `b`, `q` on a terminal
-and fall back to line input when piped.
+console always gets ASCII: glyphs come from the ASCII glyph set, and all
+user-visible text is printed with `_p`, which maps message punctuation (dashes,
+arrows, ≥, ≈, …) to ASCII there. Menus take arrows, digits, `b`, `q` on a
+terminal and fall back to line input when piped.
 
 ## Bash 3.2 conventions
 
