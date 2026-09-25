@@ -460,10 +460,7 @@ mac_choices() {
   ui_note "Omarchy Mac accepts encryption, username, hostname and keymap as flags, so it will not ask for them again. It still asks for your new user's password and, when encrypting, the disk passphrase — typed into it directly, never seen by this tool."
   printf '\n'
   local d
-  d=$([ "${CFG_enc:-1}" = 0 ] && echo n || echo y)
-  printf '   %sEncrypt Linux root?%s\n' "$C_BOLD" "$C_RESET"
-  ui_note "Recommended for a laptop. You will enter a disk passphrase during the Omarchy Mac migration flow. The bootstrap never stores this passphrase."
-  if ui_yesno "Encrypt" "$d"; then CFG_enc=1; else [ $? = 3 ] && return 3; CFG_enc=0; fi
+  ask_encrypt || return 3
   d=${CFG_user:-}
   [ -n "$d" ] || { valid_username "$MAC_USER" >/dev/null 2>&1 && d=$MAC_USER; }
   ui_ask CFG_user "Username" "$d" valid_username || return 3
@@ -702,11 +699,7 @@ mac_handoff() {
   version=$(sys_net asahi_version "$ASAHI_ALARM_VERSION_URL" | clean_version)
   asahi_bootstrap_expected "$FETCH_PATH" || shape_ok=0
 
-  ui_kv "URL" "$FETCH_URL"
-  ui_kv "Downloaded" "$FETCH_AT"
-  ui_kv "Size" "$FETCH_SIZE bytes"
-  ui_kv "SHA-256" "$FETCH_SHA256"
-  ui_kv "Saved to" "$(tildify "$FETCH_PATH")"
+  show_provenance
   if [ "$version" = "$ASAHI_INSTALLER_VERIFIED" ]; then
     ui_kv "Fetches installer" "$version" "matches the version this tool was checked against"
   else
@@ -817,13 +810,7 @@ mac_main() {
   mac_show_survey
   blockers=$(mac_blockers)
   if [ -n "$blockers" ]; then
-    ui_callout fail "This Mac cannot continue."
-    while IFS= read -r line; do
-      [ -n "$line" ] && ui_callout_body fail "$line"
-    done <<EOF
-$blockers
-EOF
-    printf '\n'
+    ui_blockers "This Mac cannot continue." "$blockers"
     return 1
   fi
   if [ "$MAC_ASAHI_PRESENT" = 1 ]; then

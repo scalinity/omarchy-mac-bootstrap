@@ -171,6 +171,19 @@ valid_gb() {
   return 1
 }
 
+# ask_encrypt — the encryption question both phases ask. 0 answered, 3 quit.
+ask_encrypt() {
+  printf '   %sEncrypt Linux root?%s\n' "$C_BOLD" "$C_RESET"
+  ui_note "Recommended for a laptop. You will enter a disk passphrase during the Omarchy Mac migration flow. The bootstrap never stores this passphrase."
+  ui_yesno "Encrypt" "$([ "${CFG_enc:-1}" = 0 ] && echo n || echo y)"
+  case $? in
+    0) CFG_enc=1 ;;
+    3) return 3 ;;
+    *) CFG_enc=0 ;;
+  esac
+  return 0
+}
+
 # cfg_field_ok KEY VALUE — the one rule for every choice, whichever way it
 # arrives (answers, state.env, a resume token). 0 valid, 1 invalid, 2 unknown.
 cfg_field_ok() {

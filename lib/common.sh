@@ -229,6 +229,15 @@ fetch_unchanged() {
   return 1
 }
 
+# show_provenance — where the last download came from, and what it is.
+show_provenance() {
+  ui_kv "URL" "$FETCH_URL"
+  ui_kv "Downloaded" "$FETCH_AT"
+  ui_kv "Size" "$FETCH_SIZE bytes"
+  ui_kv "SHA-256" "$FETCH_SHA256"
+  ui_kv "Saved to" "$(tildify "$FETCH_PATH")"
+}
+
 # view_file PATH — page a file for inspection. Control characters are made
 # visible (cat -v), so a script cannot hide lines with terminal escapes, and
 # the pager reads a pipe, so its edit command cannot change the file on disk.

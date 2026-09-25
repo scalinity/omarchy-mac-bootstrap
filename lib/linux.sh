@@ -149,7 +149,7 @@ lx_network() {
 }
 
 lx_choices() {
-  local d have=1 k
+  local have=1 k
   for k in enc user host kmap; do
     eval "[ -n \"\${CFG_$k:-}\" ]" || have=0
   done
@@ -168,10 +168,7 @@ lx_choices() {
     esac
   fi
   printf '\n'
-  d=$([ "${CFG_enc:-1}" = 0 ] && echo n || echo y)
-  printf '   %sEncrypt Linux root?%s\n' "$C_BOLD" "$C_RESET"
-  ui_note "Recommended for a laptop. You will choose a disk passphrase at the console during the Omarchy Mac migration. The bootstrap never stores this passphrase."
-  if ui_yesno "Encrypt" "$d"; then CFG_enc=1; else [ $? = 3 ] && return 3; CFG_enc=0; fi
+  ask_encrypt || return 3
   ui_ask CFG_user "Username" "${CFG_user:-}" valid_username || return 3
   ui_ask CFG_host "Hostname" "${CFG_host:-omarchy}" valid_hostname || return 3
   ui_ask CFG_kmap "Console keymap" "${CFG_kmap:-${LX_KEYMAP:-us}}" valid_keymap || return 3
@@ -228,11 +225,7 @@ lx_handoff() {
     ui_fail "Refusing to run it: $SETUP_REFUSAL."
     return 1
   fi
-  ui_kv "URL" "$FETCH_URL"
-  ui_kv "Downloaded" "$FETCH_AT"
-  ui_kv "Size" "$FETCH_SIZE bytes"
-  ui_kv "SHA-256" "$FETCH_SHA256"
-  ui_kv "Saved to" "$(tildify "$FETCH_PATH")"
+  show_provenance
   ui_kv "Omarchy version" "$version" "verified against $OMARCHY_MAC_VERIFIED"
   state_set omarchy_setup_url "$FETCH_URL"
   state_set omarchy_setup_sha256 "$FETCH_SHA256"
@@ -268,7 +261,6 @@ lx_handoff() {
     ui_info "Not started. Nothing changed. Run ./omarchy-bootstrap again when ready."
     return 1
   fi
-  cfg_save
   state_unset omarchy_setup_exit
   state_stamp omarchy_launched_at
   printf '\n'
@@ -360,13 +352,7 @@ EOF
 
   blockers=$(lx_blockers)
   if [ -n "$blockers" ]; then
-    ui_callout fail "This machine cannot continue."
-    while IFS= read -r line; do
-      [ -n "$line" ] && ui_callout_body fail "$line"
-    done <<EOF
-$blockers
-EOF
-    printf '\n'
+    ui_blockers "This machine cannot continue." "$blockers"
     return 1
   fi
 

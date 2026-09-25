@@ -216,6 +216,18 @@ ui_callout() {
   done
 }
 
+# ui_blockers TITLE LINES — a fail callout, one paragraph per line of LINES.
+ui_blockers() {
+  local line
+  ui_callout fail "$1"
+  while IFS= read -r line; do
+    [ -n "$line" ] && ui_callout_body fail "$line"
+  done <<EOF
+$2
+EOF
+  printf '\n'
+}
+
 # ui_callout_body STYLE TEXT — one more wrapped paragraph under a callout.
 ui_callout_body() {
   local color
