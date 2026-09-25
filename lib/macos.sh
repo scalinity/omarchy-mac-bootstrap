@@ -240,19 +240,6 @@ mac_show_survey() {
   return 0
 }
 
-# ui_next LABEL — Enter continues, b goes back, q quits. 0/2/3.
-ui_next() {
-  local ans
-  printf '\n   %s⏎%s %s  %s· b back · q quit%s ' "$C_ACCENT" "$C_RESET" "$1" "$C_FAINT" "$C_RESET" | _ui_ascii_hint_line
-  IFS= read -r ans || return 3
-  _ui_echo "$ans"
-  case "$ans" in
-    b | B) return 2 ;;
-    q | Q) return 3 ;;
-  esac
-  return 0
-}
-_ui_ascii_hint_line() { if [ "$UI_UNICODE" = 1 ]; then cat; else sed 's/⏎/>/; s/·/-/g'; fi; }
 
 # ---------------------------------------------------------------------------
 # Storage planning

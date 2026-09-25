@@ -426,8 +426,22 @@ ui_select() {
   done
 }
 
+# ASCII stand-ins for the hint-line glyphs.
 _ui_ascii_hint() {
-  if [ "$UI_UNICODE" = 1 ]; then cat; else sed 's/↑↓/up\/down/; s/·/-/g'; fi
+  if [ "$UI_UNICODE" = 1 ]; then cat; else sed 's/↑↓/up\/down/; s/⏎/>/; s/·/-/g'; fi
+}
+
+# ui_next LABEL — Enter continues, b goes back, q quits. 0/2/3.
+ui_next() {
+  local ans
+  printf '\n   %s⏎%s %s  %s· b back · q quit%s ' "$C_ACCENT" "$C_RESET" "$1" "$C_FAINT" "$C_RESET" | _ui_ascii_hint
+  IFS= read -r ans || return 3
+  _ui_echo "$ans"
+  case "$ans" in
+    b | B) return 2 ;;
+    q | Q) return 3 ;;
+  esac
+  return 0
 }
 
 _ui_select_render() {
