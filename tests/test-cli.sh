@@ -11,9 +11,23 @@ non_ascii() { printf '%s' "$1" | LC_ALL=C tr -d '\11\12\15\40-\176' | wc -c | tr
 # --- Help, version, unknown ---------------------------------------------------
 t_cli mac-m1pro-1tb-roomy "" --help
 assert_rc "$T_RC" 0 "--help exits 0"
-for w in plan install resume status doctor dev sources logs --dry-run --no-color --ascii; do
-  assert_contains "$T_OUT" "$w" "help lists $w"
-done
+# Each row: the command and its own description on one line, so a word that
+# also appears in the prose ("plan", "install") cannot satisfy it.
+while IFS='|' read -r cmd desc; do
+  if printf '%s\n' "$T_OUT" | grep -Eq "^ +$cmd +$desc"; then ok; else fail "help row for $cmd"; fi
+done <<'EOF'
+plan|survey \+ storage plan \+ choices; changes nothing
+install|run the current phase end to end
+resume \[token\]|continue after a reboot
+status|where this machine is, and what comes next
+doctor|read-only health checks
+dev|optional developer setup
+sources \[--check\]|upstream URLs and versions
+logs|log location and recent entries
+--dry-run|show every step; run nothing
+--no-color|plain output
+--ascii|ASCII glyphs only
+EOF
 t_cli mac-m1pro-1tb-roomy "" --version
 assert_eq "$T_OUT" "omarchy-bootstrap 0.1.0" "--version"
 t_cli mac-m1pro-1tb-roomy "" frobnicate
