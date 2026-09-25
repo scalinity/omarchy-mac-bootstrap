@@ -8,38 +8,54 @@ echo "test-safety"
 
 CODE="$REPO/omarchy-bootstrap $REPO/lib/common.sh $REPO/lib/ui.sh $REPO/lib/state.sh $REPO/lib/sources.sh $REPO/lib/storage.sh $REPO/lib/macos.sh $REPO/lib/linux.sh $REPO/lib/doctor.sh $REPO/lib/dev.sh"
 
-# Code lines only: no comments, no heredoc bodies, quoted strings removed.
-code_lines() {
+# Code lines: no comments, no heredoc bodies. raw_lines keeps quoted text,
+# because a command substitution inside quotes still executes; code_lines
+# blanks quoted text, for scans where quoted text is only data.
+_lines() {
   # shellcheck disable=SC2086 # CODE is a file list
-  awk '
+  awk -v blank="$1" '
     FNR == 1 { heredoc = "" }
     heredoc != "" { if ($0 ~ "^[[:space:]]*" heredoc "$") heredoc = ""; next }
     /^[[:space:]]*#/ { next }
     {
       line = $0
       if (match(line, /<<-?[[:space:]]*.?EOF.?/)) heredoc = "EOF"
-      gsub(/"[^"]*"/, "\"\"", line)
-      gsub(/\047[^\047]*\047/, "\047\047", line)
+      if (blank == 1) {
+        gsub(/"[^"]*"/, "\"\"", line)
+        gsub(/\047[^\047]*\047/, "\047\047", line)
+      }
       print FILENAME ":" FNR ": " line
     }' $CODE
 }
+raw_lines() { _lines 0; }
+code_lines() { _lines 1; }
+
+FORBIDDEN_RE='(dd|gpt|fdisk|sfdisk|gdisk|sgdisk|parted|bless|nvram|csrutil|shutdown|reboot|halt|poweroff|wipefs|blkdiscard|btrfs|hdiutil|asr|mkfs(\.[a-z0-9]+)?|cryptsetup|expect)'
+# Where a word is executed: line start, after ; & | ( { ! or $(, or after a
+# keyword or wrapper that runs its argument.
+CMDPOS='(^[[:space:]]*|[;&|({][[:space:]]*|![[:space:]]+|\$\([[:space:]]*|(then|do|else|if|while|until|run|sudo|exec|command|env|time|xargs|nohup)[[:space:]]+|ui_spin[[:space:]]+"[^"]*"[[:space:]]+)'
 
 # --- Static: forbidden commands -----------------------------------------------
-# A forbidden word at a command position: line start, after ; & | $( or after
-# a keyword/wrapper (then, do, else, run, sudo, exec).
-hits=$(code_lines | sed 's/^[^:]*:[0-9]*: //' |
-  grep -E '(^[[:space:]]*|[;&|][[:space:]]*|\$\([[:space:]]*|(then|do|else|run|sudo|exec)[[:space:]]+)(dd|gpt|fdisk|sfdisk|parted|bless|nvram|csrutil|shutdown|reboot|halt|poweroff|wipefs|mkfs(\.[a-z0-9]+)?|cryptsetup|expect)([[:space:]]|$)')
-assert_eq "$hits" "" "no forbidden command in code"
+hits=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E "${CMDPOS}${FORBIDDEN_RE}([[:space:]]|\$)")
+assert_eq "$hits" "" "no forbidden command at any command position"
+# PATH shims only intercept PATH lookups, so no shimmed command may be named by
+# an absolute path (a "#!" shebang pattern in a string is not a call).
+shimmed=$(printf '%s\n' $FORBIDDEN_CMDS | sed 's/\./\\./g' | paste -sd'|' -)
+hits=$({
+  code_lines | grep -E "(^|[^A-Za-z0-9_.!-])/(usr/)?s?bin/($shimmed)([^A-Za-z0-9_.-]|\$)"
+  raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E "${CMDPOS}/(usr/)?s?bin/($shimmed)([^A-Za-z0-9_.-]|\$)"
+})
+assert_eq "$hits" "" "no absolute-path call to a shimmed command (PATH shims would miss it)"
 
 # Any diskutil verb other than info / list / the literal limits query.
 hits=$(grep -n 'diskutil' $CODE | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' |
   grep -E 'diskutil[[:space:]]+(erase|partition|resize|split|merge|add|zero|random|secure|reformat|unmount|mount|apfs[[:space:]]+(delete|add|create|erase|convert|unlock|encrypt|decrypt|change|resizeContainer))' |
   grep -v 'resizeContainer "\$1" limits -plist')
 assert_eq "$hits" "" "only read-only diskutil verbs"
-n=$(grep -c 'resizeContainer' "$REPO/lib/macos.sh")
 assert_eq "$(grep 'resizeContainer' $CODE | grep -v '^[^:]*:[[:space:]]*#' | grep -c 'limits -plist')" \
   "$(grep 'resizeContainer' $CODE | grep -vc '^[^:]*:[[:space:]]*#')" "every resizeContainer use is the limits query"
-[ "$n" -ge 1 ] && ok || fail "limits query present"
+n=$(grep -v '^[[:space:]]*#' "$REPO/lib/macos.sh" | grep -c 'resizeContainer "\$1" limits -plist')
+assert_eq "$n" 1 "the limits query is present in code, not only in a comment"
 
 # --- Static: every probe is read-only ----------------------------------------------
 probes=$(grep -h 'sys_cmd ' $CODE | grep -v '^[[:space:]]*#' | grep -o 'sys_cmd [^|)]*' | sed 's/^sys_cmd [^ ]* //' | sort -u)
@@ -50,14 +66,19 @@ assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 runs=$(code_lines | grep -oE '(^|[[:space:];&|(])run [^;|&]*' | sed -E 's/^[[:space:];&|(]*run //' | awk '{print $1}' | sort -u | tr '\n' ' ')
 for cmd in $runs; do
   case "$cmd" in
-    sh | bash | nmtui | sudo | '""' | git | gh | ssh-keygen | npm | \
+    sh | bash | nmtui | sudo | git | gh | ssh-keygen | npm | \
       omarchy-pkg-add | omarchy-install-dev-env | omarchy-install-editor-vscode | \
       omarchy-setup-security-sshd | omarchy-setup-security-sudoless-docker) ok ;;
+    '""') ;; # a quoted first argument: checked exactly below
     *) fail "unexpected command through run: $cmd" ;;
   esac
 done
+quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
+assert_eq "$quoted" 'run "$OMS_SELF" --resume' "the only indirect command through run is omarchy-mac-setup --resume"
 sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | sort -u | tr '\n' ';')
 assert_eq "$sudos" "run sudo localectl set-locale;run sudo pacman -S;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale"
+hits=$(code_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E '(^[[:space:]]*|[;&|({!][[:space:]]*|\$\([[:space:]]*|(then|do|else|if|exec|command|env|xargs)[[:space:]]+)sudo[[:space:]]')
+assert_eq "$hits" "" "sudo only ever runs through run"
 
 # --- Dynamic: dry-run executes nothing ------------------------------------------------
 mac_install_input='\n\n\n\n\n\n\n\n\n\n\n\n\nyes\n\nlaunch\n'

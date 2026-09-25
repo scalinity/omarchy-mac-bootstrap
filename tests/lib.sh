@@ -18,7 +18,8 @@ mkdir -p "$TMP_ROOT"
 FORBIDDEN_CMDS="diskutil dd gpt fdisk sfdisk parted bless nvram csrutil shutdown reboot halt poweroff
 sudo pacman systemctl nmtui cryptsetup mkfs mkfs.exfat wipefs pbcopy omarchy-mac-setup curl wget sh
 omarchy-pkg-add omarchy-install-dev-env omarchy-setup-security-sshd omarchy-install-editor-vscode
-omarchy-setup-security-sudoless-docker gh ssh-keygen npm timedatectl localectl git"
+omarchy-setup-security-sudoless-docker gh ssh-keygen npm timedatectl localectl git
+sgdisk gdisk blkdiscard btrfs hdiutil asr"
 
 t_tmp() { mktemp -d "$TMP_ROOT/t.XXXXXX"; }
 
