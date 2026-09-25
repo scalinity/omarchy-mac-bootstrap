@@ -843,7 +843,7 @@ mac_reboot_guide() {
   _guide 8 "Fetch this repository and continue:"
   continuation_commands
   printf '\n'
-  ui_note "macOS stays installed: hold the power button at startup to choose it, or set the default in System Settings > General > Startup Disk. Photograph this screen — no clipboard survives the reboot. './omarchy-bootstrap resume' on macOS shows it again."
+  ui_note "The installer makes the new OS the default startup disk. macOS stays installed: hold the power button at startup to choose it, or set it back as the default in System Settings > General > Startup Disk. Photograph this screen — no clipboard survives the reboot. './omarchy-bootstrap resume' on macOS shows it again."
 }
 
 _guide() {

@@ -87,3 +87,97 @@ hold before it counts as done. Status lives at the end of each entry.
   exercised.
 - **Acceptance:** every command in the README behaves as documented.
 - **Status:** done.
+
+## M8 — Command intent and trustworthy state
+
+- **Objective:** read-only commands and previews that provably change nothing,
+  and a local record that cannot be redirected or silently lost.
+- **Work:** `OMB_INTENT`/`OMB_PERSIST` set from the command before routing;
+  `run` and downloads refuse outside act; Linux `plan` ahead of state routing;
+  lazy, checked state directory (ownership, mode, no symlinks); one checked
+  atomic writer; the run lock; `state_must_set` before irreversible steps.
+- **Verification:** `tests/test-routing.sh` (filesystem snapshots around every
+  read-only command, preview and plan in every lifecycle state),
+  `tests/test-state.sh`, `tests/test-safety.sh`.
+- **Acceptance:** plan never reaches an action in any state; read-only commands
+  and `--dry-run` leave no state, log or download; unsafe state paths and
+  unwritable records stop the step that needs them.
+- **Status:** done.
+
+## M9 — Storage geometry
+
+- **Objective:** plans made on exact extents, with the installer's own
+  alignment, that provably hold.
+- **Work:** `lib/storage.sh` geometry walk and planner; offsets and GUIDs from
+  `diskutil info`; one region per allocation; whole-MiB answers; the eight
+  invariants; checked size input; storage contract at the handoff; re-read
+  before the launch.
+- **Verification:** `tests/test-storage.sh` replays every plan through an
+  independent model of the installer; geometry fixtures shaped on a real disk.
+- **Acceptance:** separate gaps are never summed; Linux and Shared get at least
+  what was asked; the root keeps 50 GB; overflow and leading zeros are
+  refused; an unreadable layout blocks.
+- **Status:** done (model verified against upstream source; see M14).
+
+## M10 — Install classification and recovery
+
+- **Objective:** say truthfully where an interrupted Asahi install stands.
+- **Work:** `lib/asahi.sh`; the re-read after the installer; Omarchy Mac
+  encryption and finishing states; recovery docs corrected.
+- **Verification:** `tests/test-lifecycle.sh` over a fixture per interruption
+  point and per setup/encryption state.
+- **Acceptance:** exit status is never evidence; incomplete and unknown states
+  stop; repair is mentioned only where upstream offers it.
+- **Status:** done.
+
+## M11 — Shared storage
+
+- **Objective:** one exFAT partition both systems read and write, as a
+  first-class part of the plan.
+- **Work:** `lib/shared.sh`: the plan record, the codes, the guarded creation
+  on macOS, the managed mount on Linux, status, doctor and the write test;
+  `docs/SHARED.md`.
+- **Verification:** `tests/test-shared.sh` (every creation gate and failure,
+  reconciliation, activation cases); the static pin of the single
+  `addPartition` in `tests/test-safety.sh`.
+- **Acceptance:** created at most once, only in the verified reserved region,
+  only after both typed gates and a matching re-read; nothing ever formatted,
+  deleted or repaired; mounted by PARTUUID for the everyday user.
+- **Status:** implemented and tested against recorded layouts; real-hardware
+  qualification is M14.
+
+## M12 — Developer outcomes
+
+- **Objective:** a developer setup whose report and exit status are true.
+- **Work:** per-module outcomes checked on the machine afterwards; SSH as
+  separate facts; only success timestamped.
+- **Verification:** `tests/test-dev.sh` with forced failures in every module.
+- **Acceptance:** any failure is reported and exits non-zero.
+- **Status:** done.
+
+## M13 — Continuous integration
+
+- **Objective:** every push checked on stock bash 3.2 and on bash 5.
+- **Work:** `.github/workflows/ci.yml` (Linux with ShellCheck, macOS with
+  `/bin/bash`), fixture freshness, strict skips.
+- **Verification:** the suite passes locally under `/bin/bash` 3.2 and bash 5
+  with `OMB_STRICT_SKIPS=1`.
+- **Acceptance:** both jobs green on GitHub.
+- **Status:** workflow committed; not yet observed running on GitHub.
+
+## M14 — Real-hardware qualification
+
+- **Objective:** evidence from the target Mac (2021 16-inch M1 Pro) that the
+  modelled behaviour is the real behaviour.
+- **Work, in order:** full current backup; `./omarchy-bootstrap doctor` and the
+  survey compared with `diskutil list`; Asahi and Omarchy installed with the
+  planned answers, and the resulting layout compared with the plan record;
+  macOS, Recovery and Linux each boot; encryption confirmed finished; back on
+  macOS, `shared` shows `awaiting-macos-creation`; Shared created; the
+  partition checked with `diskutil info`; back on Linux, `shared activate`;
+  a file over 4 GB copied and hashed macOS → Linux and back; clean reboots
+  between the systems; the mount persists; `./omarchy-bootstrap` rerun on both
+  systems changes nothing.
+- **Acceptance:** every step above holds on the real machine, and the planned
+  and actual extents match.
+- **Status:** not started.

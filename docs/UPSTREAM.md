@@ -83,7 +83,10 @@ the tool re-reads the disk instead.
 4. `New OS size` (default `max`) → total Linux allocation including stub and
    EFI.
 5. `OS name` → shown in Startup Options.
-6. Installer ends with a **shutdown** and a 7-step first-boot procedure (hold
+6. `bless --setBoot` on the new OS ("Setting the new OS as the default boot
+   volume", `main.py:653-680`): **the new OS becomes the default startup
+   disk**; macOS is chosen by holding power, or set back in Startup Disk.
+7. Installer ends with a **shutdown** and a 7-step first-boot procedure (hold
    power, choose the new volume, macOS Recovery dialog, authenticate, follow
    the step-2 prompts). The Alarm bootstrap also asks whether to report the
    install.

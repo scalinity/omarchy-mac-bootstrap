@@ -95,6 +95,17 @@ next boot through `omarchy-mac-setup.service` on tty1.
 - **A bad update** — `omarchy snapshot restore` lists snapper snapshots plus
   `@fresh` (before Omarchy) and `@factory` (the installed system).
 - **Developer setup** — every module is rerunnable: `./omarchy-bootstrap dev`.
+  The summary names each module that failed and why; rerun just those once
+  the cause is fixed. A failed module is never recorded as done.
+
+## Shared storage stopped
+
+`./omarchy-bootstrap shared` on either system shows the state and the reason.
+Every case, and what to do about it, is in [SHARED.md](SHARED.md#when-it-stops).
+In short: a Shared partition that exists is found and recorded, never created
+twice; anything in Shared's place that is not the planned exFAT volume stops
+everything, and this tool never formats or deletes it. After a crash, check
+the exFAT volume with Disk Utility's First Aid on macOS before relying on it.
 
 ## Back to macOS only
 
@@ -102,10 +113,20 @@ There is no automatic uninstaller, by design. From macOS, follow the
 [Asahi partitioning cheatsheet](https://asahilinux.org/docs/sw/partitioning-cheatsheet/)
 exactly: set macOS as the startup disk, delete the stub APFS container, delete
 the EFI and Linux partitions, then grow the macOS container into the freed
-space. Never delete `Apple_APFS_Recovery`.
+space (*Removing an unfinished install* above lists the commands). Never
+delete `Apple_APFS_Recovery`.
+
+Shared storage is kept: it is not part of the Linux install. macOS can grow
+only into free space directly after it, so with the layout
+`macOS | (freed) | Shared | Recovery` it grows up to Shared and stops. To
+give Shared's space back too, copy its files elsewhere first, then remove it
+with `diskutil eraseVolume free free <Shared's id>` and grow macOS again. On
+Linux the managed line in `/etc/fstab` goes with the Linux install.
 
 ## This tool's own state
 
 Everything it records is in `~/.local/state/omarchy-mac-bootstrap/` (root on
 Linux: `/var/lib/omarchy-mac-bootstrap/`). Deleting that directory forgets the
-plan and history; it changes nothing on the disk.
+plan and history; it changes nothing on the disk. On macOS, keep
+`shared-intent.env` while Shared storage is still to be created: it is the
+record creation is checked against.

@@ -4,7 +4,8 @@
 #
 # One entrypoint for both operating systems. It plans, explains, downloads with
 # provenance, launches the official installers in the foreground, and records
-# non-secret progress. It never partitions a disk itself.
+# non-secret progress. The one partition it creates itself is the planned
+# Shared partition, after checking the whole disk and a typed confirmation.
 
 # Started with sh? Continue under bash (stock macOS has /bin/bash 3.2).
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -73,7 +74,7 @@ usage() {
   _help_row "-h, --help" "this help"
   _help_row "--version" "print the version"
   ui_section "Boundaries"
-  ui_note "Partitioning belongs to the Asahi installer; Omarchy's install belongs to omarchy-mac-setup. This tool never resizes, erases, or deletes partitions, never stores a password, and never launches an installer without a typed confirmation."
+  ui_note "The Asahi installer resizes macOS and creates the Linux partitions; omarchy-mac-setup owns the boot move and encryption. This tool creates one partition itself, the planned Shared partition, only after checking the whole disk and a typed confirmation, and never resizes, erases, deletes or formats a partition. It never stores a password, and never launches an installer without a typed confirmation."
   printf '\n'
 }
 

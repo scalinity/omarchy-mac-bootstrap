@@ -1,7 +1,8 @@
 # Omarchy Mac Bootstrap
 
-Turn a supported Apple Silicon Mac into a dual-boot
-macOS + Omarchy machine through a guided installer.
+Turn a supported Apple Silicon Mac into a dual-boot macOS + Omarchy machine
+through a guided installer, with an optional Shared partition both systems
+read and write.
 
 ```bash
 git clone https://github.com/scalinity/omarchy-mac-bootstrap.git
@@ -14,38 +15,50 @@ it detects which side it is on and continues.
 
 ```text
 macOS ─▶ storage plan ─▶ Asahi Alarm installer ─▶ reboot ─▶ Arch (Asahi Alarm)
-      ─▶ Omarchy Mac (quattro) ─▶ Omarchy 4 ─▶ optional developer setup
+      ─▶ Omarchy Mac (quattro) ─▶ Omarchy 4 ─▶ [Shared: macOS creates it, Linux mounts it]
+      ─▶ optional developer setup
 ```
 
 ## What it does
 
-- **Surveys the Mac, read-only.** Model and chip, memory, disk, the macOS
-  container, real free space, macOS version, FileVault, admin rights, Asahi
-  support, internet, and the installer's own resize floor.
-- **Plans storage.** Presets are calculated from this disk; custom sizes take
-  GB, TB, or a percentage. It shows what macOS keeps and why a size is unsafe.
+- **Surveys the Mac, read-only.** Model and chip, memory, the internal disk's
+  exact partition layout and free regions, the macOS container, real free
+  space, macOS version, FileVault, admin rights, Asahi support, internet, the
+  installer's own resize floor, and where any earlier install stands.
+- **Plans storage in bytes.** Shared first, then Linux, computed from this
+  disk's layout with the installer's own rules. It shows every region and the
+  exact values to type, and proves the plan holds before offering it.
 - **Hands off to the official installers**, never around them: downloads each
   script to a file, shows URL, time, size and SHA-256, lets you read it, tells
   you exactly what to type, and launches it in the foreground only after you
-  type a confirmation word.
+  type a confirmation word. Afterwards it reads the disk again and tells you
+  what actually happened.
 - **Carries your choices across the reboot** in a short, readable resume token.
 - **Continues on Linux**: network, then Omarchy Mac's own setup with your
   answers passed as its documented flags.
-- **Offers an optional developer setup** that uses Omarchy's own commands.
-- **Explains itself afterwards**: `status`, `doctor`, `logs`.
+- **Creates and mounts Shared storage** when planned: one exFAT partition,
+  created from macOS after Linux has finished, mounted at `/mnt/shared`.
+- **Offers an optional developer setup** that uses Omarchy's own commands and
+  reports what really happened in each module.
+- **Explains itself**: `status`, `doctor`, `shared`, `logs`.
 
 ## What it deliberately does not do
 
-- Partition anything. The Asahi installer resizes macOS and creates every
-  Linux partition. This tool's only disk query is the read-only
-  `diskutil apfs resizeContainer … limits -plist` the installer itself uses.
+- Partition anything but Shared. Asahi exclusively owns APFS resizing and
+  creation of the Linux/boot layout. Omarchy Mac exclusively owns its boot
+  migration and encryption. This bootstrap has only one additional
+  disk-mutation authority: after positive topology validation and explicit
+  user confirmation, it may create the one planned Shared cross-OS partition
+  inside the previously reserved free region. It never deletes, resizes,
+  reformats, or generically edits arbitrary partitions.
 - Reimplement Omarchy Mac. User creation, sudo, hostname, keymap, the `/boot`
   move, encryption, snapshots, and the Omarchy install belong to
   `omarchy-mac-setup`.
 - Type into an installer for you. No `expect`, no screen scraping.
 - Store a secret. Passwords and passphrases are typed into the upstream program
   that asks for them.
-- Remove macOS, write to APFS from Linux, or uninstall anything.
+- Repair anything automatically, remove macOS, write to APFS from Linux, or
+  uninstall anything.
 
 ## Before you start
 
@@ -54,8 +67,10 @@ macOS ─▶ storage plan ─▶ Asahi Alarm installer ─▶ reboot ─▶ Arch
   supported upstream yet. `./omarchy-bootstrap doctor` tells you which you have.
 - macOS 13.5 or newer, logged in as an administrator.
 - A recent backup of macOS. The tool asks you to confirm it; it cannot check it.
-- Free space: Omarchy Mac needs 50 GB for Linux (100 GB recommended) *on top
-  of* the 38 GB the installer keeps free in macOS for updates.
+- Free space in one region: Linux needs at least 54 GB (a 50 GB root plus 3 GB
+  of Asahi boot data; 100 GB recommended), *on top of* the 38 GB the installer
+  keeps free in macOS for updates and a 5 GB margin; Shared, if you want it,
+  comes on top of that.
 - Internet on both sides. Wi-Fi works on the Linux side via `nmtui`.
 
 Nothing to install first: it runs on stock macOS (`/bin/bash` 3.2) and on the
@@ -65,9 +80,10 @@ minimal Asahi Alarm image.
 
 The Asahi installer shrinks the macOS APFS container and adds three things
 after it: a 2.5 GB "stub macOS" container that makes Linux bootable from
-Apple's boot picker, a 0.5 GB EFI partition, and the Linux root (Btrfs). macOS
-stays exactly where it was and stays the default until you choose otherwise.
+Apple's boot picker, a 0.5 GB EFI partition, and the Linux root (Btrfs). With
+Shared storage, the Shared partition follows the Linux root.
 
+- **The new OS becomes the default startup disk** when the installer finishes.
 - **Pick an OS**: hold the power button at startup until "Loading startup
   options…", then choose.
 - **Set the default**: macOS System Settings › General › Startup Disk, or hold
@@ -76,25 +92,42 @@ stays exactly where it was and stays the default until you choose otherwise.
 
 ## Storage
 
-The planner offers presets computed from your disk, for example on a 1 TB
-M1 Pro with 700 GB free:
+On a 1 TB M1 Pro with 700 GB free, the presets are:
 
 | Preset | Linux | Meaning |
 | --- | --- | --- |
 | Minimal | 100 GB | Omarchy plus moderate development |
 | Balanced *(recommended)* | 25 % of the disk | projects, containers, packages |
 | Linux-heavy | 50 % of the disk | a Linux laptop that keeps macOS |
-| Maximum safe | what macOS can spare | macOS keeps used + 38 GB + snapshot overhead + 5 GB |
+| Maximum safe | what one region allows | macOS keeps used + 38 GB + snapshot overhead + 5 GB |
 | Custom | `300GB`, `0.5TB`, `35%`, `max` | validated against the same limits |
 
-Three numbers are kept apart on screen: the size you **request**, the
-**estimated** resulting layout, and the **exact** sizes the installer creates
-(it aligns them itself). The installer does not ask "how much for Linux"; it
-asks for the **new macOS size**, then the **New OS size**. The answer card
-gives you both, and the first goes on the clipboard.
+The review shows macOS, Linux, Shared, system and unallocated space exactly,
+and below them the values to type. The installer asks for the **new macOS
+size**, then the **New OS size**; the tool gives both as whole MiB (for
+example `711345MiB`), which the installer's rounding leaves unchanged, and the
+first goes on the clipboard. Free space split across separate regions is never
+added together: the installer uses one region at a time.
 
-[docs/STORAGE.md](docs/STORAGE.md) has the full algorithm, and the optional
-shared exFAT area (off by default, planned but never created).
+[docs/STORAGE.md](docs/STORAGE.md) has the full algorithm.
+
+## Shared storage
+
+Optional, chosen before the Linux size: 50, 100, 150 or 250 GB, or any size
+that leaves Linux its minimum.
+
+- **For** datasets, PDFs, media, model files, archives, downloads, files moving
+  between the systems.
+- **Not for** a Linux home, package databases, Docker storage, or Git checkouts
+  that need Unix permissions and symlinks: exFAT has none of those.
+- **Not encrypted** (FileVault and LUKS do not cover it) and **not a backup**.
+
+It is created after Linux is completely installed: Linux shows a completion
+code; on macOS, `./omarchy-bootstrap` takes that code, checks the whole disk
+against the plan, asks for `yes` and `create`, and adds the one partition;
+back on Linux, `./omarchy-bootstrap shared activate` mounts it at
+`/mnt/shared` on every boot. One reboot more than the install alone.
+[docs/SHARED.md](docs/SHARED.md) explains every step and every stop.
 
 ## Install, step by step
 
@@ -105,17 +138,20 @@ shared exFAT area (off by default, planned but never created).
 ```
 
 1. Survey (read-only), with a disk strip of the current layout.
-2. Storage plan and Linux choices: encryption (default yes), username,
-   hostname, console keymap, timezone, locale, SSH, GitHub key user.
+2. Shared storage (optional), then the Linux size, then Linux choices:
+   encryption (default yes), username, hostname, console keymap, timezone,
+   locale, SSH, GitHub key user, developer setup.
 3. Review: continue, change something, or save and stop.
 4. Backup gate: type `yes`.
 5. Handoff: provenance, optional inspection, the answer card, the post-install
-   boot guide, then type `launch`. The official installer runs in this
-   terminal; answer it as the card says.
+   boot guide, then type `launch`. The disk is read again, then the official
+   installer runs in this terminal; answer it as the card says.
 
 The installer ends by **shutting the Mac down**, so the boot guide and resume
 token are shown *before* it launches. Photograph them, or run
-`./omarchy-bootstrap resume` on macOS to see them again.
+`./omarchy-bootstrap resume` on macOS to see them again. If the installer
+returns instead, the tool reads the disk and says what it did: nothing,
+resized only (quitting does not undo a resize), stopped part-way, or finished.
 
 ### Reboot
 
@@ -145,7 +181,7 @@ gh repo clone scalinity/omarchy-mac-bootstrap /opt/omarchy-mac-bootstrap
 gh auth logout
 
 cd /opt/omarchy-mac-bootstrap
-./omarchy-bootstrap resume 'omb1:enc=1,user=…'     # the token from Phase 1
+./omarchy-bootstrap resume 'omb2:enc=1,user=…'     # the token from Phase 1
 ```
 
 Phase 1 prints the right variant for your repository and the exact token,
@@ -165,6 +201,14 @@ From there Omarchy Mac drives the machine through its own reboots on tty1:
 passphrase at the console), then Omarchy. About fifteen minutes and three
 reboots. If a dialog offers to build packages with no aarch64 build, say no.
 
+### Shared storage (if planned)
+
+When Omarchy Mac has completely finished, `./omarchy-bootstrap` on Linux shows
+a completion code (`ombdone-…`). Boot macOS, run `./omarchy-bootstrap`, type
+the code, then `yes` and `create`. It shows a Shared code (`ombshare-…`). Boot
+Linux, and as your everyday user run `./omarchy-bootstrap shared activate` and
+type it, then `mount`.
+
 ### Phase 3 — developer setup (optional, rerunnable)
 
 Log in as your user, open a terminal:
@@ -181,62 +225,65 @@ Log in as your user, open a terminal:
 | Editor | Neovim is Omarchy's default; VS Code via `omarchy-install-editor-vscode` |
 | Git identity | `user.name`, `user.email`, `init.defaultBranch` |
 | GitHub CLI | `gh auth login`, `gh auth setup-git` |
-| SSH | ed25519 key, add it to GitHub, enable sshd via `omarchy-setup-security-sshd` |
+| SSH | ed25519 key, add it to GitHub; SSH access (service, firewall, authorized keys, password login off) via `omarchy-setup-security-sshd` |
 | AI coding CLIs | Claude Code (native arm64 installer), Codex (npm) |
 | Time & locale | apply the timezone/locale from Phase 1 if Omarchy's differ |
 
-Nothing installs unless selected; installed things are skipped.
+Nothing installs unless selected. Each module is checked afterwards and ends
+as complete, already set up, skipped, cancelled, or failed with the reason; a
+failure makes the run exit non-zero and is not recorded as done.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `./omarchy-bootstrap` | guided flow for wherever this machine is |
-| `plan` | survey + plan + choices, launches nothing |
+| `plan` | survey + plan + choices; saves them, runs nothing, in any state |
 | `install` | the current phase end to end |
-| `resume [token]` | after a reboot (macOS: reprint the guide; Linux: continue) |
-| `status` | what the machine reports, what was recorded, what's next |
-| `doctor` | read-only health checks; exits non-zero only on FAIL |
+| `resume [token]` | after a reboot (macOS: the state and the guide; Linux: continue) |
+| `status` | what the machine shows, what was recorded, what's next (read-only) |
+| `doctor` | health checks (read-only); exits non-zero only on FAIL |
+| `shared [status]` | where Shared storage stands (read-only) |
+| `shared create` | macOS: create the planned Shared partition |
+| `shared activate` | Linux: mount Shared at `/mnt/shared` on every boot |
+| `shared test` | write, read back and remove one test file on Shared |
 | `dev` | developer setup (Linux, after Omarchy) |
-| `sources [--check]` | targeted upstream; `--check` compares with upstream live |
-| `logs` | where the log is, and its recent lines |
+| `sources [--check]` | targeted upstream; `--check` compares with upstream live (read-only) |
+| `logs` | where the log is, and its recent lines (read-only) |
 
-Flags: `--dry-run` (shows everything, runs nothing that changes the machine),
-`--no-color`, `--ascii`, `--help`, `--version`.
+Flags: `--dry-run` (shows every step; changes nothing and keeps nothing — no
+state, no log, no download), `--no-color`, `--ascii`, `--help`, `--version`.
 
 ## State and logs
 
 - macOS, and your user on Linux: `~/.local/state/omarchy-mac-bootstrap/`
 - root on Linux: `/var/lib/omarchy-mac-bootstrap/` (readable by your user later)
 
-`state.env` holds non-secret progress and choices; `logs/` has one readable
-log per day (commands, exit codes, checksums, choices); `downloads/` keeps each
-fetched upstream script for provenance. Override with `OMB_STATE_DIR`.
-
-## Files between macOS and Linux
-
-macOS stays on APFS, which Linux cannot write reliably, so this tool never
-tries. Use Git, a network share, or cloud sync for projects. If you want a
-shared partition anyway, the planner can leave space for an exFAT area and
-write a post-install plan; see [docs/STORAGE.md](docs/STORAGE.md).
+`state.env` holds non-secret progress and choices; `shared-intent.env` the
+Shared plan; `logs/` one readable log per day (commands, exit codes,
+checksums, choices); `downloads/` each fetched upstream script, for
+provenance. The directory must be yours and private; override it with
+`OMB_STATE_DIR` (an absolute path). Read-only commands and dry runs write none
+of it.
 
 ## Recovery and uninstall
 
 - Something stopped halfway: [docs/RECOVERY.md](docs/RECOVERY.md).
+- Shared storage stopped: [docs/SHARED.md](docs/SHARED.md#when-it-stops).
 - Something looks wrong: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md),
   and `./omarchy-bootstrap doctor`.
 - **Uninstall** is manual, from macOS, following the
   [Asahi partitioning cheatsheet](https://asahilinux.org/docs/sw/partitioning-cheatsheet/)
-  exactly: delete the stub container, the EFI partition and the Linux
-  partition, then grow macOS back. Never touch `Apple_APFS_Recovery`. Set macOS
-  as the startup disk first.
+  exactly: set macOS as the startup disk, delete the stub container, the EFI
+  partition and the Linux partition, then grow macOS back. Never touch
+  `Apple_APFS_Recovery`. Shared storage is kept; macOS grows only up to it.
 
 ## Upstream targets
 
 | | Value |
 | --- | --- |
 | Asahi Alarm bootstrap | `https://asahi-alarm.org/installer-bootstrap.sh` |
-| Asahi installer checked against | v0.9.2 |
+| Asahi installer checked against | v0.9.2 (a different version blocks the handoff) |
 | OS to choose | `Asahi Alarm Minimal (BTRFS)` |
 | Omarchy Mac | `omarchy-mac/omarchy-mac` (GitHub home `omacom/omarchy-mac`), branch `quattro` |
 | Omarchy checked against | 4.0.3rc4 |
@@ -248,11 +295,13 @@ differs from the commonly quoted steps: [docs/UPSTREAM.md](docs/UPSTREAM.md).
 ## Development
 
 ```bash
-tests/run.sh             # syntax, shellcheck (if installed), every test
+tests/run.sh             # syntax, shellcheck (if installed), every test (~15 min)
 tests/run.sh storage     # one file
 ./omarchy-bootstrap --dry-run     # real machine, nothing changes
 OMB_FIXTURE=$PWD/tests/fixtures/mac-m1pro-1tb-roomy ./omarchy-bootstrap --dry-run
 ```
 
+CI runs every test on Linux (bash 5, ShellCheck) and macOS (`/bin/bash` 3.2).
 Design and boundaries: [SPEC.md](SPEC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[MILESTONES.md](MILESTONES.md).
+[MILESTONES.md](MILESTONES.md). The planning and Shared logic is tested against
+recorded disk layouts; qualification on real hardware is milestone M14.
