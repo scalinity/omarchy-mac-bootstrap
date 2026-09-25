@@ -101,43 +101,60 @@ cfg_save() {
   return 0
 }
 
-# Validators print the reason and return non-zero, for ui_ask.
+# Validators print the reason and return non-zero, for ui_ask. They match the
+# whole string ([[ =~ ]]), not line by line as `grep` would: a value holding
+# a newline must never pass because one of its lines does.
+_whole() { [[ $1 =~ $2 ]]; }
+
+# Accounts an Arch / Asahi Alarm system already has; the everyday login must
+# be a new user.
+RESERVED_USERS="root bin daemon sys adm mail ftp http nobody dbus alarm sddm polkitd rtkit avahi uuidd colord git"
+
 valid_username() {
-  case "$1" in
-    root | '') printf '   %s\n' "Choose an everyday login other than root." ;;
-    *) printf '%s' "$1" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' && return 0
-      printf '   %s\n' "Lowercase letters, digits, - and _, starting with a letter (Linux username rules)." ;;
+  case " $RESERVED_USERS " in
+    *" $1 "*)
+      printf '   %s\n' "'$1' is a system account on Arch; choose your everyday login."
+      return 1
+      ;;
   esac
+  case "$1" in
+    systemd-*)
+      printf '   %s\n' "'$1' is a system account on Arch; choose your everyday login."
+      return 1
+      ;;
+  esac
+  _whole "$1" '^[a-z_][a-z0-9_-]{0,31}$' && return 0
+  printf '   %s\n' "Lowercase letters, digits, - and _, starting with a letter (Linux username rules)."
   return 1
 }
 
 valid_hostname() {
-  printf '%s' "$1" | grep -Eq '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$' && return 0
+  _whole "$1" '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$' && return 0
   printf '   %s\n' "Letters, digits and hyphens; not starting or ending with a hyphen; up to 63 characters."
   return 1
 }
 
 valid_keymap() {
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_.-]{1,32}$' && return 0
+  _whole "$1" '^[A-Za-z0-9_.-]{1,32}$' && return 0
   printf '   %s\n' "A console keymap name such as us, uk, de, fr, or dvorak."
   return 1
 }
 
 valid_tz() {
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$' && return 0
+  _whole "$1" '^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$' && return 0
   printf '   %s\n' "An IANA timezone such as America/New_York or Europe/Berlin."
   return 1
 }
 
 valid_locale() {
-  printf '%s' "$1" | grep -Eq '^[a-z]{2,3}(_[A-Z]{2})?\.UTF-8$' && return 0
+  _whole "$1" '^[a-z]{2,3}(_[A-Z]{2})?\.UTF-8$' && return 0
   printf '   %s\n' "A UTF-8 locale such as en_US.UTF-8."
   return 1
 }
 
 valid_ghuser() {
   [ -z "$1" ] && return 0
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$' && return 0
+  _whole "$1" '^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$' && return 0
   printf '   %s\n' "A GitHub username (letters, digits, hyphens), or leave empty."
   return 1
 }

@@ -98,6 +98,17 @@ valid_hostname -bad >/dev/null && fail "leading hyphen refused" || ok
 valid_tz America/Argentina/Buenos_Aires >/dev/null && ok || fail "three-part tz"
 valid_locale en_US.UTF-8 >/dev/null && ok || fail "locale valid"
 valid_locale en_US >/dev/null && fail "non-UTF-8 locale refused" || ok
+nl='
+'
+for v in "alex${nl}\$(reboot)" "omarchy${nl}X=1"; do
+  valid_username "$v" >/dev/null && fail "multi-line username accepted: $v" || ok
+  valid_hostname "$v" >/dev/null && fail "multi-line hostname accepted: $v" || ok
+done
+valid_tz "Europe/Berlin${nl}evil" >/dev/null && fail "multi-line timezone accepted" || ok
+for u in alarm nobody bin systemd-network sddm; do
+  valid_username "$u" >/dev/null && fail "system account accepted: $u" || ok
+done
+assert_contains "$(valid_username alarm)" "system account" "reserved names explain themselves"
 
 # --- Logs mask anything credential-shaped ----------------------------------------
 OMB_PHASE="test"
