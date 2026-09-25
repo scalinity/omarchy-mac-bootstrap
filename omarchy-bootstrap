@@ -110,6 +110,12 @@ main() {
         ;;
     esac
   done
+  # Test seams stay out of root runs: a fixture or recorder carried through
+  # `sudo -E` or `su` must not steer anything done with root's authority.
+  if [ "$(id -u)" = 0 ] && { [ -n "${OMB_FIXTURE:-}" ] || [ -n "${OMB_TEST_RECORD:-}" ]; }; then
+    _usage_error "OMB_FIXTURE and OMB_TEST_RECORD are for tests and are refused as root"
+    return 2
+  fi
   case "$OMB_DRY_RUN" in
     0 | 1) ;;
     *) _usage_error "OMB_DRY_RUN must be 0 or 1, not '$OMB_DRY_RUN'" ; return 2 ;;

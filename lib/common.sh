@@ -163,6 +163,13 @@ run() {
     log_event exit "0 (recorded by test harness, not executed)"
     return 0
   fi
+  # A fixture describes some other machine; executing for real against it is
+  # never right.
+  if [ -n "${OMB_FIXTURE:-}" ]; then
+    log_event refuse "fixture mode does not execute: $argv"
+    ui_fail "Fixture mode never executes commands; use --dry-run."
+    return 1
+  fi
   OMB_RUNNING=$argv
   "$@"
   local rc=$?

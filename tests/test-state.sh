@@ -102,4 +102,11 @@ run probe --flag
 assert_eq "$(cat "$OMB_STATE_DIR/running")" "probe --flag" "run exposes the executing command"
 assert_eq "${OMB_RUNNING:-}" "" "the marker clears when the command returns"
 
+# --- Fixture mode never executes ---------------------------------------------------
+OMB_FIXTURE="$FIX/linux-alarm-fresh"
+run probe --from-fixture >/dev/null
+assert_rc $? 1 "fixture mode refuses to execute without the recorder"
+assert_eq "$(cat "$OMB_STATE_DIR/running")" "probe --flag" "the refused command did not run"
+unset OMB_FIXTURE
+
 t_done test-state
