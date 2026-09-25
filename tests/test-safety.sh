@@ -48,26 +48,43 @@ hits=$({
 })
 assert_eq "$hits" "" "no absolute-path call to a shimmed command (PATH shims would miss it)"
 
-# Any diskutil verb other than info / list / the literal limits query.
+# Any diskutil verb other than info / list, the literal limits query, and the
+# one guarded Shared creation (checked on its own below).
+ADDPART='run diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"'
 hits=$(grep -n 'diskutil' $CODE | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' |
   grep -E 'diskutil[[:space:]]+(erase|partition|resize|split|merge|add|zero|random|secure|reformat|unmount|mount|apfs[[:space:]]+(delete|add|create|erase|convert|unlock|encrypt|decrypt|change|resizeContainer))' |
-  grep -v 'resizeContainer "\$1" limits -plist')
-assert_eq "$hits" "" "only read-only diskutil verbs"
+  grep -v 'resizeContainer "\$1" limits -plist' | grep -vF "$ADDPART" | grep -v 'ui_cmd "diskutil addPartition')
+assert_eq "$hits" "" "only read-only diskutil verbs, plus the one Shared creation"
 assert_eq "$(grep 'resizeContainer' $CODE | grep -v '^[^:]*:[[:space:]]*#' | grep -c 'limits -plist')" \
   "$(grep 'resizeContainer' $CODE | grep -vc '^[^:]*:[[:space:]]*#')" "every resizeContainer use is the limits query"
 n=$(grep -v '^[[:space:]]*#' "$REPO/lib/macos.sh" | grep -c 'resizeContainer "\$1" limits -plist')
 assert_eq "$n" 1 "the limits query is present in code, not only in a comment"
 
+# --- Static: the one partition this tool creates ------------------------------------
+# Exactly one addPartition, in lib/shared.sh, with a fixed filesystem and
+# name, after the backup and "create" gates, the re-read of the disk, and the
+# record that must exist before it — in that order, in one function.
+assert_eq "$(grep -hF "$ADDPART" $CODE | grep -c .)" 1 "exactly one addPartition in the code"
+assert_eq "$(grep -lF "$ADDPART" $CODE)" "$REPO/lib/shared.sh" "and it lives in lib/shared.sh"
+assert_eq "$(grep -c '^SHARED_FS_MAC="ExFAT"$' "$REPO/lib/shared.sh") $(grep -c '^SHARED_LABEL="Shared"$' "$REPO/lib/shared.sh")" "1 1" "its filesystem and name are constants"
+body=$(awk '/^shared_create_flow\(\) \{/ {f = 1} f {print} f && /^}/ {exit}' "$REPO/lib/shared.sh")
+seq=$(printf '%s\n' "$body" | grep -oE 'ui_confirm_word yes|ui_confirm_word create|mac_detect_geometry|state_must_set shared_create_started_at|run diskutil addPartition' | tr '\n' '|')
+assert_eq "$seq" "ui_confirm_word yes|ui_confirm_word create|mac_detect_geometry|state_must_set shared_create_started_at|run diskutil addPartition|" \
+  "addPartition runs only after both typed gates, a fresh read of the disk, and the record"
+# Nothing reaches the device argument from a file: it is the fresh read's id.
+assert_eq "$(printf '%s\n' "$body" | grep -c 'SHARED_PRED_ID=')" 0 "the creation never sets the device itself"
+assert_eq "$(grep -c 'SHARED_PRED_ID=\$GP_ID' "$REPO/lib/shared.sh")" 1 "the device is the partition found on the disk right before the region"
+
 # --- Static: every probe is read-only ----------------------------------------------
 probes=$(grep -h 'sys_cmd ' $CODE | grep -v '^[[:space:]]*#' | grep -o 'sys_cmd [^|)]*' | sed 's/^sys_cmd [^ ]* //' | sort -u)
-bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |cryptsetup luksDump |ip route|systemctl is-active |getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|localectl list-locales|"\$OMS_SELF" --status|gh auth status)')
+bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status)')
 assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 
 # --- Static: every mutating command goes through run, and is expected -------------
 runs=$(code_lines | grep -oE '(^|[[:space:];&|(])run [^;|&]*' | sed -E 's/^[[:space:];&|(]*run //' | awk '{print $1}' | sort -u | tr '\n' ' ')
 for cmd in $runs; do
   case "$cmd" in
-    sh | bash | nmtui | sudo | git | gh | ssh-keygen | npm | \
+    sh | bash | nmtui | sudo | git | gh | ssh-keygen | npm | cp | sync | rm | diskutil | \
       omarchy-pkg-add | omarchy-install-dev-env | omarchy-install-editor-vscode | \
       omarchy-setup-security-sshd | omarchy-setup-security-sudoless-docker) ok ;;
     '""') ;; # a quoted first argument: checked exactly below
@@ -77,7 +94,12 @@ done
 quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
 assert_eq "$quoted" 'run "$OMS_SELF" --resume' "the only indirect command through run is omarchy-mac-setup --resume"
 sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | sort -u | tr '\n' ';')
-assert_eq "$sudos" "run sudo localectl set-locale;run sudo pacman -S;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale"
+assert_eq "$sudos" "run sudo cp -p;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, and the Shared mount"
+assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | sort -u | tr '\n' ';')" \
+  'run sudo cp -p /etc/fstab /etc/fstab.omarchy-bootstrap.bak;run sudo install -d -m 0755 -o root -g root "$SHARED_MNT";run sudo install -m 0644 -o root -g root "$tmp" /etc/fstab.omarchy-bootstrap.new;run sudo mv -f /etc/fstab.omarchy-bootstrap.new /etc/fstab;' \
+  "privileged file changes are exactly the Shared mount point and the managed fstab"
+assert_eq "$(grep -hoE 'run sudo systemctl [^&]*' $CODE | sed 's/ *$//' | sort -u | tr '\n' ';')" \
+  'run sudo systemctl daemon-reload;run sudo systemctl start "$SHARED_UNIT";' "systemctl only reloads and starts the Shared automount"
 hits=$(code_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E '(^[[:space:]]*|[;&|({!][[:space:]]*|\$\([[:space:]]*|(then|do|else|if|exec|command|env|xargs)[[:space:]]+)sudo[[:space:]]')
 assert_eq "$hits" "" "sudo only ever runs through run"
 

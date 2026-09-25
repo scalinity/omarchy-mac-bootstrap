@@ -112,7 +112,7 @@ t_snapshot() {
 # Load the libraries into this shell for unit tests (main is not run).
 t_load() {
   # shellcheck source=/dev/null
-  for f in common ui state sources storage macos asahi linux doctor dev; do . "$REPO/lib/$f.sh"; done
+  for f in common ui state sources storage macos asahi shared linux doctor dev; do . "$REPO/lib/$f.sh"; done
   OMB_COLOR=never
   ui_init
 }

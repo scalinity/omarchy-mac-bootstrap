@@ -261,6 +261,33 @@ stub_files mac-asahi-files-missing /Volumes/Omarchy pending boot.bin
 mac mac-asahi-two-stubs MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((450 * GB)) $((V250 - 450 * GB + 40 * GB)) $D1T 4096 \
   "$(lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$V250:$U_MAC" "disk0s4:Apple_APFS:2499805184:$U_STUB" "disk0s7:Apple_APFS:2499805184:$U_OTHER" "gap:$((C1T - V250 - 2 * 2499805184))" "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC")"
 
+# Shared storage, planned on the roomy disk as 250 GB Linux + 150 GB Shared,
+# after the installer ran with the planner's exact answers: macOS resized to
+# VS, stub/EFI/root from the region's start, the reserved region after root.
+C0=$((GPT_FRONT + ISC))
+RZ_END=$((C0 + C1T))
+T250=$(( (250 * GB + MIB - 1) / MIB * MIB ))
+S150=$(( (150 * GB + MIB - 1) / MIB * MIB ))
+VS=$(( ( (RZ_END / MIB * MIB - T250 - S150 - 16777216) - C0 ) / MIB * MIB ))
+ROOTS=$((T250 - 2499805184 - 524288000))
+ROOT_END=$((C0 + VS + T250))
+SH0=$(( (ROOT_END + MIB - 1) / MIB * MIB ))
+SH1=$(( RZ_END / MIB * MIB ))
+shared_layout() { # [created]
+  lines "disk0s1:Apple_APFS_ISC:$ISC:$U_ISC" "disk0s2:Apple_APFS:$VS:$U_MAC" \
+    "disk0s4:Apple_APFS:2499805184:$U_STUB" "disk0s5:EFI:524288000:$U_EFI" "disk0s6:Linux Filesystem:$ROOTS:$U_ROOT"
+  if [ "${1:-}" = created ]; then
+    lines "gap:$((SH0 - ROOT_END))" "disk0s7:Microsoft Basic Data:$((SH1 - SH0)):$U_SHARED:Shared:exfat" "gap:$((RZ_END - SH1))"
+  else
+    lines "gap:$((RZ_END - ROOT_END))"
+  fi
+  lines "disk0s3:Apple_APFS_Recovery:$RECOVERY:$U_REC"
+}
+mac mac-shared-reserved MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((300 * GB)) $((VS - 300 * GB + 40 * GB)) $D1T 4096 "$(shared_layout)"
+apfs_list mac-shared-reserved disk0s4 4
+mac mac-shared-created MacBookPro18,1 "Apple M1 Pro" arm64 1 14.6 $((300 * GB)) $((VS - 300 * GB + 40 * GB)) $D1T 4096 "$(shared_layout created)"
+apfs_list mac-shared-created disk0s4 4
+
 # ---------------------------------------------------------------------------
 
 setup_fixture_script() { # PATH [ARGS-HEADER]
@@ -285,6 +312,7 @@ linux() {
   put "$d/cmd/uname_r" 6.16.8-asahi-1-1-ARCH
   put "$d/cmd/id_u" "$uid"
   put "$d/cmd/id_un" "$user"
+  put "$d/cmd/id_g" "$uid"
   printf 'apple,j316s\0apple,t6000\0apple,arm-platform\0' >"$d/root/proc/device-tree/compatible"
   printf 'Apple MacBook Pro (16-inch, M1 Pro, 2021)\0' >"$d/root/proc/device-tree/model"
   printf 'NAME="Arch Linux ARM"\nPRETTY_NAME="Arch Linux ARM"\nID=archarm\nID_LIKE=arch\n' >"$d/root/etc/os-release"
@@ -416,6 +444,70 @@ linux linux-encrypt-reencrypting 0 root btrfs /dev/mapper/root /dev/nvme0n1p5 vf
 put linux-encrypt-reencrypting/cmd/luks_dump "LUKS header information
 Version:       	2
 Requirements:	online-reencrypt"
+
+# Shared storage on Linux, on the disk above (same offsets, in 512-byte
+# sectors as lsblk reports them), root on LUKS as Omarchy leaves it.
+lower() { printf '%s' "$1" | tr 'A-F' 'a-f'; }
+lsblk_row() { # NAME PKNAME TYPE START_BYTES SIZE PARTUUID PARTTYPE FSTYPE LABEL UUID
+  local start=""
+  [ -n "$4" ] && start=$(($4 / 512))
+  printf 'NAME="%s" PKNAME="%s" TYPE="%s" START="%s" SIZE="%s" PARTUUID="%s" PARTTYPE="%s" FSTYPE="%s" LABEL="%s" UUID="%s"\n' \
+    "$1" "$2" "$3" "$start" "$5" "$(lower "$6")" "$7" "$8" "$9" "${10}"
+}
+lsblk_disk() { # with-shared|no-shared [SHARED_FSTYPE]
+  local fs=${2:-exfat}
+  lsblk_row nvme0n1 "" disk "" $D1T "" "" "" "" ""
+  lsblk_row nvme0n1p1 nvme0n1 part $GPT_FRONT $ISC $U_ISC 69646961-6700-11aa-aa11-00306543ecac apfs "" ""
+  lsblk_row nvme0n1p2 nvme0n1 part $C0 $VS $U_MAC 7c3457ef-0000-11aa-aa11-00306543ecac apfs "" ""
+  lsblk_row nvme0n1p3 nvme0n1 part $RZ_END $RECOVERY $U_REC 52637672-7900-11aa-aa11-00306543ecac apfs "" ""
+  lsblk_row nvme0n1p4 nvme0n1 part $((C0 + VS)) 2499805184 $U_STUB 7c3457ef-0000-11aa-aa11-00306543ecac apfs "" ""
+  lsblk_row nvme0n1p5 nvme0n1 part $((C0 + VS + 2499805184)) 524288000 $U_EFI c12a7328-f81f-11d2-ba4b-00a0c93ec93b vfat "" 2ABF-9F91
+  lsblk_row nvme0n1p6 nvme0n1 part $((C0 + VS + 3024093184)) $ROOTS $U_ROOT 0fc63daf-8483-4772-8e79-3d69d8477de4 crypto_LUKS "" 5f3e2d1c-0000-4000-8000-00000000c0de
+  if [ "$1" = with-shared ]; then
+    lsblk_row nvme0n1p7 nvme0n1 part $SH0 $((SH1 - SH0)) $U_SHARED ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$fs" Shared 1234-ABCD
+  fi
+  lsblk_row root nvme0n1p6 crypt "" $((ROOTS - 33554432)) "" "" btrfs "" 9f2c0000-0000-4000-8000-000000000b7f
+}
+FSTAB_BASE='# /etc/fstab: static file system information.
+UUID=9f2c0000-0000-4000-8000-000000000b7f / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
+UUID=9f2c0000-0000-4000-8000-000000000b7f /var/log btrfs rw,noatime,compress=zstd:1,subvol=@log 0 0
+UUID=2ABF-9F91 /boot vfat rw,relatime,fmask=0022,dmask=0022 0 2'
+MOUNTS_BASE='/dev/mapper/root / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
+/dev/nvme0n1p5 /boot vfat rw,relatime 0 0'
+lx_shared() { # NAME with-shared|no-shared [SHARED_FSTYPE]
+  linux "$1" 1000 alex btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 installed
+  lsblk_disk "$2" "${3:-exfat}" >"$1/cmd/lsblk_all"
+  put "$1/root/etc/fstab" "$FSTAB_BASE"
+  put "$1/root/proc/self/mounts" "$MOUNTS_BASE"
+  put "$1/root/var/lib/omarchy-mac-bootstrap/state.env" "cfg_user=alex
+cfg_host=m1pro
+cfg_enc=1
+cfg_linux=250
+cfg_shared=150
+cfg_plan=1a2b3c4d"
+}
+# Omarchy installed; Shared not created yet.
+lx_shared linux-shared-absent no-shared
+# Created on macOS; not mounted on Linux yet.
+lx_shared linux-shared-present with-shared
+# Mounted on every boot by the managed fstab entry, automount armed.
+lx_shared linux-shared-ready with-shared
+put linux-shared-ready/root/etc/fstab "$FSTAB_BASE
+# omarchy-bootstrap: Shared storage (managed; see ./omarchy-bootstrap shared)
+PARTUUID=$(lower $U_SHARED) /mnt/shared exfat rw,nofail,x-systemd.automount,x-systemd.device-timeout=10s,uid=1000,gid=1000,fmask=0177,dmask=0077,nodev,nosuid,noexec 0 0"
+put linux-shared-ready/root/proc/self/mounts "$MOUNTS_BASE
+systemd-1 /mnt/shared autofs rw,relatime,fd=52,pgrp=1,timeout=0,minproto=5,maxproto=5,direct 0 0"
+# Someone else's fstab line already claims the partition's mount point.
+lx_shared linux-shared-conflict with-shared
+put linux-shared-conflict/root/etc/fstab "$FSTAB_BASE
+LABEL=Shared /mnt/shared exfat defaults 0 0"
+# The partition after root is not exFAT (an interrupted format, say).
+lx_shared linux-shared-wrong-fs with-shared vfat
+# An everyday user who is not uid 1000.
+lx_shared linux-shared-uid1001 with-shared
+put linux-shared-uid1001/cmd/id_u 1001
+put linux-shared-uid1001/cmd/id_g 1001
+put linux-shared-uid1001/cmd/id_un bob
 
 # ---------------------------------------------------------------------------
 # `sources --check` responses: current, and drifted.

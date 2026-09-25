@@ -1,0 +1,2 @@
+/dev/mapper/root / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
+/dev/nvme0n1p5 /boot vfat rw,relatime 0 0

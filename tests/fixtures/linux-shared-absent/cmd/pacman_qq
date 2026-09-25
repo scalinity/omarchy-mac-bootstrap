@@ -1,0 +1,13 @@
+base
+base-devel
+bash
+btop
+curl
+docker
+fd
+fzf
+git
+jq
+ripgrep
+tmux
+unzip

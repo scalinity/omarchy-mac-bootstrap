@@ -1,0 +1,4 @@
+# /etc/fstab: static file system information.
+UUID=9f2c0000-0000-4000-8000-000000000b7f / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
+UUID=9f2c0000-0000-4000-8000-000000000b7f /var/log btrfs rw,noatime,compress=zstd:1,subvol=@log 0 0
+UUID=2ABF-9F91 /boot vfat rw,relatime,fmask=0022,dmask=0022 0 2

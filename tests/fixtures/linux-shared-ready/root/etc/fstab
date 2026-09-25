@@ -1,0 +1,6 @@
+# /etc/fstab: static file system information.
+UUID=9f2c0000-0000-4000-8000-000000000b7f / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
+UUID=9f2c0000-0000-4000-8000-000000000b7f /var/log btrfs rw,noatime,compress=zstd:1,subvol=@log 0 0
+UUID=2ABF-9F91 /boot vfat rw,relatime,fmask=0022,dmask=0022 0 2
+# omarchy-bootstrap: Shared storage (managed; see ./omarchy-bootstrap shared)
+PARTUUID=4a7b1c2d-0007-4e5f-8a9b-000000000007 /mnt/shared exfat rw,nofail,x-systemd.automount,x-systemd.device-timeout=10s,uid=1000,gid=1000,fmask=0177,dmask=0077,nodev,nosuid,noexec 0 0

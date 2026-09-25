@@ -153,8 +153,8 @@ assert_eq "$CFG_user@$CFG_host $CFG_tz" "alex@m1pro Europe/Berlin" "choices roun
 
 # --- Resume token ---------------------------------------------------------------
 tok=$(token_encode)
-assert_eq "$tok" "omb1:enc=1,user=alex,host=m1pro,kmap=us,tz=Europe/Berlin,loc=de_DE.UTF-8,ssh=1,gh=octocat,linux=250" "token encoding"
-assert_not_contains "$tok" "shared" "token carries only whitelisted fields"
+assert_eq "$tok" "omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=Europe/Berlin,loc=de_DE.UTF-8,ssh=1,gh=octocat,linux=250,dev=1" "token encoding (no Shared: left out)"
+assert_not_contains "$tok" "shared=" "a token without Shared storage leaves the field out"
 unset CFG_enc CFG_user CFG_host CFG_kmap CFG_tz CFG_loc CFG_ssh CFG_gh CFG_linux
 token_decode "$tok"
 assert_rc $? 0 "token decodes"

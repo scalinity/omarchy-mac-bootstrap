@@ -721,10 +721,20 @@ mac_review() {
     "Save and stop|||resume any time"
 }
 
+# mac_save_plan — the choices, and with Shared storage the plan record its
+# later creation is checked against. The record's digest goes into the
+# resume token, so Linux's completion code can name this plan.
 mac_save_plan() {
+  mac_plan_compute "${CFG_shared:-0}"
+  plan_layout $((CFG_linux * GB))
+  if ! shared_intent_save; then
+    ui_fail "Could not record the Shared plan in $(tildify "$OMB_STATE_DIR")."
+    return 1
+  fi
+  CFG_plan=""
+  [ "${CFG_shared:-0}" -gt 0 ] && CFG_plan=$(shared_plan_digest)
   cfg_save
   state_stamp planned_at
-
   return 0
 }
 
@@ -972,6 +982,12 @@ The sizes this tool would ask you to type were computed for asahi-installer $ASA
   fi
 
   mac_recheck_plan || return 1
+  # With Shared storage, its later creation is checked against the saved
+  # record; the install must be exactly the plan that record describes.
+  if ! shared_intent_matches_plan; then
+    ui_fail "The saved Shared plan does not match the plan about to run${INT_ERR:+ ($INT_ERR)}. Nothing was launched; run ./omarchy-bootstrap to plan again."
+    return 1
+  fi
   # What the disk looked like before: the installer's exit status says
   # nothing (0 for quit, error and success), so the disk is compared instead.
   local before
@@ -1057,7 +1073,8 @@ mac_main() {
     none) ;;
     resized-only) asahi_guidance ;;
     *)
-      mac_existing_install
+      mac_existing_install || return 1
+      mac_shared_step "$mode"
       return
       ;;
   esac
@@ -1094,14 +1111,14 @@ mac_main() {
           2) step=storage; continue ;;
           3) step=choices; continue ;;
           4)
-            mac_save_plan
+            mac_save_plan || return 1
             printf '\n'
             ui_ok "Plan saved. Run ./omarchy-bootstrap to continue; your saved answers are the defaults."
             printf '\n'
             return 0
             ;;
         esac
-        mac_save_plan
+        mac_save_plan || return 1
         if [ "$mode" = plan ]; then
           printf '\n'
           ui_ok "Plan saved$([ "$OMB_DRY_RUN" = 1 ] && printf ' (dry run: not written)'). Run ./omarchy-bootstrap to continue."
@@ -1135,6 +1152,25 @@ mac_existing_install() {
   return "$rc"
 }
 
+# mac_shared_step MODE — after an install, on macOS: Shared storage's next
+# step. plan only shows it; the guided flow continues into it, through the
+# same gates as `shared create`.
+mac_shared_step() {
+  [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ] || return 0
+  shared_mac_state
+  shared_status_rows
+  if [ "$1" = plan ] || [ "$SHARED_STATE" = reserved ] || [ "$SHARED_STATE" = off ]; then
+    printf '\n'
+    return 0
+  fi
+  if [ "$SHARED_STATE" = awaiting-linux-completion ] && [ "$ASAHI_STATE" = pending-first-boot ]; then
+    ui_note "Shared is created after Linux: boot it, let Omarchy Mac finish, then come back here with the code it shows."
+    printf '\n'
+    return 0
+  fi
+  shared_create_flow
+}
+
 mac_resume() {
   OMB_PHASE=macos
   mac_survey
@@ -1156,6 +1192,11 @@ mac_resume() {
       ;;
     *) asahi_guidance ;;
   esac
+  if [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ]; then
+    shared_mac_state
+    shared_status_rows
+    ui_para "$(shared_next_action)"
+  fi
   printf '\n'
 }
 

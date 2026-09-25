@@ -382,6 +382,7 @@ lx_in_progress() {
 lx_installed() {
   ui_section "Omarchy is installed" "${LX_OMARCHY_VERSION:-}"
   ui_note "Omarchy Mac's install is complete on this machine. Nothing will be reinstalled."
+  lx_shared_step
   if [ "$OMB_UID" = 0 ]; then
     ui_note "Log in as ${CFG_user:-your user} in the desktop, open a terminal, and run the developer setup from there:"
     ui_cmd "$OMB_HOME/omarchy-bootstrap dev"
@@ -394,6 +395,28 @@ lx_installed() {
   fi
   ui_note "Run './omarchy-bootstrap dev' any time."
   printf '\n'
+}
+
+# lx_shared_step — once Omarchy is installed: Shared storage's next step.
+lx_shared_step() {
+  shared_lx_state
+  [ "$SHARED_STATE" = off ] && return 0
+  shared_status_rows
+  case "$SHARED_STATE" in
+    awaiting-macos-creation) shared_lx_macos_next ;;
+    awaiting-linux-activation)
+      if [ "$OMB_UID" = 0 ]; then
+        ui_note "As your everyday user, in a terminal:"
+        ui_cmd "$OMB_HOME/omarchy-bootstrap shared activate"
+      elif ui_yesno "Set up Shared storage now?" y; then
+        shared_activate_flow
+      fi
+      ;;
+    blocked)
+      ui_blockers "Shared storage needs attention." "$(printf "%s\n" "$SHARED_WHY" "Nothing was changed; docs/SHARED.md explains each case.")"
+      ;;
+  esac
+  return 0
 }
 
 # lx_plan — the Linux side of `plan`: review and save the Omarchy Mac
@@ -446,7 +469,8 @@ lx_main() {
 $TOKEN_WARNINGS
 EOF
     if [ "$ok" = 0 ]; then
-      ui_ok "Phase 1 choices loaded: ${CFG_user:-?}@${CFG_host:-?}, encryption $([ "${CFG_enc:-1}" = 1 ] && echo on || echo off), Linux ${CFG_linux:-?} GB."
+      ui_ok "Phase 1 choices loaded: ${CFG_user:-?}@${CFG_host:-?}, encryption $([ "${CFG_enc:-1}" = 1 ] && echo on || echo off), Linux ${CFG_linux:-?} GB$([ "${CFG_shared:-0}" -gt 0 ] && printf ', Shared %s GB' "$CFG_shared")."
+      cfg_save
       state_stamp phase1_choices_loaded_at
     else
       ui_warn "Token not usable; you will be asked instead."

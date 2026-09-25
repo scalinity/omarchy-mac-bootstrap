@@ -9,10 +9,12 @@ echo "test-routing"
 
 # Every lifecycle state the fixtures describe, on both systems.
 LINUX_STATES="linux-alarm-fresh linux-alarm-offline linux-setup-in-progress linux-setup-active linux-omarchy-partial
-linux-encrypt-staged linux-encrypt-reencrypting linux-omarchy-finishing linux-omarchy-installed"
+linux-encrypt-staged linux-encrypt-reencrypting linux-omarchy-finishing linux-omarchy-installed
+linux-shared-absent linux-shared-present linux-shared-ready linux-shared-conflict linux-shared-wrong-fs linux-shared-uid1001"
 MAC_STATES=""
 command -v plutil >/dev/null 2>&1 && MAC_STATES="mac-m1pro-1tb-roomy mac-m1pro-1tb-tight mac-m1-free-space mac-geo-two-gaps
-mac-asahi-resized-only mac-asahi-stub-only mac-asahi-no-root mac-asahi-pending mac-asahi-installed mac-asahi-complete mac-asahi-two-stubs"
+mac-asahi-resized-only mac-asahi-stub-only mac-asahi-no-root mac-asahi-pending mac-asahi-installed mac-asahi-complete mac-asahi-two-stubs
+mac-geo-512-sectors mac-geo-multi-apfs mac-geo-no-limits mac-geo-missing-offset mac-geo-disagree mac-shared-reserved mac-shared-created"
 
 _fx_path() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$FIX" "$1" ;; esac; }
 _name() { basename "$1"; }
@@ -37,7 +39,7 @@ done
 
 # --- Read-only commands, in every lifecycle state ----------------------------------
 for fx in $LINUX_STATES $MAC_STATES; do
-  for cmd in status doctor sources logs; do
+  for cmd in status doctor sources logs shared; do
     before=$(t_snapshot "$(_fx_path "$fx")")
     t_cli "$fx" 'resume\nstart\nyes\nlaunch\ny\n' "$cmd"
     expect_pure "$cmd on $(_name "$fx")" "$fx" "$before"

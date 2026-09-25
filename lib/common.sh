@@ -183,7 +183,10 @@ run() {
   if [ -n "${OMB_TEST_RECORD:-}" ]; then
     printf '%s\n' "$argv" >>"$OMB_TEST_RECORD"
     log_event exit "0 (recorded by test harness, not executed)"
-    return 0
+    # A test may say what the machine looks like once a recorded command
+    # "ran", so the checks that follow it read a changed machine.
+    [ -n "${OMB_TEST_AFTER:-}" ] && OMB_FIXTURE=$OMB_TEST_AFTER
+    return "${OMB_TEST_RC:-0}"
   fi
   # A fixture describes some other machine; executing for real against it is
   # never right.
@@ -209,6 +212,15 @@ sha256_of() {
     shasum -a 256 "$1" | awk '{print $1}'
   else
     sha256sum "$1" | awk '{print $1}'
+  fi
+}
+
+# sha256_str TEXT — the SHA-256 of a string, lowercase hex.
+sha256_str() {
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+  else
+    printf '%s' "$1" | sha256sum | awk '{print $1}'
   fi
 }
 

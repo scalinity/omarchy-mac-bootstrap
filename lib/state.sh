@@ -141,6 +141,36 @@ _state_rewrite() {
   return 1
 }
 
+# state_put_file NAME CONTENT — a whole file in the state directory, written
+# the same way as state.env: a unique temporary file, renamed into place.
+# Returns non-zero, leaving any old file untouched, when that fails. A
+# non-recording run writes nothing (0).
+state_put_file() {
+  local path="$OMB_STATE_DIR/$1" tmp
+  [ "$OMB_PERSIST" = 1 ] || return 0
+  state_dir_ready || return 1
+  if [ -e "$path" ] && ! _state_file_ok "$path"; then
+    _state_refuse "$(tildify "$path") is not a plain file owned by you; refusing to rewrite it."
+    return 1
+  fi
+  tmp=$(mktemp "$OMB_STATE_DIR/.$1.XXXXXX") || return 1
+  if printf '%s\n' "$2" >"$tmp" && chmod "$STATE_FILE_MODE" "$tmp" && mv -f "$tmp" "$path"; then
+    log_event record "wrote $1"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+# state_remove_file NAME — remove a file of our own from the state directory.
+state_remove_file() {
+  local path="$OMB_STATE_DIR/$1"
+  [ "$OMB_PERSIST" = 1 ] || return 0
+  [ -e "$path" ] || return 0
+  _state_file_ok "$path" || return 1
+  rm -f "$path" && log_event record "removed $1"
+}
+
 # state_set KEY VALUE — atomic, checked rewrite. Returns non-zero when the
 # value could not be recorded; a caller about to do something irreversible
 # must stop on that. Read-only commands and dry runs record nothing (0).
@@ -233,7 +263,7 @@ state_unlock() {
 # globals during a run; persisted with cfg_save.
 # ---------------------------------------------------------------------------
 
-CFG_KEYS="enc user host kmap tz loc ssh gh linux shared dev"
+CFG_KEYS="enc user host kmap tz loc ssh gh linux shared dev plan"
 
 # cfg_load [FILE] — loads saved choices (default: this run's state file). A
 # value is applied only if it passes cfg_field_ok: state is data, and values
@@ -324,9 +354,19 @@ valid_bool() {
   printf '   %s\n' "0 or 1."
   return 1
 }
+# valid_gb — a whole number of GB in canonical form: digits, no leading zero,
+# at most seven digits. Saved and token values reach shell arithmetic, where
+# a leading zero means octal.
 valid_gb() {
-  case "$1" in '' | *[!0-9]*) ;; *) return 0 ;; esac
+  _whole "$1" '^(0|[1-9][0-9]{0,6})$' && return 0
   printf '   %s\n' "A whole number of GB, such as 32."
+  return 1
+}
+
+# valid_digest8 — the short plan digest a Shared plan is known by.
+valid_digest8() {
+  _whole "$1" '^[0-9a-f]{8}$' && return 0
+  printf '   %s\n' "Eight lowercase hex digits."
   return 1
 }
 
@@ -355,22 +395,26 @@ cfg_field_ok() {
     loc) valid_locale "$2" ;;
     gh) [ "$2" != "-" ] && valid_ghuser "$2" ;;
     linux | shared) valid_gb "$2" ;;
+    plan) valid_digest8 "$2" ;;
     *) return 2 ;;
   esac >/dev/null
 }
 
 # ---------------------------------------------------------------------------
 # Resume token — readable, hand-typeable, whitelisted fields only.
-#   omb1:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,...
+#   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,...,shared=150,dev=1,plan=1a2b3c4d
+# Version 1 tokens (omb1:, without shared/dev/plan) are still read.
 # ---------------------------------------------------------------------------
 
-TOKEN_FIELDS="enc user host kmap tz loc ssh gh linux"
+TOKEN_FIELDS="enc user host kmap tz loc ssh gh linux shared dev plan"
 
 token_encode() {
-  local out="omb1:" k v sep=""
+  local out="omb2:" k v sep=""
   for k in $TOKEN_FIELDS; do
     eval "v=\${CFG_$k:-}"
     [ -n "$v" ] || continue
+    # Typed by hand after the reboot: a default of no Shared storage is left out.
+    [ "$k" = shared ] && [ "$v" = 0 ] && continue
     out="$out$sep$k=$v"
     sep=","
   done
@@ -389,9 +433,10 @@ token_decode() {
   local token=$1 body pair k v ok=0
   TOKEN_WARNINGS=""
   case "$token" in
+    omb2:*) body=${token#omb2:} ;;
     omb1:*) body=${token#omb1:} ;;
     *)
-      _tw "not an omarchy-bootstrap token (expected it to start with omb1:)"
+      _tw "not an omarchy-bootstrap token (expected it to start with omb2:)"
       return 1
       ;;
   esac

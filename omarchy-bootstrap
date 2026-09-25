@@ -37,6 +37,8 @@ unset _self _link
 . "$OMB_HOME/lib/macos.sh"
 # shellcheck source=lib/asahi.sh
 . "$OMB_HOME/lib/asahi.sh"
+# shellcheck source=lib/shared.sh
+. "$OMB_HOME/lib/shared.sh"
 # shellcheck source=lib/linux.sh
 . "$OMB_HOME/lib/linux.sh"
 # shellcheck source=lib/doctor.sh
@@ -58,6 +60,10 @@ usage() {
   _help_row "status" "where this machine is, and what comes next (read-only)"
   _help_row "doctor" "read-only health checks"
   _help_row "dev" "optional developer setup (Linux, after Omarchy)"
+  _help_row "shared [status]" "Shared macOS/Linux storage: where it stands (read-only)"
+  _help_row "shared create" "macOS: create the planned Shared partition"
+  _help_row "shared activate" "Linux: mount Shared at /mnt/shared on every boot"
+  _help_row "shared test" "write, read back and remove one test file"
   _help_row "sources [--check]" "upstream URLs and versions; --check compares live (read-only)"
   _help_row "logs" "log location and recent entries (read-only)"
   ui_section "Flags"
@@ -114,10 +120,14 @@ main() {
   done
   # Test seams stay out of root runs: a fixture or recorder carried through
   # `sudo -E` or `su` must not steer anything done with root's authority.
-  if [ "$(id -u)" = 0 ] && { [ -n "${OMB_FIXTURE:-}" ] || [ -n "${OMB_TEST_RECORD:-}" ]; }; then
-    _usage_error "OMB_FIXTURE and OMB_TEST_RECORD are for tests and are refused as root"
+  if [ "$(id -u)" = 0 ] && [ -n "${OMB_FIXTURE:-}${OMB_TEST_RECORD:-}${OMB_TEST_AFTER:-}${OMB_TEST_RC:-}" ]; then
+    _usage_error "OMB_FIXTURE, OMB_TEST_RECORD, OMB_TEST_AFTER and OMB_TEST_RC are for tests and are refused as root"
     return 2
   fi
+  case "${OMB_TEST_RC:-0}" in
+    [0-9] | [0-9][0-9] | [0-9][0-9][0-9]) ;;
+    *) _usage_error "OMB_TEST_RC must be an exit status" ; return 2 ;;
+  esac
   case "$OMB_DRY_RUN" in
     0 | 1) ;;
     *) _usage_error "OMB_DRY_RUN must be 0 or 1, not '$OMB_DRY_RUN'" ; return 2 ;;
@@ -126,6 +136,13 @@ main() {
     sources) [ "${#rest[@]}" = 0 ] || { [ "${#rest[@]}" = 1 ] && [ "${rest[0]}" = --check ]; } ||
       { _usage_error "sources takes only --check" ; return 2; } ;;
     resume) [ "${#rest[@]}" -le 1 ] || { _usage_error "resume takes at most one token" ; return 2; } ;;
+    shared)
+      case "${rest[0]:-status}" in
+        status | test) [ "${#rest[@]}" -le 1 ] || { _usage_error "shared ${rest[0]} takes no code" ; return 2; } ;;
+        create | activate) [ "${#rest[@]}" -le 2 ] || { _usage_error "shared ${rest[0]} takes at most one code" ; return 2; } ;;
+        *) _usage_error "shared takes status, create, activate or test" ; return 2 ;;
+      esac
+      ;;
     *) [ "${#rest[@]}" = 0 ] || { _usage_error "unexpected argument: ${rest[0]}" ; return 2; } ;;
   esac
 
@@ -145,6 +162,9 @@ main() {
   OMB_CMD=${cmd:-default}
   case "$cmd" in
     status | doctor | sources | logs) OMB_INTENT=read OMB_PERSIST=0 ;;
+    shared)
+      if [ "${rest[0]:-status}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
+      ;;
     plan) OMB_INTENT=plan ;;
     *) OMB_INTENT=act ;;
   esac
@@ -167,6 +187,7 @@ main() {
     logs) cmd_logs ; return ;;
     doctor) cmd_doctor ; return ;;
     status) cmd_status ; return ;;
+    shared) cmd_shared ${rest[@]+"${rest[@]}"} ; return ;;
   esac
 
   case "$OMB_PLATFORM" in

@@ -123,6 +123,7 @@ mac_doctor() {
   [ -n "$(state_get cfg_linux)" ] && doc info "Saved plan" "Linux $(state_get cfg_linux) GB $G_DOT $(state_get planned_at)"
   winfo="installer resize failures usually mean APFS damage: run First Aid from Recovery"
   doc info "If a resize fails" "$winfo"
+  shared_doctor
   doc info "macOS" "remains installed and bootable; the installer never removes it"
   doc_summary
 }
@@ -181,6 +182,10 @@ mac_status() {
   _status_row "Installer launched" asahi_launched_at
   [ -n "$(state_get asahi_bootstrap_sha256)" ] && ui_kv "Bootstrap SHA-256" "$(state_get asahi_bootstrap_sha256)" "$(state_get asahi_installer_version)"
   [ -n "$(state_get asahi_exit)" ] && ui_kv "Installer exit" "$(state_get asahi_exit)"
+  if [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ]; then
+    shared_mac_state
+    shared_status_rows
+  fi
   ui_section "Next"
   ui_para "$(mac_next_action)"
   if [ -n "$(state_get cfg_user)" ]; then
@@ -206,6 +211,7 @@ lx_doctor() {
   lx_detect
   lx_online
   cfg_load
+  [ -z "${CFG_user:-}" ] && [ -f "$STATE_SYSTEM_FILE" ] && cfg_load "$STATE_SYSTEM_FILE"
   ui_header "linux $G_DOT doctor"
   ui_section "Omarchy Mac Doctor" "read-only"
 
@@ -312,6 +318,7 @@ lx_doctor() {
     *) if [ "${CFG_ssh:-0}" = 1 ]; then doc warn "SSH" "disabled — planned on; ./omarchy-bootstrap dev → ssh"; else doc info "SSH" "disabled"; fi ;;
   esac
   [ -n "$LX_PAGESIZE" ] && doc info "Page size" "$LX_PAGESIZE bytes$([ "$LX_PAGESIZE" = 16384 ] && printf ' (16K: some prebuilt binaries assume 4K)')"
+  shared_doctor
   doc info "macOS" "remains available through the boot picker (hold power at startup)"
   doc_summary
 }
@@ -346,6 +353,7 @@ lx_status() {
   OMB_PHASE=linux
   lx_detect
   cfg_load
+  [ -z "${CFG_user:-}" ] && [ -f "$STATE_SYSTEM_FILE" ] && cfg_load "$STATE_SYSTEM_FILE"
   lx_screen "$([ "$LX_OMARCHY_STATE" = installed ] && echo dev || echo omarchy)"
   ui_section "Detected now" "read from the machine"
   ui_kv "Omarchy" "$LX_OMARCHY_STATE" "${LX_OMARCHY_VERSION:-}"
@@ -367,6 +375,8 @@ lx_status() {
     [ -n "$(state_get omarchy_setup_sha256 '' "$f")" ] && ui_kv "Setup SHA-256" "$(state_get omarchy_setup_sha256 '' "$f")"
     [ -n "$(state_get dev_last_run_at '' "$f")" ] && ui_kv "Developer setup" "$(state_get dev_modules '' "$f")" "$(state_get dev_last_run_at '' "$f")"
   done
+  shared_lx_state
+  [ "$SHARED_STATE" = off ] || shared_status_rows
   ui_section "Next"
   ui_para "$(lx_next_action)"
   printf '\n'

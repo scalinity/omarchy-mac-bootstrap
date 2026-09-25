@@ -115,11 +115,11 @@ if command -v plutil >/dev/null 2>&1; then
   T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-m1pro-1tb-roomy "" status
   assert_contains "$T_OUT" "Linux 250 GB" "status shows the plan"
   assert_contains "$T_OUT" "confirm the backup" "status names the next action"
-  assert_contains "$T_OUT" "resume omb1:enc=1,user=alex,host=m1pro" "status shows the token"
+  assert_contains "$T_OUT" "resume omb2:enc=1,user=alex,host=m1pro" "status shows the token"
   T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-asahi-installed "" resume
   assert_contains "$(t_flat "$T_OUT")" "partitions are all in place" "resume on macOS after install reports what the disk shows"
   assert_contains "$T_OUT" "https://github.com/example/omarchy-mac-bootstrap/archive/0123456789abcdef0123456789abcdef01234567.tar.gz" "public continuation pinned to the commit"
-  assert_contains "$T_OUT" "./omarchy-bootstrap resume omb1:" "token printed after reboot guide"
+  assert_contains "$T_OUT" "./omarchy-bootstrap resume omb2:" "token printed after reboot guide"
   # Private repository, commit not pushed: branch tip with a warning, and sign out.
   fx=$(t_variant mac-asahi-installed)
   : >"$fx/cmd/git_pushed"
