@@ -63,8 +63,8 @@ Each preset is kept only if it lies between 50 GB and the maximum and below
 | Preset | Size |
 | --- | --- |
 | Minimal | 100 GB, or 50 GB when 100 does not fit |
-| Balanced *(recommended when offered)* | 25 % of D, nearest 25 GB |
-| Linux-heavy | 50 % of D, nearest 25 GB |
+| Balanced *(recommended when offered)* | 25 % of D, nearest 25 GB (10 GB below 100 GB) |
+| Linux-heavy | 50 % of D, nearest 25 GB (10 GB below 100 GB) |
 | Maximum safe | the Linux maximum |
 | Custom | `250`, `250GB`, `250.5 GB`, `1TB`, `0.5T`, `35%` (of D), `max` |
 

@@ -176,8 +176,8 @@ and below 90 % of `Linux_max`:
 | Preset | Value |
 | --- | --- |
 | Minimal | 100 GB (50 GB when 100 does not fit) |
-| Balanced *(recommended)* | 25 % of `D`, rounded to 25 GB |
-| Linux-heavy | 50 % of `D`, rounded to 25 GB |
+| Balanced *(recommended)* | 25 % of `D`, nearest 25 GB (nearest 10 GB below 100 GB) |
+| Linux-heavy | 50 % of `D`, nearest 25 GB (nearest 10 GB below 100 GB) |
 | Maximum safe | `Linux_max` (always offered) |
 | Custom | `N`, `N GB`, `N.N GB`, `N TB`, `N %` of `D`, or `max` |
 
