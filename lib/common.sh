@@ -224,6 +224,7 @@ omb_cleanup() {
   case "${OMB_TMP:-}" in
     */omarchy-bootstrap.*) rm -rf "$OMB_TMP" ;;
   esac
+  state_unlock
 }
 
 # fetch_upstream KEY URL

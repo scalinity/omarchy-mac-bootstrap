@@ -541,7 +541,7 @@ mac_backup_gate() {
     "The Asahi installer shrinks the macOS container and adds partitions. It is designed to be safe, but a partition change is exactly when a backup matters." \
     "This tool cannot tell whether a backup is good, so it asks you."
   if ui_confirm_word yes "A recent backup of this Mac exists."; then
-    state_stamp backup_confirmed_at
+    state_must_set backup_confirmed_at "$(now_utc)" || return 1
     return 0
   fi
   printf '\n'
@@ -747,7 +747,7 @@ mac_handoff() {
   fi
 
   state_unset asahi_exit
-  state_stamp asahi_launched_at
+  state_must_set asahi_launched_at "$(now_utc)" || return 1
   printf '\n'
   fetch_unchanged || return 1
   run sh "$FETCH_PATH"

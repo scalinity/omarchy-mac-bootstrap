@@ -152,6 +152,10 @@ main() {
   state_init || return 1
   trap on_interrupt INT TERM
   trap 'ui_cursor_restore; omb_cleanup' EXIT
+  # One recording run at a time; read-only runs and previews take no lock.
+  if [ "$OMB_PERSIST" = 1 ]; then
+    state_lock || return 1
+  fi
 
   OMB_PHASE=$OMB_PLATFORM
   log_event start "omarchy-bootstrap $OMB_VERSION cmd=$OMB_CMD intent=$OMB_INTENT os=$OMB_OS uid=$OMB_UID dry_run=$OMB_DRY_RUN${OMB_FIXTURE:+ fixture=$(basename "$OMB_FIXTURE")}"

@@ -175,6 +175,34 @@ t_cli linux-omarchy-installed '8\n1\n\n\n' dev --dry-run
 assert_contains "$T_OUT" "Run the Claude Code installer? [y/N]" "the installer prompt defaults to no"
 assert_not_contains "$T_OUT" "would run  bash" "Enter does not run the downloaded installer"
 
+# --- A change the tool cannot record does not happen -------------------------------------
+# state.env replaced by something that is not a plain file: every record
+# fails, and the backup gate, which must be recorded, stops the run.
+pre=$(t_tmp)
+mkdir "$pre/state.env"
+T_ENV="OMB_STATE_DIR=$pre" t_cli mac-m1pro-1tb-roomy "$mac_install_input"
+assert_rc "$T_RC" 1 "an unrecordable run stops"
+assert_contains "$T_OUT" "stopping before anything changes" "and says why"
+assert_empty_file "$T_DIR/record" "an unrecordable run launches nothing"
+
+# --- One recording run at a time -----------------------------------------------------------
+pre=$(t_tmp)
+(exec -a omarchy-bootstrap-lockholder sleep 30) &
+holder=$!
+mkdir "$pre/lock"
+printf '%s 2026-09-25T00:00:00Z\n' "$holder" >"$pre/lock/owner"
+T_ENV="OMB_STATE_DIR=$pre" t_cli linux-alarm-fresh '\n\nstart\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
+assert_rc "$T_RC" 1 "a second recording run stops while one is running"
+assert_contains "$T_OUT" "Another omarchy-bootstrap run" "the second run says why"
+assert_empty_file "$T_DIR/record" "the second run launches nothing"
+T_ENV="OMB_STATE_DIR=$pre" t_cli linux-alarm-fresh "" status
+assert_rc "$T_RC" 0 "a read-only command still works while a run holds the lock"
+kill "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+T_ENV="OMB_STATE_DIR=$pre" t_cli linux-alarm-fresh '\nalex\nm1pro\n\n' plan
+assert_contains "$T_OUT" "Choices saved" "the lock of a run that has exited is cleared"
+[ ! -e "$pre/lock" ] && ok || fail "a finished run releases its lock"
+
 # --- The Omarchy handoff refuses upstream drift (acceptance criterion 9) -----------------
 token='omb1:enc=1,user=alex,host=omarchy,kmap=us'
 t_cli linux-upstream-drift '\n\nstart\n' resume "$token"

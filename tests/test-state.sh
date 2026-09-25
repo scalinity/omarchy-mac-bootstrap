@@ -57,6 +57,93 @@ assert_rc $? 0 "a non-recording run's state_set succeeds without writing"
 OMB_PERSIST=1
 assert_eq "$(state_get dry_key)" "" "a non-recording run does not write state"
 
+# --- The state directory is trusted only when it is ours ------------------------
+saved_dir=$OMB_STATE_DIR
+for bad in relative/state /tmp/../etc/omb /tmp/./omb; do
+  OMB_STATE_DIR=$bad
+  state_init >/dev/null 2>&1
+  assert_rc $? 1 "OMB_STATE_DIR '$bad' is refused"
+done
+scratch=$(t_tmp)
+mkdir "$scratch/real"
+ln -s "$scratch/real" "$scratch/link"
+OMB_STATE_DIR="$scratch/link"
+state_init
+out=$(state_set cfg_user alex 2>&1)
+assert_rc $? 1 "a symlinked state directory is refused"
+assert_contains "$out" "is a symbolic link" "the refusal names the symlink"
+assert_eq "$(ls -A "$scratch/real")" "" "nothing is written through the symlink"
+mkdir -m 777 "$scratch/open"
+chmod 777 "$scratch/open"
+OMB_STATE_DIR="$scratch/open"
+state_init
+state_set cfg_user alex >/dev/null 2>&1
+assert_rc $? 1 "a world-writable state directory is refused"
+assert_eq "$(ls -A "$scratch/open")" "" "nothing is written to a world-writable directory"
+OMB_STATE_DIR="$scratch/fresh/nested"
+state_init
+state_set cfg_user alex
+assert_eq "$(find "$scratch/fresh/nested" -maxdepth 0 -perm 700)" "$scratch/fresh/nested" "a new state directory is private"
+assert_eq "$(find "$scratch/fresh/nested/state.env" -perm 600)" "$scratch/fresh/nested/state.env" "state.env is private"
+# state.env itself swapped for a symlink: neither read nor rewritten.
+printf 'cfg_user=mallory\n' >"$scratch/elsewhere"
+rm -f "$scratch/fresh/nested/state.env"
+ln -s "$scratch/elsewhere" "$scratch/fresh/nested/state.env"
+state_init
+assert_eq "$(state_get cfg_user)" "" "a symlinked state.env is not read"
+state_set cfg_host h >/dev/null 2>&1
+assert_rc $? 1 "a symlinked state.env is not rewritten"
+assert_eq "$(cat "$scratch/elsewhere")" "cfg_user=mallory" "the symlink target is untouched"
+# A write that cannot complete leaves state.env as it was and reports it.
+OMB_STATE_DIR="$scratch/ro"
+state_init
+state_set cfg_user alex
+chmod 500 "$scratch/ro"
+state_set cfg_user bob 2>/dev/null
+assert_rc $? 1 "a failed write is reported"
+chmod 700 "$scratch/ro"
+assert_eq "$(state_get cfg_user)" alex "a failed write leaves the old value"
+assert_eq "$(find "$scratch/ro" -name '.state.env.*' | wc -l | tr -d ' ')" 0 "no temporary file is left behind"
+state_must_set cfg_user carol
+chmod 500 "$scratch/ro"
+out=$(state_must_set asahi_launched_at now 2>&1)
+assert_rc $? 1 "a record that must exist before a change fails closed"
+assert_contains "$out" "stopping before anything changes" "and says it is stopping"
+chmod 700 "$scratch/ro"
+
+# --- One recording run at a time --------------------------------------------------
+OMB_STATE_DIR="$scratch/locks"
+state_init
+state_lock
+assert_rc $? 0 "the lock is taken"
+assert_eq "$(cut -d' ' -f1 "$scratch/locks/lock/owner")" "$$" "the lock records its owner"
+state_unlock
+[ ! -e "$scratch/locks/lock" ] && ok || fail "the lock is released"
+# Held by a live omarchy-bootstrap process: refused.
+(exec -a omarchy-bootstrap-lockholder sleep 30) &
+holder=$!
+mkdir "$scratch/locks/lock"
+printf '%s 2026-09-25T00:00:00Z\n' "$holder" >"$scratch/locks/lock/owner"
+out=$(state_lock 2>&1)
+assert_rc $? 1 "a live run's lock is respected"
+assert_contains "$out" "Another omarchy-bootstrap run (pid $holder" "the refusal names the holder"
+kill "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+# Left by a run that has exited: cleared.
+state_lock
+assert_rc $? 0 "a lock whose owner has exited is cleared"
+state_unlock
+# No recorded owner yet: a fresh lock may be a run starting, an old one is abandoned.
+mkdir "$scratch/locks/lock"
+out=$(state_lock 2>&1)
+assert_rc $? 1 "a fresh ownerless lock is respected"
+touch -t 202601010000 "$scratch/locks/lock"
+state_lock
+assert_rc $? 0 "an old ownerless lock is cleared"
+state_unlock
+OMB_STATE_DIR=$saved_dir
+state_init
+
 # --- Choices -------------------------------------------------------------------
 CFG_enc=1 CFG_user=alex CFG_host=m1pro CFG_kmap=us CFG_tz=Europe/Berlin CFG_loc=de_DE.UTF-8 CFG_ssh=1 CFG_gh=octocat CFG_linux=250 CFG_shared=0 CFG_dev=1
 cfg_save

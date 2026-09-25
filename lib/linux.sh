@@ -262,7 +262,7 @@ lx_handoff() {
     return 1
   fi
   state_unset omarchy_setup_exit
-  state_stamp omarchy_launched_at
+  state_must_set omarchy_launched_at "$(now_utc)" || return 1
   printf '\n'
   fetch_unchanged || return 1
   run bash "$FETCH_PATH" "${LX_FLAGS[@]}"
@@ -297,6 +297,7 @@ lx_in_progress() {
     return 0
   fi
   if ui_confirm_word resume "Continue omarchy-mac-setup now."; then
+    state_must_set omarchy_resumed_at "$(now_utc)" || return 1
     run "$OMS_SELF" --resume
   fi
 }
