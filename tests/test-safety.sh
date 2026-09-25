@@ -131,6 +131,11 @@ assert_contains "$T_OUT" "Stopped. Nothing changed." "q at 'Use these?' quits"
 assert_not_contains "$T_OUT" "Encrypt [Y/n]" "q at 'Use these?' does not re-ask every choice"
 assert_empty_file "$T_DIR/record" "q at 'Use these?' starts nothing"
 
+# Enter at "Run the Claude Code installer?" must not run downloaded code.
+t_cli linux-omarchy-installed '8\n1\n\n\n' dev --dry-run
+assert_contains "$T_OUT" "Run the Claude Code installer? [y/N]" "the installer prompt defaults to no"
+assert_not_contains "$T_OUT" "would run  bash" "Enter does not run the downloaded installer"
+
 # --- Existing free space: no resize, and the reviewed size is typed ----------------------
 t_cli mac-m1-free-space "$mac_install_input"
 assert_rc "$T_RC" 0 "free-space install flow completes"

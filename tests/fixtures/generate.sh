@@ -198,7 +198,11 @@ jq
 ripgrep
 tmux
 unzip"
-      printf 'pacman\nnmtui\ncurl\nsnapper\ndocker\nomarchy-pkg-add\nomarchy-install-dev-env\nomarchy-install-editor-vscode\nomarchy-setup-security-sshd\nomarchy-setup-security-sudoless-docker\ngit\ngh\n' >"$d/commands"
+      printf 'pacman\nnmtui\ncurl\nsnapper\ndocker\nomarchy-pkg-add\nomarchy-install-dev-env\nomarchy-install-editor-vscode\nomarchy-setup-security-sshd\nomarchy-setup-security-sudoless-docker\ngit\ngh\n' >"$d/commands" && cat >"$d/net/claude-code-install.sh" <<'CEOF'
+#!/bin/bash
+# FIXTURE — a stand-in for the Claude Code installer. Never executed by tests.
+echo fixture
+CEOF
       ;;
   esac
 }

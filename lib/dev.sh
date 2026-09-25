@@ -255,7 +255,7 @@ dev_run_ssh() {
     ui_note "ssh-keygen asks for an optional passphrase itself."
     run ssh-keygen -t ed25519 -C "${email:-${CFG_user:-$LX_USER}@${CFG_host:-omarchy}}" -f "$key"
   fi
-  if [ -f "$key.pub" ] && sys_cmd gh_status gh auth status >/dev/null && ui_yesno "Add the public key to your GitHub account?" y; then
+  if [ -f "$key.pub" ] && sys_cmd gh_status gh auth status >/dev/null && ui_yesno "Add the public key to your GitHub account?" n; then
     run gh ssh-key add "$key.pub" --title "${CFG_host:-omarchy}"
   fi
   if [ "$(sys_cmd sshd_active systemctl is-active sshd)" = active ]; then
@@ -294,7 +294,7 @@ dev_run_ai() {
         ui_kv "Saved to" "$(tildify "$FETCH_PATH")"
         state_set claude_install_sha256 "$FETCH_SHA256"
         offer_inspection || continue
-        ui_yesno "Run the Claude Code installer?" y && fetch_unchanged && run bash "$FETCH_PATH"
+        ui_yesno "Run the Claude Code installer?" n && fetch_unchanged && run bash "$FETCH_PATH"
         ;;
       2)
         if sys_has codex; then
