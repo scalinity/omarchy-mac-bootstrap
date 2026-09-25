@@ -116,7 +116,11 @@ mac_doctor() {
 }
 
 mac_next_action() {
-  if [ "$MAC_ASAHI_PRESENT" = 1 ]; then
+  local blockers
+  blockers=$(mac_blockers)
+  if [ -n "$blockers" ]; then
+    printf 'This Mac cannot continue: %s' "$(printf '%s' "$blockers" | head -1)"
+  elif [ "$MAC_ASAHI_PRESENT" = 1 ]; then
     echo "Boot the new OS from Startup Options, then run ./omarchy-bootstrap resume <token> on Linux (./omarchy-bootstrap resume shows it)."
   elif [ -n "$(state_get asahi_launched_at)" ]; then
     echo "The installer was launched but no Linux partitions exist; run ./omarchy-bootstrap to try again."
@@ -139,7 +143,7 @@ mac_status() {
   [ "$MAC_ASAHI_PRESENT" = 1 ] && active=reboot
   mac_screen "$active"
   ui_section "Detected now" "$MAC_MODEL_ID"
-  ui_kv "Machine" "${DEV_NAME:-$MAC_MODEL_ID}" "$DEV_TIER"
+  ui_kv "Machine" "${DEV_NAME:-$MAC_CHIP}" "$DEV_TIER"
   ui_kv "Linux partitions" "$([ "$MAC_ASAHI_PRESENT" = 1 ] && echo "present on $MAC_DISK" || echo none)"
   ui_kv "Safe Linux max" "$(fmt_gb "$PLAN_LINUX_MAX")"
   ui_section "Recorded" "$(tildify "$STATE_FILE")"

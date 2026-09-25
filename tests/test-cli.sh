@@ -81,6 +81,11 @@ if command -v plutil >/dev/null 2>&1; then
   assert_contains "$T_OUT" "./omarchy-bootstrap resume omb1:" "token printed after reboot guide"
 fi
 
+if command -v plutil >/dev/null 2>&1; then
+  t_cli mac-intel "" status
+  assert_contains "$T_OUT" "This Mac cannot continue: This Mac is not Apple Silicon" "status names the blocker"
+fi
+
 # --- Linux status and plan -------------------------------------------------------------
 t_cli linux-setup-in-progress "" status
 assert_contains "$T_OUT" "omarchy-mac-setup --status" "status includes upstream status"
