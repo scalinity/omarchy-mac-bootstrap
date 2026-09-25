@@ -18,6 +18,16 @@ assert_eq "$T_OUT" "omarchy-bootstrap 0.1.0" "--version"
 t_cli mac-m1pro-1tb-roomy "" frobnicate
 assert_rc "$T_RC" 2 "unknown command exits 2"
 assert_contains "$T_OUT" "Unknown command: frobnicate" "unknown command named"
+t_cli mac-m1pro-1tb-roomy "yes\nlaunch\n" install --dryrun
+assert_rc "$T_RC" 2 "a mistyped --dry-run stops"
+assert_contains "$T_OUT" "unknown flag: --dryrun" "the typo is named"
+assert_empty_file "$T_DIR/record" "a mistyped --dry-run runs nothing"
+T_ENV="OMB_DRY_RUN=yes" t_cli mac-m1pro-1tb-roomy "" status
+assert_rc "$T_RC" 2 "OMB_DRY_RUN accepts only 0 or 1"
+t_cli mac-m1pro-1tb-roomy "" status extra
+assert_rc "$T_RC" 2 "stray arguments are refused"
+t_cli linux-alarm-fresh "" resume omb1:user=alex omb1:host=x
+assert_rc "$T_RC" 2 "resume takes one token"
 
 # --- Degradation ----------------------------------------------------------------
 t_cli mac-m1pro-1tb-roomy "" --help

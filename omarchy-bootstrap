@@ -69,6 +69,9 @@ usage() {
   printf '\n'
 }
 
+# Before ui_init there is no palette, so usage errors are plain text.
+_usage_error() { printf 'omarchy-bootstrap: %s (see --help)\n' "$1" >&2; }
+
 _help_row() { printf '     %s%-20s%s %s%s%s\n' "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
 
 on_interrupt() {
@@ -88,6 +91,9 @@ main() {
       --ascii) OMB_ASCII=1 ;;
       -h | --help) cmd=help ;;
       --version) cmd=version ;;
+      --check) rest+=("$arg") ;;
+      # A mistyped --dry-run must stop, not silently become a real run.
+      -*) _usage_error "unknown flag: $arg" ; return 2 ;;
       *)
         if [ -z "$cmd" ]; then
           cmd=$arg
@@ -97,6 +103,16 @@ main() {
         ;;
     esac
   done
+  case "$OMB_DRY_RUN" in
+    0 | 1) ;;
+    *) _usage_error "OMB_DRY_RUN must be 0 or 1, not '$OMB_DRY_RUN'" ; return 2 ;;
+  esac
+  case "$cmd" in
+    sources) [ "${#rest[@]}" = 0 ] || { [ "${#rest[@]}" = 1 ] && [ "${rest[0]}" = --check ]; } ||
+      { _usage_error "sources takes only --check" ; return 2; } ;;
+    resume) [ "${#rest[@]}" -le 1 ] || { _usage_error "resume takes at most one token" ; return 2; } ;;
+    *) [ "${#rest[@]}" = 0 ] || { _usage_error "unexpected argument: ${rest[0]}" ; return 2; } ;;
+  esac
 
   ui_init
   platform_init
