@@ -79,7 +79,7 @@ if command -v plutil >/dev/null 2>&1; then
   assert_empty_file "$T_DIR/record" "plan runs nothing"
   st=$(cat "$T_DIR/state/state.env")
   assert_contains "$st" "cfg_linux=250" "plan recorded the Linux size"
-  assert_contains "$st" "plan_macos_new_gb=745" "plan recorded the macOS size"
+  assert_not_contains "$st" "plan_macos_new_gb" "no write-only plan keys"
   assert_contains "$st" "cfg_host=m1pro" "plan recorded the hostname"
   state_dir=$T_DIR/state
   T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-m1pro-1tb-roomy "" status
@@ -104,6 +104,22 @@ fi
 if command -v plutil >/dev/null 2>&1; then
   t_cli mac-intel "" status
   assert_contains "$T_OUT" "This Mac cannot continue: This Mac is not Apple Silicon" "status names the blocker"
+fi
+
+# --- Saved answers are the defaults; a saved reservation never shrinks the survey ------
+if command -v plutil >/dev/null 2>&1; then
+  t_cli mac-m1pro-1tb-roomy '\n5\n300\n\ny\n40\n\n\n\n\n\n\n\n\n\n\n' plan
+  st=$(cat "$T_DIR/state/state.env")
+  assert_contains "$st" "cfg_linux=300" "custom size saved"
+  assert_contains "$st" "cfg_shared=40" "shared reservation saved"
+  state_dir=$T_DIR/state
+  T_ENV="OMB_STATE_DIR=$state_dir" t_cli mac-m1pro-1tb-roomy '\n\n\n\n\n\n\n\n\n\n\n\n\n\n' plan
+  assert_contains "$T_OUT" "Safe Linux maximum  655 GB" "the saved reservation does not shrink the survey"
+  assert_contains "$T_OUT" "Saved plan       300 GB" "the saved size is offered"
+  assert_contains "$T_OUT" "Plan a shared area? [Y/n]" "the shared question defaults to the saved answer"
+  st=$(cat "$state_dir/state.env")
+  assert_contains "$st" "cfg_linux=300" "Enter keeps the saved size"
+  assert_contains "$st" "cfg_shared=40" "Enter keeps the saved reservation"
 fi
 
 # --- An optional choice can be cleared ----------------------------------------------------

@@ -125,9 +125,9 @@ mac_next_action() {
   elif [ -n "$(state_get asahi_launched_at)" ]; then
     echo "The installer was launched but no Linux partitions exist; run ./omarchy-bootstrap to try again."
   elif [ -n "$(state_get backup_confirmed_at)" ] && [ -n "$(state_get cfg_linux)" ]; then
-    echo "Run ./omarchy-bootstrap to download and launch the Asahi Alarm installer."
+    echo "Run ./omarchy-bootstrap: review the saved plan (Enter keeps each answer), then download and launch the Asahi Alarm installer."
   elif [ -n "$(state_get cfg_linux)" ]; then
-    echo "Run ./omarchy-bootstrap to confirm the backup and continue."
+    echo "Run ./omarchy-bootstrap: review the saved plan (Enter keeps each answer), then confirm the backup."
   else
     echo "Run ./omarchy-bootstrap to survey this Mac and plan storage."
   fi

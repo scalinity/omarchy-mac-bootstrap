@@ -147,8 +147,11 @@ mac_blockers() {
   return 0
 }
 
+# mac_plan_compute [SHARED_GB] — no reservation unless one is passed: a saved
+# shared area must not shrink the survey, presets or status before the
+# shared question has been answered again in this run.
 mac_plan_compute() {
-  plan_compute "$MAC_DISK_SIZE" "$MAC_CONTAINER_SIZE" "$MAC_CONTAINER_FREE" "$MAC_LIMIT_PREF" "$MAC_EXISTING_FREE" "$(( ${CFG_shared:-0} * GB ))"
+  plan_compute "$MAC_DISK_SIZE" "$MAC_CONTAINER_SIZE" "$MAC_CONTAINER_FREE" "$MAC_LIMIT_PREF" "$MAC_EXISTING_FREE" "$(( ${1:-0} * GB ))"
 }
 
 # ---------------------------------------------------------------------------
@@ -249,13 +252,23 @@ _ui_ascii_hint_line() { if [ "$UI_UNICODE" = 1 ]; then cat; else sed 's/⏎/>/; 
 # ---------------------------------------------------------------------------
 
 mac_plan_storage() {
-  local opts="" line key label bytes desc badge n=0 def=1 rc
+  local opts="" line key label bytes desc badge n=0 def=1 rc saved=0
   mac_screen plan
   mac_plan_compute
   plan_presets
+  # A saved size that still fits is the default: Enter keeps the plan.
+  if [ -n "${CFG_linux:-}" ] && [ $((CFG_linux * GB)) -ge "$PLAN_LINUX_MIN" ] && [ $((CFG_linux * GB)) -le "$PLAN_LINUX_MAX" ]; then
+    saved=$((CFG_linux * GB))
+  fi
   ui_section "Storage" "Linux can have $(fmt_gb "$PLAN_LINUX_MIN")–$(fmt_gb "$PLAN_LINUX_MAX")"
   ui_note "Sizes are the Linux allocation the installer calls \"New OS size\": the Btrfs root plus 3 GB of boot data. macOS keeps everything else."
   set --
+  if [ "$saved" -gt 0 ] && ! printf '%s' "$PRESETS" | cut -d'|' -f3 | grep -qx "$saved"; then
+    n=1
+    def=1
+    set -- "Saved plan|$(fmt_gb "$saved")|Your previous choice.|saved"
+    opts=" $saved"
+  fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     n=$((n + 1))
@@ -266,6 +279,10 @@ mac_plan_storage() {
     badge=""
     if [ "$key" = "$PRESET_DEFAULT" ]; then
       badge="recommended"
+      [ "$saved" = 0 ] && def=$n
+    fi
+    if [ "$saved" -gt 0 ] && [ "$bytes" = "$saved" ]; then
+      badge="${badge:+$badge, }saved"
       def=$n
     fi
     set -- "$@" "$label|$(fmt_gb "$bytes")|$desc|$badge"
@@ -322,14 +339,14 @@ mac_custom_size() {
 mac_shared_prompt() {
   ui_section "Shared data area" "advanced $G_DOT off by default"
   ui_note "A small exFAT partition both systems can read and write — handy for moving files, poor for code (no permissions, no symlinks, case-insensitive). Git or cloud sync is the better default. The Asahi installer has no shared-partition option, so this tool only leaves the space free and writes a post-install plan; it never creates the partition."
-  local rc
-  ui_yesno "Plan a shared area?" n
+  local rc saved=${CFG_shared:-0}
+  ui_yesno "Plan a shared area?" "$([ "$saved" -gt 0 ] && echo y || echo n)"
   rc=$?
   [ "$rc" = 3 ] && return 3
   if [ "$rc" = 0 ]; then
     local ans max=$((PLAN_LINUX_MAX - PLAN_LINUX))
     while :; do
-      ui_ask ans "Shared size in GB" "32" valid_gb || return 3
+      ui_ask ans "Shared size in GB" "$([ "$saved" -gt 0 ] && echo "$saved" || echo 32)" valid_gb || return 3
       if [ $((ans * GB)) -gt "$max" ] || [ "$ans" -lt 1 ]; then
         ui_fail "Between 1 and $(gb_floor "$max") GB fits beside $(fmt_gb "$PLAN_LINUX") of Linux."
         continue
@@ -340,13 +357,13 @@ mac_shared_prompt() {
   else
     CFG_shared=0
   fi
-  mac_plan_compute
+  mac_plan_compute "$CFG_shared"
   plan_layout "$((CFG_linux * GB))"
 }
 
 mac_show_layout() {
   local linux=$((CFG_linux * GB)) shared=$(( ${CFG_shared:-0} * GB )) boot rest
-  mac_plan_compute
+  mac_plan_compute "${CFG_shared:-0}"
   plan_layout "$linux"
   boot=$((PLAN_BOOT + MAC_APPLE_SYS + MAC_OTHER_BYTES))
   rest=$((PLAN_DISK - PLAN_MACOS_NEW - PLAN_ROOT - boot - shared))
@@ -450,11 +467,6 @@ mac_review() {
 
 mac_save_plan() {
   cfg_save
-  state_set mac_model "$MAC_MODEL_ID"
-  state_set mac_disk "$MAC_DISK"
-  state_set plan_macos_new_gb "${PLAN_MACOS_NEW_GB:-}"
-  state_set plan_os_size_answer "$PLAN_OS_SIZE_ANSWER"
-  state_set plan_mode "$PLAN_MODE"
   state_stamp planned_at
   [ "${CFG_shared:-0}" -gt 0 ] && mac_write_shared_plan
   return 0
@@ -825,7 +837,7 @@ EOF
           4)
             mac_save_plan
             printf '\n'
-            ui_ok "Plan saved. Run ./omarchy-bootstrap to continue from here."
+            ui_ok "Plan saved. Run ./omarchy-bootstrap to continue; your saved answers are the defaults."
             printf '\n'
             return 0
             ;;
