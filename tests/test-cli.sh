@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # The command surface, output degradation, doctor/status/sources/logs.
+# shellcheck disable=SC2015,SC2016 # ok/fail always return 0; literal $ in single quotes
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo "test-cli"
@@ -112,6 +113,18 @@ assert_contains "$T_OUT" "next step       omarchy" "upstream status body"
 t_cli linux-alarm-fresh '\nalex\nm1pro\n\n' plan
 assert_contains "$(cat "$T_DIR/state/state.env")" "cfg_user=alex" "linux plan saves choices"
 assert_empty_file "$T_DIR/record" "linux plan runs nothing"
+
+# --- Root → user hand-off through the system state file --------------------------------
+fx=$(t_variant linux-omarchy-installed)
+mkdir -p "$fx/root/var/lib/omarchy-mac-bootstrap"
+printf 'cfg_user=alex\ncfg_host=m1pro\ncfg_enc=1\ncfg_ssh=1\ncfg_tz=Europe/Berlin\ncfg_shared=a[$(touch pwned)]\n' \
+  >"$fx/root/var/lib/omarchy-mac-bootstrap/state.env"
+t_cli "$fx" 'q\n' dev --dry-run
+assert_contains "$T_OUT" "◉ 7  SSH" "the root run's SSH choice preselects the SSH module"
+assert_contains "$T_OUT" "planned Europe/Berlin" "the root run's timezone reaches the user run"
+[ ! -e pwned ] && [ ! -e "$fx/pwned" ] && ok || fail "an invalid system-state value was executed"
+t_cli "$fx" "" status
+assert_contains "$T_OUT" "alex@m1pro" "status shows the root run's record"
 
 # --- Sources -------------------------------------------------------------------------------
 t_cli "" "" sources

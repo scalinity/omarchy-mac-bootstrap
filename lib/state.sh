@@ -12,7 +12,7 @@ state_init() {
   fi
   STATE_FILE="$OMB_STATE_DIR/state.env"
   # The record a root run of Phase 2 leaves for the later non-root run.
-  STATE_SYSTEM_FILE=/var/lib/omarchy-mac-bootstrap/state.env
+  STATE_SYSTEM_FILE=$(sys_path /var/lib/omarchy-mac-bootstrap/state.env)
   mkdir -p "$OMB_STATE_DIR" 2>/dev/null
 }
 
