@@ -106,6 +106,13 @@ result (`proto-diff-chunks`).
 | `proto-managed-prompt` | static: every `sudo` on a managed path is `sudo -n`; stdin of a managed child is `/dev/null` |
 | `proto-no-shell-text` | static: no response field and no record value reaches `eval`, `source`, `$(( ))` unchecked, or a command string |
 | `proto-exit` | exit 0 with a `result`, 2 for an inadmissible request, 3 for a version refusal |
+| `proto-golden-hello`, `proto-golden-snapshot`, `proto-golden-detail`, `proto-golden-validate`, `proto-golden-validate-refused`, `proto-golden-execute`, `proto-golden-approve`, `proto-golden-cancelled` | the golden requests of docs/PROTOCOL.md → *Golden examples*, against the core in fixture mode: the responses byte for byte, and the frontend's decoding of each |
+| `proto-golden-codes` | each code kind as written there: `token`, `ombdone`, `ombshare`, `ombbundle` round-trip through encode, admission and the kind's semantic check unchanged |
+| `proto-code-kind` | a token with an unknown field, a repeated field or 513 bytes; a code with wrong check digits; a `token` value under `kind=ombdone`; an `ombbundle` value with upper-case hex in a response: refused `type` |
+| `proto-code-typed` | an approval code typed with upper-case hex and spaces: normalised as `code_parse` does, then accepted |
+| `proto-invalid-schemas` | each row of the invalid-examples table there: validate without `select`, `exec` without `basis`, a code of the wrong kind, an extra field, a duplicate field, a `#` line, a record after `result`, a byte after the result's LF: the reason code shown there, in Bash and in Rust |
+| `proto-op-records` | every request record placed in an operation that forbids it (a `page` in `validate`, an `arg` in `snapshot`, a `select` in `execute`): refused `schema` |
+| `proto-admit-io` | `head`, `tr`, `tail` or `awk` failing during admission (a fixture that makes one exit non-zero): refused `io`, never an empty or valid document |
 
 ## Processes, descriptors and the terminal
 
@@ -120,17 +127,37 @@ result (`proto-diff-chunks`).
 | `sup-slow-frontend` | F's channel held full by a test hook while C runs a managed act | C finishes and exits without waiting; F then reads every record |
 | `sup-overflow` | C produces more than 8 MiB − 64 KiB of `progress` | one `overflow`, then the `result`; the spool stays under 8 MiB |
 | `sup-epipe` | F writes a 1 MiB request | EPIPE in F, a refusal shown; C exits 2 |
-| `sup-frontend-death` | F is killed during a managed act | C completes, its operation record is resolved; L waits for `req-*.core` to end, then restores the terminal |
-| `sup-core-death` | C is killed while its child runs | F reports an unknown outcome and waits for the group before taking the terminal back; a new act in that scope is refused as busy while the child lives, and reconciles after it ends |
-| `sup-launcher-death` | L is killed | F runs on and restores its terminal; the next launcher removes the stale session folder only when its launcher and cores are dead |
-| `sup-mutator-survives` | C is killed; its mutating child runs 3 s more | every new act in the scope is refused as busy, naming the child; nothing reclaims the operation |
-| `sup-no-reclaim-pid` | an operation record whose PID is dead, with a live process from its group | busy, not reclaimed |
-| `sup-reclaim-empty` | an operation record whose group has no live process | the scope's reconciliation runs, then the record is removed |
+| `sup-frontend-death-core-live` | F is killed during a managed act | C completes and removes its operation record; L waits for `req-*.core` to end, then restores the terminal; the scratch is removed only then |
+| `sup-launcher-death-live-frontend` | L is killed while F lives between requests; a second launcher starts | the second launcher leaves the first session's scratch alone while `frontend.omb` names a live frontend; F keeps working |
+| `sup-pid-reuse` | a session file and an operation record whose PIDs now belong to other processes (same PID, different start time), and one from a previous boot | none of them taken as alive |
+| `sup-session-quiescent` | scratch folders with, in turn, a live launcher, a live frontend, a live core, a live process whose arguments name the folder but no `frontend.omb` yet, an unresolved operation naming the session, and none of these | removed only in the last case |
+| `sup-core-death-mutator-live` | C is killed while its mutating child runs | outcome unknown; the operation becomes unsupervised; every act in the scope refused `unsupervised`, naming it; read commands still work |
+| `sup-mutator-escaped-pgid` | C is killed; its child has started a descendant with `setsid` that keeps writing, and exits | the process group is empty, and the barrier stays |
+| `sup-unsupervised-blocks` | the next act in the scope, from the frontend and from `--no-tui` | refused `unsupervised` in both interfaces |
+| `sup-boot-clears` | the fixture's boot session changes | the barrier is no longer held by the old processes; reconciliation is now allowed |
+| `sup-post-reboot-reconcile` | after the boot change, the next act in the scope | the scope's reconciliation runs, records what the machine shows, removes the record, then the action proceeds |
+| `sup-read-orphan-no-barrier` | C of a read request is killed while its read child runs on | no operation record, no barrier; the next act proceeds |
+| `sup-no-reclaim-pid` | an operation record whose core's PID is dead | unsupervised, never reclaimed |
+| `sup-completion` | a supervised mutating child that exits normally, leaving no process in its group | the core checks the postcondition and removes the record |
 | `sup-reader-death` | the reader thread panics (test hook) | the outcome is unknown; a fresh snapshot is asked for |
 | `sup-eintr` | a signal during a read or wait | the call is retried (Rust unit test; a Bash `wait` loop test) |
 | `sup-no-setsid` | static: F and C never call `setsid` or `setpgid`; L, F, C never ignore SIGINT, SIGQUIT, SIGTSTP or block them across a spawn | — |
 | `sup-one-spawner` | static: F opens descriptors and spawns only on its main thread; C writes the spool only from its main shell | — |
 | `sup-shared-critical` | the Shared creation over fixtures, with the spool and the recorded commands time-ordered | between the final topology read and `sudo -n diskutil addPartition`: no spool write, no other recorded command; statically, the code between those two points is byte-identical to the accepted baseline's |
+
+### `diag-*`: diagnostics by child class
+
+| Id | Case | Expected |
+| --- | --- | --- |
+| `diag-bound-read` | a read child writes 10 MiB to stderr | it runs to its end unblocked; its retained file is at most 65 537 bytes; the diag header marks earlier output discarded |
+| `diag-overflow-discard` | a read child writes exactly 65 536, then 65 537 bytes | kept whole and not marked; then marked "earlier output discarded" |
+| `diag-request-bound` | a read request whose children together pass 256 KiB | later children appear as headers marked "not kept"; `req-<n>.diag` stays under 256 KiB plus one header per child |
+| `diag-session-bound` | many requests in one session pass 4 MiB | later diagnostics are headers only; the session's diag files stay under 4 MiB plus headers |
+| `diag-capture-failure` | the drain killed mid-run; the scratch filesystem full when the drain writes | diagnostics shown as "not available"; the read's outcome judged by its own status; nothing retried because of it |
+| `diag-mutator-no-backpressure` | a mutating child writes 1 GiB to stdout and stderr | nothing reaches disk or a pipe; the child is never blocked or signalled; its outcome is its exit status and the postcondition; the command is shown for running by hand |
+| `diag-handoff-not-captured` | a handoff child prints to the terminal | nothing of it in the scratch |
+| `diag-raw-sensitive` | a read child prints a planted token | it appears only on the log screen from `req-<n>.diag`; never in `debug`, `debug context`, a record, the log file or the state directory |
+| `diag-class-static` | static: every child the core runs has a declared class; no mutating child has a pipe on 1 or 2 | — |
 
 ### `pty-*`: the real terminal
 
@@ -161,8 +188,9 @@ runners.
 | `stale-param-changed` | validate with size X; execute with the basis for X and the argument Y | refused `changed` |
 | `stale-generation` | paging a detail across a new inventory generation | refused `changed`; no mixed rows |
 | `stale-between-items` | a three-item restore; item 2's destination changes after item 1 is placed | item 2 stops as a conflict; items 1 and 3 complete |
-| `stale-last-instant` | with `OMB_TEST_PAUSE_AT` after the re-check, the test creates a file at an absent destination; in a second run, changes a destination being replaced | `ln` refuses and the new file is untouched; the moved file is not the reviewed one, so it is renamed back; both stop as conflicts |
-| `stale-setting-instant` | a Git setting changed between the re-read and the write | the read-back reports a conflict with both values |
+| `stale-last-instant` | with `OMB_TEST_PAUSE_AT` after the re-check, the test creates a file at an absent destination; in a second run, changes a destination being replaced; in a third, creates a folder where a folder unit goes | `ln` refuses and the new file is untouched; the moved file is not the reviewed one, so it is renamed back; `mv --update=none-fail` refuses; all stop as conflicts |
+| `stale-setting-before-recheck` | a Git setting changed after the review and before the re-read | the item stops as a conflict; nothing written |
+| `restore-setting-verified` | a Git setting and a Claude Code MCP server written by their owners' commands | each read back with the intended value; a different value is reported as a failure |
 | `stale-lock-order` | two executes of one scope at once | the second is refused busy; the basis comparison happens after the operation record exists (checked by the recorded order) |
 | `stale-plan-geometry` | the disk changes between the plan review and `plan.save` | refused `changed` |
 | `stale-shared-final` | the partition table changes after the basis check but before the final read (`OMB_TEST_AFTER`) | the baseline's final revalidation refuses; nothing created |
@@ -215,7 +243,11 @@ baseline action: `equiv-plan-save`, `equiv-backup-gate`,
 | --- | --- | --- |
 | `toml-codex-written` | files shaped exactly as Codex 0.157.1 writes them: quoted server names, `[mcp_servers.x.env]`, single-line arrays, float timeouts, `[[skills.config]]`, `[projects."/p"]` | accepted; every value exact |
 | `toml-docs-shapes` | the documentation's inline `env = { … }`, multi-line arrays with comments and a trailing comma, literal strings, quoted dotted keys | accepted |
-| `toml-dotted` | `a.b.c = 1` beside `[a.b]` | accepted as one key path |
+| `toml-dotted` | `a.b.c = 1` and `a.b.d = 2` in one table | accepted; both under the table `a.b` |
+| `toml-dotted-redefine` | `a.b.c = 1` followed by `[a.b]` (the dotted key already defined the table `a.b`) | the whole file refused |
+| `toml-dotted-subtable` | `a.b.c = 1` followed by `[a.b.x]` (a sub-table of a table defined by dotted keys) | accepted |
+| `toml-bounds` | a file of 1 MiB + 1; nesting of arrays and inline tables 17 deep; a line of 16 KiB + 1 | the whole file refused |
+| `toml-conformance` | every case of the `toml-test` corpus (pinned by digest): each invalid case | refused; each valid case either refused as outside the subset, or accepted with exactly the corpus's decoded values |
 | `toml-multiline` | `"""…"""` with a line-ending backslash; `'''…'''` with a first newline | accepted; decoded as TOML does |
 | `toml-duplicate`, `toml-table-twice`, `toml-key-and-table` | a key twice; a table twice; a key used as both | the whole file refused |
 | `toml-datetime`, `toml-hex`, `toml-underscore`, `toml-inf` | each | the whole file refused |
@@ -277,7 +309,8 @@ baseline action: `equiv-plan-save`, `equiv-backup-gate`,
 | Id | Case | Expected |
 | --- | --- | --- |
 | `secret-unknown-key` | a supported adapter's file with a credential under an ordinary key (`sessionKey`) | not carried: not on the allowlist |
-| `secret-whole-file` | a Neovim Lua file with a credential in a shape the scan does not know | carried, and marked "carried whole" in the review; nothing states it holds no secret |
+| `secret-whole-file-caught` | a Neovim Lua file with a planted `ghp_…` token (a shape the scan knows) | the scan catches this planted example and the file is excluded — which shows the scan works on it, not that whole files are free of secrets it cannot recognise |
+| `secret-whole-file-marked` | a whole file carried | marked "carried whole" in the review and the manifest's item; no output says it holds no secret |
 | `secret-opaque-default` | the same file in a custom path | excluded until typed `opaque`; the warning shown; then carried and marked outside the guarantee |
 | `secret-opaque-hard` | `.env`, `id_ed25519`, `credentials` inside an opaque folder | refused even with consent |
 | `secret-url` | `https://user:pass@host`, `?token=…` in a supported field | dropped, flagged |
@@ -314,6 +347,9 @@ baseline action: `equiv-plan-save`, `equiv-backup-gate`,
 | `restore-modes` | setuid, group- and world-writable modes in the manifest | capped; private classes 0600/0700 |
 | `restore-seeded` | Omarchy's seeded `starship.toml` | a conflict labelled "Omarchy's default" |
 | `restore-untouched` | `/usr/share/omarchy`, `~/.local/state/omarchy`, the skill links, the wrappers, `defaults/agent` | byte-identical after the restore |
+| `restore-backup-cross-device` | a Replace whose destination is on another device than the backups | the item refused (Keep or Skip); nothing copied or overwritten |
+| `restore-folder-fs` | a folder unit on a filesystem outside btrfs, ext4, xfs, tmpfs | the folder unit refused; files still placed |
+| `restore-open-writer` | a program holds the reviewed file open and writes after it was moved aside | its bytes end in the backup, not the destination; the summary names the backup (the stated residual, shown, not detected) |
 | `restore-consent` | `restore verify` with and without consent | no MCP server or application started without it |
 | `restore-accept` | `restore accept NAME` | an `accepted` step; shown as accepted, never verified |
 
@@ -381,21 +417,29 @@ And:
 | `rescue-workspace` | the workspace after a start | `AGENTS.md` is the brief, `CLAUDE.md` imports it, `report.omb` is the safe report, each tool's rules file denies the disk, boot and encryption commands; nothing under `/etc` written |
 | `rescue-start-fails` | `--version` fails | `failed`; the next tool offered |
 | `rescue-leftovers` | seen by the everyday user | listed from rescue's record |
-| `rescue-remove-exact` | `rescue remove` | exactly the recorded files and lines removed; everything else untouched |
-| `ssh-fresh-image` | the image's shape: enabled, password on, `alarm` | `exposed`, shown before any rescue |
-| `ssh-earlier-setting` | a drop-in sorting before ours with `PasswordAuthentication yes` | the effective check fails; changes undone; not open |
-| `ssh-match` | `Match User alarm` with passwords on; `Match LocalPort 22` | caught for that context |
-| `ssh-no-include` | `sshd_config` without the `Include` | caught; not open |
+| `rescue-remove-exact` | `rescue remove` | exactly what rescue's record lists as rescue's is removed; a released harden drop-in stays and is named; everything else untouched |
+| `ssh-fresh-image` | the image's shape: enabled, running, no `Match`, password on, `alarm` | `exposed`, shown before any rescue |
+| `ssh-match-unproven` | a `Match Address 10.0.0.9` block with passwords on, in `sshd_config`; in an included drop-in; in a file included by an included file; written `match=…` in lower case | `unproven` in every case; harden refused |
+| `ssh-keyonly-proven` | no `Match`, `sshd -T` key-only | `key-only` |
+| `ssh-other-listener` | a second `sshd` listening outside the system unit | `unproven`; stopped with the typed word before remote rescue opens |
 | `ssh-case` | `sshd -T` output in mixed case | read correctly |
-| `ssh-invalid` | `sshd -t` fails | the drop-in removed; nothing reloaded |
-| `ssh-reload-fails`, `ssh-key-test-fails`, `ssh-password-offered` | each | undone; not open |
-| `ssh-starts-stopped` | `sshd` stopped before | `start`, never `enable`; recorded |
-| `ssh-cleanup-started` | rescue started it | stopped, and verified not running |
-| `ssh-cleanup-exposed` | exposed before rescue | ends retained key-only or stopped; never password access |
-| `ssh-cleanup-verify-fails` | the final check fails | "not clean", no success reported |
-| `ssh-cleanup-predict` | the policy without rescue's drop-in would allow passwords | the drop-in kept (released) or `sshd` stopped; never removed and reloaded |
-| `ssh-cleanup-putback` | the prediction says key-only, the real check after reload does not | the drop-in restored and `sshd` reloaded at once; "not clean" |
-| `ssh-cleanup-stop-first` | cleanup ending in *stopped* | `sshd` stopped before the drop-in or keys are removed (recorded order) |
+| `ssh-close` | close on an exposed server | stopped for this boot, never disabled; the screen says it starts at the next boot |
+| `ssh-harden-offline` | harden on a `Match`-free exposed server | the drop-in checked with `sshd -t -f` and `sshd -T -f` on a private copy before it is installed; installed; reloaded; `sshd -T` key-only; released and recorded as released |
+| `ssh-harden-disagree` | the check after the reload disagrees with the offline one | the drop-in removed and the service reloaded at once; reported |
+| `ssh-harden-no-include` | `sshd_config` without the `Include` first | harden refused |
+| `rescue-sshd-config-exact` | the rescue configuration | its bytes equal what the tool wrote; `sshd -t -f` passes; `sshd -T -f` shows exactly the listed values |
+| `rescue-sshd-invalid` | `sshd -t -f` fails | nothing started, nothing listens, the system's server unchanged |
+| `rescue-sshd-port` | 2222 in use; every port 2222–2229 in use | the next free port; refused |
+| `rescue-sshd-address` | the chosen address gone before start | refused before start |
+| `rescue-sshd-exposed-first` | the system's server exposed, and unproven | stopped (typed `ssh` covered it) and checked stopped before the rescue unit starts (recorded order); remote rescue never open while it listens |
+| `rescue-sshd-keyonly-untouched` | the system's server key-only | left running and untouched |
+| `rescue-sshd-key-login` | the generated configuration run by a real `sshd` in a container on the Linux runner, with the throwaway key | login succeeds with strict host-key checking against the rescue key; the throwaway line removed afterwards |
+| `rescue-sshd-wrong-key` | the same server, with a key not in the rescue file, and with no key | refused |
+| `rescue-sshd-start-fails` | the unit fails, or the listener or the key login check fails | the unit stopped; nothing listens on its port; not open |
+| `rescue-sshd-dies` | the rescue unit's process dies while open | the screen shows it stopped; nothing restarts it |
+| `rescue-sshd-cleanup` | `rescue remove` | the unit stopped and inactive, its port free, `/root/omarchy-rescue/ssh/` gone |
+| `rescue-sshd-no-restart` | the system's server was stopped by rescue | still stopped after cleanup; the screen says it starts at the next boot and offers harden |
+| `rescue-sshd-cleanup-verify-fails` | a check at the end of cleanup fails | "not clean", no success reported |
 
 ## Qualification
 
@@ -413,7 +457,11 @@ And:
 | `qual-stale-round` | an old, valid, passed round on Shared, not named by `active.omb` | never current |
 | `qual-two-rounds` | two rounds awaiting Linux | Linux `blocked`, both named |
 | `qual-new-round-refused` | macOS starts a round while one it created is unfinished | refused until `qualify clean` |
-| `qual-replay-cleaned` | a copy of a cleaned round put back on Shared | never current on either side |
+| `qual-replay-cleaned` | macOS creates and cleans a round before Linux sees it; a copy of its step-one files is put back on Shared | Linux accepts it as a provisional candidate and runs step 2, saying *provisional*; macOS refuses step 3 for it (not its active round); the round never passes |
+| `qual-linux-provisional` | Linux after step 2 | its state and records say provisional until macOS reads the round back; never "current" or "qualified" |
+| `qual-round-records` | a round's life on macOS | `created.omb`, then `finished.omb`, then (after `qualify clean`) `cleaned.omb`, three files each written once; `active.omb` never names the round after `finished` or `cleaned` |
+| `qual-round-invalid` | `finished.omb` without `created.omb`; `cleaned.omb` then an attempt to write `finished.omb`; an attempt to rewrite an existing state file | invalid (treated as cleaned, reported); refused by exclusive creation; refused |
+| `qual-artifact-mismatch` | a stage whose recorded frontend artifact digest is not the one the lock of its commit pins | the terminal evidence of that stage does not count towards M18 |
 | `qual-wrong-partition` | a USB volume named Shared with a valid copy of the manifest | never opened |
 | `qual-other-plan`, `qual-wrong-guid`, `qual-bad-seal` | each | `blocked` before any write |
 | `qual-names` | the case pair on exFAT | the second recorded as a collision; the first untouched |
@@ -430,9 +478,17 @@ And:
 | Id | Case | Expected |
 | --- | --- | --- |
 | `frontend-lock-not-input` | a commit changing only `release/frontend.lock` | `inputs_digest` unchanged |
-| `frontend-inputs-changed` | a commit changing `frontend/src/` without a new release | the CI check fails |
-| `frontend-inputs-link` | a symbolic link under `frontend/` | the listing refuses |
-| `frontend-inputs-order` | the listing under `LC_ALL=C` and a UTF-8 locale | byte-identical |
+| `frontend-input-source-change` | a commit changing a file under `frontend/src/` without a new release | `inputs_digest` changes; the CI comparison with the lock fails |
+| `frontend-input-cargo-lock` | a commit changing only `frontend/Cargo.lock` | the same |
+| `frontend-input-toolchain` | a commit changing only `frontend/rust-toolchain.toml` | the same |
+| `frontend-input-test-asset` | production code with `include_bytes!("../tests/schema.bin")`; a commit changing only that file | `inputs_digest` changes (tests are inputs); the closure check passes |
+| `frontend-input-include-outside` | `include_bytes!` or `include_str!` of a file outside `frontend/`, and of an untracked file inside it | the closure check fails: the path is in rustc's dependency file and not a tracked input |
+| `frontend-input-build-rs` | a `build.rs` in the frontend's own package, with and without reading an asset | refused by the `cargo metadata` check |
+| `frontend-input-local-path-dependency` | a `path` dependency outside `frontend/`; a `git` dependency; a `[patch]` section | refused |
+| `frontend-input-generated-target-excluded` | a `target/` folder and an untracked file under `frontend/` present when the digest is computed | the digest unchanged (computed from the commit); the release build refuses to start on an unclean tree |
+| `frontend-input-cargo-config` | a `.cargo/config.toml` at the repository root; `RUSTFLAGS` set in the release workflow | refused (the repository check; the static check of the workflow) |
+| `frontend-input-link` | a tracked symbolic link under `frontend/` | the listing refuses |
+| `frontend-input-order` | the listing under `LC_ALL=C` and a UTF-8 locale | byte-identical |
 | `frontend-digest` | a mismatch on download and in the cache | never run |
 | `frontend-offline`, `frontend-unrunnable` | no cache and no network; wrong architecture, exit 126/127 | text, with the reason |
 | `frontend-dev` | the override outside fixture mode, or as root | refused |
@@ -517,11 +573,11 @@ A validator, `tests/test-docs.sh` (M14 gate 1), runs in CI over `SPEC.md`,
 | Linux (existing) | Bash 5, ShellCheck 0.9.0, every Bash test, fixture freshness, `docs-*`, `persist-full-real` |
 | macOS (existing) | `/bin/bash` 3.2, every Bash test, the launcher step, fixture freshness |
 | equivalence | both systems: the baseline worktree and `equiv-*` |
-| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, `proto-diff-*`, no pending snapshots, `frontend-inputs-*` and `frontend-lock-not-input`, the lock's protocol equals the core's |
+| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, `proto-diff-*`, no pending snapshots, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's |
 | frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, `sup-*`, `frontend-compat-linux` |
 | frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, `sup-*`, `frontend-compat-macos` |
 | release | on a `frontend-v*` tag: native builds, the checks above, `SHA256SUMS`, artifact attestations, no `test-hooks` feature |
-| benchmark | by hand (`workflow_dispatch`) on both arm64 runners: `bench-*`; its numbers are recorded in MILESTONES.md → M14 gate 2 |
+| benchmark | by hand (`workflow_dispatch`) on both arm64 runners: `bench-*`; its numbers are recorded in MILESTONES.md → *Gate 2 — Read-only equivalence* |
 
 ## What only the real Mac can show
 

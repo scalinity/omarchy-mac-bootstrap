@@ -493,10 +493,12 @@ baseline's own flows with all their checks. Programs that need the terminal
 a handoff: the frontend restores the terminal and stops reading it while
 still following the request's event spool, the core runs the program in the
 foreground, and the frontend returns to a fresh read. No protocol
-descriptor reaches a child; a core that ends without its result leaves the
-outcome unknown until the machine is read again; mutations keep an
-operation record that outlives their processes. Typed-word gates stay
-typed words. docs/FRONTEND.md, docs/PROTOCOL.md, docs/UX.md.
+descriptor reaches a child; a mutating child's output goes nowhere that can
+fill or block, and a read child's is kept within fixed bounds; a core that
+ends without its result leaves the outcome unknown until the machine is
+read again; a mutation whose supervising core is gone stays a barrier for
+its scope until a new boot. Typed-word gates stay typed words.
+docs/FRONTEND.md, docs/PROTOCOL.md, docs/UX.md.
 
 ### Migration (M14, M15)
 
@@ -532,10 +534,11 @@ typed words. docs/FRONTEND.md, docs/PROTOCOL.md, docs/UX.md.
 Optional agents as root on the fresh system (Claude Code preferred; Codex;
 OpenCode when a verified release is pinned), each signed in separately,
 starting in a workspace with the agent brief and guidance rules (not a
-sandbox); remote rescue opens only after key-only SSH is verified in its
-effective policy and by a real login, and cleanup ends in a verified safe
-state; nothing crosses from root to the everyday user; `rescue remove`
-deletes exactly what rescue recorded. `debug` prints a field-allowlisted
+sandbox); remote rescue runs its own key-only `sshd`, whose whole
+configuration is checked before it listens, never beside an exposed system
+server, and opens after a real key login; cleanup stops it and ends in a
+verified safe state; nothing crosses from root to the everyday user;
+`rescue remove` removes exactly what rescue owns and names what it released. `debug` prints a field-allowlisted
 report; `debug context` a vendor-neutral brief; `debug raw` the raw
 diagnostics, marked potentially sensitive. docs/RESCUE.md.
 
@@ -573,8 +576,9 @@ is invalidated by behaviour. docs/QUALIFICATION.md.
 | resolution (per item) | `unresolved`, `needs-decision`, `resolved`, `unsupported`, then on Linux `ready` or `unavailable` |
 | restore | `not-started`, `partial`, `blocked`, `complete`; per item `planned`, `ready`, `applied`, `verified`, `kept`, `skipped`, `unsupported`, `failed`, `blocked`, `degraded`, `needs-sign-in`, `needs-secret`, `accepted` |
 | AI tool (observed) | `wrapper_present`, `artifact_installed`, `selected_version`, `tool_runnable`, `configured`, `authenticated`, each on its own |
-| rescue (per option) | `unavailable`, `available`, `installed`, `signed-in`, `open` (remote rescue), `failed`, `skipped`; SSH `closed`, `key-only`, `exposed` |
-| operation (per scope) | none, or unresolved until reconciled |
+| rescue (per option) | `unavailable`, `available`, `installed`, `signed-in`, `open` (remote rescue), `failed`, `skipped`; the system's SSH `stopped`, `key-only`, `exposed`, `unproven` |
+| operation (per scope) | none; running (its supervising core alive); `unsupervised` (a barrier until a new boot and reconciliation) |
+| qualification round (macOS, local) | `created`, `finished`, `cleaned`, each one immutable file |
 | qualification | `not-started`, `waiting-for-linux`, `waiting-for-macos`, `in-progress`, `passed`, `failed`, `blocked` |
 | journey (per stage) | `done`, `current`, `todo`, `skipped`, `blocked`; each `machine` or `recorded` |
 | frontend (launcher) | `verified`, `missing`, `mismatch`, `unrunnable`, `fallback` |
@@ -647,9 +651,11 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
   commands, exit codes, upstream URLs/checksums/versions, non-secret choices.
   Upstream installers' output is never captured.
 - `downloads/` — fetched upstream scripts, kept for provenance.
-- (M14) `ops/<scope>.omb` — an act action's operation record, written before
-  its effect and removed after its result is recorded; one still present is
-  unresolved (docs/PROTOCOL.md → *Operations and exclusion*).
+- (M14) `ops/<scope>.omb` — an act action's operation record, with the
+  boot session, written before its effect and removed by its supervising
+  core after its result is recorded; one whose core is gone is
+  unsupervised, a barrier for that scope until a new boot and
+  reconciliation (docs/PROTOCOL.md → *Operations and exclusion*).
 - (M14) `profile-draft.omb` and `profile.omb` — the Migration Profile being
   made, and finished (macOS); `availability/` — the advisory aarch64
   check's downloads and their provenance; `exports/<name>.omb` — each
@@ -659,12 +665,14 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
 - (M15) `restore/runs/<run>/` (`run.omb` and one sealed record per step and
   phase) and `restore/backups/<run>/` — the restore's journal and the files
   it replaced (Linux, the everyday user); `debug/` — saved debug reports.
-- (M16) `qualify/active.omb`, `qualify/rounds/<round>.omb` (macOS),
-  `qualify/stages/<stage>.omb` — the active round, the rounds this Mac
-  created, and the stage records for the hardware report.
+- (M16) `qualify/active.omb`, `qualify/rounds/<round>/{created,finished,cleaned}.omb`
+  (macOS, one immutable file per state), `qualify/stages/<stage>.omb` — the
+  active round, the rounds this Mac created, and the stage records for the
+  hardware report.
 - (M14) The per-session scratch folder `omb-session.*` in `$TMPDIR` — the
-  request spool and diagnostics; temporary, never read by a later session
-  except to remove it.
+  session's owners, the request spools and bounded diagnostics; temporary,
+  removed only when quiescent, never read by a later session except to
+  decide that.
 - (M14) The frontend cache is outside the state directory:
   `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/`, root's under
   `/var/cache/omarchy-mac-bootstrap/`, checked like the state directory. The
@@ -759,11 +767,15 @@ warning, and a token without it simply has no profile.
   privileged changes are exactly: in `restore`, packages and system setup
   through Omarchy's own commands (`omarchy-pkg-add`, `omarchy-install-terminal`,
   `omarchy-install-dev-env` — the developer modules' existing category),
-  each as a handoff; and, for rescue only, as root, the rescue tools in
-  `/root`, marked lines in `/root/.ssh/authorized_keys`, one `sshd` drop-in,
-  and stopping, reloading or starting (never enabling or disabling) `sshd` —
-  each recorded in rescue's record and removed or ended by `rescue remove`
-  in a verified safe state. `restore` never runs as root, and its own writes
+  each as a handoff; and, for rescue only, as root: the rescue tools in
+  `/root`; a rescue-owned `sshd` with its own configuration, host key and
+  authorized keys under `/root/omarchy-rescue/ssh`, run as a transient
+  systemd unit (never enabled); stopping the system's `sshd` for this boot
+  (never disabling it); and, on the person's typed `harden`, one key-only
+  drop-in in `/etc/ssh/sshd_config.d`, checked before the service reads it
+  and released to the person. Each is recorded in rescue's record;
+  `rescue remove` stops and removes what rescue owns and verifies the safe
+  final state. `restore` never runs as root, and its own writes
   are only in the everyday user's home. Managed actions use only `sudo -n`.
   The baseline's Shared sequence is unchanged: the typed gates, `sudo -v`,
   the final topology read, the creation record, `sudo -n diskutil
@@ -856,9 +868,12 @@ acceptance; the test ids are in docs/TESTING.md):
     terminal is restored after exit, error, panic, SIGTERM and every
     handoff.
 19. (M14) Every protocol document is admitted byte by byte before it is
-    parsed, identically in Bash and Rust; no protocol descriptor reaches a
-    child; a missing result is an unknown outcome; an operation is never
-    reclaimed because a PID vanished; nothing is added inside Shared's
+    parsed, identically in Bash and Rust, and matches the golden examples;
+    no protocol descriptor reaches a child; a mutating child has no pipe;
+    read children's diagnostics stay within their bounds; a missing result
+    is an unknown outcome; an operation whose supervisor is gone stays a
+    barrier until a new boot, whatever its process group shows; a session's
+    scratch is removed only when quiescent; nothing is added inside Shared's
     critical interval.
 20. (M14) The core refuses every request the execute rules refuse, including
     a stale basis; for every baseline action the protocol exposes, the
@@ -873,11 +888,21 @@ acceptance; the test ids are in docs/TESTING.md):
 23. (M14) A profile is finished only with every included item resolved or
     unsupported, is stale on another Mac, and resolution and the graph's
     order are byte-identical under Bash 3.2 and 5 and in any locale.
-24. (M14, M15) For every supported adapter, only allowlisted fields travel
-    and no planted credential reaches a profile, bundle, debug report, log
-    or state; opaque content travels only after typed `opaque`; an
-    encrypted SSH key only after typed `carry`; no session or history
-    travels.
+24. (M14, M15) Secrets, by kind of content:
+    - **parsed configuration** of a supported adapter: only allowlisted
+      fields leave macOS, known credential fields never do, and the
+      credential-shape scan rejects on top; no planted credential in such a
+      field reaches a profile, bundle, debug report, log or state;
+    - **files a supported adapter carries whole**: the hard refusals and the
+      whole-length scan apply, planted credentials of known shapes are
+      caught, and the file is marked "carried whole"; the tool does not
+      certify it secret-free;
+    - **opaque custom paths**: excluded by default, carried only after typed
+      `opaque` with the warning that Shared is not encrypted, known
+      credential files still refused, and outside the secret guarantee;
+    - an encrypted SSH key travels only as docs/MIGRATION.md → *The one
+      secret exception: an encrypted SSH key* says, after typed `carry`;
+      no session or history travels.
 25. (M15) Import refuses a bundle whose admission, seals, digests,
     destination graph or approval code fail; a bundle recomputed after
     export is refused for its approval code; no manifest entry can place a
@@ -890,15 +915,21 @@ acceptance; the test ids are in docs/TESTING.md):
     static check runs an agent, its wrapper, a mise shim or mise; live
     checks run only with consent.
 28. (M15) Rescue never blocks the install, never copies anything from root
-    to the everyday user; remote rescue opens only with key-only access
-    verified in its effective policy and by a real login; `rescue remove`
-    leaves nothing it made and ends SSH in a verified safe state; `debug`
-    and `debug context` hold only allowlisted fields.
+    to the everyday user; remote rescue runs only its own `sshd`, whose
+    configuration has no `Include` and no `Match` and is checked offline
+    before it listens, never while an exposed or unproven system server
+    listens, and opens only after a real key login; `rescue remove` removes
+    everything rescue owns — what it released to the person (a harden
+    drop-in) stays and is named — and ends in the verified safe state of
+    docs/RESCUE.md → *Ending remote rescue*; `debug` and `debug context`
+    hold only allowlisted fields.
 29. (M16) Every stage is derived from the machine on each system; nothing
     runs after a reboot until its word is typed.
 30. (M16) Qualification reads and writes only on the partition the baseline
     identifies as Shared, bound to the plan, the Shared GUID and the active
-    round; its stream matches the reference vectors on both systems; it
+    round; only macOS's own active round can pass, and a round Linux
+    accepted without that is provisional; its stream matches the reference
+    vectors on both systems; it
     removes its data automatically only after a pass, and otherwise only
     after typed `clean`, and only what its records own.
 31. (M16) The journey simulation passes on both CI systems.

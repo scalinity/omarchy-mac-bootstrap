@@ -245,12 +245,20 @@ of docs/TESTING.md.
 - **Work:** close findings H1–H10 and M1–M4 in the documents; record the
   review's answers to O1–O9 (docs/DECISIONS.md); remove the rejected
   `sudo`-cache change; resolve every fact source or package metadata can
-  answer (docs/UPSTREAM.md); define the gates below.
+  answer (docs/UPSTREAM.md); define the gates below. Then close the delta
+  review's findings on `9119502` (DV1–DV8, the TOML test oracle, the
+  section references): the build-input closure, per-operation protocol
+  schemas and code kinds, diagnostics bounded by child class, session
+  ownership and the boot-session mutation barrier, a dedicated rescue SSH
+  server, honest last-instant write limits, provisional Linux qualification
+  rounds, and the secret criterion by kind of content.
 - **Exit:** every finding closed in the documents; O1–O9 recorded; the
   documentation checks of docs/TESTING.md → *Documentation checks* pass
   when run by hand; an independent review of the remediated documents
   passes. No code, workflow, test or fixture changes.
-- **Status:** remediated; awaiting the independent review of the delta.
+- **Status:** second remediation done (DV1–DV8); awaiting the independent
+  verification of this candidate. Gate 1 is not authorized until that
+  verification passes.
 
 ## M14 — Frontend, protocol, scanner, profile, resolver and bundle
 
@@ -261,22 +269,27 @@ of docs/TESTING.md.
   component (13) driven by a test action; protocol `hello`; the record
   format and admission in both languages (`lib/records.sh`, `record.rs`);
   the process model (`lib/core.sh`, `core.rs`): descriptors, the spool,
-  supervision, operation records; the launcher's side (`lib/frontend.sh`):
-  the lock, acquisition, cache, intent rules, fallback; one fake managed and
-  one fake handoff child (`OMB_TEST_HANDOFF_CHILD`); `release/frontend.lock`
-  and the release workflow; the frontend CI jobs; `tests/test-docs.sh`.
-  **No baseline action is exposed.**
-- **Verification:** `proto-diff-*`, `proto-env`, `proto-version`,
-  `proto-exit`, `sup-*`, `pty-*`, `frontend-*`, `docs-*`; frontend layers
-  A–H for the two screens.
+  session ownership, supervision, operation records and the boot-session
+  barrier, diagnostics by child class; the launcher's side
+  (`lib/frontend.sh`): the lock, acquisition, cache, intent rules,
+  fallback; one fake read, one fake mutating and one fake handoff child
+  (`OMB_TEST_HANDOFF_CHILD`); `release/frontend.lock`, the build-input
+  closure checks and the release workflow; the frontend CI jobs;
+  `tests/test-docs.sh`. **No baseline action is exposed.**
+- **Verification:** `proto-diff-*`, `proto-golden-hello`,
+  `proto-invalid-schemas`, `proto-code-kind`, `proto-admit-io`,
+  `proto-env`, `proto-version`, `proto-exit`, `sup-*`, `diag-*`, `pty-*`,
+  `frontend-*`, `docs-*`; frontend layers A–H for the two screens.
 - **Exit:** the macOS arm64 artifact built, verified and started by the
   launcher on CI and on this Mac's macOS; the Linux aarch64 artifact
-  passing `frontend-compat-linux` and starting on the aarch64 runner; start
-  and every cleanup path verified; every descriptor and process-death test
-  passing; Bash and Rust admission agreeing on the whole differential
-  corpus; `frontend-lock-not-input` passing; no path that changes the
-  machine.
-- **Status:** not started.
+  passing `frontend-compat-linux` and starting on the aarch64 runner; every
+  `frontend-input-*` case behaving as written; start and every cleanup path
+  verified; every descriptor, diagnostics and process-death test passing,
+  the boot-session barrier included; Bash and Rust admission agreeing on
+  the whole differential corpus and the golden examples;
+  `frontend-lock-not-input` passing; no path that changes the machine.
+- **Status:** not started, and not authorized until the independent
+  verification of Gate 0's second remediation passes.
 
 ### Gate 2 — Read-only equivalence
 
@@ -350,8 +363,9 @@ of docs/TESTING.md.
   `debug save`; screens 17, 20, 21, and the journal in 24; `restore` moves
   to the frontend.
 - **Verification:** `bundle-*` (import side), `restore-*`, `persist-*`,
-  `stale-dest-*`, `stale-between-items`, `debug-*`, over every
-  `linux-restore-*` fixture.
+  `stale-dest-*`, `stale-between-items`, `stale-last-instant`,
+  `stale-setting-before-recheck`, `secret-whole-file-marked`, `debug-*`,
+  over every `linux-restore-*` fixture.
 - **Exit:** a stop or a full disk at every persistence boundary reconciles
   correctly on real temporary filesystems; a recomputed bundle is refused;
   undo refuses after later edits; the debug report holds only allowlisted
@@ -377,10 +391,13 @@ of docs/TESTING.md.
 ### M15-C — Optional rescue
 
 - **Work:** the rescue screen (16), the root workspace, the agents as root,
-  closing and hardening SSH, remote rescue and its checks, `rescue remove`
+  closing and hardening the system's SSH, the rescue-owned SSH server and
+  its checks, `rescue remove`
   and the safe final states.
 - **Verification:** `rescue-*`, `ssh-*`.
-- **Exit:** no failure leaves a newly opened password path; cleanup reports
+- **Exit:** remote rescue opens only through its own server, never beside an
+  exposed or unproven system server; no failure leaves a newly opened
+  password path; cleanup reports
   success only in a verified safe state; nothing crosses from root to the
   everyday user; the M15-C facts in docs/UPSTREAM.md → *Not verified yet*
   verified first.

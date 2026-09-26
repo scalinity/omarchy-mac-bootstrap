@@ -158,7 +158,7 @@ Friction follows consequence, and the core checks every word
 | none | moving, selecting, filtering, looking | — |
 | yes / no, default no | saving a plan, finishing a profile, exporting a bundle, the availability check, starting a rescue agent, closing SSH for this boot, live checks, accepting an item as it is, saving raw diagnostics | a one-line question; Enter alone answers no |
 | yes / no, default yes | the first download of the frontend itself, in the text launcher (a pinned file, checked by digest) | `[Y/n]` |
-| **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` — and the new `restore`, `undo`, `import` (a foreign bundle), `opaque` (a custom path no adapter understands), `carry` (an encrypted SSH key), `ssh` (hardening SSH, or remote rescue), `remove` (rescue tools), `clean` (qualification files) | the gate screen |
+| **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` — and the new `restore`, `undo`, `import` (a foreign bundle), `opaque` (a custom path no adapter understands), `carry` (an encrypted SSH key), `ssh` (remote rescue), `harden` (the system's SSH), `remove` (rescue tools), `clean` (qualification files) | the gate screen |
 | **approval code** | restoring a bundle: the `ombbundle-…` code macOS showed after the export | the gate screen, with the code's field in place of the word |
 
 **The gate screen** says what will happen, on what, what it does not touch,

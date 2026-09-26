@@ -300,6 +300,8 @@ Read at the same commits, and mise `v2026.9.12`
 | Arch's (and Arch Linux ARM's, identical) `sshd_config` starts with `Include /etc/ssh/sshd_config.d/*.conf`; `99-archlinux.conf` sets `KbdInteractiveAuthentication no`, `UsePAM yes`; `PasswordAuthentication` stays at its default, yes | `archlinux/packaging/packages/openssh` `87ce57139f3b40e1fb20b85128fb5b10b9128f40` (10.5p1-1) `PKGBUILD` (lines 93–95, 159); the Arch Linux ARM package inspected |
 | OpenSSH 10.5p1: `-t` checks the configuration and keys; `-T` prints the effective configuration, `-C` sets `addr`, `user`, `host`, `laddr`, `lport`, `rdomain` (and `invalid-user`), and an attribute left out makes a `Match` on it false; both need root (they load the host keys); the first value of a keyword wins; included files are read in name order; a satisfied `Match` overrides the global value; since 10.4 the dump's keywords are in mixed case | openssh-portable `V_10_5_P1` `b3f7344209832eea8ece447d871ea748767c444b` `servconf.c` (lines 893–897, 2649–2681), `sshd.c` (lines 1506, 1567–1745); sshd(8), sshd_config(5); release notes 10.4 |
 | with `BatchMode=yes` the client never sends a password and fails with `Permission denied (<methods>)`, listing the server's methods for that account | openssh-portable `sshconnect2.c` (lines 405–414, 543, 2414), `auth2.c` |
+| `sshd -f <file>` reads that configuration instead of `/etc/ssh/sshd_config`; `-D` keeps it in the foreground; `-E <file>` sends its log there; it refuses to run unless started by an absolute path; `Match` and `Include` are its only conditional and indirection keywords, so a configuration without either has one effective policy | openssh-portable `V_10_5_P1` `sshd.c` (lines 1350, 1364, 1370, 1455), `servconf.c` (lines 517–518) |
+| `AuthenticationMethods publickey` lets only public-key authentication complete a login; methods it lists should also be enabled | sshd_config(5); `auth2.c` |
 
 ## Platform tools the core relies on
 
@@ -308,6 +310,8 @@ Read at the same commits, and mise `v2026.9.12`
 | admission uses `head -c`, `wc -c`, `tr -d`, `tail -c`, `od`, and `awk` in the C locale: BSD `awk` 20200816 on stock macOS, gawk on the image and Omarchy | this Mac; the image's package list above |
 | GNU `sync FILE` flushes that file (and a directory given as an argument); macOS's `sync` ignores arguments and flushes everything | coreutils 9.11 `src/sync.c`, `NEWS` 8.24; `apple-oss-distributions/system_cmds` `408bba7453608006b89772db185defbac8fe2fd0` `sync/sync.c`; `/bin/sync /nonexistent` exits 0 on macOS 27.0 |
 | Bash's `noclobber` refuses `>` onto an existing regular file or any link and creates a new file with `O_EXCL`; `>|` and `>>` bypass it; an existing FIFO or device is opened without `O_EXCL` | Bash `redir.c` `noclobber_open` (Apple bash-3.2 `51bf3fc6f26e9517c3a2e4bc3d208f9b39b87178`, lines 525–548; bash-5.3); *Experiments* |
+| GNU `mv -n` refuses to replace an existing destination atomically where the kernel offers `renameat2` with `RENAME_NOREPLACE` (since 8.30); `--update=none-fail` (since 9.5) does the same and exits with failure when the destination exists; the image and Omarchy ship 9.11 | coreutils `NEWS` (8.30, 9.5) |
+| a boot session's identity: `/proc/sys/kernel/random/boot_id` on Linux; `sysctl -n kern.bootsessionuuid` on macOS (a UUID, read on this Mac); a process's start time: `ps -p <pid> -o lstart=` on both, as the baseline's `_proc_started` reads it | `lib/state.sh` (line 220); this Mac |
 
 ## aarch64 availability
 
@@ -399,7 +403,7 @@ Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
 
 ## Not verified yet
 
-Split by what can answer it (docs/DECISIONS.md → O9). Nothing is left for
+Split by what can answer it (docs/DECISIONS.md → *Resolved review questions*, O9). Nothing is left for
 the Mac that source, package metadata or a CI runner can answer.
 
 ### Before a feature's gate closes
@@ -411,7 +415,8 @@ the Mac that source, package metadata or a CI runner can answer.
 | the delivered `asahi-base-btrfs.zip` has the root filesystem's packages, `sshd` enabled and `alarm` present, as inferred from its builder | list the image's package database and enabled units | M15-C |
 | Codex, OpenCode, Gemini CLI and Crush refuse or change behaviour as root | their source | M15-C |
 | `claude install` refuses root in any case beyond bypass mode; its working-directory scan | an install as root in a container on the aarch64 runner | M15-C |
-| `ssh`'s exit status and `BatchMode`'s handling of an unknown host key, for the loopback test | ssh(1), ssh_config(5) at 10.5p1 | M15-C |
+| the rescue server on the image: `sshd -D -f` under `systemd-run`, `UsePAM no` with Arch's build, the `sshd-session` and `sshd-auth` helpers it starts, and `ssh -o StrictHostKeyChecking=yes` against a prepared host-key file | a run in a container of the image's root filesystem on the aarch64 runner | M15-C |
+| `renameat2` with `RENAME_NOREPLACE` on btrfs, ext4, xfs and tmpfs in the Asahi kernel | the kernel source of the `linux-asahi` version | M15-A |
 | which mise backend Claude Code resolves to on linux-arm64, the executable's path under `installs/claude/<version>/`, and whether mise reaches the network beyond version resolution | mise's source and a run in a container on the aarch64 runner | M15-B |
 | how mise quotes keys for tools outside its registry in `config.toml` | mise's source | M15-B |
 | `omarchy-pkg-add` with a repository-qualified target from a `Usage = Sync` repository | its source and pacman's | M15-B |

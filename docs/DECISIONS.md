@@ -53,11 +53,15 @@ tab-separated, percent-encoded, one canonical encoding per value, typed and
 schema-ordered, sealed where stored. Every document passes a bounded,
 byte-level admission (`head -c`, `wc`, `tr`, `tail`, `od`, C-locale `awk`)
 before Bash splits it, because Bash's `read` normalises doubled, leading and
-trailing TABs and drops or truncates NULs (reproduced on Bash 3.2 and 5.3).
-The Rust side applies the same rules; a differential corpus holds them
-together. *Set aside:* JSON (no parser in the core on fresh Asahi, and a Bash
-JSON parser would be a larger trusted surface), plists, NUL-separated
-streams.
+trailing TABs and drops or truncates NULs (reproduced on Bash 3.2 and 5.3);
+a tool that fails refuses the document. The Rust side applies the same
+rules; a differential corpus and golden examples hold them together. Every
+protocol operation has its own record set; codes (the resume token, the
+completion, Shared and approval codes) are a `code` type checked by kind,
+never a widened `id`; there are no comment lines, and a family that wants
+notes has a `note` record. *Set aside:* JSON (no parser in the core on fresh
+Asahi, and a Bash JSON parser would be a larger trusted surface), plists,
+NUL-separated streams.
 
 **D8. The core says what is legal and judges every execute afresh.** In
 order: admission; the session's ceiling and scopes from the launcher; the
@@ -74,12 +78,18 @@ the core. Authentication is a separate matter, left to upstream programs and
 
 **D10. Release binaries, pinned by a lock outside the build inputs.**
 `release/frontend.lock` pins each artifact's SHA-256 and size, and records
-`source_commit` and `inputs_digest` (the SHA-256 of every file under
-`frontend/` except `frontend/tests/`, listed canonically). The lock is not a
-build input, so updating it cannot change what it records. At run time only
-the artifact digest counts; CI checks the checkout's `inputs_digest` against
-the lock's; GitHub attestations link the artifact to its commit as optional
-evidence. No updater, no signing infrastructure.
+`source_commit` and `inputs_digest`: the SHA-256 of a canonical listing of
+every Git-tracked file under `frontend/` at the commit, tests included, read
+from the commit and never from the working tree, so build output and
+untracked files cannot enter it. The build may read nothing outside that
+closure, crates.io packages pinned by `Cargo.lock`, and the pinned
+toolchain; CI enforces it from rustc's dependency files and `cargo
+metadata`. The lock is not a build input, so updating it cannot change what
+it records. At run time only the artifact digest counts; CI checks the
+commit's `inputs_digest` against the lock's; GitHub attestations link the
+artifact to its commit as optional evidence. No updater, no signing
+infrastructure. *Set aside:* excluding tests from the inputs, which would
+need a proof that production code never reads them.
 
 **D11. On fresh Asahi, the frontend is downloaded once the network is up**,
 checked against the lock of the checkout the Phase 1 guide pinned.
@@ -120,11 +130,31 @@ anything else; responses are appended to a per-request spool file the core
 opens and closes per record, so no protocol descriptor ever reaches a child
 and the core never waits on the frontend. The end of a response is the
 core's exit plus exactly one final `result`; anything else is an unknown
-outcome, re-derived from the machine. Mutating actions keep an operation
-record that survives the death of the process that wrote it; a new mutation
-in that scope reconciles first and waits while any process of the old
-operation's group remains. Nothing is added between the final Shared
-topology validation and `sudo -n diskutil addPartition`.
+outcome, re-derived from the machine. Processes are known by PID, start
+time and boot session; a session's scratch is removed only when its
+launcher, frontend and cores are all gone. Mutating actions keep an
+operation record that survives the death of the process that wrote it
+(D47). Children's output follows their class (D46). Nothing is added
+between the final Shared topology validation and `sudo -n diskutil
+addPartition`.
+
+**D46. Children's output is bounded by class.** A read child's output
+drains through `tail -c`, which keeps draining and retains only its last
+64 KiB, within per-request and per-session caps; a mutating child's output
+goes to `/dev/null`, because any pipe or growing file would put a fallible
+consumer inside a mutation; a handoff child owns the terminal. Losing
+diagnostics changes no outcome. *Set aside:* capturing a mutator's output
+through a drain, which could block or end it.
+
+**D47. A mutation that loses its supervisor waits for a new boot.** Only
+the core that waited for its mutating child, found the child's process
+group empty and checked the postcondition completes an operation. If that
+core is gone, the operation is unsupervised: a barrier for its scope, in
+both interfaces, until the machine's boot session changes — the one proof
+that no old process can still write, since a descendant may have left the
+process group — and the scope's reconciliation has run. Read-only orphans
+hold nothing. *Set aside:* clearing the barrier when the process group is
+empty (a daemonised descendant is not in it); a general process tracker.
 
 **D43. The frontend's own persistence follows intent.** Only an act
 session downloads and caches the frontend, moves aside a bad cached binary,
@@ -215,9 +245,16 @@ versions of one runtime); a solver.
 **D29. Restore is journaled, resumable and conditionally reversible.** One
 immutable, sealed record per step and phase, committed (flush, rename,
 directory flush) before the step it announces; after any crash the next run
-judges each unfinished step from its records and the filesystem; undo
-re-reads the destination and refuses when anything changed; packages,
-sign-ins and external effects are never claimed to roll back.
+judges each unfinished step from its records and the filesystem. A
+replacement moves the destination aside whole and compares it with what
+was reviewed; placing uses primitives that fail if anything appeared
+(`link`, `symlink`, `renameat2` with `RENAME_NOREPLACE`); a cross-device
+replacement is refused rather than copied. The residual race is stated: a
+program holding the old file open writes into the backup, and a structured
+setting's owner command has no compare-and-set, so a write by another
+program just before it is overwritten and not detected. Undo re-reads the
+destination and refuses when anything changed; packages, sign-ins and
+external effects are never claimed to roll back.
 
 **D30. AI tools are providers shared by `dev` and `restore`** (review
 questions O5 and O6). One provider per tool, used by both commands, over one
@@ -236,8 +273,11 @@ Omarchy's wrapper, as a reviewed change to a baseline file.
 question O7). The core parses the subset of TOML that Codex writes and
 documents, and refuses the whole file on anything else — no opaque copy, no
 pattern-matching that skips valid TOML (docs/AI-TOOLS.md → *Codex's
-configuration*). *Set aside:* a full TOML parser in the frontend, which is
-not the authority and whose output the core would have to trust.
+configuration*). It has size and nesting bounds and is held to the
+`toml-test` conformance corpus before M14 gate 4 closes; it is a real
+parser to maintain, accepted for that. *Set aside:* a full TOML parser in
+the frontend, which is not the authority and whose output the core would
+have to trust.
 
 **D31. Omarchy's default agent is the person's choice, made through
 Omarchy.** The restore never runs `omarchy-default-agent` (which opens a
@@ -252,15 +292,20 @@ authorise nothing in this tool.
 user.** No global agent policy is installed (review question O3): isolated
 workspace rules, a plain statement of root's risk, no claim of a sandbox.
 
-**D42. Remote rescue ends in a verified safe state** (review question O4).
-SSH changes are validated (`sshd -t`), the effective policy is checked per
-context (`sshd -T -C`), the listener is read, and a real key login and a
-refused password login are tested on loopback before rescue is open.
-Cleanup ends stopped, key-only retained and handed to the person, or key-only
-as before: it stops before removing, predicts the policy without its
-drop-in before a running service reloads, and puts the drop-in back if the
-real check disagrees. It never reopens password access on a running
-service and calls that clean.
+**D42. Remote rescue runs its own SSH server and ends in a verified safe
+state** (review question O4). A rescue-owned `sshd` with a configuration
+this tool writes whole — no `Include`, no `Match`, so one effective policy
+for every connection — is validated and inspected offline (`sshd -t -f`,
+`sshd -T -f`) before it listens, runs as a transient systemd unit, and is
+open only after a real key login. The system's own server is classified;
+an exposed one, or one whose `Match` blocks make it unprovable, is stopped
+for this boot before remote rescue opens, and never restarted by cleanup.
+Cleanup stops the rescue server and removes its files. Hardening the
+system's server is a separate choice, only for `Match`-free
+configurations, checked offline first and released to the person. *Set
+aside:* changing the system's configuration for rescue and sampling
+connection contexts, which cannot cover every `Match`; a failed-password
+probe as evidence.
 
 **D33. The default debug report is field-allowlisted**; raw diagnostics are
 a separate command, `debug raw`, marked potentially sensitive and never put
@@ -273,12 +318,16 @@ instructions from untrusted observed data.
 arrives as typed codes or journey notes and is shown as recorded. Nothing
 starts by itself after a reboot.
 
-**D35. Qualification is bound to an active round.** Identity first; then
-admission, plan, Shared GUID and schema; then the round this system's own
-`active.omb` names, one round awaiting Linux at a time, a cleaned round
-never current again, and the step order. The stream is a normative
-AES-256-CTR construction with reference vectors; exclusive creation for
-names; removal only of what the round's own records name.
+**D35. Qualification is bound to an active round, and macOS decides it.**
+Identity first; then admission, plan, Shared GUID and schema; then the
+round macOS's own `active.omb` names, from immutable `created`, `finished`
+and `cleaned` records, one round awaiting Linux at a time, and the step
+order. Linux, which cannot know what macOS cleaned, accepts at most one
+candidate, provisionally; only macOS's active round can pass. The stream is
+a normative AES-256-CTR construction with reference vectors; exclusive
+creation for names; removal only of what the round's own records name.
+*Set aside:* a cross-boot freshness proof for Linux, which would buy only
+the avoidance of provisional work.
 
 **D36. Hardware validation is per model, and evidence is scoped by
 behaviour.** Every stage records the claimed commit, the executed source
