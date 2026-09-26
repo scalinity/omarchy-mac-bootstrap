@@ -136,3 +136,59 @@ digits, `b`, `q` on a terminal and fall back to line input when piped.
 shaped on a real 1 TB M1 Pro disk. CI (`.github/workflows/ci.yml`) runs the
 suite on Linux (bash 5, ShellCheck required) and macOS (`/bin/bash` 3.2), and
 fails on any skip it does not expect.
+
+## The product expansion (designed for M14–M16, not implemented)
+
+The product gains a compiled frontend and a migration path. The Bash core
+above stays the authority; the new Bash modules extend it under the same
+seams, conventions and tests.
+
+```mermaid
+flowchart TD
+    E[omarchy-bootstrap<br/>launcher] -->|interactive, verified| FE[[omb-tui<br/>Rust, Ratatui]]
+    E -->|one-shot, --no-tui, fallback| T[text interface<br/>baseline ui.sh]
+    FE -->|one process per request| CO[core.sh<br/>protocol, execute rules]
+    CO --> B[baseline modules<br/>macos, storage, asahi, linux, shared, doctor, dev]
+    CO --> J[journey.sh]
+    CO --> MS[migrate_scan.sh] --> AG[agents.sh + agents/*.sh]
+    CO --> MP[migrate_profile.sh<br/>profile, bundle]
+    CO --> MR[migrate_resolve.sh<br/>registry, resolution, paths]
+    CO --> RS[migrate_restore.sh<br/>journal, placement, undo, health]
+    CO --> RQ[rescue.sh]
+    CO --> DB[debug.sh]
+    CO --> QU[qualify.sh]
+    E --> FL[frontend.sh<br/>lock, acquire, verify, fallback]
+    REC[records.sh] -.used by.- CO & MP & RS & QU & FL
+```
+
+| Module | Holds | Prefix |
+| --- | --- | --- |
+| `records.sh` | the record format: encode, decode, schema validation, seals (docs/PROTOCOL.md) | `rec_` |
+| `core.sh` | the protocol: requests, responses, operations, the execute rules, handoff and managed modes | `core_` |
+| `frontend.sh` | the launcher's side: the lock, acquisition, the cache, verification, start, fallback (docs/FRONTEND.md) | `fe_` |
+| `journey.sh` | the ten stages on both systems, journey notes | `jr_` |
+| `migrate_scan.sh` | the scan adapters (docs/MIGRATION.md) | `scan_` |
+| `migrate_profile.sh` | selection, the profile, bundle export and import | `prof_`, `bndl_` |
+| `migrate_resolve.sh` | the registry, resolution, availability, dependency layers, path rules, the Zsh adapter (docs/RESOLVER.md) | `res_` |
+| `migrate_restore.sh` | the journal, placement, conflicts, layers, undo, health (docs/RESTORE.md) | `rst_` |
+| `agents.sh`, `agents/<id>.sh` | the AI tool providers (docs/AI-TOOLS.md) | `agent_`, `agent_<id>_` |
+| `rescue.sh` | rescue tools, the workspace, remote rescue, removal (docs/RESCUE.md) | `rsq_` |
+| `debug.sh` | the debug report and the agent brief | `dbg_` |
+| `qualify.sh` | the cross-system check, stage records, the report (docs/QUALIFICATION.md) | `qual_` |
+| `data/registry.omb`, `data/agent-brief.md` | the registry; the brief's fixed text | — |
+| `frontend/` | the Rust crate and its lock | — |
+
+- **Loading.** The baseline's eleven modules load at start as today. The
+  new ones load only for the commands and core operations that need them,
+  each with `|| _omb_unloaded NAME`, so a module that does not load stops
+  that command. The installer's act paths load none of the migration
+  modules.
+- **Bash 3.2 everywhere**, the new Linux-only modules included: the macOS
+  CI job runs every Linux path under `/bin/bash` 3.2.
+- **The text interface** keeps its six-station rail on the installer's own
+  text screens; `status` and `doctor` print the ten journey stages as a
+  list, one per line, which fits any width.
+- **The same seams.** New reads go through `sys_cmd`, `sys_path` and
+  `sys_walk`; every change goes through `run`; every new probe, command and
+  `sudo` joins the allowlists in `tests/test-safety.sh`.
+- Tests for all of this: docs/TESTING.md.

@@ -15,6 +15,9 @@ afterwards, and records.
 - `MILESTONES.md` — mark a milestone done only when its acceptance criteria hold.
   Its accepted baseline names the reviewed commit every later change is a
   delta against; new work does not inherit that review.
+- `docs/DECISIONS.md` — the product expansion (M14–M18): its decisions, open
+  questions, and which design document governs each part; read it before
+  building any of them.
 
 ## Rules
 
