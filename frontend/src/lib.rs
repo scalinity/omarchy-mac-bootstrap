@@ -103,6 +103,7 @@ pub fn run(args: &[String]) -> i32 {
         Ok(t) => t,
         Err(e) => return fallback(&format!("the terminal could not be prepared ({e})")),
     };
+    terminal::watch_reads();
     let mut trace = Trace::open();
     let mut model = Model::default();
     let mut cmds = model.start();
@@ -217,28 +218,28 @@ pub fn run(args: &[String]) -> i32 {
             }
         }
         // One thread reads the terminal: this one, and never during a handoff.
-        match event::poll(Duration::from_millis(TICK_MS as u64)) {
-            Ok(true) => match event::read() {
-                Ok(Event::Key(k)) => {
-                    cmds.extend(update(&mut model, Msg::Key(k)));
-                    dirty = true;
-                }
-                Ok(Event::Resize(_, _)) => dirty = true,
-                Ok(_) => {}
-                // A signal interrupting the read: retried on the next pass.
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(_) => {
-                    term.restore();
-                    return 1;
-                }
+        let got = terminal::reading(
+            || match event::poll(Duration::from_millis(TICK_MS as u64)) {
+                Ok(true) => event::read().map(Some),
+                Ok(false) => Ok(None),
+                Err(e) => Err(e),
             },
-            Ok(false) => {
+        );
+        match got {
+            Ok(Some(Event::Key(k))) => {
+                cmds.extend(update(&mut model, Msg::Key(k)));
+                dirty = true;
+            }
+            Ok(Some(Event::Resize(_, _))) => dirty = true,
+            Ok(Some(_)) => {}
+            Ok(None) => {
                 // Motion only while something is happening.
                 if model.pending.is_some() {
                     cmds.extend(update(&mut model, Msg::Tick));
                     dirty = true;
                 }
             }
+            // A signal interrupting the read: retried on the next pass.
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
             Err(_) => {
                 term.restore();

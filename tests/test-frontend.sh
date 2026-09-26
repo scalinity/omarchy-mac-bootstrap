@@ -293,7 +293,7 @@ proc_file() {
     . "$REPO/lib/core.sh"
     platform_init
     core_boot_read
-    start=${4:-$(_proc_started "$3")}
+    start=${4:-$(LC_ALL=C _proc_started "$3")}
     { printf 'omb-proc 1\n' && rec_line proc role "$2" pid "$3" start "$start" boot "${BOOT:-$CORE_BOOT}"; } >"$1"
     rec_seal_write "$1"
     omb_cleanup
@@ -323,6 +323,24 @@ d=$(mk_scratch)
 proc_file "$d/frontend.omb" frontend "$live"
 fe_call '' fe_reclaim >/dev/null
 [ -d "$d" ] && ok || fail "sup-reclaim-live-controller: a live frontend recorded in frontend.omb keeps the scratch"
+# Identities are read in the C locale: a live frontend recorded by a launcher
+# running in German is alive to a later one running in English.
+dl=$(mk_scratch)
+rm -f "$dl/frontend.omb"
+(
+  export OMB_FIXTURE=$FIXB LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  # shellcheck source=lib/core.sh
+  . "$REPO/lib/core.sh"
+  platform_init
+  core_boot_read
+  core_proc_write "$dl/frontend.omb" frontend "$live"
+  omb_cleanup
+)
+fe_call '' fe_reclaim >/dev/null
+[ -d "$dl" ] && ok || fail "sup-reclaim-live-controller: a live frontend recorded in another language keeps the scratch"
 d2=$(mk_scratch)
 rm -f "$d2/frontend.omb"
 (exec -a "omb-tui --session $d2" sleep 30) &
@@ -385,12 +403,21 @@ wait "$live" 2>/dev/null
 kill "$(sed -n 's/.*	pid=\([0-9]*\)	.*/\1/p' "$d/frontend.omb")" 2>/dev/null
 
 # --- sup-eintr: a signal during the launcher's wait -----------------------------------------
+# SIGINT is caught and kept by the launcher (the child acts on its own).
 printf '0 sleep' >"$T/fake-behaviour"
+(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
+bg=$!
+sleep 0.8
+pkill -INT -f "bash -c .*fe_run act journey" 2>/dev/null
+wait "$bg"
+assert_contains "$(cat "$T/eintr")" "0|verified|" "sup-eintr: the launcher's wait is retried after a signal, and the frontend's status kept"
+# SIGTERM (and SIGHUP) the launcher passes to the frontend: this fake has no
+# handler, so it ends by the signal, and its status says so.
 (FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
 bg=$!
 sleep 0.8
 pkill -TERM -f "bash -c .*fe_run act journey" 2>/dev/null
 wait "$bg"
-assert_contains "$(cat "$T/eintr")" "0|verified|" "sup-eintr: the launcher's wait is retried after a signal, and the frontend's status kept"
+assert_contains "$(cat "$T/eintr")" "status 143" "SIGTERM to the launcher reaches the frontend"
 
 t_done test-frontend

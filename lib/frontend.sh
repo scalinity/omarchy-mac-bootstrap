@@ -11,7 +11,7 @@
 #
 # Needs lib/common.sh, lib/state.sh, lib/ui.sh, lib/records.sh, lib/core.sh.
 
-FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA=""
+FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA="" FE_FPID=""
 
 # The scopes a default-command session carries (SPEC.md → Commands).
 FE_ALL_SCOPES="journey,disk,plan,profile,resolve,asahi,network,omarchy,shared,export,restore,rescue,qualify,debug"
@@ -374,6 +374,14 @@ fe_reclaim() {
 
 fe_on_signal() { :; }
 
+# fe_forward SIGNAL — SIGTERM and SIGHUP reach the frontend, which cancels
+# or waits, restores and exits (docs/PROTOCOL.md → Signals). A launcher that
+# leads its session, as over SSH, is the only process a hangup signals.
+fe_forward() {
+  [ -n "${FE_FPID:-}" ] && kill -"$1" "$FE_FPID" 2>/dev/null
+  return 0
+}
+
 # fe_run INTENT SCOPES — start the verified frontend for a session of INTENT
 # (act, plan or dry-run) and SCOPES, wait for it, restore the terminal and
 # clean up. 0 when the frontend finished; 10 to continue in the text
@@ -406,16 +414,19 @@ fe_run() {
     unset OMB_TUI_LOG
   fi
   # Ctrl-C and Ctrl-\ are caught (never ignored), so a child after exec has
-  # the default disposition; SIGTERM and SIGHUP wait for the frontend.
-  trap fe_on_signal INT QUIT TERM HUP
+  # the default disposition; SIGTERM and SIGHUP are passed to the frontend,
+  # and the launcher waits for it.
+  trap fe_on_signal INT QUIT
+  trap 'fe_forward TERM' TERM
+  trap 'fe_forward HUP' HUP
   "$FE_BIN" --session "$FE_SESSION" <&0 &
   fpid=$!
+  FE_FPID=$fpid
   core_proc_write "$FE_SESSION/frontend.omb" frontend "$fpid" || true
-  while :; do
-    wait "$fpid"
-    st=$?
-    kill -0 "$fpid" 2>/dev/null || break
-  done
+  # The frontend's own status, however many caught signals end the wait early.
+  _core_wait "$fpid"
+  st=$?
+  FE_FPID=""
   # A handoff child may still own the terminal: wait while any recorded core
   # of this session is alive.
   i=0
@@ -430,8 +441,10 @@ fe_run() {
     10) FE_STATE=fallback ;;
     126 | 127) FE_STATE=unrunnable FE_WHY="$(tildify "$FE_BIN") would not execute (status $st; SHA-256 ${FE_SHA:-unpinned}, $FE_TARGET)" ;;
     *)
-      # The frontend did not restore the terminal itself.
-      printf '\033[?1049l\033[?25h' >/dev/tty 2>/dev/null
+      # The frontend did not restore the terminal itself. In a subshell: a
+      # terminal that has gone keeps a builtin's unwritten bytes in bash's
+      # buffer, and the next builtin output, to any file, would carry them.
+      (printf '\033[?1049l\033[?25h') >/dev/tty 2>/dev/null
       FE_STATE=crashed FE_WHY="the interface stopped (status $st)"
       ;;
   esac

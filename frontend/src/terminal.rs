@@ -18,8 +18,73 @@ use ratatui::crossterm::{
 };
 use rustix::termios::{OptionalActions, Termios, tcgetattr, tcsetattr};
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+// Crossterm 0.29 retries a terminal read forever once the terminal answers
+// end of file or an error — what a closed window or a dropped SSH link leaves
+// — without returning from `event::poll`, so the event loop never runs again
+// and no signal flag is read. On a live terminal every reading call returns
+// within a tick. A watcher that finds the same call still running at four
+// checks a quarter of a second apart knows the terminal is gone and ends the
+// process: nothing is left to restore, and nobody is left to see it.
+static READING: AtomicBool = AtomicBool::new(false);
+static READS: AtomicUsize = AtomicUsize::new(0);
+
+/// Run F, one call that reads the terminal, where the watcher can see it.
+pub fn reading<T>(f: impl FnOnce() -> T) -> T {
+    READS.fetch_add(1, Ordering::SeqCst);
+    READING.store(true, Ordering::SeqCst);
+    let r = f();
+    READING.store(false, Ordering::SeqCst);
+    r
+}
+
+/// The watcher's judgement, one check at a time.
+pub struct Watch {
+    last: usize,
+    same: u32,
+}
+
+impl Default for Watch {
+    fn default() -> Self {
+        Watch {
+            last: usize::MAX,
+            same: 0,
+        }
+    }
+}
+
+impl Watch {
+    /// One check of (a read in progress, reads started so far): true once
+    /// the same read has been in progress at four checks in a row. The
+    /// watcher's own time counts, so a stopped process, which stops the
+    /// watcher too, is never taken for a stuck one.
+    pub fn stuck(&mut self, reading: bool, reads: usize) -> bool {
+        if reading && reads == self.last {
+            self.same += 1;
+        } else {
+            self.same = 0;
+        }
+        self.last = reads;
+        self.same >= 4
+    }
+}
+
+/// Start the watcher: a quarter-second check for the whole process's life.
+pub fn watch_reads() {
+    std::thread::spawn(|| {
+        let mut w = Watch::default();
+        loop {
+            std::thread::sleep(Duration::from_millis(250));
+            if w.stuck(READING.load(Ordering::SeqCst), READS.load(Ordering::SeqCst)) {
+                eprintln!("omb-tui: the terminal went away; the interface stops.");
+                std::process::exit(1);
+            }
+        }
+    });
+}
 
 /// The settings saved at start, shared with the panic hook.
 type Saved = Arc<Mutex<Option<Termios>>>;
@@ -113,8 +178,8 @@ impl Term {
         put_back(&self.saved);
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen, Clear(ClearType::All))?;
-        while event::poll(Duration::from_millis(0))? {
-            let _ = event::read()?;
+        while reading(|| event::poll(Duration::from_millis(0)))? {
+            let _ = reading(event::read)?;
         }
         self.terminal =
             ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))?;
@@ -125,6 +190,34 @@ impl Term {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_watcher_stops_only_on_a_read_that_never_returns() {
+        let mut w = Watch::default();
+        // Reads that keep returning: never stuck, however long.
+        for n in 1..40 {
+            assert!(!w.stuck(true, n));
+        }
+        // Not reading (a handoff, a suspend, drawing): never stuck.
+        let mut w = Watch::default();
+        for _ in 0..40 {
+            assert!(!w.stuck(false, 7));
+        }
+        // One read still running at four checks after it was first seen.
+        let mut w = Watch::default();
+        assert!(!w.stuck(true, 9));
+        for _ in 0..3 {
+            assert!(!w.stuck(true, 9));
+        }
+        assert!(w.stuck(true, 9));
+        // A read that returns just in time resets the count.
+        let mut w = Watch::default();
+        for _ in 0..4 {
+            assert!(!w.stuck(true, 3));
+        }
+        assert!(!w.stuck(true, 4));
+        assert!(!w.stuck(true, 4));
+    }
 
     #[test]
     fn the_epilogue_shows_the_cursor_and_clears_the_console() {

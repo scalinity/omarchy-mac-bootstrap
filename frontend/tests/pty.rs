@@ -11,6 +11,8 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -42,6 +44,10 @@ struct Pty {
     /// The terminal's settings before anything started on it.
     initial: String,
     fix: PathBuf,
+    /// Tells the reader thread to stop after its next read; it answers on
+    /// `read_done` once its copy of the controller's descriptor is closed.
+    stop_reading: Arc<AtomicBool>,
+    read_done: Receiver<()>,
 }
 
 struct Opts<'a> {
@@ -176,6 +182,8 @@ impl Pty {
         let screen = Arc::new(Mutex::new(vt100::Parser::new(o.rows, o.cols, 0)));
         let raw = Arc::new(Mutex::new(Vec::new()));
         let (s2, r2) = (screen.clone(), raw.clone());
+        let stop_reading = Arc::new(AtomicBool::new(false));
+        let (stop2, (done_tx, read_done)) = (stop_reading.clone(), channel());
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             while let Ok(n) = reader.read(&mut buf) {
@@ -184,7 +192,12 @@ impl Pty {
                 }
                 s2.lock().unwrap().process(&buf[..n]);
                 r2.lock().unwrap().extend_from_slice(&buf[..n]);
+                if stop2.load(Ordering::SeqCst) {
+                    break;
+                }
             }
+            drop(reader);
+            let _ = done_tx.send(());
         });
         let mut p = Pty {
             child,
@@ -195,6 +208,8 @@ impl Pty {
             dir,
             initial,
             fix,
+            stop_reading,
+            read_done,
         };
         if o.shell {
             p.wait_for("$ ");
@@ -331,6 +346,28 @@ impl Pty {
             std::thread::sleep(Duration::from_millis(30));
         }
     }
+
+    /// Close the terminal as a closing window does: every descriptor of the
+    /// pseudo-terminal's controller shut. The reader thread holds a copy, so
+    /// it is told to stop and woken by a resize, which the frontend answers
+    /// with a redraw. Returns the launcher.
+    fn hang_up(self) -> Box<dyn Child + Send + Sync> {
+        self.stop_reading.store(true, Ordering::SeqCst);
+        self.master
+            .resize(PtySize {
+                rows: 30,
+                cols: 100,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        self.read_done
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the reader thread closed its descriptor");
+        drop(self.writer);
+        drop(self.master);
+        self.child
+    }
 }
 
 fn kill(pid: i32, sig: &str) {
@@ -348,6 +385,7 @@ fn alive(pid: i32) -> bool {
     Command::new("kill")
         .arg("-0")
         .arg(pid.to_string())
+        .stderr(std::process::Stdio::null())
         .status()
         .unwrap()
         .success()
@@ -669,6 +707,56 @@ fn pty_sigterm_and_sighup_idle() {
         assert_eq!(p.wait_exit(), 0, "SIG{sig}");
         assert!(p.restored(), "SIG{sig}: the terminal restored");
     }
+}
+
+#[test]
+fn pty_sigterm_and_sighup_to_the_launcher_reach_the_frontend() {
+    for sig in ["TERM", "HUP"] {
+        let mut p = Pty::start(&format!("lsig-{sig}"), Opts::default());
+        p.dashboard();
+        p.idle();
+        kill(p.child.process_id().unwrap() as i32, sig);
+        assert_eq!(p.wait_exit(), 0, "SIG{sig} to the launcher");
+        assert!(
+            p.restored(),
+            "SIG{sig} to the launcher: the terminal restored"
+        );
+        assert!(
+            p.sessions().is_empty(),
+            "SIG{sig} to the launcher: the scratch removed"
+        );
+    }
+}
+
+// --- pty-hangup: the terminal closes under a session -------------------------------------
+// The launcher leads the terminal's session here, as over SSH, so the hangup
+// signals only it: it passes SIGHUP to the frontend. The frontend, whose
+// terminal now reads as end of file, stops instead of spinning; the launcher
+// cleans up and exits.
+
+#[test]
+fn pty_hangup_ends_the_session() {
+    let p = Pty::start("hangup", Opts::default());
+    p.dashboard();
+    p.idle();
+    let f = p.frontend_pid();
+    let tmp = p.dir.join("tmp");
+    let mut launcher = p.hang_up();
+    let t0 = Instant::now();
+    while launcher.try_wait().unwrap().is_none() {
+        assert!(
+            t0.elapsed() < Duration::from_secs(30),
+            "the launcher is still running 30 s after its terminal closed"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!alive(f), "the frontend ended with its terminal");
+    let left: Vec<_> = std::fs::read_dir(&tmp)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("omb-session."))
+        .collect();
+    assert!(left.is_empty(), "the session scratch was removed");
 }
 
 #[test]

@@ -59,10 +59,14 @@ assert_eq "$(bash_code | grep -cE "trap ('' ?|\"\" ?)(INT|QUIT|TSTP|TERM|HUP)")"
 
 # --- sup-one-spawner -------------------------------------------------------------------
 threads=$(printf '%s\n' "$PROD" | grep 'thread::spawn')
-assert_eq "$(printf '%s\n' "$threads" | grep -c .)" 1 "one thread besides the main one: the spool reader"
+assert_eq "$(printf '%s\n' "$threads" | grep -c .)" 2 "two threads besides the main one: the spool reader and the read watcher"
 reader=$(awk '/^fn reader\(/ { f = 1 } f { print } f && /^}/ { exit }' "$REPO/frontend/src/core.rs")
 assert_eq "$(printf '%s\n' "$reader" | grep -cE 'File::open|OpenOptions|Command|pipe\(|spawn_command')" 0 \
   "sup-one-spawner: the reader thread opens and spawns nothing (it reads its already-open handle)"
+watcher=$(awk '/^pub fn watch_reads\(/ { f = 1 } f { print } f && /^}/ { exit }' "$REPO/frontend/src/terminal.rs")
+[ -n "$watcher" ] && ok || fail "the read watcher is found"
+assert_eq "$(printf '%s\n' "$watcher" | grep -cE 'File::open|OpenOptions|Command|pipe\(|spawn_command|event::')" 0 \
+  "sup-one-spawner: the read watcher opens, spawns and reads nothing (two counters, then an exit)"
 follow=$(awk '/^pub fn follow</ { f = 1 } f { print } f && /^}/ { exit }' "$REPO/frontend/src/core.rs")
 assert_eq "$(printf '%s\n' "$follow" | grep -cE 'File::open|OpenOptions|Command|pipe\(')" 0 "nor does the loop it runs"
 spool_writes=$(grep -n '>>"\$CORE_EVENTS"' "$REPO/lib/core.sh")
