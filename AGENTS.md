@@ -106,6 +106,10 @@ afterwards, and records.
   insertion order and drop duplicates with `awk '!seen[$0]++'`.
 - The Asahi installer ends with a shutdown, so anything the user needs after it
   must be shown before the launch.
+- A mount's source text is not its identity. What is mounted where is the
+  kernel's device number (major:minor) in `/proc/self/mountinfo`, traced
+  through `lsblk` (`MAJ:MIN`) to one device; `/dev/disk/by-partuuid/<guid>`
+  names whatever carries that GUID, and a copy of a disk carries it too.
 - Linux progress is re-derived from the machine (Omarchy Mac's marker, runtime
   version, display manager, setup conf, migration conf and marker); recorded
   state is history only.

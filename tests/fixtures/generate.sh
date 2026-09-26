@@ -454,25 +454,27 @@ put linux-encrypt-reencrypting/cmd/luks_dump "$(luks_dump online-reencrypt-v2)"
 # Shared storage on Linux, on the disk above (same offsets, in 512-byte
 # sectors as lsblk reports them), root on LUKS as Omarchy leaves it.
 lower() { printf '%s' "$1" | tr 'A-F' 'a-f'; }
-lsblk_row() { # NAME PKNAME TYPE START_BYTES SIZE PARTUUID PARTTYPE FSTYPE LABEL UUID
+lsblk_row() { # NAME PKNAME TYPE START_BYTES SIZE PARTUUID PARTTYPE FSTYPE LABEL UUID MAJ:MIN
   local start=""
   [ -n "$4" ] && start=$(($4 / 512))
-  printf 'NAME="%s" PKNAME="%s" TYPE="%s" START="%s" SIZE="%s" PARTUUID="%s" PARTTYPE="%s" FSTYPE="%s" LABEL="%s" UUID="%s"\n' \
-    "$1" "$2" "$3" "$start" "$5" "$(lower "$6")" "$7" "$8" "$9" "${10}"
+  printf 'NAME="%s" PKNAME="%s" TYPE="%s" START="%s" SIZE="%s" PARTUUID="%s" PARTTYPE="%s" FSTYPE="%s" LABEL="%s" UUID="%s" MAJ:MIN="%s"\n' \
+    "$1" "$2" "$3" "$start" "$5" "$(lower "$6")" "$7" "$8" "$9" "${10}" "${11}"
 }
+# The NVMe disk and its partitions are block major 259; the LUKS mapping is
+# device-mapper, major 254.
 lsblk_disk() { # with-shared|no-shared [SHARED_FSTYPE]
   local fs=${2:-exfat}
-  lsblk_row nvme0n1 "" disk "" $D1T "" "" "" "" ""
-  lsblk_row nvme0n1p1 nvme0n1 part $GPT_FRONT $ISC $U_ISC 69646961-6700-11aa-aa11-00306543ecac apfs "" ""
-  lsblk_row nvme0n1p2 nvme0n1 part $C0 $VS $U_MAC 7c3457ef-0000-11aa-aa11-00306543ecac apfs "" ""
-  lsblk_row nvme0n1p3 nvme0n1 part $RZ_END $RECOVERY $U_REC 52637672-7900-11aa-aa11-00306543ecac apfs "" ""
-  lsblk_row nvme0n1p4 nvme0n1 part $((C0 + VS)) 2499805184 $U_STUB 7c3457ef-0000-11aa-aa11-00306543ecac apfs "" ""
-  lsblk_row nvme0n1p5 nvme0n1 part $((C0 + VS + 2499805184)) 524288000 $U_EFI c12a7328-f81f-11d2-ba4b-00a0c93ec93b vfat "" 2ABF-9F91
-  lsblk_row nvme0n1p6 nvme0n1 part $((C0 + VS + 3024093184)) $ROOTS $U_ROOT 0fc63daf-8483-4772-8e79-3d69d8477de4 crypto_LUKS "" 5f3e2d1c-0000-4000-8000-00000000c0de
+  lsblk_row nvme0n1 "" disk "" $D1T "" "" "" "" "" 259:0
+  lsblk_row nvme0n1p1 nvme0n1 part $GPT_FRONT $ISC $U_ISC 69646961-6700-11aa-aa11-00306543ecac apfs "" "" 259:1
+  lsblk_row nvme0n1p2 nvme0n1 part $C0 $VS $U_MAC 7c3457ef-0000-11aa-aa11-00306543ecac apfs "" "" 259:2
+  lsblk_row nvme0n1p3 nvme0n1 part $RZ_END $RECOVERY $U_REC 52637672-7900-11aa-aa11-00306543ecac apfs "" "" 259:3
+  lsblk_row nvme0n1p4 nvme0n1 part $((C0 + VS)) 2499805184 $U_STUB 7c3457ef-0000-11aa-aa11-00306543ecac apfs "" "" 259:4
+  lsblk_row nvme0n1p5 nvme0n1 part $((C0 + VS + 2499805184)) 524288000 $U_EFI c12a7328-f81f-11d2-ba4b-00a0c93ec93b vfat "" 2ABF-9F91 259:5
+  lsblk_row nvme0n1p6 nvme0n1 part $((C0 + VS + 3024093184)) $ROOTS $U_ROOT 0fc63daf-8483-4772-8e79-3d69d8477de4 crypto_LUKS "" 5f3e2d1c-0000-4000-8000-00000000c0de 259:6
   if [ "$1" = with-shared ]; then
-    lsblk_row nvme0n1p7 nvme0n1 part $SH0 $((SH1 - SH0)) $U_SHARED ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$fs" Shared 1234-ABCD
+    lsblk_row nvme0n1p7 nvme0n1 part $SH0 $((SH1 - SH0)) $U_SHARED ebd0a0a2-b9e5-4433-87c0-68b6b72699c7 "$fs" Shared 1234-ABCD 259:7
   fi
-  lsblk_row root nvme0n1p6 crypt "" $((ROOTS - 33554432)) "" "" btrfs "" 9f2c0000-0000-4000-8000-000000000b7f
+  lsblk_row root nvme0n1p6 crypt "" $((ROOTS - 33554432)) "" "" btrfs "" 9f2c0000-0000-4000-8000-000000000b7f 254:0
 }
 FSTAB_BASE='# /etc/fstab: static file system information.
 UUID=9f2c0000-0000-4000-8000-000000000b7f / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
@@ -480,11 +482,17 @@ UUID=9f2c0000-0000-4000-8000-000000000b7f /var/log btrfs rw,noatime,compress=zst
 UUID=2ABF-9F91 /boot vfat rw,relatime,fmask=0022,dmask=0022 0 2'
 MOUNTS_BASE='/dev/mapper/root / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
 /dev/nvme0n1p5 /boot vfat rw,relatime 0 0'
+# The same mounts as the kernel records them in mountinfo: ID, parent,
+# device (major:minor; btrfs reports an anonymous 0:N), root, mount point,
+# options, optional fields, "-", type, source, superblock options.
+MOUNTINFO_BASE='23 1 0:25 /@ / rw,noatime shared:1 - btrfs /dev/mapper/root rw,compress=zstd:1,subvol=/@
+45 23 259:5 / /boot rw,relatime shared:26 - vfat /dev/nvme0n1p5 rw,fmask=0022,dmask=0022'
 lx_shared() { # NAME with-shared|no-shared [SHARED_FSTYPE]
   linux "$1" 1000 alex btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 installed
   lsblk_disk "$2" "${3:-exfat}" >"$1/cmd/lsblk_all"
   put "$1/root/etc/fstab" "$FSTAB_BASE"
   put "$1/root/proc/self/mounts" "$MOUNTS_BASE"
+  put "$1/root/proc/self/mountinfo" "$MOUNTINFO_BASE"
   put "$1/root/var/lib/omarchy-mac-bootstrap/state.env" "cfg_user=alex
 cfg_host=m1pro
 cfg_enc=1
@@ -503,6 +511,8 @@ put linux-shared-ready/root/etc/fstab "$FSTAB_BASE
 PARTUUID=$(lower $U_SHARED) /mnt/shared exfat rw,nofail,x-systemd.automount,x-systemd.device-timeout=10s,uid=1000,gid=1000,fmask=0177,dmask=0077,nodev,nosuid,noexec 0 0"
 put linux-shared-ready/root/proc/self/mounts "$MOUNTS_BASE
 systemd-1 /mnt/shared autofs rw,relatime,fd=52,pgrp=1,timeout=0,minproto=5,maxproto=5,direct 0 0"
+put linux-shared-ready/root/proc/self/mountinfo "$MOUNTINFO_BASE
+120 23 0:48 / /mnt/shared rw,relatime shared:60 - autofs systemd-1 rw,fd=52,pgrp=1,timeout=0,minproto=5,maxproto=5,direct"
 # Someone else's fstab line already claims the partition's mount point.
 lx_shared linux-shared-conflict with-shared
 put linux-shared-conflict/root/etc/fstab "$FSTAB_BASE

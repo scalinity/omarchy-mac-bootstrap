@@ -929,13 +929,15 @@ shared_linux_next() {
 # ---------------------------------------------------------------------------
 
 # shared_lx_scan — the partitions on the disk holding root, from lsblk.
-# SH_ROWS: "name|start_bytes|size|partuuid|parttype|fstype|label|uuid".
+# SH_ROWS: "name|start_bytes|size|partuuid|parttype|fstype|label|uuid|maj:min".
+# SH_DEVS: every block device lsblk lists, "name|parent|type|partuuid|maj:min",
+# which is how a mounted filesystem's device number is traced to a device.
 shared_lx_scan() {
   local all root
-  SH_ROWS="" SH_DISK="" SH_ROOT_PARTUUID="" SH_ROOT_END=0
+  SH_ROWS="" SH_DEVS="" SH_DISK="" SH_ROOT_PARTUUID="" SH_ROOT_END=0
   root=${LX_ROOT_BACKING#/dev/}
   [ -n "$root" ] || return 1
-  all=$(sys_cmd lsblk_all lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID |
+  all=$(sys_cmd lsblk_all lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID,MAJ:MIN |
     awk '
       function f(k,   re, v) {
         re = "(^| )" k "=\"[^\"]*\""
@@ -946,10 +948,15 @@ shared_lx_scan() {
         gsub(/\|/, "", v)
         return v
       }
-      { print f("NAME") "|" f("PKNAME") "|" f("TYPE") "|" f("START") "|" f("SIZE") "|" tolower(f("PARTUUID")) "|" tolower(f("PARTTYPE")) "|" f("FSTYPE") "|" f("LABEL") "|" f("UUID") }')
+      {
+        mm = f("MAJ:MIN")
+        if (mm == "") mm = f("MAJ_MIN")
+        print f("NAME") "|" f("PKNAME") "|" f("TYPE") "|" f("START") "|" f("SIZE") "|" tolower(f("PARTUUID")) "|" tolower(f("PARTTYPE")) "|" f("FSTYPE") "|" f("LABEL") "|" f("UUID") "|" mm
+      }')
+  SH_DEVS=$(printf '%s\n' "$all" | awk -F'|' '$1 != "" {print $1 "|" $2 "|" $3 "|" $6 "|" $11}' | awk '!seen[$0]++')
   SH_DISK=$(printf '%s\n' "$all" | awk -F'|' -v r="$root" '$1 == r {print $2; exit}')
   [ -n "$SH_DISK" ] || return 1
-  SH_ROWS=$(printf '%s\n' "$all" | awk -F'|' -v d="$SH_DISK" '$2 == d && $3 == "part" && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ {print $1 "|" $4 * 512 "|" $5 "|" $6 "|" $7 "|" $8 "|" $9 "|" $10}')
+  SH_ROWS=$(printf '%s\n' "$all" | awk -F'|' -v d="$SH_DISK" '$2 == d && $3 == "part" && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ {print $1 "|" $4 * 512 "|" $5 "|" $6 "|" $7 "|" $8 "|" $9 "|" $10 "|" $11}')
   local line name start size puuid
   while IFS='|' read -r name start size puuid _; do
     if [ "$name" = "$root" ]; then
@@ -965,8 +972,8 @@ EOF
 # SHARED_WHY, SH_NEED_CODE, and for the partition found: SH_NAME,
 # SH_PARTUUID, SH_SIZE, SH_FSUUID, SH_LABEL.
 shared_lx_state() {
-  local want=${CFG_shared:-0} id12 name start size puuid ptype fs label fsuuid n=0 near=0
-  SHARED_STATE=off SHARED_WHY="" SH_NEED_CODE=0 SH_NAME="" SH_PARTUUID="" SH_SIZE=0 SH_FSUUID="" SH_LABEL=""
+  local want=${CFG_shared:-0} id12 name start size puuid ptype fs label fsuuid majmin n=0 near=0
+  SHARED_STATE=off SHARED_WHY="" SH_NEED_CODE=0 SH_NAME="" SH_PARTUUID="" SH_SIZE=0 SH_FSUUID="" SH_LABEL="" SH_MAJMIN=""
   local from=state
   id12=$(state_get shared_id12)
   # With the record lost, the entry this tool wrote in /etc/fstab still names
@@ -998,14 +1005,14 @@ shared_lx_state() {
     _blocked "/etc/fstab already has an entry for $SHARED_MNT or this partition that this tool did not write: $(printf '%s' "$FS_CONFLICTS" | head -1)"
     return 0
   fi
-  while IFS='|' read -r name start size puuid ptype fs label fsuuid; do
+  while IFS='|' read -r name start size puuid ptype fs label fsuuid majmin; do
     [ -n "$name" ] || continue
     [ "$ptype" = "$SHARED_PARTTYPE" ] || continue
     # Shared is the Basic Data partition right after the Linux root.
     [ "$start" -ge "$SH_ROOT_END" ] && [ $((start - SH_ROOT_END)) -lt "$ASAHI_GAP_MIN_BYTES" ] && near=$((near + 1))
     if [ -n "$id12" ] && [ "$(guid12 "$puuid")" = "$id12" ]; then
       n=$((n + 1))
-      SH_NAME=$name SH_PARTUUID=$puuid SH_SIZE=$size SH_FSUUID=$fsuuid SH_LABEL=$label SH_FS=$fs SH_START=$start
+      SH_NAME=$name SH_PARTUUID=$puuid SH_SIZE=$size SH_FSUUID=$fsuuid SH_LABEL=$label SH_FS=$fs SH_START=$start SH_MAJMIN=$majmin
     fi
   done <<EOF
 $SH_ROWS
@@ -1364,54 +1371,69 @@ shared_mountpoint() {
   esac
 }
 
-# shared_lx_mount — what is mounted at /mnt/shared now, from the kernel's
-# mount table, bound to the Shared partition chosen by PARTUUID (after
-# shared_lx_state). A source is matched only as a kernel name on the disk
-# holding root, or as /dev/disk/by-partuuid. Sets SH_MOUNT, SH_MOUNT_SRC,
-# SH_MOUNT_OPTS and SH_MOUNT_WHY:
-#   verified    the Shared partition, exFAT
+# shared_lx_mount — what is mounted at /mnt/shared now, by the kernel's own
+# record of it (/proc/self/mountinfo, after shared_lx_state): the mounted
+# filesystem's device number (major:minor) is looked up among the devices
+# lsblk listed, and that one device must be the Shared partition chosen by
+# PARTUUID, on the disk holding the Linux root. The mount's source text is
+# shown, never trusted: /dev/disk/by-partuuid/<guid> names whatever carried
+# that GUID when it was resolved, and a copy of the disk can carry it too.
+# Sets SH_MOUNT, SH_MOUNT_SRC, SH_MOUNT_OPTS and SH_MOUNT_WHY:
+#   verified    the Shared partition itself, exFAT
 #   armed       the automount, with nothing mounted yet
 #   none        nothing at all
-#   wrong       another partition or filesystem
-#   unresolved  a source that cannot be matched to a partition here
+#   wrong       another device, or Shared with another filesystem
+#   unresolved  a device that cannot be traced to exactly one partition
 #   duplicate   more than one filesystem mounted there
 shared_lx_mount() {
-  local mounts rows n src fs opts name="" puuid="" row
+  local info rows real n majmin fs src opts dev name pk type puuid
   SH_MOUNT=none SH_MOUNT_SRC="" SH_MOUNT_OPTS="" SH_MOUNT_WHY=""
-  mounts=$(cat "$(sys_path /proc/self/mounts)" 2>/dev/null)
-  rows=$(printf '%s\n' "$mounts" | awk -v m="$SHARED_MNT" '$2 == m && $3 != "autofs" {print $1, $3, $4}')
-  n=$(printf '%s' "$rows" | grep -c .)
+  info=$(cat "$(sys_path /proc/self/mountinfo)" 2>/dev/null)
+  if [ -z "$info" ]; then
+    SH_MOUNT=unresolved SH_MOUNT_WHY="the kernel's mount table (/proc/self/mountinfo) could not be read, so what is mounted at $SHARED_MNT is not known"
+    return 0
+  fi
+  # ID PARENT MAJ:MIN ROOT MOUNTPOINT OPTIONS [OPTIONAL...] - TYPE SOURCE SUPEROPTIONS
+  rows=$(printf '%s\n' "$info" | awk -v m="$SHARED_MNT" '
+    $5 == m {
+      i = 7
+      while (i <= NF && $i != "-") i++
+      if (i + 2 <= NF) print $3 "|" $(i + 1) "|" $(i + 2) "|" $6 "," $(i + 3)
+    }')
+  real=$(printf '%s\n' "$rows" | awk -F'|' '$2 != "" && $2 != "autofs"')
+  n=$(printf '%s' "$real" | grep -c .)
   if [ "$n" = 0 ]; then
-    printf '%s\n' "$mounts" | awk -v m="$SHARED_MNT" '$2 == m && $3 == "autofs"' | grep -q . && SH_MOUNT=armed
+    printf '%s\n' "$rows" | awk -F'|' '$2 == "autofs"' | grep -q . && SH_MOUNT=armed
     return 0
   fi
   if [ "$n" != 1 ]; then
-    SH_MOUNT=duplicate SH_MOUNT_WHY="$n filesystems are mounted at $SHARED_MNT ($(printf '%s' "$rows" | awk '{print $1}' | paste -sd, -)); unmount the extra ones"
+    SH_MOUNT=duplicate SH_MOUNT_WHY="$n filesystems are mounted at $SHARED_MNT ($(printf '%s' "$real" | awk -F'|' '{print $3}' | paste -sd, -)); unmount the extra ones"
     return 0
   fi
-  read -r src fs opts <<EOF
-$rows
+  IFS='|' read -r majmin fs src opts <<EOF
+$real
 EOF
   SH_MOUNT_SRC=$src SH_MOUNT_OPTS=$opts
-  case "$src" in
-    /dev/disk/by-partuuid/*) puuid=$(printf '%s' "${src#/dev/disk/by-partuuid/}" | tr 'A-F' 'a-f') ;;
-    /dev/*/*) ;;
-    /dev/?*)
-      name=${src#/dev/}
-      row=$(printf '%s\n' "$SH_ROWS" | awk -F'|' -v n="$name" '$1 == n {print $4; exit}')
-      if [ -z "$row" ]; then
-        SH_MOUNT=wrong SH_MOUNT_WHY="$src is mounted at $SHARED_MNT; it is not a partition on the disk holding the Linux root, and Shared is /dev/$SH_NAME"
-        return 0
-      fi
-      puuid=$row
-      ;;
+  # The mounted device, by the number the kernel gives it.
+  dev=""
+  case "$majmin" in
+    [0-9]*:[0-9]*) dev=$(printf '%s\n' "$SH_DEVS" | awk -F'|' -v d="$majmin" '$5 == d') ;;
   esac
-  if [ -z "$puuid" ]; then
-    SH_MOUNT=unresolved SH_MOUNT_WHY="$src is mounted at $SHARED_MNT, and it cannot be matched to a partition here, so it is not known to be Shared (/dev/$SH_NAME)"
-  elif [ "$puuid" != "$SH_PARTUUID" ]; then
-    SH_MOUNT=wrong SH_MOUNT_WHY="$src is mounted at $SHARED_MNT, but its PARTUUID is $puuid, not Shared's ($SH_PARTUUID)"
+  if [ "$(printf '%s' "$dev" | grep -c .)" != 1 ]; then
+    SH_MOUNT=unresolved SH_MOUNT_WHY="the filesystem at $SHARED_MNT ($src) is on device ${majmin:-?}, which is not exactly one device listed here, so it is not known to be Shared (/dev/$SH_NAME)"
+    return 0
+  fi
+  IFS='|' read -r name pk type puuid _ <<EOF
+$dev
+EOF
+  if [ "$type" != part ]; then
+    SH_MOUNT=unresolved SH_MOUNT_WHY="the filesystem at $SHARED_MNT ($src) is on /dev/$name, a $type device, which is not traced to one partition here, so it is not known to be Shared (/dev/$SH_NAME)"
+  elif [ "$pk" != "$SH_DISK" ]; then
+    SH_MOUNT=wrong SH_MOUNT_WHY="the filesystem at $SHARED_MNT ($src) is on /dev/$name, on /dev/$pk, not on the disk holding the Linux root; Shared is /dev/$SH_NAME"
+  elif [ "$name" != "$SH_NAME" ] || [ "$puuid" != "$SH_PARTUUID" ] || [ "$majmin" != "$SH_MAJMIN" ]; then
+    SH_MOUNT=wrong SH_MOUNT_WHY="the filesystem at $SHARED_MNT ($src) is on /dev/$name (PARTUUID=${puuid:-none}), not on Shared (/dev/$SH_NAME, PARTUUID=$SH_PARTUUID)"
   elif [ "$fs" != exfat ]; then
-    SH_MOUNT=wrong SH_MOUNT_WHY="$src is mounted at $SHARED_MNT as $fs, not exFAT"
+    SH_MOUNT=wrong SH_MOUNT_WHY="Shared (/dev/$name) is mounted at $SHARED_MNT as $fs, not exFAT"
   else
     SH_MOUNT=verified
   fi
@@ -1591,7 +1613,7 @@ shared_intent_matches_plan() {
 # shared_doctor — read-only checks. Reading proves presence, identity and
 # mount configuration; only `shared test` proves writing.
 shared_doctor() {
-  local mounts others avail
+  local others avail
   case "$OMB_PLATFORM" in macos) shared_mac_state ;; linux) shared_lx_state ;; esac
   case "$SHARED_STATE" in
     off) return 0 ;;
@@ -1612,13 +1634,12 @@ shared_doctor() {
   fi
   doc pass "Shared identity" "/dev/$SH_NAME $G_DOT PARTUUID=$SH_PARTUUID $G_DOT exFAT $G_DOT $(fmt_gb "$SH_SIZE")"
   doc pass "Shared on boot" "/etc/fstab: $SHARED_MNT, uid $SH_UID, nofail, automount"
-  mounts=$(cat "$(sys_path /proc/self/mounts)" 2>/dev/null)
   shared_lx_mount
   case "$SH_MOUNT" in
     verified)
       case ",$SH_MOUNT_OPTS," in
         *,ro,*) doc warn "Shared mounted" "read-only: the kernel remounts exFAT read-only after an error; check it from macOS (First Aid)" ;;
-        *) doc pass "Shared mounted" "$SH_MOUNT_SRC at $SHARED_MNT, PARTUUID matches ($SH_MOUNT_OPTS)" ;;
+        *) doc pass "Shared mounted" "/dev/$SH_NAME at $SHARED_MNT: the kernel's device $SH_MAJMIN, PARTUUID matches ($SH_MOUNT_OPTS)" ;;
       esac
       avail=$(sys_cmd df_shared df -Pk "$SHARED_MNT" | awk 'NR==2 {print $4}')
       [ -n "$avail" ] && doc info "Shared free space" "$((avail / 1000000)) GB"
@@ -1628,7 +1649,8 @@ shared_doctor() {
     unresolved) doc warn "Shared mounted" "$SH_MOUNT_WHY" ;;
     *) doc warn "Shared mounted" "not mounted and no automount active: sudo systemctl start $SHARED_UNIT" ;;
   esac
-  others=$(printf '%s\n' "$mounts" | awk -v d="/dev/$SH_NAME" -v m="$SHARED_MNT" '$1 == d && $2 != m {print $2}' | head -1)
+  # The same partition mounted anywhere else, by the kernel's device number.
+  others=$(awk -v d="$SH_MAJMIN" -v m="$SHARED_MNT" 'd != "" && $3 == d && $5 != m {print $5}' "$(sys_path /proc/self/mountinfo)" 2>/dev/null | head -1)
   [ -n "$others" ] && doc warn "Shared mounted twice" "also at $others; unmount that copy"
   doc info "Shared writing" "not checked by doctor; ./omarchy-bootstrap shared test writes and removes one file"
 }

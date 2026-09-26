@@ -600,8 +600,32 @@ for w in "[PASS] Shared storage" "[PASS] Shared identity" "[PASS] Shared on boot
   assert_contains "$T_OUT" "$w" "doctor: $w"
 done
 assert_contains "$(t_flat "$T_OUT")" "[INFO] Shared mounted automount armed, nothing mounted yet" "doctor: an armed automount is not reported as the partition mounted"
-fx=$(t_variant linux-shared-ready)
-printf '/dev/mapper/root / btrfs rw 0 0\n/dev/nvme0n1p7 /mnt/shared exfat ro,nodev,nosuid,noexec,uid=1000 0 0\n/dev/nvme0n1p7 /run/media/alex/Shared exfat rw 0 0\n' >"$fx/root/proc/self/mounts"
+G=4a7b1c2d-0007-4e5f-8a9b-000000000007
+BY=/dev/disk/by-partuuid
+# mi MAJ:MIN TYPE SOURCE [ID] — the kernel's mountinfo line for a filesystem
+# mounted at /mnt/shared, over the automount (mount 120).
+mi() { printf '%s 120 %s / /mnt/shared rw,nosuid,nodev,noexec,relatime shared:61 - %s %s rw,uid=1000,gid=1000,fmask=0177,dmask=0077' "${4:-130}" "$1" "$2" "$3"; }
+# mounted LINE... — the ready machine (automount armed) with LINEs added to
+# its mountinfo. Its lsblk also lists a copy of the disk in an enclosure
+# (sda: sda1 carries Shared's PARTUUID, sda2 another exFAT volume) and a
+# device-mapper device stacked on Shared; /dev/disk/by-partuuid/<Shared's
+# GUID> links to Shared itself, as udev would have it on a good day.
+mounted() {
+  local fx
+  fx=$(t_variant linux-shared-ready)
+  printf '%s\n' "$@" >>"$fx/root/proc/self/mountinfo"
+  printf '%s\n' 'NAME="sda" PKNAME="" TYPE="disk" START="" SIZE="1000204886016" PARTUUID="" PARTTYPE="" FSTYPE="" LABEL="" UUID="" MAJ:MIN="8:0"' \
+    "NAME=\"sda1\" PKNAME=\"sda\" TYPE=\"part\" START=\"2048\" SIZE=\"150000893952\" PARTUUID=\"$G\" PARTTYPE=\"ebd0a0a2-b9e5-4433-87c0-68b6b72699c7\" FSTYPE=\"exfat\" LABEL=\"Shared\" UUID=\"1234-ABCD\" MAJ:MIN=\"8:1\"" \
+    'NAME="sda2" PKNAME="sda" TYPE="part" START="292970496" SIZE="64000000000" PARTUUID="4a7b1c2d-0009-4e5f-8a9b-000000000009" PARTTYPE="ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" FSTYPE="exfat" LABEL="Stick" UUID="5678-EF01" MAJ:MIN="8:2"' \
+    'NAME="shared" PKNAME="nvme0n1p7" TYPE="crypt" START="" SIZE="150000000000" PARTUUID="" PARTTYPE="" FSTYPE="exfat" LABEL="" UUID="" MAJ:MIN="254:5"' >>"$fx/cmd/lsblk_all"
+  mkdir -p "$fx/root/dev/disk/by-partuuid"
+  ln -s ../../nvme0n1p7 "$fx/root/dev/disk/by-partuuid/$G"
+  printf '%s' "$fx"
+}
+# Read-only after an error, and mounted a second time under another spelling:
+# the second mount is found by the kernel's device number, not by its name.
+fx=$(mounted "130 120 259:7 / /mnt/shared ro,nosuid,nodev,noexec,relatime shared:61 - exfat /dev/nvme0n1p7 ro,uid=1000,gid=1000" \
+  "140 23 259:7 / /run/media/alex/Shared rw,nosuid,nodev,relatime shared:70 - exfat $BY/$G rw,uid=1000,gid=1000")
 t_cli "$fx" "" doctor
 assert_contains "$T_OUT" "[WARN] Shared mounted" "doctor: a read-only remount after an error warns"
 assert_contains "$T_OUT" "[WARN] Shared mounted twice" "doctor: a second mount of the same partition warns"
@@ -609,24 +633,19 @@ t_cli linux-shared-conflict "" doctor
 assert_contains "$T_OUT" "[FAIL] Shared storage" "doctor: a conflict fails"
 
 # What is mounted at /mnt/shared is bound to the partition chosen by PARTUUID
-# before doctor vouches for it or the write test writes a byte. mounted
-# LINE... — the ready machine (automount armed) with LINEs mounted too.
-mounted() {
-  local fx
-  fx=$(t_variant linux-shared-ready)
-  printf '%s\n' "$@" >>"$fx/root/proc/self/mounts"
-  printf '%s' "$fx"
-}
-OPTS="rw,nosuid,nodev,noexec,relatime,uid=1000,gid=1000,fmask=0177,dmask=0077 0 0"
-BY=/dev/disk/by-partuuid
+# by the kernel's device number for it, before doctor vouches for it or the
+# write test writes a byte. The mount's source text decides nothing.
 for c in \
-  "the Shared partition|/dev/nvme0n1p7 /mnt/shared exfat $OPTS|[PASS] Shared mounted|/dev/nvme0n1p7 at /mnt/shared, PARTUUID matches|1" \
-  "the Shared partition by PARTUUID|$BY/4a7b1c2d-0007-4e5f-8a9b-000000000007 /mnt/shared exfat $OPTS|[PASS] Shared mounted|PARTUUID matches|1" \
-  "another disk's exFAT volume|/dev/sda1 /mnt/shared exfat $OPTS|[FAIL] Shared mounted|/dev/sda1 is mounted at /mnt/shared; it is not a partition on the disk holding the Linux root|0" \
-  "another partition on root's disk|/dev/nvme0n1p5 /mnt/shared exfat $OPTS|[FAIL] Shared mounted|its PARTUUID is 4a7b1c2d-0005-4e5f-8a9b-000000000005, not Shared's|0" \
-  "another partition by PARTUUID|$BY/4a7b1c2d-0005-4e5f-8a9b-000000000005 /mnt/shared exfat $OPTS|[FAIL] Shared mounted|not Shared's (4a7b1c2d-0007-4e5f-8a9b-000000000007)|0" \
-  "Shared, but not as exFAT|/dev/nvme0n1p7 /mnt/shared vfat $OPTS|[FAIL] Shared mounted|as vfat, not exFAT|0" \
-  "a source that cannot be matched|/dev/mapper/shared /mnt/shared exfat $OPTS|[WARN] Shared mounted|cannot be matched to a partition here|0"; do
+  "Shared by its kernel name|$(mi 259:7 exfat /dev/nvme0n1p7)|[PASS] Shared mounted|/dev/nvme0n1p7 at /mnt/shared: the kernel's device 259:7, PARTUUID matches|1" \
+  "Shared by its PARTUUID path, the kernel's device Shared|$(mi 259:7 exfat "$BY/$G")|[PASS] Shared mounted|the kernel's device 259:7, PARTUUID matches|1" \
+  "another disk's exFAT volume by its kernel name|$(mi 8:2 exfat /dev/sda2)|[FAIL] Shared mounted|(/dev/sda2) is on /dev/sda2, on /dev/sda, not on the disk holding the Linux root|0" \
+  "a copy of the disk with Shared's PARTUUID, by that PARTUUID path|$(mi 8:1 exfat "$BY/$G")|[FAIL] Shared mounted|($BY/$G) is on /dev/sda1, on /dev/sda, not on the disk holding the Linux root|0" \
+  "Shared's PARTUUID path, whose link names Shared, the kernel's device another partition|$(mi 259:5 exfat "$BY/$G")|[FAIL] Shared mounted|($BY/$G) is on /dev/nvme0n1p5 (PARTUUID=4a7b1c2d-0005-4e5f-8a9b-000000000005), not on Shared|0" \
+  "another partition on root's disk|$(mi 259:5 exfat /dev/nvme0n1p5)|[FAIL] Shared mounted|is on /dev/nvme0n1p5 (PARTUUID=4a7b1c2d-0005-4e5f-8a9b-000000000005), not on Shared|0" \
+  "Shared, but not as exFAT|$(mi 259:7 vfat /dev/nvme0n1p7)|[FAIL] Shared mounted|Shared (/dev/nvme0n1p7) is mounted at /mnt/shared as vfat, not exFAT|0" \
+  "a device number no listed device has|$(mi 8:99 exfat /dev/sdz1)|[WARN] Shared mounted|is on device 8:99, which is not exactly one device listed here|0" \
+  "a device number that is not one|$(mi bogus exfat /dev/nvme0n1p7)|[WARN] Shared mounted|is on device bogus, which is not exactly one device listed here|0" \
+  "a device-mapper device stacked on Shared|$(mi 254:5 exfat /dev/mapper/shared)|[WARN] Shared mounted|is on /dev/shared, a crypt device, which is not traced to one partition here|0"; do
   IFS='|' read -r label line doc why write <<EOF
 $c
 EOF
@@ -642,15 +661,21 @@ EOF
     assert_contains "$(t_flat "$T_OUT")" "Nothing was written" "write test, $label: and says so"
   fi
 done
-fx=$(mounted "/dev/nvme0n1p7 /mnt/shared exfat $OPTS" "/dev/sda1 /mnt/shared exfat $OPTS")
+fx=$(mounted "$(mi 259:7 exfat /dev/nvme0n1p7)" "$(mi 8:1 exfat "$BY/$G" 131)")
 t_cli "$fx" "" doctor
-assert_contains "$(t_flat "$T_OUT")" "[FAIL] Shared mounted 2 filesystems are mounted at /mnt/shared (/dev/nvme0n1p7,/dev/sda1)" "doctor: two filesystems stacked at /mnt/shared fail"
+assert_contains "$(t_flat "$T_OUT")" "[FAIL] Shared mounted 2 filesystems are mounted at /mnt/shared (/dev/nvme0n1p7,$BY/$G)" "doctor: two filesystems stacked at /mnt/shared fail"
 t_cli "$fx" "test\n" shared test
 assert_empty_file "$T_DIR/record" "write test: nothing written on a doubled mount"
-fx=$(t_variant linux-shared-ready)
-printf '/dev/mapper/root / btrfs rw 0 0\n' >"$fx/root/proc/self/mounts"
+fx=$(mounted "$(mi 259:7 exfat /dev/nvme0n1p7)")
+rm -f "$fx/root/proc/self/mountinfo"
 t_cli "$fx" "" doctor
-assert_contains "$T_OUT" "[WARN] Shared mounted" "doctor: neither mounted nor armed warns"
+assert_contains "$(t_flat "$T_OUT")" "[WARN] Shared mounted the kernel's mount table (/proc/self/mountinfo) could not be read" "doctor: an unreadable mount table is not a pass"
+t_cli "$fx" "test\n" shared test
+assert_empty_file "$T_DIR/record" "write test: nothing written without the kernel's mount table"
+fx=$(t_variant linux-shared-ready)
+grep -v ' - autofs ' "$FIX/linux-shared-ready/root/proc/self/mountinfo" >"$fx/root/proc/self/mountinfo"
+t_cli "$fx" "" doctor
+assert_contains "$(t_flat "$T_OUT")" "[WARN] Shared mounted not mounted and no automount active" "doctor: neither mounted nor armed warns"
 # An armed automount is asked to mount by listing the directory (which
 # writes nothing); when nothing is mounted then, nothing is written.
 t_cli linux-shared-ready "test\n" shared test
@@ -660,7 +685,7 @@ assert_contains "$(t_flat "$T_OUT")" "Nothing is mounted at /mnt/shared, even af
 t_cli linux-shared-ready "test\n" shared test --dry-run
 assert_contains "$(t_flat "$T_OUT")" "Dry run: nothing is mounted at /mnt/shared yet; a real run asks the automount to mount it" "a dry run leaves the automount alone"
 assert_contains "$T_OUT" "would run  cp " "and shows what would run"
-fx=$(mounted "/dev/nvme0n1p7 /mnt/shared exfat $OPTS")
+fx=$(mounted "$(mi 259:7 exfat /dev/nvme0n1p7)")
 t_cli "$fx" "\n" shared test
 assert_empty_file "$T_DIR/record" "the write test needs consent"
 t_cli "$fx" "test\n" shared test

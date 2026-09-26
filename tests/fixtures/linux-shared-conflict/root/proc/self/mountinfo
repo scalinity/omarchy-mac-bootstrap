@@ -1,0 +1,2 @@
+23 1 0:25 /@ / rw,noatime shared:1 - btrfs /dev/mapper/root rw,compress=zstd:1,subvol=/@
+45 23 259:5 / /boot rw,relatime shared:26 - vfat /dev/nvme0n1p5 rw,fmask=0022,dmask=0022

@@ -342,12 +342,16 @@ Detailed in `docs/SHARED.md`. Summary:
   `/etc/fstab` entry `PARTUUID=<guid> /mnt/shared exfat
   rw,nofail,x-systemd.automount,x-systemd.device-timeout=10s,uid,gid,fmask=0177,dmask=0077,nodev,nosuid,noexec`
   written by rename, the old file kept; `/mnt/shared` root-owned 0755.
-- **Checks** `doctor` and `shared test` match what is mounted at
-  `/mnt/shared` to the chosen PARTUUID (a kernel partition name on root's
-  disk, or `/dev/disk/by-partuuid`) before vouching for it or writing to it;
-  an armed automount is reported as armed, not mounted. The write test
-  writes only to that verified filesystem, and succeeds only when its file
-  is also removed.
+- **Checks** `doctor` and `shared test` identify what is mounted at
+  `/mnt/shared` by the kernel's device number for it (major:minor in
+  `/proc/self/mountinfo`), traced through `lsblk` to exactly one partition,
+  which must be the chosen Shared partition (its name, PARTUUID and device
+  number) on root's disk, formatted exFAT, before vouching for it or writing
+  to it. The mount's source text is never identity. A device that cannot be
+  traced to exactly one partition is unresolved and blocks writing; an
+  armed automount is reported as armed, not mounted. The write test writes
+  only to that verified filesystem, and succeeds only when its file is also
+  removed.
 - **States** `off`, `reserved`, `awaiting-linux-completion`,
   `awaiting-macos-creation`, `created`, `awaiting-linux-activation`, `ready`,
   `blocked`, derived from the machine on every run.

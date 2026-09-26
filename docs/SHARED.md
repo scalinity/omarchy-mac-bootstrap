@@ -203,13 +203,19 @@ Running it again when the entry is in place changes nothing.
 - `./omarchy-bootstrap doctor` — identity, type, filesystem, size, disk, the
   fstab entry, what is mounted at `/mnt/shared`, with which options, free
   space, a read-only remount after an error, and a second mount of the same
-  partition. What is mounted there is matched to Shared by PARTUUID (from the
-  kernel's mount table: a partition name on the Linux root's disk, or
-  `/dev/disk/by-partuuid/…`), and reported as one of: Shared mounted (pass);
-  automount armed, nothing mounted yet (information: nothing to match yet);
-  another partition or filesystem, or more than one filesystem stacked there
-  (fail); a source that cannot be matched (warning). Reading proves presence,
-  not that it can be written.
+  partition. What is mounted there is identified by the kernel's own number
+  for its device (major:minor, from `/proc/self/mountinfo`), traced through
+  `lsblk` to exactly one partition, which must be Shared itself: its
+  PARTUUID, on the disk holding the Linux root. The mount's source text (a
+  device path, or `/dev/disk/by-partuuid/…`) is shown but never trusted: a
+  copy of the disk in an enclosure can carry the same PARTUUID. It is
+  reported as one of: Shared mounted (pass); automount armed, nothing mounted
+  yet (information: nothing to match yet); another device or filesystem, or
+  more than one filesystem stacked there (fail); a device that cannot be
+  traced to exactly one partition, such as a device-mapper layer, or a mount
+  table that cannot be read (warning). A second mount of Shared elsewhere is
+  found by the same device number. Reading proves presence, not that it can
+  be written.
 - `./omarchy-bootstrap shared test` — after typing `test`: first the
   filesystem at the mount point must be Shared, matched as doctor matches it
   (on Linux an armed automount is asked to mount by listing the directory,

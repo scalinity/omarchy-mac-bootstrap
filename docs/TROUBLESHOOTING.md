@@ -49,7 +49,7 @@ Start with `./omarchy-bootstrap doctor` and `./omarchy-bootstrap logs`.
 | `/mnt/shared` hangs about ten seconds, then "No such device" | Shared is missing (another disk layout, or not created) | Check with `./omarchy-bootstrap doctor`; nothing is written onto the Linux root meanwhile |
 | Shared mounted read-only | the kernel remounted exFAT after an error | Shut Linux down, run First Aid on the volume from macOS |
 | Shared also appears under `/run/media` | a desktop automounter mounted it too | Unmount that copy; `/mnt/shared` is the managed mount |
-| doctor: "is mounted at /mnt/shared … not Shared's" or "filesystems are mounted at /mnt/shared" | something other than Shared, or more than one filesystem, is mounted there; `shared test` refuses to write | `sudo umount /mnt/shared` until nothing is mounted there, then open `/mnt/shared` (the automount mounts Shared) and run doctor again |
+| doctor: "the filesystem at /mnt/shared … is on /dev/…, not on Shared" or "filesystems are mounted at /mnt/shared" | the device the kernel has mounted there is not Shared (another partition, or a copy of the disk carrying the same PARTUUID), or more than one filesystem is mounted there; `shared test` refuses to write | `sudo umount /mnt/shared` until nothing is mounted there, detach the other disk, then open `/mnt/shared` (the automount mounts Shared) and run doctor again |
 
 ## This tool
 
