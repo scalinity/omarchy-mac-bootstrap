@@ -167,7 +167,7 @@ flowchart TD
 | Module | Holds | Prefix |
 | --- | --- | --- |
 | `records.sh` | the record format and admission: bounds, byte class, framing and canonical form, schemas, seals, the strict TOML subset reader (docs/PROTOCOL.md → §1, §2; docs/AI-TOOLS.md → *Codex's configuration*) | `rec_` |
-| `core.sh` | the protocol: requests, responses, the spool, operation records, bases, the execute order, handoff and managed modes (docs/PROTOCOL.md → §3–§5) | `core_` |
+| `core.sh` | the protocol: requests, responses, the spool, session ownership, children by class and their diagnostics, operation records and the boot-session barrier, bases, the execute order, handoff and managed modes (docs/PROTOCOL.md → §3–§5) | `core_` |
 | `frontend.sh` | the launcher's side: the lock, acquisition, the cache, verification, the intent rules, start, fallback, the session scratch (docs/FRONTEND.md) | `fe_` |
 | `journey.sh` | the ten stages on both systems, journey notes | `jr_` |
 | `migrate_scan.sh` | the versioned scan adapters, the Zsh tracker (docs/MIGRATION.md) | `scan_` |
@@ -175,11 +175,11 @@ flowchart TD
 | `migrate_resolve.sh` | the registry, resolution, availability, the graph, path rules (docs/RESOLVER.md) | `res_` |
 | `migrate_restore.sh` | the journal, placement, conflicts, graph execution, conditional undo, health (docs/RESTORE.md) | `rst_` |
 | `agents.sh`, `agents/<id>.sh` | the AI tool providers, used by `restore` and by the baseline's `dev` (docs/AI-TOOLS.md) | `agent_`, `agent_<id>_` |
-| `rescue.sh` | rescue tools, the workspace, SSH observation, remote rescue, removal (docs/RESCUE.md) | `rsq_` |
+| `rescue.sh` | rescue tools, the workspace, the system's SSH classification, closing and hardening it, the rescue-owned SSH server, removal (docs/RESCUE.md) | `rsq_` |
 | `debug.sh` | the field-allowlisted report, the agent brief, raw diagnostics | `dbg_` |
 | `qualify.sh` | the cross-system check, the stream, stage records, the executed-source digest, the report (docs/QUALIFICATION.md) | `qual_` |
 | `data/registry.omb`, `data/agent-brief.md` | the registry; the brief's fixed text | — |
-| `frontend/` | the Rust crate; every file in it except `frontend/tests/` is a build input | — |
+| `frontend/` | the Rust crate; every Git-tracked file in it, tests included, is a build input (docs/FRONTEND.md → *Four identities*) | — |
 | `release/frontend.lock` | the release lock, outside the build inputs | — |
 
 - **Loading.** The baseline's eleven modules load at start as today. The
@@ -187,7 +187,7 @@ flowchart TD
   each with `|| _omb_unloaded NAME`, so a module that does not load stops
   that command. The installer's act paths load none of the migration
   modules. The one baseline module that gains a dependency is `dev.sh`,
-  whose AI module calls the providers (MILESTONES.md → M15-B).
+  whose AI module calls the providers (MILESTONES.md → *M15-B — Packages and AI providers*).
 - **Bash 3.2 everywhere**, the new Linux-only modules included: the macOS
   CI job runs every Linux path under `/bin/bash` 3.2.
 - **The text interface** keeps its six-station rail on the installer's own

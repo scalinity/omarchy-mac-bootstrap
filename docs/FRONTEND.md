@@ -21,9 +21,10 @@ it; the frontend presents, asks and shows.
 It never computes a storage plan, never decides that anything is safe,
 never reads a user file or a record in the state directory, never runs a
 program other than the core, and never interprets human-formatted text.
-What it reads and writes is limited to its own requests and their spool and
-diagnostics files in the session scratch, the process table, and an
-optional trace file (*Intent and persistence*). The process model, the
+What it reads and writes is limited to its own requests and their spools in
+the session scratch, the bounded diagnostics the core keeps there (which it
+only reads), the process table, and an optional trace file (*Intent and
+persistence*). The process model, the
 descriptors and supervision are defined once, in docs/PROTOCOL.md → §3.
 
 ## When the frontend runs
@@ -88,22 +89,42 @@ or acquires its own copy into the user's cache.
 
 ## Distribution and provenance
 
-### Three identities
+### Four identities
 
 | Identity | What it is | Who establishes it |
 | --- | --- | --- |
 | **Git commit** | the commit a release was built from, `source_commit` (40 hex) | the release workflow's checkout |
-| **Source input** | `inputs_digest`: the SHA-256 of a canonical listing of every build input (below) | computed by the release workflow, and by CI on every commit |
+| **Source input** | `inputs_digest`: the SHA-256 of a canonical listing of every Git-tracked file under `frontend/` at that commit (below) | computed from the commit by the release workflow, and by CI on every commit |
 | **Release artifact** | each binary's SHA-256 and size | computed by the release workflow; pinned in the lock |
+| **Attestation** | a GitHub artifact attestation naming the repository, the workflow run and `source_commit` for each binary | published by the release workflow; checked by anyone with `gh attestation verify` |
 
-**Build inputs** are every regular file under `frontend/` except
-`frontend/tests/`: the Rust sources, `Cargo.toml`, `Cargo.lock`,
-`rust-toolchain.toml`, `.cargo/config.toml` (which carries the link
-arguments), any `build.rs` and any checked-in generated source. A symbolic
-link under `frontend/` is an error. The canonical listing is
-`omb-frontend-inputs 1` followed by one line per file, `<path> TAB <sha256>`,
-in byte order of the path (`LC_ALL=C`); `inputs_digest` is the SHA-256 of
-that listing.
+**Source input** is defined by Git, never by what happens to be on disk:
+every file Git tracks under `frontend/` at the commit — the Rust sources,
+`Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` (an exact version, never a
+channel name), `frontend/.cargo/config.toml` (the only Cargo configuration
+the build reads: link arguments, and `MACOSX_DEPLOYMENT_TARGET` in its
+`[env]`), checked-in generated source and assets, and `frontend/tests/`
+too, so that nothing production code could include is outside it. The
+listing is `omb-frontend-inputs 1` followed by one line per tracked path,
+`<path> TAB <mode> TAB <sha256 of the file's bytes at the commit>`, in byte
+order of the path (`LC_ALL=C`), read with `git ls-tree -r` and `git
+cat-file` from the commit, never from the working tree; `inputs_digest` is
+the SHA-256 of that listing. A tracked symbolic link under `frontend/` is an
+error. Build output (`target/`), untracked and ignored files can never enter
+it, because Git does not list them.
+
+**The build may read nothing else.** Everything the compiler and Cargo
+consume must be a tracked file under `frontend/`, a crates.io package
+pinned by `Cargo.lock`, or the pinned toolchain. CI enforces it on every
+build (docs/TESTING.md → `frontend-input-*`):
+
+| Rule | How CI checks it |
+| --- | --- |
+| built from the commit, with nothing generated beside it | the checkout has no untracked or ignored file under `frontend/` before the build (`git status --porcelain --ignored -- frontend`), and `CARGO_TARGET_DIR` is outside the repository |
+| no file outside the closure reaches the compiler (`include_bytes!`, `include_str!`, `#[path]`, a module) | after the build, every path in the frontend crate's dependency files (`*.d`, which rustc writes for every file it read) must be a tracked file under `frontend/`, a file under `$CARGO_HOME/registry/src`, or under the toolchain's sysroot; any other path fails |
+| no build script of its own | `cargo metadata` shows no `build` target in the frontend's own packages; a dependency's build script comes with its `Cargo.lock`-pinned source |
+| no local or Git dependency outside the closure | `cargo metadata --locked` shows every package either under `frontend/` or from crates.io; no `git` source, no `path` outside `frontend/`, no `[patch]` or `[replace]` |
+| no Cargo configuration from elsewhere | no `.cargo/` directory elsewhere in the repository; the release job starts with an empty `CARGO_HOME`; the release workflow sets none of `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`, `CARGO_BUILD_*` or `CARGO_PROFILE_*` (a static check of the workflow file) |
 
 **The lock is not a build input.** It is `release/frontend.lock`, outside
 `frontend/`, so changing it cannot change the digest it records:
@@ -128,25 +149,25 @@ How they relate:
   says which bytes are accepted; it does not by itself say how they were
   built.
 - **CI connects the checkout to the release.** On every commit CI computes
-  `inputs_digest` from the working tree and fails if it differs from the
-  lock's, which means the frontend's inputs changed since the release and a
-  new release is needed. A commit that changes only the lock leaves
+  `inputs_digest` from the commit and fails if it differs from the lock's,
+  which means the frontend's inputs changed since the release and a new
+  release is needed. A commit that changes only the lock leaves
   `inputs_digest` unchanged.
-- **The attestation connects the release to its commit.** The release
-  workflow publishes a GitHub artifact attestation for each binary, naming
-  the repository, the workflow and `source_commit`. It is evidence anyone can
-  check with `gh attestation verify`; nothing at run time depends on it, and
-  no signing infrastructure is added.
+- **The attestation connects the release to its commit.** It is evidence
+  anyone can check; nothing at run time depends on it, and no signing
+  infrastructure is added.
 
 ### Building
 
-On a tag `frontend-v<version>`, the release workflow builds natively on
-GitHub's arm64 macOS runner and on `ubuntu-24.04-arm`, with the toolchain in
-`frontend/rust-toolchain.toml` (at least 1.88, Ratatui's minimum),
-`cargo build --release --locked`, and `--remap-path-prefix` for build paths.
-It computes `inputs_digest`, checks every artifact against *Compatibility*,
-publishes the binaries, `SHA256SUMS` and the attestations, and prints the
-lock lines. A reviewed commit then updates `release/frontend.lock`.
+On a tag `frontend-v<version>`, the release workflow checks out the tagged
+commit, confirms the clean-tree rule, computes `inputs_digest`, fetches the
+crates with `cargo fetch --locked`, and builds natively on GitHub's arm64
+macOS runner and on `ubuntu-24.04-arm` with `cargo build --release --locked
+--offline` and the toolchain `frontend/rust-toolchain.toml` names (at least
+1.88, Ratatui's minimum). It then applies the closure checks above and
+*Compatibility* below to every artifact, publishes the binaries,
+`SHA256SUMS` and the attestations, and prints the lock lines. A reviewed
+commit then updates `release/frontend.lock`.
 
 ### Compatibility, checked from the artifact
 
@@ -273,7 +294,7 @@ sequenceDiagram
   draw from and asks again after every action, on `r`, and after a handoff or
   a suspend; an action is always submitted with the basis it was shown.
 - **Local work stays local.** Navigation, focus, scrolling, searching and
-  filtering loaded data never call the core (docs/DECISIONS.md → O1).
+  filtering loaded data never call the core (docs/DECISIONS.md → *Resolved review questions*, O1).
 
 ## The security boundary
 

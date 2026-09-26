@@ -91,49 +91,57 @@ Rules that come with the sources:
 
 ## The registry
 
-Versioned data in this repository, `data/registry.omb`, in the record format
-(docs/PROTOCOL.md), with `#` comments. It is reviewed like code.
+Versioned data in this repository, `data/registry.omb`, an `omb-registry 1`
+document in the record format, admitted like every other (docs/PROTOCOL.md
+→ §2). Notes for people are `note` records, never comment lines. It is
+reviewed like code.
 
 ```text
 omb-registry 1
 registry	version=1
-# ripgrep: the same program everywhere
+note	text=ripgrep:%20the%20same%20program%20everywhere
 sw	id=sw:ripgrep	name=ripgrep
 from	sw=sw:ripgrep	source=brew-formula	name=ripgrep
 from	sw=sw:ripgrep	source=cargo	name=ripgrep
-to	sw=sw:ripgrep	disposition=EXACT	method=pacman	target=ripgrep	keep=none	verified=2026-09-26	evidence=alarm:extra
-# Node.js: a runtime, the major version kept
+to	sw=sw:ripgrep	disposition=EXACT	method=pacman	target=ripgrep	keep=none	cap=	verified=2026-09-26	evidence=alarm:extra
+note	text=Node.js:%20a%20runtime,%20the%20major%20version%20kept
 sw	id=sw:node	name=Node.js
 from	sw=sw:node	source=brew-formula	name=node
 from	sw=sw:node	source=brew-formula	name=node@22
 from	sw=sw:node	source=nvm	name=node
 from	sw=sw:node	source=mise	name=node
-to	sw=sw:node	disposition=RUNTIME	method=mise	target=node	keep=major	verified=2026-09-26	evidence=mise-lock:linux-arm64
-# Rectangle: Omarchy already tiles
+to	sw=sw:node	disposition=RUNTIME	method=mise	target=node	keep=major	cap=cap:node	verified=2026-09-26	evidence=mise-lock:linux-arm64
+note	text=Rectangle:%20Omarchy%20already%20tiles
 sw	id=sw:rectangle	name=Rectangle
 from	sw=sw:rectangle	source=brew-cask	name=rectangle
 from	sw=sw:rectangle	source=app	name=com.knollsoft.Rectangle
-to	sw=sw:rectangle	disposition=OMARCHY_PROVIDED	cap=cap:tiling
-cap	id=cap:tiling	name=Tiling%20window%20management	provided_by=hyprland	check=pkg:hyprland
-# iTerm2: Omarchy has a terminal; the person may want another
+to	sw=sw:rectangle	disposition=OMARCHY_PROVIDED	method=	target=	keep=	cap=cap:tiling	verified=2026-09-26	evidence=omarchy:hyprland
+note	text=iTerm2:%20Omarchy%20has%20a%20terminal%3B%20the%20person%20may%20want%20another
 sw	id=sw:iterm2	name=iTerm2
 from	sw=sw:iterm2	source=brew-cask	name=iterm2
-to	sw=sw:iterm2	disposition=ALTERNATIVE	cap=cap:terminal	choices=keep-default,ghostty,kitty,alacritty
+to	sw=sw:iterm2	disposition=ALTERNATIVE	method=	target=	keep=	cap=cap:terminal	choice=keep-default	choice=ghostty	choice=kitty	choice=alacritty	verified=2026-09-26	evidence=omarchy:terminals
+cap	id=cap:tiling	name=Tiling%20window%20management	provided_by=hyprland	check=pkg:hyprland
 choice	id=ghostty	cap=cap:terminal	method=omarchy-helper	target=omarchy-install-terminal	arg=ghostty
 ```
 
-| Record | Holds |
-| --- | --- |
-| `registry` | the registry's version |
-| `sw` | a software id and its display name |
-| `from` | one way that software appears on macOS: source kind and name (a formula, a cask token, a bundle id, a crate, an npm name, a mise tool) |
-| `to` | the resolution: disposition, method, target, kept version (`none`, `major`, `minor`, `exact`), capability, choices, the date it was verified and what verified it |
-| `cap` | a capability, what provides it on Omarchy, and how to check that it is there |
-| `choice` | one option of an `ALTERNATIVE` |
-| `alias` | a command analogue for shell aliases (below) |
-| `path` | a path rule (below) |
-| `class` | a sensitivity rule for a path pattern (docs/MIGRATION.md) |
-| `bad16k` | software known to fail on 16 KiB pages, with the version that fixed it if any |
+| Record | Schema | Holds |
+| --- | --- | --- |
+| `registry` 1 | `version:uint` | the registry's version |
+| `note` * | `text:text` | a note for people; the resolver ignores it |
+| `sw` * | `id:id name:text` | a software id and its display name |
+| `from` * | `sw:id source:enum(brew-formula\|brew-cask\|app\|cargo\|npm\|pnpm\|bun\|nvm\|mise\|asdf\|uv\|pipx\|go) name:bytes` | one way that software appears on macOS |
+| `to` * | `sw:id disposition:enum(EXACT\|OMARCHY_PROVIDED\|NATIVE_EQUIVALENT\|RUNTIME\|ECOSYSTEM\|ALTERNATIVE\|MACOS_ONLY\|UNSUPPORTED_ARCH) method:id? target:bytes? keep:enum(none\|major\|minor\|exact)? cap:id? choice:id* verified:id evidence:id` | the resolution, the date it was verified and what verified it |
+| `cap` * | `id:id name:text provided_by:id check:id` | a capability, what provides it on Omarchy, and how to check that it is there |
+| `choice` * | `id:id cap:id method:id target:bytes arg:bytes*` | one option of an `ALTERNATIVE` |
+| `alias` * | `from:bytes to:bytes` | a command analogue for shell aliases (*From Zsh to Bash*) |
+| `path` * | `rule:id from:bytes to:bytes? applied:enum(auto\|review\|never)` | a path rule (*Paths*) |
+| `class` * | `pattern:bytes class:enum(PUBLIC_CONFIG\|PRIVATE_CONFIG\|SENSITIVE\|OPAQUE\|SECRET\|MACHINE_SPECIFIC)` | a sensitivity rule for a path pattern (docs/MIGRATION.md) |
+| `bad16k` * | `sw:id fixed:id?` | software known to fail on 16 KiB pages, with the version that fixed it if any |
+
+**Order.** After `registry`, records are grouped by software: a `sw`
+record, then its `from` records, then its `to` records; `note` records may
+stand anywhere after `registry`; `cap`, `choice`, `alias`, `path`, `class`
+and `bad16k` records follow all the software groups, each type together.
 
 **Layers.** The built-in registry, then the person's own
 `~/.config/omarchy-mac-bootstrap/registry.local.omb` (same format, overriding a

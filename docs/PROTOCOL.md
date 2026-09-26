@@ -1,8 +1,9 @@
 # Records and the core protocol
 
 **Status: the implementation contract for M14 gate 1 (framing, admission,
-processes) and gate 3 (actions and bases); not implemented.** Local
-experiments that ground it are recorded in docs/UPSTREAM.md → *Experiments*.
+processes, diagnostics) and gate 3 (actions and bases); not implemented.**
+Local experiments that ground it are recorded in docs/UPSTREAM.md →
+*Experiments*.
 
 Defined here once and used everywhere else: the **record format** every
 file and message is written in, how bytes are **admitted** before anything
@@ -28,7 +29,10 @@ seal     = "seal" TAB "sha256=" 64( 0-9 / a-f )
 
 A document is bytes, and only these bytes: TAB (0x09), LF (0x0A) and
 0x20–0x7E. Every other byte — NUL, CR, other controls, DEL, anything above
-0x7E — is invalid wherever it appears.
+0x7E — is invalid wherever it appears. **There are no comment lines**: a
+document family that needs notes for people has a `note text:text` record
+in its schema (the registry does, docs/RESOLVER.md → *The registry*), which
+is admitted like any other record.
 
 ### One canonical encoding per value
 
@@ -50,14 +54,17 @@ bytes (which the seals, bases and digests depend on):
   in its place in the schema's order; an empty list is the key absent; an
   element may be empty (`arg=`) only in a `bytes` or `text` list, where it
   is the empty string;
-- record order and cardinality are the schema's (`1`, `?`, `*`, `+`); a
-  duplicate of a record the schema says is unique (the same `id`, say) is
-  invalid.
+- record order and cardinality are the schema's (`1`, `?`, `*`, `+`, `—`
+  for forbidden); unless the schema states another order (the registry
+  groups records by software), records of one type are consecutive, in the
+  order the schema table lists the types; a duplicate of a record the
+  schema says is unique (the same `id`, say) is invalid.
 
 Schemas are written as `record: key:type key:type? key:type*` — `?` optional
 (present, and empty for none), `*` a list, `+` a list of at least one — with
-the record's cardinality in the document. Every stored and exchanged record family has
-its schema table in the document that owns it; the protocol's own are in §4.
+the record's cardinality in the document. Every stored and exchanged record
+family has its schema table in the document that owns it; the protocol's
+own are in §4.
 
 ### Value types
 
@@ -71,6 +78,22 @@ its schema table in the document that owns it; the protocol's own are in §4.
 | `utc` | `YYYY-MM-DDTHH:MM:SSZ` | a time, shown, never compared across systems |
 | `text` | percent-encoded | valid UTF-8 with no C0 or C1 control, no DEL, no ESC: safe to render |
 | `bytes` | percent-encoded | any bytes except NUL: paths, file names, raw values. **Never rendered raw** |
+| `code` | percent-encoded | printable ASCII of at most 512 bytes that matches the grammar of its **kind** (below) |
+
+**Codes.** A `code` value is always read together with its kind, from the
+same record (`code kind=…`) or from the declaring `param`; the type never
+widens `id`:
+
+| Kind | Decoded grammar | Semantic check |
+| --- | --- | --- |
+| `token` | `omb2:` then `name=value` fields joined by `,`; names `[a-z]+`; values without `,` or `=` | the baseline's `token_decode`: every name on its whitelist (`enc user host kmap tz loc ssh gh linux shared dev plan`, and `prof`), each at most once, each value accepted by `cfg_field_ok` |
+| `ombdone`, `ombshare` | `<kind>-` 8 hex `-` 12 hex `-` 4 hex, lower case | the baseline's `code_parse`: the last 4 digits are the first 4 hex digits of the SHA-256 of everything before the last `-` |
+| `ombbundle` | `ombbundle-` 16 hex `-` 4 hex, lower case | the same check-digit rule (docs/MIGRATION.md → *The approval code*) |
+
+A code the person types arrives as an `arg` of a `param` whose type is
+`code`: the core normalises it as `code_parse` does (upper-case hex folded,
+spaces removed) before the semantic check. A code the core writes is already
+canonical.
 
 **Display versus data.** `bytes` values (paths above all) are kept
 byte-for-byte for every comparison, digest and file operation, and are shown
@@ -107,8 +130,8 @@ or truncates at NUL (reproduced on `/bin/bash` 3.2.57 and Bash 5.3). So every
 document the core reads — a request, a profile, a manifest, a journal step,
 a qualification record, the lock, the registry — passes **admission** first,
 using standard tools present on stock macOS and on the fresh Asahi image
-(`head`, `wc`, `tr`, `tail`, `od`, `awk`; BSD `awk` on macOS, GNU `awk` in
-Arch's `base`):
+(`head`, `wc`, `tr`, `tail`, `od`, `awk`; BSD `awk` on macOS, gawk in the
+image and on Omarchy):
 
 1. **Bounded copy.** A stream is copied with `head -c <limit+1>` into a
    private file in the per-run scratch directory; a stored file's size is
@@ -126,19 +149,26 @@ Arch's `base`):
    byte, record count. Its input is now NUL-free ASCII, which both awks treat
    alike.
 6. **Only then** Bash splits lines on TAB and fields at the first `=`, and
-   validates each record against its schema (order, cardinality, types). At
-   this point splitting can no longer normalise anything, because every
-   input it would normalise was refused.
+   validates each record against its schema (order, cardinality, types, and
+   for a response, one `result` as the last record). At this point splitting
+   can no longer normalise anything, because every input it would normalise
+   was refused.
+
+**Every tool's status counts.** Each step captures the exit status of every
+stage of its pipeline in the first assignment after it (`PIPESTATUS`), and
+any tool that fails refuses the document (`io`), so a failed read can never
+look like an empty or valid document.
 
 Each refusal carries one **reason code**, decided by the first check that
 fails, in the order of the steps above; within step 5, lines are checked from
 the first, and within a line in this order: `line` (too long), `blank`,
-`tab`, `header` (the first line only), `key` (type or key grammar), `value`,
-`nul-escape`, `non-canonical`, and `too-large` at the first record past the
-document's record limit. Step 2 gives `too-large`, step 3 `byte`,
-step 4 `eof`, step 6 `schema` or `type`, a seal check `seal`; a response
-adds `after-result` (anything after the `result`) and `result` (none, or
-two).
+`tab`, `header` (the first line only), `key` (type or key grammar, including
+a line with no TAB, such as a `#` line), `value`, `nul-escape`,
+`non-canonical`, and `too-large` at the first record past the document's
+record limit. Step 1 or any tool failure gives `io`, step 2 `too-large`,
+step 3 `byte`, step 4 `eof`, step 6 `schema`, `type` (a value that breaks
+its type or its code kind), `after-result` (a record after the `result`) or
+`result` (none, or two); a seal check gives `seal`.
 
 The frontend admits the core's responses with the same rules in Rust,
 directly on bytes. The two implementations are held together by a
@@ -157,7 +187,7 @@ flowchart TD
     T([terminal]) --- L
     L["L — launcher (Bash)<br/>verifies the frontend; owns the session scratch and final terminal restore"] -->|spawns, waits| F
     F["F — frontend (Rust)<br/>draws, reads keys, supervises requests"] -->|one per request| C
-    C["C — core request (Bash)<br/>admits, decides, runs"] -->|run| X[X — managed or handoff child]
+    C["C — core request (Bash)<br/>admits, decides, runs"] -->|run| X[X — child: read, mutating or handoff]
     X --> D[D — the child's descendants]
 ```
 
@@ -167,30 +197,53 @@ together during a handoff. A descendant may make its own group (for
 example `sudo` with `use_pty`); what that means for exclusion is in
 *Operations and exclusion*.
 
+**A process's identity** is its PID, its start time as `ps -o lstart=`
+reports it (the baseline's `_proc_started`), and the machine's boot session
+(`/proc/sys/kernel/random/boot_id` on Linux, `sysctl -n
+kern.bootsessionuuid` on macOS). A recorded process is alive only if a
+process with that PID exists now, with that start time, in that boot
+session; a reused PID is never taken for the recorded process.
+
 ### The session scratch
 
 L creates a private directory, `mktemp -d "${TMPDIR:-/tmp}/omb-session.XXXXXX"`
-(0700), writes `session.omb` (its own PID and start time) into it, and passes
-its path as `OMB_SESSION_DIR`. For each request, F creates `req-<n>.events`
-and `req-<n>.diag` there (exclusive create, 0600). C writes
-`req-<n>.core` (its PID and start time) at start and removes it at exit.
-L removes the directory when F has exited and no `req-*.core` names a live
-process. The scratch is temporary, not persistent state: it holds nothing
-secret and is never read by a later session except to remove it (below).
+(0700), and passes its path as `OMB_SESSION_DIR`. In it, each written once
+with exclusive creation (0600):
+
+| File | Written by | Holds |
+| --- | --- | --- |
+| `launcher.omb` | L, first | L's identity |
+| `frontend.omb` | L, right after spawning F | F's identity |
+| `req-<n>.events` | F, before spawning C | the request's event spool |
+| `req-<n>.diag` | C, when a read child's output is kept | retained diagnostics (*Diagnostics*) |
+| `req-<n>.core` | C, at start; removed at exit | C's identity |
+
+The scratch is **quiescent** only when the launcher, the frontend and every
+core it names are no longer alive (identities as above), no live process's
+arguments name the directory (L starts F as `omb-tui --session <dir>`, so
+this covers the moment before `frontend.omb` exists; read with `ps -axo
+pid=,args=`), and no unresolved operation record in the state directory
+names this session. L removes its
+own scratch when F has exited and the scratch is quiescent; if it is not
+(a core still runs), L leaves it. A later launcher removes an old
+`omb-session.*` directory only when it is quiescent — never merely because
+its launcher is gone. The scratch is temporary, not persistent state, and is
+never read by a later session except to decide whether to remove it.
 
 ### Descriptors
 
-| Descriptor | L | F | C | X, managed | X, handoff | D |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 | terminal | terminal | managed: `/dev/null`; handoff: terminal | `/dev/null` | terminal | as X |
-| 1, 2 | terminal | terminal | managed: `req-<n>.diag`, append; handoff: terminal | the diag file | terminal | as X |
-| 3 | — | the request pipe's write end, close-on-exec; closed as soon as the request is written | the request pipe's read end; read to EOF (bounded) and closed with `exec 3<&-` before anything else runs | never open | never open | never open |
-| the event spool | — | a read-only handle on `req-<n>.events`, close-on-exec, in a reader thread | **no descriptor held**: each record is appended with `printf … >>"$OMB_EVENTS"`, which opens, writes and closes | never open | never open | never open |
-| anything else | none | every descriptor Rust's standard library opens is close-on-exec; fd 3 is placed with `dup2` in the child just before `exec` | Bash's own script descriptor is close-on-exec | — | — | — |
+| Descriptor | L | F | C | X, read | X, mutating | X, handoff | D |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | terminal | terminal | managed: `/dev/null`; handoff: terminal | `/dev/null` | `/dev/null` | terminal | as X |
+| 1, 2 | terminal | terminal | managed: `/dev/null` (in fixture mode, `req-<n>.core-err`, for tests); handoff: terminal | a pipe to C's drain (*Diagnostics*) | `/dev/null` | terminal | as X |
+| 3 | — | the request pipe's write end, close-on-exec; closed as soon as the request is written | the request pipe's read end; read to EOF (bounded) and closed with `exec 3<&-` before anything else runs | never open | never open | never open | never open |
+| the event spool | — | a read-only handle on `req-<n>.events`, close-on-exec, in a reader thread | **no descriptor held**: each record is appended with `printf … >>"$OMB_EVENTS"`, which opens, writes and closes | never open | never open | never open | never open |
+| anything else | none | every descriptor Rust's standard library opens is close-on-exec; fd 3 is placed with `dup2` in the child just before `exec` | Bash's own script descriptor is close-on-exec | — | — | — | — |
 
 There is no response pipe (no fd 4) and no child-status pipe: responses go
 to the spool file, F learns that C has ended from `waitpid`, and C learns
-the same of its children from `wait`.
+the same of its children from `wait`. Everything C knows how to report
+travels as a record; C writes nothing else.
 
 Consequences, each tested (docs/TESTING.md → `sup-*`):
 
@@ -208,23 +261,57 @@ Consequences, each tested (docs/TESTING.md → `sup-*`):
 
 ### A request's life
 
-1. F creates the pipe, the spool and the diag file, then spawns C with the
-   descriptors above and the environment of §4 → *Environment*.
-2. C loads its libraries, copies fd 3 through admission step 1 (bounded) and
-   closes it. An over-long request makes `head` stop reading; F's write then
-   fails with EPIPE, which F treats as a refusal.
-3. C appends `hello`, then its records, then one `result`, then exits.
+1. F creates the pipe and the spool, then spawns C with the descriptors
+   above and the environment of §4 → *Environment*.
+2. C writes `req-<n>.core`, loads its libraries, copies fd 3 through
+   admission step 1 (bounded) and closes it. An over-long request makes
+   `head` stop reading; F's write then fails with EPIPE, which F treats as a
+   refusal.
+3. C appends `hello`, then its records, then one `result`, removes
+   `req-<n>.core`, and exits.
 4. F's reader thread follows the spool continuously — during a handoff too,
    because it never touches the terminal — and passes each complete, admitted
    line to the main thread through a bounded channel. When C has exited, the
    reader drains the rest and checks that the last line was a `result`.
-5. F keeps the diag file's last 64 KiB for the session's log screen.
+5. F shows `req-<n>.diag`, if any, on the session's log screen.
+
+### Diagnostics, by child class
+
+Every child C runs belongs to one class, fixed by the action table in the
+core, never chosen at run time:
+
+| Class | Which children | Output | Outcome judged by |
+| --- | --- | --- | --- |
+| **read** | every child of a read or plan request; children an act action declares read-only (target checks, digests, `--version` checks, live checks) | stdout and stderr through a pipe into `tail -c 65537`, which reads everything and keeps only the last 65 537 bytes in memory, writing them to a per-child file in the scratch when the child's output ends | its exit status, captured first from `PIPESTATUS`, and what the core read |
+| **mutating** | every other child of an act action (installers, `git config`, the tools' own configuration commands, the qualification generator, `diskutil`) | stdout and stderr to `/dev/null`: no pipe, no file, nothing that can fill, block, or end the child | its exit status and the machine read afterwards (the postcondition); the command itself is shown so the person can run it by hand to see its output |
+| **handoff** | children that need the terminal | the terminal, never captured | the machine read afterwards |
+
+- **Bounds.** A read child's retained output is at most 65 537 bytes on disk,
+  plus the pipe's buffer in memory. C appends it to `req-<n>.diag` after a
+  header line naming the command, its exit status and whether earlier output
+  was discarded (the 65 537th byte means it was), while that file is under
+  256 KiB and the session's diagnostics are under 4 MiB (C sums
+  `req-*.diag`); past either, C appends only the header, marked "not kept".
+  Nothing grows without a bound, and nothing depends on F reading it.
+- **Discarding.** `tail` keeps draining after its buffer is full, so a
+  noisy read child never blocks and is never ended by its drain. If `tail`
+  itself fails (killed, or the write at the end fails because the disk is
+  full), the read child may receive SIGPIPE; a read can be repeated
+  safely, and its outcome is judged as any failed read.
+- **A capture failure changes no outcome.** Diagnostics that cannot be kept
+  are shown as "not available"; they never turn a result into a failure,
+  never authorise a retry, and never stand in for a postcondition.
+- **Raw and temporary.** Diagnostics are raw output, potentially sensitive:
+  they stay in the scratch, are shown only on the log screen, are removed
+  with the scratch, and never enter a debug report or an agent's context
+  (docs/RESCUE.md). The scratch is not a security boundary and removal is
+  not secure erasure.
 
 ### Backpressure and bounds
 
 - **C never waits on F.** Its output is a file, so however slowly F reads, C's
   writes complete; nothing on a mutation path depends on the frontend
-  keeping up.
+  keeping up, and no mutating child has a pipe.
 - C counts what it writes. Past 8 MiB less 64 KiB it writes no more
   `progress` or `message` records, one `overflow` record with the number
   suppressed, and then its `result`.
@@ -233,10 +320,6 @@ Consequences, each tested (docs/TESTING.md → `sup-*`):
   at most 500 `message` records per request.
 - A spool larger than 8 MiB, a line over 16 KiB, or an unterminated last line
   when C has exited is a protocol error: the outcome is **unknown**.
-- The diag file is not bounded by the core (a child writes it directly); it
-  lives only in the session scratch and is removed with it. Diagnostics are
-  never persisted and never enter a debug report or an agent's context
-  (docs/RESCUE.md).
 
 ### The terminal result
 
@@ -252,15 +335,14 @@ record decides what must be reconciled (*Operations and exclusion*).
 
 | Event | What happens |
 | --- | --- |
-| F dies (panic, kill) during a request | C continues to its end — its writes go to a file, so nothing fails — and exits. L sees F exit, then waits while any `req-*.core` names a live process (a handoff child may still own the terminal), then restores the terminal settings it saved, leaves the alternate screen, shows the cursor, and reports that the interface stopped and what to run to see the machine's state |
-| C dies (crash, kill) | its children continue. F sees C exit without a `result`: outcome unknown. After a handoff request, F does not take the terminal back while any process other than L and F remains in its process group (it reads the process table directly — `/proc` on Linux, `libproc` on macOS — spawning nothing); then it re-enters and re-derives |
-| L dies | F continues, restores its own terminal when it exits, and the session scratch is left behind; the next launcher removes a stale `omb-session.*` directory only when its `session.omb` names a dead launcher and no `req-*.core` in it names a live process |
+| F dies (panic, kill) during a request | C continues to its end — its writes go to a file, so nothing fails — and exits. L sees F exit, then waits while any `req-*.core` names a live core (a handoff child may still own the terminal), then restores the terminal settings it saved, leaves the alternate screen, shows the cursor, and reports that the interface stopped and what to run to see the machine's state |
+| C dies (crash, kill) | its children continue. F sees C exit without a `result`: outcome unknown. For an act request, its operation becomes **unsupervised** (*Operations and exclusion*). After a handoff request, F does not take the terminal back while any process other than L and F remains in its process group (it reads the process table directly — `/proc` on Linux, `libproc` on macOS — spawning nothing); then it re-enters and re-derives |
+| L dies | F continues and restores its own terminal when it exits; the scratch stays until it is quiescent, and a later launcher removes it only then |
 | X dies | C sees the exit status, reads the machine afterwards, and reports what the machine shows (the baseline's rule) |
-| EPIPE | only the request pipe exists: F writing an over-long request, or to a C that already exited, is a refusal. Rust ignores SIGPIPE by default and sees EPIPE as an error |
+| EPIPE | only the request pipe and a read child's drain exist: F writing an over-long request, or to a C that already exited, is a refusal; Rust ignores SIGPIPE by default and sees EPIPE as an error. A mutating child has no pipe |
 | F's reader thread dies | the main thread sees its channel close; when C exits, the outcome is unknown and the state is re-derived |
-| a descendant outlives its parent | exclusion holds (next section) |
+| a descendant outlives its parent, or leaves its process group | for a read request, nothing is held for it; for an act request, *Operations and exclusion* |
 | a signal interrupts a read or wait | the call is retried; signals change behaviour only as the next table says |
-| a descendant changes process group | it is outside the terminal's group signals; exclusion still finds it if it stays in the group, and the limit is stated below |
 
 ### Signals
 
@@ -280,37 +362,60 @@ check, and PTY tests of the actual dispositions).
 The baseline's run lock stays exactly as it is: one recording run at a time,
 cleared when its owner process is gone. It is not enough on its own when a
 mutating child can outlive the core that started it, so every **act**
-action that changes the machine also keeps an **operation record**:
+action that changes the machine also keeps an **operation record**,
+`ops/<scope>.omb` in the state directory:
 
-- `ops/<scope>.omb` in the state directory, written with the baseline's
-  checked writer **before** the effect (a record that cannot be written stops
-  the action, as `state_must_set` does): the action, its full basis digest,
-  the session, C's PID and start time, the process group, the start time.
-- It is removed only after the action's own result is recorded where its
-  scope keeps results (the Shared creation record, the restore journal, the
-  install classification, the qualification step).
-- **A record that is still there is unresolved**, whatever became of the
-  process that wrote it. A new act action in that scope first reconciles:
-  while any live process that started after the record's start time remains
-  in its process group, the action is refused as busy, naming those
-  processes; when none remain, the scope's own reconciliation runs (the
-  baseline's creation-record check, the journal's, a fresh classification),
-  and only then is the record removed.
-- A process that leaves the group (`setsid`, a daemon) cannot be found this
-  way. This is **not a disk lock** and never was: the scope's own
-  postconditions and records remain the authority for what happened, as the
-  baseline's creation record is for Shared.
+- **Written before the effect**, with the baseline's checked writer (a
+  record that cannot be written stops the action, as `state_must_set`
+  does): the action, its full basis digest, the session, C's identity (with
+  the boot session), the child's process group, the start time.
+- **Completed only by its supervisor.** The core that wrote it removes it —
+  after the action's result is recorded where its scope keeps results (the
+  Shared creation record, the restore journal, the install classification,
+  the qualification step) — and only when it has itself waited for the
+  child to exit, found no live process left in the child's process group,
+  and checked the postcondition.
+- **Unsupervised when its supervisor is gone.** A record whose core is no
+  longer alive is **unsupervised**: the outcome is unknown and a mutating
+  descendant may still be running, even one that left the process group
+  (`setsid`, a daemon), which the process table cannot connect to the
+  operation. An unsupervised record is a **barrier**: every act action in
+  its scope is refused (`code=unsupervised`), naming the operation and the
+  one way forward. An empty process group never clears it.
+- **Cleared by a new boot.** Once the current boot session differs from the
+  record's, no process of the old boot can still run. Then, and only then,
+  the scope's own reconciliation runs (the baseline's creation-record check,
+  the journal's judgement, a fresh classification), records what the
+  machine shows, and removes the operation record. Read commands keep
+  working throughout, and show the barrier and "restart this Mac (or this
+  Linux system), then run the tool again".
+- **Honoured by both interfaces.** The act entry of every command, in the
+  frontend and in the text interface (`--no-tui`), checks the operation
+  records of its scopes first; this check in the launcher is a baseline
+  change reviewed on its own in M14 gate 3.
+- **Read requests hold nothing.** A read child that outlives its core is a
+  non-mutating orphan: it can write only its diagnostics into the scratch,
+  and it never creates or holds a barrier.
+- **Limit, stated.** While its supervisor is alive, completion needs the
+  child's exit and an empty process group; a descendant that deliberately
+  left the group before the child exited is not seen. The mutating children
+  the core runs are an allowlisted set (`tests/test-safety.sh`) of programs
+  that do not daemonise; adding one is a reviewed change. This is not a
+  disk lock: the scope's own postconditions and records remain the
+  authority for what happened, as the baseline's creation record is for
+  Shared.
 
 ### The Shared critical interval
 
 Between the accepted final topology validation and `sudo -n diskutil
 addPartition`, nothing is added: no event record, no prompt, no progress
-write, no wait on the frontend, no other I/O than the baseline already
-performs. C emits its last record before the final read begins and its next
-record after `addPartition` returns. The operation record is written before
-the final read, not inside the interval. This is checked statically (the
-code between the two points is the baseline's own, unchanged) and in the
-fixture tests (`sup-shared-critical`).
+write, no wait on the frontend, no diagnostics capture (`diskutil` is a
+mutating child), no other I/O than the baseline already performs. C emits
+its last record before the final read begins and its next record after
+`addPartition` returns. The operation record, with the boot session, is
+written before the final read, not inside the interval. This is checked
+statically (the code between the two points is the baseline's own,
+unchanged) and in the fixture tests (`sup-shared-critical`).
 
 ## 4. Requests, responses and operations
 
@@ -336,66 +441,226 @@ that started it (SPEC.md → *Commands*).
 
 ### Operations
 
-| Operation | Intent | Answers |
-| --- | --- | --- |
-| `hello` | read | negotiation only |
-| `snapshot` | read | the stages, facts, warnings, blockers and actions available now for one scope, with a `generation` |
-| `detail` | read | one page of large content (inventory rows, profile items, resolution rows, a diff, a downloaded script for inspection), with the `generation` it came from |
-| `validate` | read | an action's parameters normalised, or one error per field; the planner's sizes come back as the full plan computed by `lib/storage.sh` |
-| `execute` | the action's | one available action, with its progress |
+| Operation | Intent | Answers | Results |
+| --- | --- | --- | --- |
+| `hello` | read | negotiation only | `done`, `error` |
+| `snapshot` | read | the stages, facts, warnings, blockers and actions available now for one scope, with a `generation` | `done`, `refused`, `error` |
+| `detail` | read | one page of large content (inventory rows, profile items, resolution rows, a diff, a downloaded script for inspection), with the `generation` it came from | `done`, `refused` (`changed`), `error` |
+| `validate` | read | for one named action: each parameter normalised or refused, and — when all are valid — the basis for exactly those parameters and what the action will do (for the plan, the full plan computed by `lib/storage.sh`) | `done` (with `review`), `refused` (`invalid`, with `invalid` records), `error` |
+| `execute` | the action's | one available action, with its progress | `done`, `refused`, `failed`, `cancelled`, `stopped`, `error` |
 
-Cancellation is a signal, not a request: for an action declared
-cancellable, F sends SIGTERM to C, which finishes the unit in hand and
-reports `status=cancelled` with what completed. A read request may be
-cancelled at any time; a managed act is cancelled only at its declared safe
-boundaries; a handoff child is never signalled by F.
+`refused` means the core declined before any effect (a code says why:
+`changed`, `busy`, `unsupervised`, `invalid`, `word`, `ceiling`, `scope`,
+`unavailable`, `protocol`, `frontend`); `failed` means the action ran and
+the machine does not show its postcondition; `stopped` means the action
+ended at a safe boundary because the machine differed from what it
+expected; `error` means the request could not be handled (admission,
+environment). Exit statuses: 0 when a `result` was written; 2 for an
+inadmissible request; 3 for a version refusal; no `result` means unknown.
 
-### Protocol schemas
+Cancellation is not an operation: for an action declared cancellable, F
+sends SIGTERM to C, which finishes the unit in hand and reports
+`status=cancelled` with what completed. A read request may be cancelled at
+any time; a managed act only at its declared safe boundaries; a handoff
+child is never signalled by F.
 
-Request (`omb-req 1`): `req` 1, then the operation's records.
+### Request schemas
 
-| Record | Cardinality | Schema |
-| --- | --- | --- |
-| `req` | 1 | `op:enum(hello\|snapshot\|detail\|validate\|execute) proto:uint frontend:id session:hex16` |
-| `scope` | ? | `name:enum(<scopes>)` — snapshot |
-| `page` | ? | `kind:id generation:hex64 offset:uint limit:uint` — detail; `limit` at most 500 |
-| `exec` | ? | `action:id basis:hex64 confirm:id?` — execute |
-| `arg` | * | `name:id value:bytes` — validate and execute; names as the action's `param` records declare, each at most once |
+Request (`omb-req 1`). Cardinality per operation (`—` forbidden: its
+presence refuses the request with `schema`):
 
-Response (`omb-res 1`): `hello` 1, then any of the others, then `result` 1
-last.
+| Record | Schema | `hello` | `snapshot` | `detail` | `validate` | `execute` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `req` | `op:enum(hello\|snapshot\|detail\|validate\|execute) proto:uint frontend:id session:hex16` | 1 | 1 | 1 | 1 | 1 |
+| `scope` | `name:enum(<scopes>)` | — | 1 | — | — | — |
+| `page` | `scope:enum(<scopes>) kind:id generation:hex64 offset:uint limit:uint` — `limit` 1 to 500 | — | — | 1 | — | — |
+| `select` | `action:id` — the action whose parameters are validated | — | — | — | 1 | — |
+| `exec` | `action:id basis:hex64 confirm:id?` — `confirm` is the typed word, empty when the action has no gate | — | — | — | — | 1 |
+| `arg` | `name:id value:bytes` — names as the action's `param` records declare, each at most once, at most 64 | — | — | — | * | * |
 
-| Record | Schema |
-| --- | --- |
-| `hello` | `core:id commit:hex40? source:hex64 proto:uint platform:enum(macos\|linux) arch:enum(arm64\|aarch64) user:enum(root\|user) ceiling:enum(read\|plan\|act) dry_run:bool fixture:bool` |
-| `stage` | `name:enum(<stages>) state:enum(done\|current\|todo\|skipped\|blocked) basis:enum(machine\|recorded) by:enum(macos\|linux)? at:utc? detail:text?` |
-| `fact` | `scope:enum(<scopes>) key:id label:text value:text state:enum(ok\|info\|warn\|fail\|unknown)` |
-| `region` | `start:uint size:uint role:enum(apple\|macos\|stub\|efi\|linux\|shared\|free\|other) label:text?` |
-| `answer` | `n:uint prompt:text value:text bytes:uint?` |
-| `guide` | `id:id step:uint text:text` |
-| `code` | `kind:enum(token\|ombdone\|ombshare\|ombbundle) value:id` |
-| `warning`, `blocker` | `id:id text:text fix:text?` |
-| `action` | `id:id scope:enum(<scopes>) label:text intent:enum(read\|plan\|act) gate:id? terminal:enum(managed\|handoff) cancel:bool basis:hex64 explain:text?` |
-| `param` | `action:id name:id type:enum(uint\|bool\|id\|bytes\|text\|choice) required:bool choice:id*` |
-| `row` | `kind:id key:bytes col:text*` — a detail page's rows; `generation` names their set |
-| `generation` | `id:hex64 total:uint` |
-| `progress` | `action:id done:uint total:uint unit:id? label:text?` |
-| `message` | `level:enum(info\|ok\|warn\|fail) text:text` |
-| `overflow` | `suppressed:uint` |
-| `result` | `status:enum(done\|refused\|failed\|cancelled\|stopped\|error) code:id text:text? next:text?` |
+### Response schemas
 
+Response (`omb-res 1`). Records appear in this table's order; cardinality
+per operation:
+
+| Record | Schema | `hello` | `snapshot` | `detail` | `validate` | `execute` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `hello` | `core:id commit:hex40? source:hex64 proto:uint platform:enum(macos\|linux) arch:enum(arm64\|aarch64) user:enum(root\|user) ceiling:enum(read\|plan\|act) dry_run:bool fixture:bool` | 1 | 1 | 1 | 1 | 1 |
+| `generation` | `id:hex64 total:uint` | — | 1 | 1 | — | — |
+| `stage` | `name:enum(<stages>) state:enum(done\|current\|todo\|skipped\|blocked) basis:enum(machine\|recorded) by:enum(macos\|linux)? at:utc? detail:text?` | — | * | — | — | — |
+| `fact` | `scope:enum(<scopes>) key:id label:text value:text state:enum(ok\|info\|warn\|fail\|unknown)` | — | * | — | — | — |
+| `region` | `start:uint size:uint role:enum(apple\|macos\|stub\|efi\|linux\|shared\|free\|other) label:text?` | — | * | — | * | — |
+| `answer` | `n:uint prompt:text value:text bytes:uint?` | — | * | — | * | — |
+| `guide` | `id:id step:uint text:text` | — | * | — | — | * |
+| `code` | `kind:enum(token\|ombdone\|ombshare\|ombbundle) value:code` | — | * | — | — | * |
+| `warning` | `id:id text:text fix:text?` | — | * | — | * | * |
+| `blocker` | `id:id text:text fix:text?` | — | * | — | — | — |
+| `action` | `id:id scope:enum(<scopes>) label:text intent:enum(read\|plan\|act) gate:id? terminal:enum(managed\|handoff) cancel:bool basis:hex64? explain:text?` — `basis` empty for an action with parameters (validate gives it) | — | * | — | — | — |
+| `param` | `action:id name:id type:enum(uint\|bool\|id\|bytes\|text\|choice\|code) kind:id? required:bool choice:id*` — `kind` names the code kind for type `code` | — | * | — | — | — |
+| `normal` | `name:id value:bytes` — a parameter as the core normalised it | — | — | — | * | — |
+| `invalid` | `name:id code:id text:text` — one per refused parameter | — | — | — | * | — |
+| `review` | `action:id basis:hex64` — only when no parameter is invalid | — | — | — | ? | — |
+| `row` | `kind:id key:bytes col:text*` — at most the page's `limit` | — | — | * | — | — |
+| `progress` | `action:id done:uint total:uint unit:id? label:text?` | — | — | — | — | * |
+| `message` | `level:enum(info\|ok\|warn\|fail) text:text` | — | * | * | * | * |
+| `overflow` | `suppressed:uint` | — | ? | ? | ? | ? |
+| `result` | `status:enum(done\|refused\|failed\|cancelled\|stopped\|error) code:id text:text? next:text?` — last | 1 | 1 | 1 | 1 | 1 |
+
+Every response is bounded by the spool's limits (8 MiB, 65 536 records).
 Subsystem rows (`item`, `resolution`, `conflict`, `health`, `step`) are
-delivered as `row` records whose `kind` and columns are defined with their
-subsystems.
+`row` records whose `kind` and columns are defined with their subsystems.
+
+### Golden examples
+
+Normative: the frontend's contract tests (docs/TESTING.md →
+`proto-golden-*`) send and expect these bytes exactly. Fields are separated
+by one TAB; every line ends with LF.
+
+`hello`:
+
+```text
+omb-req 1
+req	op=hello	proto=1	frontend=0.1.0	session=0123456789abcdef
+```
+
+```text
+omb-res 1
+hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=act	dry_run=0	fixture=0
+result	status=done	code=ok	text=	next=
+```
+
+`snapshot` of the Shared scope, after Linux has finished (every code kind
+appears in a response the same way):
+
+```text
+omb-req 1
+req	op=snapshot	proto=1	frontend=0.1.0	session=0123456789abcdef
+scope	name=shared
+```
+
+```text
+omb-res 1
+hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=act	dry_run=0	fixture=0
+generation	id=9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15	total=0
+stage	name=shared	state=current	basis=machine	by=	at=	detail=
+fact	scope=shared	key=shared.state	label=Shared	value=planned,%20not%20created	state=info
+code	kind=token	value=omb2:enc%3D1,user%3Dalex,host%3Dm1pro,kmap%3Dus,tz%3DAmerica/New_York,loc%3Den_US.UTF-8,ssh%3D0,gh%3Doctocat,linux%3D250,shared%3D150,dev%3D1,plan%3D1a2b3c4d,prof%3D3f09c2a1
+action	id=shared.create	scope=shared	label=Create%20Shared	intent=act	gate=create	terminal=handoff	cancel=0	basis=5f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a0	explain=
+result	status=done	code=ok	text=	next=
+```
+
+The token above decodes to `omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,loc=en_US.UTF-8,ssh=0,gh=octocat,linux=250,shared=150,dev=1,plan=1a2b3c4d,prof=3f09c2a1`.
+The other kinds, as they are written:
+
+```text
+code	kind=ombdone	value=ombdone-1a2b3c4d-8f2a41c0e9b7-f5f0
+code	kind=ombshare	value=ombshare-1a2b3c4d-3c1f9e2d7a60-4149
+code	kind=ombbundle	value=ombbundle-3f09c2a1b7d45e60-26d1
+```
+
+`detail`, one page of two rows:
+
+```text
+omb-req 1
+req	op=detail	proto=1	frontend=0.1.0	session=0123456789abcdef
+page	scope=profile	kind=inventory	generation=9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15	offset=0	limit=2
+```
+
+```text
+omb-res 1
+hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=act	dry_run=0	fixture=0
+generation	id=9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15	total=212
+row	kind=inventory	key=brew:ripgrep	col=ripgrep	col=brew	col=15.2.0	col=pacman%20ripgrep
+row	kind=inventory	key=brew:node	col=node	col=brew	col=22.11.0	col=mise%20node@22
+result	status=done	code=ok	text=	next=
+```
+
+`validate`, the plan's sizes:
+
+```text
+omb-req 1
+req	op=validate	proto=1	frontend=0.1.0	session=0123456789abcdef
+select	action=plan.save
+arg	name=linux_size	value=250GB
+arg	name=shared_size	value=150GB
+```
+
+```text
+omb-res 1
+hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=plan	dry_run=0	fixture=0
+answer	n=1	prompt=New%20size%20for%20macOS	value=532543MiB	bytes=558411808768
+answer	n=2	prompt=New%20OS%20size	value=244140MiB	bytes=255999344640
+normal	name=linux_size	value=250000000000
+normal	name=shared_size	value=150000000000
+review	action=plan.save	basis=5f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a0
+result	status=done	code=ok	text=	next=
+```
+
+`validate` refused:
+
+```text
+omb-res 1
+hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=plan	dry_run=0	fixture=0
+invalid	name=linux_size	code=leading-zero	text=Sizes%20cannot%20start%20with%200
+result	status=refused	code=invalid	text=	next=
+```
+
+`execute`, an approval code typed on Linux (the action's parameter is
+declared `param action=bundle.approve name=code type=code kind=ombbundle
+required=1`, and it has no gate word):
+
+```text
+omb-req 1
+req	op=execute	proto=1	frontend=0.1.0	session=0123456789abcdef
+exec	action=bundle.approve	basis=5f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a0	confirm=
+arg	name=code	value=ombbundle-3f09c2a1b7d45e60-26d1
+```
+
+`execute`, Shared's creation, with its result and the code it produces:
+
+```text
+omb-req 1
+req	op=execute	proto=1	frontend=0.1.0	session=0123456789abcdef
+exec	action=shared.create	basis=5f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a05f2ec1a0	confirm=create
+```
+
+```text
+omb-res 1
+hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=act	dry_run=0	fixture=0
+code	kind=ombshare	value=ombshare-1a2b3c4d-3c1f9e2d7a60-4149
+message	level=ok	text=Shared%20created%20as%20disk0s7
+result	status=done	code=ok	text=	next=Boot%20Linux%20and%20run%20shared%20activate
+```
+
+A cancelled request ends:
+
+```text
+result	status=cancelled	code=cancelled	text=2%20of%205%20items%20done	next=
+```
+
+Invalid examples, each refused with the reason shown:
+
+| Case | Bytes (TAB shown as `⇥`) | Reason |
+| --- | --- | --- |
+| validate without an action | `req⇥op=validate⇥…` with no `select` record | `schema` |
+| execute without a basis | `exec⇥action=shared.create⇥confirm=create` | `schema` |
+| a code of the wrong kind | `code⇥kind=ombdone⇥value=omb2:enc%3D1` | `type` |
+| a field the schema does not list | `scope⇥name=shared⇥extra=1` | `schema` |
+| a duplicate field | `scope⇥name=shared⇥name=disk` | `schema` |
+| a comment line | `# a note` | `key` |
+| a record after the result | `result⇥…` then `message⇥level=info⇥text=x` | `after-result` |
+| a byte after the result's LF | `result⇥…` LF then `x` | `eof` |
 
 ## 5. Actions, bases and execution
 
 ### The core says what is legal
 
 The frontend shows only actions the core listed, asks only for the
-parameters they declare, and sends back the `basis` it was shown. `gate` is
-the typed word, or empty; `terminal` says whether the action needs the real
-terminal; `cancel` whether cancelling is safe.
+parameters they declare, and sends back the `basis` it was shown — from the
+`action` record for an action without parameters, from `validate`'s
+`review` for one with them. `gate` is the typed word, or empty; `terminal`
+says whether the action needs the real terminal; `cancel` whether
+cancelling is safe.
 
 ### The basis
 
@@ -432,8 +697,10 @@ Per family, the keys:
 | `install.node` | `method`, `target`, `version` | `target_check` (the check's answer: repository, name, version, architecture; or the lock URL), `installed` (absent, or the version found) | `registry` |
 | `ai.transform` | `source` (the source definition's SHA-256), `output` (the SHA-256 of what was shown) | `existing` (absent, or the SHA-256 of the tool's definition of that name) | `adapter` |
 | `rescue.agent` | `tool`, `installer_sha256` | `euid`, `installed` | — |
-| `rescue.ssh` | `key.<n>` (fingerprints), `mode` (`harden` or `open`) | `euid`, `sshd_installed`, `sshd_active`, `sshd_enabled`, `policy.<context>` (the effective values of docs/RESCUE.md), `listeners`, `dropins` (the SHA-256 of the drop-in listing), `authorized_keys` | — |
-| `rescue.remove` | `removal` (the SHA-256 of the list shown) | `rescue_record`, `sshd_active`, `dropins` | — |
+| `rescue.close` | — | `euid`, `system_sshd` (its state and classification, docs/RESCUE.md → *The system's SSH*) | — |
+| `rescue.harden` | — | `euid`, `system_sshd`, `system_config` (the SHA-256 of `sshd_config` and every file it includes) | — |
+| `rescue.open` | `key.<n>` (fingerprints), `address`, `port` | `euid`, `system_sshd`, `rescue_config` (the SHA-256 of the rescue instance's configuration), `listeners` | — |
+| `rescue.remove` | `removal` (the SHA-256 of the list shown) | `rescue_record`, `rescue_unit` (the rescue instance's state), `system_sshd` | — |
 | `qualify.step` | `step`, `round` | `shared` (GUID and mount identity), `active`, `step_files` (the SHA-256 of the round folder's listing) | `schema`, `frontend` |
 
 **Thresholds are not bases.** Free space, free memory and similar amounts
@@ -448,8 +715,9 @@ In this order, stopping at the first refusal:
 1. **Admit and validate** the request and each argument's syntax.
 2. **The session allows it**: intent within the ceiling, scope among the
    session's scopes, both from the environment.
-3. **Take exclusion**: the run lock, then reconcile or create the scope's
-   operation record.
+3. **Take exclusion**: the run lock; then the scope's operation records — an
+   unsupervised one refuses (`unsupervised`), a supervised one of a live
+   core refuses (`busy`) — then write this action's operation record.
 4. **Re-read** the action's machine and destination observations.
 5. **Available now**: the action is among those the fresh read allows,
    thresholds included (free space, free memory).
@@ -474,15 +742,13 @@ set it describes. A `detail` request names the generation it is paging; if
 the core's fresh generation differs, it refuses with `code=changed`, so rows
 from two different inventories are never shown as one.
 
-### Versions and exit statuses
+### Versions
 
 - **Protocol**: an integer; the core answers `proto` or refuses
   (`code=protocol`). Changing an existing record's meaning is a new version.
 - **Frontend**: the core refuses a `frontend=` version other than the one the
   release lock names (`code=frontend`), except in fixture mode with the
   development override.
-- **Exit status**: 0 when a `result` was written; 2 for an inadmissible
-  request; 3 for a version refusal. No `result` means unknown.
 
 ### Managed and handoff requests
 
