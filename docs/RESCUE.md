@@ -27,7 +27,7 @@ this install. None of it is required, and none of it can block the install:
 | Start Claude Code | `unavailable` (why) · `available` · `installed` (version) · `signed-in` · `failed` (why) · `skipped` |
 | Start Codex | the same |
 | Start OpenCode | the same; `unavailable` unless a verified release is pinned in `lib/sources.sh` |
-| Remote rescue over SSH | `unavailable` · `available` · `open` (the address) — and, before anything, the SSH state found (below) |
+| Remote rescue over SSH | `unavailable` · `available` · `open` (the address and port) — and, before anything, the system's SSH classification (below) |
 | Debug report | always |
 | Continue installation | always |
 
@@ -66,7 +66,7 @@ screen says so before the first start, and nothing here is a sandbox.
   or reads an API key typed into it; OpenCode has `auth login`. Credentials
   land in the tool's own files under `/root`; this tool never reads or copies
   them.
-- **No global policy is installed** (docs/DECISIONS.md → O3): no Claude Code
+- **No global policy is installed** (docs/DECISIONS.md → *Resolved review questions*, O3): no Claude Code
   managed settings, nothing under `/etc` for the agents.
 
 ### The rescue workspace
@@ -90,125 +90,140 @@ must never be done.
 ## Remote rescue over SSH
 
 The most comfortable rescue is often another computer: a full terminal, a
-clipboard, and the person's own agent, already signed in. Opening it changes
-how the machine can be reached, so it is a state machine whose every step is
-verified on the machine.
+clipboard, and the person's own agent, already signed in. Remote rescue
+therefore runs **its own SSH server**, a rescue-owned `sshd` with a
+configuration this tool writes whole, instead of changing the system's.
+An arbitrary system configuration can hold `Match` blocks for addresses,
+hosts or users that no set of sample checks can cover; a configuration with
+no `Match` and no `Include` has one effective policy for every connection,
+which `sshd -T` shows completely.
 
-### What is observed first, and recorded
+### The system's SSH
 
-Before anything changes, as root, read-only:
+Before anything changes, as root, read-only, the system's own server is
+observed and classified:
 
 | Observation | How |
 | --- | --- |
-| OpenSSH installed | `pacman -Q openssh` |
-| the service running, and enabled | `systemctl is-active sshd`, `systemctl is-enabled sshd` |
-| the effective policy, per connection context | `sshd -T -C user=<u>,host=omb-check,addr=<a>,laddr=<l>,lport=<p>` for users `root`, `alarm` (when it exists) and the everyday user (when it exists), remote addresses `127.0.0.1` and one on each network the machine is on, and each local address and port it listens on (an attribute left out makes a `Match` on it false, so every one is given): `passwordauthentication`, `kbdinteractiveauthentication`, `permitrootlogin`, `pubkeyauthentication`, `authenticationmethods`, `permitemptypasswords`, `usepam`, `port`, `listenaddress`. Keywords are compared without regard to case (OpenSSH 10.4 changed their case). `sshd -T` needs root and the host keys, which the image generates on first boot |
-| what listens | `ss -Hltn` for the configured port |
-| the configuration's shape | whether `/etc/ssh/sshd_config` includes `sshd_config.d/*.conf` and where (Arch puts it first); the names of the drop-ins present; whether `Match` blocks exist |
+| OpenSSH installed; the service running, and enabled | `pacman -Q openssh`, `systemctl is-active sshd`, `systemctl is-enabled sshd` |
+| the configuration's shape | `/etc/ssh/sshd_config` and every file its `Include` lines name (globs expanded, relative to `/etc/ssh`, nested includes followed, at most 16 deep), read as text: whether any line's first keyword is `Match`, in any case, with or without `=` |
+| its effective policy | `sshd -T` (root; the host keys the image makes on first boot): `passwordauthentication`, `kbdinteractiveauthentication`, `permitrootlogin`, `pubkeyauthentication`, `authenticationmethods`, `permitemptypasswords`, `usepam`, `port`, `listenaddress`, compared without regard to case (OpenSSH 10.4 changed it) |
+| what listens | `ss -Hltnp`: any listening `sshd` that is not the system unit's is classified **unproven** as well |
 | default accounts | `alarm` present and not locked (`passwd -S alarm`) |
 | a firewall | whether `ufw` is active (`ufw status`), shown as information; never relied on and never changed |
 
+| Classification | Means |
+| --- | --- |
+| **stopped** | not running |
+| **key-only** | running; no `Match` anywhere in its configuration, so its policy is the same for every connection; and that policy allows no password or keyboard-interactive login and no password for root |
+| **exposed** | running; no `Match`; and its policy allows a password or keyboard-interactive login, or root with a password |
+| **unproven** | running, with a `Match` block somewhere: this tool cannot prove what every connection gets, so it treats it as exposed |
+
 On the fresh Asahi Alarm Minimal image this finds `sshd` enabled and
-running, password authentication on (OpenSSH's default; Arch changes only
-keyboard-interactive), and the documented `alarm`/`alarm` account: the
-machine is **exposed** from its first boot. Omarchy Mac later turns on a
+running with no `Match`, password authentication on (OpenSSH's default;
+Arch changes only keyboard-interactive), and the documented `alarm`/`alarm`
+account: **exposed** from the first boot. Omarchy Mac later turns on a
 firewall that denies incoming connections, but it neither stops `sshd` nor
-changes `alarm`'s password.
+changes `alarm`'s password. An exposed or unproven server is shown at the
+top of the rescue screen and in `doctor`, whether or not rescue is used.
 
-The machine's SSH state is then one of: **closed** (not running), **key-only**
-(running, and in every observed context password and keyboard-interactive
-authentication are off and root may log in with a key only), or **exposed**
-(running, and any observed context allows a password or keyboard-interactive
-login, or root with a password). An exposed machine is shown as exposed at
-the top of the rescue screen and in `doctor`, whether or not rescue is used.
+Two actions deal with it, with or without remote rescue:
 
-### Close or harden, without opening
+- **close** (yes/no) stops the system's `sshd` for this boot, never
+  disabling it, and says that it starts again at the next boot (Omarchy
+  Mac's setup reboots several times).
+- **harden** (typed `harden`), only for a configuration with no `Match` and
+  with its `Include` of `sshd_config.d/*.conf` first: a drop-in,
+  `00-omarchy-mac-bootstrap-harden.conf`, with `PasswordAuthentication no`,
+  `KbdInteractiveAuthentication no`, `PermitRootLogin prohibit-password`,
+  `AuthenticationMethods publickey`. It is checked **before** the service
+  sees it — `sshd -t -f` and `sshd -T -f` on a private copy of the
+  configuration whose `Include` points at the existing drop-ins plus this
+  one — then installed, the service reloaded, and `sshd -T` checked again;
+  if that check disagrees, the drop-in is removed and the service reloaded
+  at once. With no `Match`, one check covers every connection. The drop-in
+  lasts across reboots and is **released to the person** at once: it is
+  theirs, recorded as released, and no cleanup removes it. With a `Match`
+  present, harden is refused and says why.
 
-When the state is **exposed**, the screen offers two actions before any
-rescue: **close** (yes/no) stops `sshd` for this boot, never disabling it,
-and says that it starts again at the next boot (Omarchy Mac's setup reboots
-several times); **harden** (typed `ssh`) applies the key-only drop-in below
-and verifies it, adding no key, which lasts across reboots. Both are
-recorded in rescue's record.
+### The rescue server
+
+| Part | What it is |
+| --- | --- |
+| files | `/root/omarchy-rescue/ssh/` (0700): `sshd_config`, `host_ed25519` (a host key made for rescue with `ssh-keygen -t ed25519 -N ''`), `authorized_keys`, `sshd.log` |
+| configuration | written whole by this tool, **no `Include`, no `Match`**: `ListenAddress <the chosen address>`, `Port <the first free of 2222–2229>`, `HostKey` the rescue key, `AuthorizedKeysFile` the rescue file, `AuthorizedKeysCommand none`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `PubkeyAuthentication yes`, `AuthenticationMethods publickey`, `PermitRootLogin prohibit-password`, `PermitEmptyPasswords no`, `UsePAM no`, `HostbasedAuthentication no`, `GSSAPIAuthentication no`, `AllowUsers root`, `MaxAuthTries 3`, `MaxStartups 3:50:10`, `AllowTcpForwarding no`, `X11Forwarding no`, `PermitTunnel no`, `PermitUserEnvironment no` |
+| process | a transient systemd unit, `systemd-run --unit=omb-rescue-sshd --collect /usr/bin/sshd -D -f /root/omarchy-rescue/ssh/sshd_config -E /root/omarchy-rescue/ssh/sshd.log`: never enabled, gone at the next boot, stopped by name, and systemd ends every process of it, open sessions included |
+| keys | the person's public keys, fetched from `https://github.com/<user>.keys` for the token's `gh=` user or pasted, each shown by fingerprint before use; only in the rescue file, never in `/root/.ssh` |
 
 ### Opening
 
-Typed `ssh`, as root, in this order; any failure undoes rescue's changes
-(below) and reports, and remote rescue is not open:
+Typed `ssh`, as root, after a review that shows the address, the port, the
+keys' fingerprints and what happens to the system's server. In this order,
+checking before anything listens:
 
-1. **Keys** — the person's public keys, fetched from
-   `https://github.com/<user>.keys` for the token's `gh=` user, or pasted;
-   each shown by fingerprint before use; added to `/root/.ssh/authorized_keys`
-   between marker lines, the lines recorded.
-2. **Drop-in** — `/etc/ssh/sshd_config.d/00-omarchy-mac-bootstrap-rescue.conf`
-   with `PasswordAuthentication no`, `KbdInteractiveAuthentication no`,
-   `PermitRootLogin prohibit-password`, `PubkeyAuthentication yes`,
-   `AuthenticationMethods publickey`. OpenSSH keeps the **first** value it
-   reads for a keyword; Arch includes the drop-ins at the top of
-   `sshd_config` in name order, so `00-…` is read before Arch's
-   `20-systemd-userdb.conf` and `99-archlinux.conf`. A `Match` block can
-   still override it for some users or addresses; the effective check below
-   is what decides, never the file.
-3. **Validate** — `sshd -t` must pass; otherwise the drop-in is removed and
-   nothing is reloaded.
-4. **Start or reload** — `systemctl start sshd` if it was not running (never
-   `enable`), `systemctl reload sshd` if it was; which one is recorded.
-5. **Verify the effective policy** — `sshd -T -C` again for every context
-   above: password and keyboard-interactive off, root key-only, public keys
-   on. A `Match` block or an earlier drop-in that overrides any of these fails
-   the step.
-6. **Verify the listener** — `ss -Hltn` shows the port on the expected
-   addresses. No firewall is assumed and none is changed: a private address
-   is not a firewall, and the screen says which addresses can reach it.
-7. **Test for real, on loopback** — a throwaway key made in the rescue
-   workspace is added (marked) and `ssh -o BatchMode=yes` with it to
-   `root@127.0.0.1` must succeed. Then, for root and every other account
-   observed, an attempt with `BatchMode=yes` and public keys off — which
-   never sends a password — must be refused with the server offering
-   `publickey` and nothing else. The throwaway key and its line are then
-   removed.
-8. **Open** — the screen shows `ssh root@<address>`; on the other computer,
+1. **Prepare** the files above.
+2. **Validate offline** — `sshd -t -f <config>` must pass.
+3. **Inspect the effective policy offline** — `sshd -T -f <config> -C
+   user=root,host=omb-check,addr=127.0.0.1,laddr=<address>,lport=<port>`
+   must show exactly the configuration's values above. The configuration's
+   bytes are compared with what the tool wrote, so no `Include` or `Match`
+   can be in it; with neither, this one check is the policy for every
+   connection.
+4. **The system's server** — if it is exposed or unproven and running, it
+   is stopped for this boot (the review said so, and the typed word covers
+   it) and checked stopped; a second `sshd` listening outside the system
+   unit is stopped the same way (its process ended); if the system's server
+   is key-only or stopped, it is left alone. Remote rescue never opens while
+   an exposed or unproven `sshd` listens.
+5. **Start** the rescue unit.
+6. **Verify the listener** — `ss -Hltn` shows exactly the chosen address and
+   port for the unit's process, and nothing else of it.
+7. **A real key login** — a throwaway key made in the workspace is added to
+   the rescue file, and `ssh -F /dev/null -o BatchMode=yes -o
+   IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o
+   UserKnownHostsFile=<a file holding the rescue host key> -i <throwaway> -p
+   <port> root@<address> true` must succeed; the throwaway line is then
+   removed. No password attempt is made: the proof that no password path
+   exists is the configuration itself (steps 2 and 3), not a failed login.
+8. **Open** — the screen shows `ssh -p <port> root@<address>` and the host
+   key's fingerprint; on the other computer,
    `/opt/omarchy-mac-bootstrap/omarchy-bootstrap debug context` prints the
    brief for the person's own agent.
 
-### Cleanup and the safe final states
+Any failure before step 5 changes nothing that listens. Any failure from
+step 5 on stops the rescue unit, checks that nothing listens on its port,
+and reports; the system's server stays as step 4 left it, never restarted
+because it had been running. No firewall is assumed and none is changed: a
+private address is not a firewall, and the screen says which addresses can
+reach the port (after Omarchy's firewall is on, none from outside).
 
-`rescue remove` (typed `remove`) ends SSH in exactly one of these, verified
-on the machine before it reports success. It never lets a running service
-reload into a policy it has not checked:
+### Ending remote rescue
 
-- **Stopping comes first.** Where the final state is *stopped*, `sshd` is
-  stopped before rescue's drop-in and keys are removed.
-- **Predict before removing.** Before the drop-in is removed from a running
-  service, cleanup computes the policy without it: `sshd -T -C …` for every
-  observed context with `-f` naming a private copy of `sshd_config` whose
-  `Include` points at a folder holding every drop-in except rescue's. A
-  predicted exposed policy keeps the drop-in (released to the person) or
-  stops `sshd`, as the person chooses; only a predicted key-only policy
-  lets the drop-in go.
-- **Check, and put it back if wrong.** After the reload, the effective
-  check runs on the real service; if it fails, the drop-in is restored and
-  `sshd` reloaded at once, and cleanup reports "not clean".
+`rescue remove` (typed `remove`), or **close rescue** on the rescue screen:
 
-| Before rescue | Cleanup does | Final state |
-| --- | --- | --- |
-| closed, and rescue started `sshd` | removes rescue's keys and drop-in, stops `sshd`, checks it is not running | **stopped** |
-| closed, and the person chose to keep SSH | keeps the drop-in and the keys, releases them to the person (recorded as no longer rescue's), verifies key-only | **retained key-only** |
-| key-only already | removes rescue's keys and drop-in, reloads, verifies the effective policy is still key-only in every context | **as before, key-only** |
-| exposed | removes rescue's keys unless kept; **keeps the key-only drop-in**, releases it to the person, reloads, verifies key-only — or, if the person prefers, stops `sshd` | **retained key-only**, or **stopped** |
+1. Stop the rescue unit; check it is inactive and nothing listens on its
+   port.
+2. Remove `/root/omarchy-rescue/ssh/`.
+3. Leave the system's server as it is: if rescue stopped it for this boot,
+   it stays stopped — never restarted because it was running before — and
+   the screen says it starts at the next boot because it is enabled, with
+   **harden** offered when its configuration allows it.
 
-Cleanup never reopens password access on a running service and calls the
-result clean. If a verification fails, cleanup says "not clean", shows the
-state it found, and reports no success. Handing SSH over to permanent use
-later belongs to the developer setup's SSH module, which runs Omarchy's
-`omarchy-setup-security-sshd`.
+The safe final state is always the same and is verified before success is
+reported: **the rescue server stopped, its files gone, and the system's
+server either untouched (it was stopped or key-only), stopped for this boot
+(it was exposed or unproven), or hardened by the person's own choice.** If a
+check fails, cleanup says "not clean" with what it found, and reports no
+success. Handing SSH over to permanent use belongs to the developer setup's
+SSH module, which runs Omarchy's `omarchy-setup-security-sshd`.
 
 ## `rescue remove`
 
 Typed `remove`, as root. It removes exactly what rescue's record lists: each
-tool's files and its sign-in file under `/root`, the workspace, and the SSH
-changes as above. Everything is re-read afterwards; what could not be
-removed is named.
+tool's files and its sign-in file under `/root`, the workspace, and the
+rescue server as above. What rescue **released** — a harden drop-in — is not
+rescue's any more and stays; the summary names it. Everything is re-read
+afterwards; what could not be removed is named.
 
 After Omarchy, root's password is locked and `/root` is unreadable to the
 everyday user. The verify stage, run as that user, reads rescue's record and
@@ -254,7 +269,7 @@ enum, a version, a bounded identifier, a count or a size:
 | Linux | Omarchy Mac's signals as booleans; `omarchy-mac-setup.service` `ActiveState`, `SubState` and `Result` (`systemctl show -p`); encryption classification; NetworkManager `STATE` (`nmcli -t -f STATE general`); root filesystem type; whether `/boot` is mounted; Shared state and whether its mount identity matched |
 | restore | counts per state; for failed nodes, node ids (generated, never names or paths) and reason codes |
 | qualification | state, step, whether the Shared identity matched |
-| rescue | each option's state; SSH state (`closed`, `key-only`, `exposed`) |
+| rescue | each option's state; the system's SSH classification (`stopped`, `key-only`, `exposed`, `unproven`); the rescue server's state (`open`, `stopped`) |
 | failures | `failure code=<enum>` records from a fixed list (`network-offline`, `setup-unit-failed`, `encryption-pending`, `shared-identity-mismatch`, …) |
 
 Adding a field means adding it to this table, with its type, in a reviewed
@@ -325,5 +340,5 @@ How to look:
 
 ## Not yet seen on real hardware
 
-{the hardware-only facts from docs/UPSTREAM.md → Not verified yet}
+{the facts from docs/UPSTREAM.md → *Only the Mac can show (M17)*}
 ```

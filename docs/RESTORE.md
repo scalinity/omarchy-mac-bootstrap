@@ -76,8 +76,8 @@ one or with a choice for the rest; the default for every conflict is
 | --- | --- |
 | `run` (in `run.omb`) | `id:hex16 bundle:bytes manifest:hex64 profile:hex16 approved:utc code:id started:utc tool:id source:hex64 user_uid:uint home:bytes` |
 | `step` | `run:hex16 n:uint phase:enum(intent\|staged\|backed-up\|placed\|applied\|verified\|failed\|accepted\|undo-intent\|undone\|undo-refused) node:id item:bytes kind:enum(file\|dir\|link\|package\|runtime\|tool\|agent\|setting\|mcp\|shell-line) at:utc` |
-| `dest` (file kinds) | `path:bytes old:enum(absent\|file\|link\|dir) old_sha:hex64? old_mode:enum(0600\|0644\|0700\|0755)? old_link:bytes? old_tree:hex64? new_sha:hex64? new_mode:enum(0600\|0644\|0700\|0755)? new_link:bytes? stage:bytes? backup:bytes? backup_how:enum(rename\|copy)?` |
-| `setting` (structured kinds) | `owner:enum(git\|claude\|codex\|opencode\|bash) key:bytes old:bytes? old_absent:bool new:bytes` |
+| `dest` (file kinds) | `path:bytes old:enum(absent\|file\|link\|dir) old_sha:hex64? old_mode:enum(0600\|0644\|0700\|0755)? old_link:bytes? old_tree:hex64? new_sha:hex64? new_mode:enum(0600\|0644\|0700\|0755)? new_link:bytes? stage:bytes? backup:bytes?` |
+| `setting` (structured kinds) | `owner:enum(git\|claude) key:bytes old:bytes? old_absent:bool new:bytes` |
 | `package` (install kinds) | `method:id target:bytes version:bytes? found:bytes?` |
 | `reason` | `code:id text:text` — with `failed`, `undo-refused` |
 
@@ -96,31 +96,53 @@ For a destination `D` under the home, with the item's approved choice:
 3. **Stage**: the object is checked against its digest, written to the stage
    path with exclusive creation and a private umask, given its mode, read
    back, and flushed. **`staged`**.
-4. **Back up** a replacement by renaming `D` into `backups/<run>/` (the
-   backups live under the home, on the same filesystem), then comparing what
-   was moved with the reviewed old state. If it differs — `D` changed in the
-   instant since the re-check — it is renamed back and the item stops as a
-   conflict. If the rename is refused across devices, the old file is copied
-   and flushed instead (`backup_how=copy`), the copy compared with the
-   reviewed old state, and `D` compared once more just before placing.
-   **`backed-up`**.
-5. **Place, never over something new**: a file by `ln` from the stage to
-   `D`, which refuses if any name has appeared at `D`, then the stage name
-   removed; a link by `ln -s` at `D`, which refuses the same way; a folder
-   by renaming it onto `D`, which can replace only an empty folder that
-   appeared, never a file or a folder with contents. (After a backup by
-   copy, `D` still exists, and the stage is renamed onto it.) **`placed`**.
+4. **Back up** a replacement by renaming `D` into `backups/<run>/`, then
+   comparing what was moved with the reviewed old state. The rename moves
+   whatever is at `D` at that instant, whole; if it is not what the review
+   showed — `D` changed since the re-check — it is renamed back and the
+   item stops as a conflict, so nothing unreviewed is replaced. The backups
+   live under the home, on its filesystem; if `D` is on another device, the
+   rename is refused and so is the item (Keep or Skip), because a copy
+   followed by an overwrite could not keep this promise. **`backed-up`**.
+5. **Place, never over something new**, with a primitive that fails if any
+   name — a file, a folder, a link — has appeared at `D`: a file by `ln`
+   from the stage to `D` (`link(2)`), then the stage name removed; a link by
+   `ln -s` at `D` (`symlink(2)`); a folder by `mv -T --update=none-fail`
+   (GNU coreutils 9.5 and later: `renameat2` with `RENAME_NOREPLACE`,
+   failing if `D` exists). A folder is placed this way only when the home's
+   filesystem is one whose kernel support for `RENAME_NOREPLACE` is known
+   (btrfs, ext4, xfs, tmpfs; read with `stat -f -c %T`); elsewhere a folder
+   unit is refused rather than placed with a weaker rename. If placing
+   fails because something appeared, the item stops as a conflict, the
+   newcomer is left alone, and the old state stays in the backup, named.
+   **`placed`**.
 6. **Verify**: `D` is read back (digest, mode, or link text). **`verified`**.
 
 A folder unit is built whole beside its target and placed by the same steps.
-Modes are a ceiling: no setuid, setgid or sticky bit, nothing group- or
-world-writable, private classes 0600/0700; ownership is the running user;
-`chown` is never used.
+Generated and merged configuration (the Codex and OpenCode files, the
+shell file and `~/.bashrc` with its one marked line) is written as a whole
+new file and placed by the same steps. Modes are a ceiling: no setuid,
+setgid or sticky bit, nothing group- or world-writable, private classes
+0600/0700; ownership is the running user; `chown` is never used.
 
-A structured setting (a Git setting, an MCP definition, the Bash line) is
-read immediately before its write and read back after it. Its owner's
-command has no compare-and-set, so a change made in that instant is found
-by the read-back and reported as a conflict, with both values.
+**What this prevents, and what it does not.** Nothing the review did not
+show is replaced: a change before the re-check stops the item; a change
+between the re-check and the backup rename is caught by comparing what was
+moved; something that appears before placing makes the placing primitive
+fail. The one residual race is **a program that keeps the old file open
+and writes to it after it was moved aside**: its writes land in the backup,
+not in `D`, and are not detected. This tool's lock cannot stop another
+program writing.
+
+**Structured settings** that only their owner's command writes — a Git
+setting (`git config`), a Claude Code MCP server (`claude mcp add-json`), a
+plugin (`claude plugin install`) — use that command as it is: it has no
+compare-and-set. The setting is re-read under this tool's lock immediately
+before the command, the write goes ahead only if it still has the reviewed
+value, and it is read back afterwards to verify the intended value. A write
+by another program between that re-read and the command is **overwritten
+and not detected**; the read-back proves only that the intended value is
+there now. A change made before the re-read stops the item as a conflict.
 
 ### After a crash
 
@@ -135,8 +157,8 @@ records and the filesystem, before anything new happens:
 | `staged` | `D` unchanged; no backup | died before backing up | continues from the backup |
 | `staged` | `D` absent; the backup equals the old state | died after the backup rename | writes `backed-up`, continues |
 | `staged` | `D` absent; the backup is not the old state | `D` changed just before the backup | renames the backup back to `D`; stops the item as a conflict |
-| `staged`, backing up by copy | `D` unchanged; a backup copy equal to the old state (or a partial one) | died after (or during) the copy | writes `backed-up` (or removes the partial copy, named by the intent, and copies again), continues |
-| `backed-up`, or `staged` with nothing to back up | `D` absent; the stage file present | died before placing | continues from the placing rename |
+| `backed-up`, or `staged` with nothing to back up | `D` absent; the stage file present | died before placing | continues from placing |
+| `backed-up`, or `staged` with nothing to back up | `D` present and not the new object; the stage file present | something appeared at `D` before placing | stops the item as a conflict; the newcomer left alone, the old state in the backup |
 | `backed-up` or `staged` | `D` equals the new object; the stage name absent, or a second name of the same file | died after placing | removes the stage name, writes `placed`, verifies |
 | `placed` | `D` equals the new object | died before verifying | verifies |
 | `undo-intent` | `D` is still what the restore wrote | died before undoing | undoes, after the same comparison |
@@ -147,8 +169,8 @@ records and the filesystem, before anything new happens:
 For the other kinds the machine decides the same way: a package is present
 or not (`pacman -Q`); a runtime is installed or not (its version folder
 under `~/.local/share/mise/installs/`); a Git
-setting, an MCP definition or the Bash line reads back as the old value, the
-new value, or something else (a conflict).
+setting or a Claude Code MCP definition reads back as the old value, the new
+value, or something else (a conflict).
 
 ### What survives what
 
@@ -231,10 +253,9 @@ wrote and what was there before, and undo re-reads the destination first.
 | Kind | Undo does, when the destination is exactly what the restore wrote | Otherwise |
 | --- | --- | --- |
 | a placed file, folder or link | puts the backup back, or removes the new one if nothing was there before | refused: "changed since the restore", with what is there now |
-| a generated configuration file | the same | refused |
+| a generated or merged configuration file (Codex, OpenCode, `~/.bashrc` with its marked line, `shell.bash`) | the same | refused |
 | a Git setting | sets the old value back, or unsets it if it was absent | refused if its current value is not the one written |
-| an MCP definition | removes it through the tool's own command, or restores the previous definition | refused if the definition changed |
-| the Bash line and `shell.bash` | removes the marked line if it is exactly the line written, and the file if its digest is the one written | refused |
+| a Claude Code MCP definition | removes it through the tool's own command, or restores the previous definition | refused if the definition changed |
 | a folder the restore created | removed only if empty, or if everything in it is the restore's own and unchanged | refused |
 
 Each undo writes `undo-intent`, then `undone` or `undo-refused` with its
