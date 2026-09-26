@@ -141,6 +141,7 @@ main() {
       --dry-run) OMB_DRY_RUN=1 ;;
       --no-color) OMB_COLOR=never ;;
       --ascii) OMB_ASCII=1 ;;
+      --no-tui) OMB_NO_TUI=1 ;;
       -h | --help) cmd=help ;;
       --version) cmd=version ;;
       --check) rest+=("$arg") ;;
@@ -229,6 +230,27 @@ main() {
 
   platform_init
   state_init || return 1
+  # The frontend (docs/FRONTEND.md → When the frontend runs). No installer
+  # flow is exposed through the protocol yet, so the only flow it can finish
+  # is the foundation's own, over a fixture: the default run there, on a
+  # terminal. Everything else — and every frontend failure — is the text
+  # interface below. The frontend's session takes no lock of its own: each
+  # core request takes the run lock itself.
+  if [ -z "$cmd" ] && [ -n "${OMB_FIXTURE:-}" ] && [ -z "${OMB_NO_TUI:-}" ] &&
+    [ -t 0 ] && [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
+    # shellcheck source=lib/records.sh
+    . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
+    # shellcheck source=lib/core.sh
+    . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
+    # shellcheck source=lib/frontend.sh
+    . "$OMB_HOME/lib/frontend.sh" || _omb_unloaded frontend
+    if [ "$OMB_DRY_RUN" = 1 ]; then fe_run dry-run "$FE_ALL_SCOPES"; else fe_run act "$FE_ALL_SCOPES"; fi
+    case $? in
+      0) return 0 ;;
+      10) ;;
+      *) return 1 ;;
+    esac
+  fi
   trap on_interrupt INT TERM
   trap 'ui_cursor_restore; omb_cleanup' EXIT
   # One recording run at a time; read-only runs and previews take no lock.
