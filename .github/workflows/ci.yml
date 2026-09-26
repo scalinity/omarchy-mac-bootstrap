@@ -35,10 +35,12 @@ jobs:
       - name: Syntax, ShellCheck and every test
         env:
           OMB_REQUIRE_SHELLCHECK: "1"
-          # Linux has no plutil: only the macOS plist checks may skip here;
-          # any other skip fails the job.
+          # Linux has no plutil: only the macOS plist checks may skip here,
+          # and the signal-storm case when Ubuntu's Bash 5.2 hits its own
+          # parser bug (tests/test-core.sh says which); any other skip fails
+          # the job.
           OMB_STRICT_SKIPS: "1"
-          OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
+          OMB_ALLOWED_SKIP_RE: "\\((no plutil|Bash 5\\.2 upstream)\\)$"
         run: tests/run.sh
 
   macos:
@@ -151,7 +153,7 @@ jobs:
       CARGO_TERM_COLOR: never
       INSTA_UPDATE: "no"
       OMB_STRICT_SKIPS: "1"
-      OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
+      OMB_ALLOWED_SKIP_RE: "\\((no plutil|Bash 5\\.2 upstream)\\)$"
     steps:
       # Full history: test-static compares lib/shared.sh with 2edb76a.
       - uses: actions/checkout@v7

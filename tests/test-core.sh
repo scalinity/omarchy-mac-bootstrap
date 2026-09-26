@@ -323,16 +323,27 @@ c_wait_file "$SESS/req-$n.core" && ok || fail "sup-eintr: the core (pid $core) n
 perl -e 'setpgrp(0, 0); my ($p, $n) = @ARGV; while (kill 0, $p) { kill "HUP", $p and $n++; select(undef, undef, undef, 0.03) } print "$n\n"' "$core" 0 >"$T/sent"
 wait "$bg"
 st=$?
-[ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"
 r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
-assert_eq "$r" "status=done code=ok" "sup-eintr: signals during the reading leave a supervised completion"
-if [ "$r" != "status=done code=ok" ]; then
-  printf '    the run: status %s; its spool:\n' "$st"
-  sed 's/^/      /' "$SESS/req-$n.events" | cut -c1-200
-  printf '    its stderr:\n'
-  sed 's/^/      /' "$T/stderr" | head -20
+# Bash 5.2 (not the targets: macOS runs 3.2.57, the Linux root 5.3.15)
+# parses a trap's command wrongly when it fires while a command substitution
+# is being parsed ("unexpected EOF while looking for matching `)'"), and the
+# shell can die of it. Upstream; 3.2 and 5.3 hold under the same storm. That
+# one signature is reported as what it is; anything else is judged.
+if [ "$r" != "status=done code=ok" ] && [ "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" = 5.2 ] &&
+  grep -q 'unexpected EOF while looking for matching' "$T/stderr"; then
+  skip "sup-eintr under a signal storm: Bash $BASH_VERSION's parser loses a trap fired inside a command substitution (Bash 5.2 upstream)"
+  rm -f "$OPS"
+else
+  [ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"
+  assert_eq "$r" "status=done code=ok" "sup-eintr: signals during the reading leave a supervised completion"
+  if [ "$r" != "status=done code=ok" ]; then
+    printf '    the run: status %s; its spool:\n' "$st"
+    sed 's/^/      /' "$SESS/req-$n.events" | cut -c1-200
+    printf '    its stderr:\n'
+    sed 's/^/      /' "$T/stderr" | head -20
+  fi
+  [ ! -e "$OPS" ] || ! grep -q 'state=unsupervised' "$OPS" && ok || fail "sup-eintr: no barrier from a signal"
 fi
-[ ! -e "$OPS" ] || ! grep -q 'state=unsupervised' "$OPS" && ok || fail "sup-eintr: no barrier from a signal"
 rm -f "$EFFECT"
 c_conf mutate
 
