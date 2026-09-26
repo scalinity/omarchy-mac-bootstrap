@@ -112,6 +112,16 @@ build || fail "the untracked include builds: $(cat "$T/build")"
 check closure "$CARGO_TARGET_DIR/debug/deps"
 assert_rc "$?" 1 "frontend-input-include-outside: an untracked file inside frontend/ fails the closure"
 assert_contains "$(cat "$T/out")" "which Git does not track" "and says so"
+# The build's own output folder is not an input either: only each rule's
+# target is an output, never a file rustc read from there.
+rm -rf "$CARGO_TARGET_DIR/debug/deps"/omb_tui-*
+printf 'planted\n' >"$CARGO_TARGET_DIR/debug/deps/planted.txt"
+printf 'fn main() {\n    println!("{}", include_str!("%s"));\n}\n' "$CARGO_TARGET_DIR/debug/deps/planted.txt" >"$R/frontend/src/main.rs"
+git_ add frontend/src/main.rs && git_ commit -q -m "include a file beside the build's outputs"
+build || fail "the planted include builds: $(cat "$T/build")"
+check closure "$CARGO_TARGET_DIR/debug/deps"
+assert_rc "$?" 1 "frontend-input-include-outside: a file in the build's own output folder fails the closure"
+assert_contains "$(cat "$T/out")" "planted.txt" "and names it"
 
 # --- frontend-input-generated-target-excluded -----------------------------------------------
 dh=$(digest)
@@ -183,6 +193,16 @@ printf 'name: release\njobs:\n  build:\n    steps:\n      - run: cargo build --r
 commit "test hooks in a release"
 check config
 assert_rc "$?" 1 "a release workflow naming the test-hooks feature is refused"
+# The same configuration under other names.
+for bad in '      CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS: "-C opt-level=0"' '      RUSTC_WRAPPER: sccache' \
+  '      - run: cargo build --release --config profile.release.debug=true'; do
+  printf 'name: release\njobs:\n  build:\n    steps:\n%s\n' "$bad" >"$R/.github/workflows/release.yml"
+  commit "configuration under another name"
+  check config
+  assert_rc "$?" 1 "frontend-input-cargo-config: the release workflow setting it this way is refused: $bad"
+done
+printf 'name: release\njobs:\n  build:\n    steps:\n      - run: cargo build --release --locked --offline\n' >"$R/.github/workflows/release.yml"
+commit "a plain release workflow"
 
 # --- frontend-input-link ---------------------------------------------------------------------
 ln -s main.rs "$R/frontend/src/link.rs"

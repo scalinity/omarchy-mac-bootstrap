@@ -55,6 +55,7 @@ EOF
       120000:*) die "a tracked symbolic link under frontend/: $path" ;;
       *) die "not a plain file under frontend/: $path ($mode $type)" ;;
     esac
+    [ "$(git cat-file -t "$obj" 2>/dev/null)" = blob ] || die "cannot read $path at $commit"
     sum=$(git cat-file blob "$obj" | sha256) || die "cannot read $path at $commit"
     printf '%s\t%s\t%s\n' "$path" "$mode" "$sum"
   done
@@ -92,8 +93,9 @@ case "$cmd" in
       found=1
       # A dependency file: "target: dep dep ...", one rule per line; spaces
       # in paths are escaped with a backslash; lines from '#' on are rustc's
-      # notes (env-dep, checksum), not files.
-      grep -v '^#' "$d" | sed -e 's/\\ /@SP@/g' | tr ' ' '\n' | sed -e 's/:$//' -e 's/@SP@/ /g' | grep -v '^$' | while IFS= read -r p; do
+      # notes (env-dep, checksum), not files. Each rule's target (an output)
+      # is dropped; everything after it is a file rustc read.
+      grep -v '^#' "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/^[^ ]*:( |$)//' | tr ' ' '\n' | sed -e 's/@SP@/ /g' | grep -v '^$' | while IFS= read -r p; do
         # rustc names the crate's own files relative to the package
         # (frontend/): resolve them, `..` included, before judging.
         case "$p" in
@@ -104,7 +106,6 @@ case "$cmd" in
             ;;
         esac
         case "$p" in
-          "$depdir"/*) continue ;; # the rule's own targets
           "$registry"/* | "$sysroot"/*) continue ;;
           "$root"/frontend/*)
             rel=${p#"$root"/}
@@ -143,7 +144,10 @@ case "$cmd" in
     other=$(git ls-files | grep -E '(^|/)\.cargo/' | grep -v '^frontend/\.cargo/config\.toml$')
     [ -z "$other" ] || die "Cargo configuration outside frontend/.cargo/config.toml: $other"
     if [ -f "$wf" ]; then
-      bad=$(grep -nE '(^|[^A-Z_])(RUSTFLAGS|CARGO_ENCODED_RUSTFLAGS|CARGO_BUILD_[A-Z_]*|CARGO_PROFILE_[A-Z_]*)[[:space:]]*[:=]' "$wf")
+      # The names the document lists, and the ones that do the same under
+      # another name: a target's own flags, linker or runner, a compiler
+      # wrapper, and configuration passed on Cargo's command line.
+      bad=$(grep -nE '(^|[^A-Z_])(RUSTFLAGS|CARGO_ENCODED_RUSTFLAGS|RUSTC_WRAPPER|RUSTC_WORKSPACE_WRAPPER|CARGO_BUILD_[A-Z_]*|CARGO_PROFILE_[A-Z_]*|CARGO_TARGET_[A-Z0-9_]*_(RUSTFLAGS|LINKER|RUNNER))[[:space:]]*[:=]|cargo[^#]*[[:space:]]--config' "$wf")
       [ -z "$bad" ] || die "the release workflow sets build configuration: $bad"
       grep -q 'test-hooks' "$wf" && die "the release workflow names the test-hooks feature"
     fi
