@@ -91,6 +91,11 @@ describes another disk blocks creation.
 
 Before anything runs, the whole disk is read and must show:
 
+- this Mac's internal disk: the whole disk and the physical store macOS runs
+  from both report themselves internal, macOS runs from the container the
+  plan was made on, on a single physical store, and the disk gives the name
+  the plan recorded. A copy of the disk in an external enclosure can carry
+  the same GUIDs and extents; it is never a target;
 - the disk the plan was made for, with Apple's ISC and Recovery partitions and
   every other partition from before exactly where they were;
 - the macOS container at exactly the size the plan left it;
@@ -190,7 +195,8 @@ never runs a filesystem repair itself.
 | It says | What to do |
 | --- | --- |
 | the Shared plan record was changed / has a line this tool did not write / is from another version | the record is not trustworthy; plan again before installing, or remove `shared-intent.env` to give up on Shared |
-| this is not the disk the plan was made for | run it on the Mac that made the plan |
+| this is not the disk the plan was made for / on | run it on the Mac that made the plan |
+| the disk macOS runs from is not reported as internal / macOS is not running from the container the plan was made on / more than one physical store | boot this Mac's own macOS from its internal disk and run it there; an external copy of the disk is never a target |
 | an Apple system partition, the macOS container, or another partition is not where the plan found it | something changed the disk since the plan; compare `diskutil list` with `./omarchy-bootstrap status` |
 | an unexpected partition / a free region the plan did not leave | something other than Asahi changed the disk; nothing is created while which region is Shared's would be a guess |
 | the free region after Linux is smaller than reserved | the installer was given a different Linux size than planned; Shared can still be created by hand in the space there is (below) |

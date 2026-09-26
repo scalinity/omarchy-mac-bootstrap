@@ -286,7 +286,11 @@ Detailed in `docs/SHARED.md`. Summary:
   (macOS → Linux). A GUID prefix, the plan, check digits. Input, never
   permission.
 - **Creation (macOS)** from `awaiting-macos-creation` only: the plan's disk,
-  Apple's and every earlier partition unchanged, the container at the planned
+  positively this Mac's internal disk (the whole disk and macOS's physical
+  store both report `Internal`, one physical store, macOS running from the
+  planned container, the disk's own name as recorded — an external copy with
+  the same GUIDs and extents is refused, on every read including the one
+  after the typed gates), Apple's and every earlier partition unchanged, the container at the planned
   size, Asahi's three partitions in order, one free region after the root at
   least the planned size, nothing else new, Linux's code accepted, power.
   Typed `yes` and `create`; the disk read again and matched; the start

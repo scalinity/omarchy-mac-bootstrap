@@ -123,8 +123,9 @@ that leaves Linux its minimum.
 - **Not encrypted** (FileVault and LUKS do not cover it) and **not a backup**.
 
 It is created after Linux is completely installed: Linux shows a completion
-code; on macOS, `./omarchy-bootstrap` takes that code, checks the whole disk
-against the plan, asks for `yes` and `create`, and adds the one partition;
+code; on macOS, `./omarchy-bootstrap` takes that code, checks that the disk
+is this Mac's internal disk and matches the plan throughout, asks for `yes`
+and `create`, and adds the one partition;
 back on Linux, `./omarchy-bootstrap shared activate` mounts it at
 `/mnt/shared` on every boot. One reboot more than the install alone.
 [docs/SHARED.md](docs/SHARED.md) explains every step and every stop.

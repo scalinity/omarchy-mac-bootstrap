@@ -114,7 +114,7 @@ mac_detect_geometry() {
   local list dinfo info i content size id uuid off lsize luuid label fstype count
   geo_reset
   MAC_PARTS="" MAC_APPLE_SYS=0 MAC_OTHER_BYTES=0 MAC_ASAHI_PRESENT=0 MAC_OTHER_APFS=""
-  MAC_DISK_SIZE=0 MAC_DISK_BLOCK="" MAC_EXISTING_FREE=0 MAC_STORE_UUID=""
+  MAC_DISK_SIZE=0 MAC_DISK_BLOCK="" MAC_EXISTING_FREE=0 MAC_STORE_UUID="" MAC_WHOLE_INTERNAL=""
   if [ -z "$MAC_DISK" ]; then
     GEO_ERR="the boot volume's physical disk was not found"
     return 1
@@ -124,6 +124,7 @@ mac_detect_geometry() {
   MAC_DISK_SIZE=$(plist_get "$dinfo" Size)
   MAC_DISK_BLOCK=$(plist_get "$dinfo" DeviceBlockSize)
   MAC_DISK_MEDIA=$(plist_get "$dinfo" IORegistryEntryName)
+  MAC_WHOLE_INTERNAL=$(plist_get "$dinfo" Internal)
   if ! _uint "${MAC_DISK_SIZE:-}" || [ "$MAC_DISK_SIZE" != "$(plist_get "$list" AllDisksAndPartitions.0.Size)" ]; then
     GEO_ERR="diskutil list and diskutil info disagree about the size of $MAC_DISK"
     MAC_DISK_SIZE=0

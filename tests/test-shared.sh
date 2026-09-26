@@ -200,6 +200,45 @@ if t_plutil "the macOS Shared plan and creation"; then
   fx=$(variant mac-shared-reserved "diskutil_list_disk0:s#<integer>$ROOTS</integer>#<integer>$((ROOTS - 4096))</integer>#")
   expect_blocked "the two views of the partition map disagree" "$fx" "could not be read exactly"
 
+  # The physical target: this Mac's internal disk, the one macOS runs from,
+  # the one planned on. An external copy keeps every size, GUID and extent,
+  # and Linux's code for its root still matches, so only the target check
+  # tells them apart.
+  internal_off() {
+    local f
+    for f in "$1"/cmd/diskutil_info_*; do
+      sed -i.bak 's#<key>Internal</key><true/>#<key>Internal</key><false/>#' "$f" && rm -f "$f.bak"
+    done
+  }
+  fx=$(t_variant mac-shared-reserved)
+  internal_off "$fx"
+  expect_blocked "an external copy of the disk, identical but for Internal" "$fx" "is not reported as internal"
+  fx=$(variant mac-shared-reserved 'diskutil_info_root:s#<string>disk0s2</string></dict></array>#<string>disk0s2</string></dict><dict><key>APFSPhysicalStore</key><string>disk5s2</string></dict></array>#')
+  expect_blocked "a container on two physical stores" "$fx" "more than one physical store"
+  fx=$(variant mac-shared-reserved 'diskutil_info_root:s#<key>APFSPhysicalStores</key><array>.*</array>##')
+  expect_blocked "no physical store for macOS" "$fx" "physical disk was not found"
+  fx=$(variant mac-shared-reserved 'diskutil_info_root:s#<string>disk0s2</string>#<string>disk0s4</string>#')
+  expect_blocked "macOS running from another container" "$fx" "not running from the container the plan was made on"
+  fx=$(variant mac-shared-reserved 'diskutil_info_disk0:s#APPLE SSD FIXTURE Media#Portable SSD Media#')
+  expect_blocked "another disk with the same layout" "$fx" "not the disk the plan was made on"
+  # Checked again on the read after the typed gates: a disk that stops
+  # reading as internal while they were answered gets nothing created.
+  d=$(with_receipt)
+  ext=$(t_variant mac-shared-reserved)
+  internal_off "$ext"
+  rec=$(t_tmp)/record
+  out=$(
+    OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$d OMB_TEST_RECORD=$rec
+    state_init
+    mac_survey
+    shared_mac_state
+    # shellcheck disable=SC2329 # called by shared_create_flow
+    ui_confirm_word() { [ "$1" = create ] && OMB_FIXTURE=$ext; return 0; }
+    shared_create_flow </dev/null
+  )
+  assert_contains "$(t_flat "$out")" "The disk changed since it was shown (the disk macOS runs from (disk0) is not reported as internal" "the target is checked again after the gates"
+  assert_eq "$(cat "$rec" 2>/dev/null | grep -c addPartition)" 0 "a target that changed during the gates: nothing created"
+
   # After addPartition: anything but one new exFAT partition in the region stops.
   fx=$(variant mac-shared-created "diskutil_info_disk0s7:s#<string>exfat</string>#<string>msdos</string>#")
   expect_blocked "the new partition has the wrong filesystem" mac-shared-reserved "not the exFAT volume planned" "$fx"

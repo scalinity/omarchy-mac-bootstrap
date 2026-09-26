@@ -54,7 +54,7 @@ EOF
   printf 'contract=%s\n' "$STORAGE_CONTRACT"
   printf 'planned_at=%s\n' "$(now_utc)"
   printf 'disk_size=%s\ndisk_block=%s\n' "$GEO_DISK_SIZE" "$GEO_BLOCK"
-  printf 'disk_media=%s\n' "$(printf '%s' "${MAC_DISK_MEDIA:-}" | tr -cd '[:alnum:] ._()-')"
+  printf 'disk_media=%s\n' "$(shared_media)"
   printf 'isc=%s\n' "$(_part_rec "$(geo_role_uuids isc | head -1)")"
   printf 'macos=%s\n' "$(_part_rec "$PLAN_MACOS_UUID")"
   printf 'recovery=%s\n' "$(_part_rec "$(geo_role_uuids recovery | head -1)")"
@@ -66,6 +66,9 @@ EOF
   printf 'region_start=%s\nregion_end=%s\n' "$PLAN_GAP_START" "$PLAN_GAP_END"
   printf 'shared_start=%s\nshared_end=%s\n' "$PLAN_SHARED_START" "$PLAN_SHARED_END"
 }
+
+# shared_media — the disk's own name (IORegistryEntryName), as recorded.
+shared_media() { printf '%s' "${MAC_DISK_MEDIA:-}" | tr -cd '[:alnum:] ._()-'; }
 
 # shared_intent_save — write the record for the current plan, or remove it
 # when no Shared storage is planned. Returns non-zero when it cannot.
@@ -209,6 +212,7 @@ shared_mac_state() {
     _blocked "the partition layout could not be read exactly ($GEO_ERR)"
     return 0
   fi
+  shared_mac_target || return 0
   if [ "$INT_disk_size" != "$MAC_DISK_SIZE" ] || [ "$INT_disk_block" != "$MAC_DISK_BLOCK" ]; then
     _blocked "this is not the disk the Shared plan was made for"
     return 0
@@ -294,6 +298,31 @@ EOF
     SHARED_STATE=awaiting-linux-completion
     SHARED_WHY="the region is reserved; Shared is created once Linux (Omarchy and its encryption) has finished"
   fi
+}
+
+# shared_mac_target — the physical disk is this Mac's internal disk, the one
+# macOS runs from, and the one the plan was made on. A copy of the disk in
+# an enclosure can carry the same size, GUIDs and extents, so a layout that
+# matches does not by itself say which disk this is. Run on every read of
+# the disk, including the one after the typed gates.
+shared_mac_target() {
+  if [ "$MAC_DISK_INTERNAL" != true ] || [ "$MAC_WHOLE_INTERNAL" != true ]; then
+    _blocked "the disk macOS runs from (${MAC_DISK:-unknown}) is not reported as internal; Shared is created only on this Mac's internal disk"
+    return 1
+  fi
+  if [ -n "${MAC_STORES_EXTRA:-}" ]; then
+    _blocked "the macOS container spans more than one physical store ($MAC_STORE, $MAC_STORES_EXTRA)"
+    return 1
+  fi
+  if [ -z "$MAC_STORE_UUID" ] || [ "$MAC_STORE_UUID" != "${INT_macos%%:*}" ]; then
+    _blocked "macOS is not running from the container the plan was made on (${MAC_STORE:-none found})"
+    return 1
+  fi
+  if [ -n "$INT_disk_media" ] && [ "$(shared_media)" != "$INT_disk_media" ]; then
+    _blocked "this is not the disk the plan was made on (it reports itself as ${MAC_DISK_MEDIA:-nothing}, the plan's as $INT_disk_media)"
+    return 1
+  fi
+  return 0
 }
 
 # shared_mac_existing ROOT_END — a partition follows the Linux root. It is
