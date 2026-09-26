@@ -241,6 +241,7 @@ Library facts: Ratatui 0.30.2 with Crossterm 0.29.0.
 | normal exit | `try_restore()`; the cursor shown explicitly (restore does not); the saved settings put back; on the Linux console the screen also cleared, because a kernel older than August 2025 has no alternate screen there |
 | error, panic | the same restore, then the report on the normal screen |
 | signals, Ctrl-C, Ctrl-Z | docs/PROTOCOL.md → *Signals* |
+| the terminal goes away (a closed window, a dropped SSH link) | the launcher passes SIGHUP and SIGTERM to the frontend (a launcher that leads its session is the only process a hangup signals); Crossterm 0.29 retries a read of a terminal that has gone without ever returning, so a watcher thread ends the frontend once one read is still running at four checks a quarter of a second apart; nothing is left to restore; the launcher then cleans up as after any exit |
 | resize | Crossterm's resize event; layout recomputed from the new size; below the minimum, the too-small state (docs/UX.md) |
 | output | nothing is ever printed onto the screen the frontend owns |
 
@@ -340,7 +341,8 @@ release/
 frontend/
   Cargo.toml  Cargo.lock  rust-toolchain.toml  .cargo/config.toml
   src/
-    main.rs        start, exit, the launcher contract
+    main.rs        calls lib.rs's entry and exits with its status
+    lib.rs         start, exit, the launcher contract; the modules, shared with the tests
     terminal.rs    init, restore, saved settings, suspend, handoff
     record.rs      admission and the record format (docs/PROTOCOL.md)
     core.rs        the only process spawn: the core, its descriptors, the spool reader

@@ -128,12 +128,18 @@ afterwards, and records.
 ## Verify
 
 ```bash
-tests/run.sh                         # syntax, shellcheck (SHELLCHECK=path if not on PATH), all tests; ~15 min
+tests/run.sh                         # syntax, shellcheck (SHELLCHECK=path if not on PATH), all tests; ~30 min
 OMB_STRICT_SKIPS=1 tests/run.sh      # as CI: any skip fails (Linux CI allows only "(no plutil)")
 OMB_TEST_BASH=/path/to/bash5 tests/run.sh
 tests/fixtures/generate.sh           # after changing fixture shapes; commit the output
 OMB_FIXTURE=$PWD/tests/fixtures/<name> ./omarchy-bootstrap --dry-run
+# The frontend, from frontend/, with CARGO_TARGET_DIR outside the repository:
+cargo fmt --check && cargo clippy --locked --all-targets --features test-hooks -- -D warnings
+OMB_TEST_BASH=/bin/bash cargo test --locked --features test-hooks   # layers A–H, the PTY tests included
+tests/frontend-inputs.sh clean | digest | closure DIR | compat-macos FILE   # the build-input and artifact rules CI and the release apply
 ```
 
 Report an unrun check as unrun. `.github/workflows/ci.yml` runs Linux (bash
-5, ShellCheck) and macOS (`/bin/bash` 3.2) jobs.
+5, ShellCheck) and macOS (`/bin/bash` 3.2) jobs, and the frontend on Linux
+x86_64 and on both arm64 runners; `release.yml` runs only for a
+`frontend-v*` tag.
