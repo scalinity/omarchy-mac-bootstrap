@@ -12,6 +12,11 @@
 #   frontend-inputs.sh lock [COMMIT]       the commit's inputs_digest against release/frontend.lock's
 #   frontend-inputs.sh compat-linux FILE   the Linux artifact's contract
 #   frontend-inputs.sh compat-macos FILE   the macOS artifact's contract
+#   frontend-inputs.sh lock-head VERSION [COMMIT]     the lock's header and frontend line
+#   frontend-inputs.sh artifact-line TARGET FILE URL  one artifact's lock line, read from the binary
+#
+# A release's lock is lock-head, then one artifact-line per target, then
+# `seal TAB sha256=` the SHA-256 of everything before it.
 #
 # Run from the repository's root (or with -C DIR first). Every check prints
 # what it found and exits non-zero on the first thing that breaks the rule.
@@ -156,7 +161,13 @@ case "$cmd" in
     if [ "$l" != "$d" ]; then
       die "the frontend's inputs changed since the release: the commit's inputs_digest is $d, the lock's $l — a new release is needed"
     fi
-    echo "inputs_digest $d matches the lock"
+    # The lock's protocol is the core's (docs/TESTING.md → CI), as the
+    # launcher also checks before starting it.
+    p=$(sed -n 's/^frontend\t.*\tproto=\([0-9]*\)\t.*/\1/p' release/frontend.lock)
+    c=$(sed -n 's/^REC_PROTO=\([0-9]*\)$/\1/p' lib/records.sh 2>/dev/null)
+    [ -n "$c" ] || die "the core's protocol cannot be read from lib/records.sh"
+    [ "$p" = "$c" ] || die "the lock's frontend speaks protocol ${p:-none}, the core $c"
+    echo "inputs_digest $d matches the lock; protocol $p, the core's"
     ;;
   compat-linux)
     f=${1:?compat-linux FILE}
@@ -191,6 +202,41 @@ case "$cmd" in
     [ "$minos" = 13.5 ] || die "minos $minos, not 13.5"
     codesign -v "$f" || die "the signature does not verify"
     echo "macos artifact: arm64 only; minos 13.5; codesign -v passes"
+    ;;
+  lock-head)
+    version=${1:?lock-head VERSION [COMMIT]}
+    commit=$(git rev-parse --verify "${2:-HEAD}^{commit}") || die "not a commit: ${2:-HEAD}"
+    d=$("$0" digest "$commit") || exit 1
+    proto=$(git show "$commit:lib/records.sh" | sed -n 's/^REC_PROTO=\([0-9]*\)$/\1/p')
+    rust=$(git show "$commit:frontend/rust-toolchain.toml" | sed -n 's/^channel = "\(.*\)"$/\1/p')
+    [ -n "$proto" ] && [ -n "$rust" ] || die "the protocol or the toolchain cannot be read at $commit"
+    printf 'omb-frontend-lock 1\nfrontend\tversion=%s\tproto=%s\tsource_commit=%s\tinputs_digest=%s\trust=%s\n' "$version" "$proto" "$commit" "$d" "$rust"
+    ;;
+  artifact-line)
+    target=${1:?artifact-line TARGET FILE URL} f=${2:?artifact-line TARGET FILE URL} url=${3:?artifact-line TARGET FILE URL}
+    size=$(wc -c <"$f" | tr -d ' ') || die "cannot read $f"
+    sum=$(sha256 <"$f")
+    case "$target" in
+      aarch64-apple-darwin)
+        minos=$(vtool -show-build "$f" | awk '$1 == "minos" { print $2 }')
+        [ -n "$minos" ] || die "no minos in $f"
+        printf 'artifact\ttarget=%s\turl=%s\tsize=%s\tsha256=%s\tminos=%s\tglibc_max=\tinterp=\talign_min=\n' "$target" "$url" "$size" "$sum" "$minos"
+        ;;
+      aarch64-unknown-linux-gnu)
+        interp=$(readelf -l "$f" | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p')
+        top=$(objdump -T "$f" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+        align=$(readelf -lW "$f" | awk '$1 == "LOAD" { print $NF }')
+        [ -n "$interp" ] && [ -n "$top" ] && [ -n "$align" ] || die "the ELF facts of $f cannot be read"
+        min=""
+        for a in $align; do
+          if [ -z "$min" ] || [ $((a)) -lt "$min" ]; then min=$((a)); fi
+        done
+        printf 'artifact\ttarget=%s\turl=%s\tsize=%s\tsha256=%s\tminos=\tglibc_max=%s\tinterp=%s' "$target" "$url" "$size" "$sum" "$top" "$interp"
+        for n in $(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do printf '\tneeded=%s' "$n"; done
+        printf '\talign_min=%s\n' "$min"
+        ;;
+      *) die "no lock line is defined for $target" ;;
+    esac
     ;;
   *)
     sed -n '2,/^set -u$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'

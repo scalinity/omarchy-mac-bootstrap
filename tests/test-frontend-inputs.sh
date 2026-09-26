@@ -38,6 +38,8 @@ printf 'fn main() {\n    println!("{}", include_str!("../tests/schema.txt").len(
 printf 'schema 1\n' >"$R/frontend/tests/schema.txt"
 printf '[toolchain]\nchannel = "1.88.0"\n' >"$R/frontend/rust-toolchain.toml.pin"
 printf 'omb-frontend-lock 1\n' >"$R/release/frontend.lock"
+mkdir -p "$R/lib"
+printf 'REC_PROTO=1\n' >"$R/lib/records.sh"
 printf 'name: release\njobs:\n  build:\n    steps:\n      - run: cargo build --release --locked --offline\n' >"$R/.github/workflows/release.yml"
 (cd "$R/frontend" && cargo generate-lockfile --offline --quiet) || fail "cargo generate-lockfile"
 commit base
@@ -64,6 +66,13 @@ sed -i.bak "s/$d0/$d1/" "$R/release/frontend.lock" && rm -f "$R/release/frontend
 commit "the lock of these inputs"
 check lock
 assert_rc "$?" 0 "the lock naming these inputs passes"
+sed -i.bak 's/proto=1/proto=2/' "$R/release/frontend.lock" && rm -f "$R/release/frontend.lock.bak"
+commit "a lock of another protocol"
+check lock
+assert_rc "$?" 1 "a lock whose protocol is not the core's fails"
+assert_contains "$(cat "$T/out")" "speaks protocol 2, the core 1" "and names both protocols"
+sed -i.bak 's/proto=2/proto=1/' "$R/release/frontend.lock" && rm -f "$R/release/frontend.lock.bak"
+commit "the lock of the core's protocol"
 printf '\n' >>"$R/frontend/Cargo.lock"
 commit "Cargo.lock"
 d2=$(digest)
@@ -196,5 +205,30 @@ dc=$(digest)
 printf '// uncommitted\n' >>"$R/frontend/src/a.rs"
 assert_eq "$(digest)" "$dc" "an uncommitted change is not an input: the digest is the commit's"
 assert_eq "$(digest HEAD~1)" "$(cd "$R" && "$TOOL" digest HEAD~1)" "any commit's digest can be computed"
+
+# --- The release's lock lines: what the release workflow prints, the launcher admits ---------
+# Read from this host's build of the crate: the Darwin lines on macOS, the
+# ELF lines on Linux.
+printf '[toolchain]\nchannel = "1.88.0"\n' >"$R/frontend/rust-toolchain.toml"
+git_ add frontend/rust-toolchain.toml && git_ commit -q -m "a toolchain for the lock"
+case "$(uname -s)" in Darwin) tgt=aarch64-apple-darwin ;; *) tgt=aarch64-unknown-linux-gnu ;; esac
+bin=$CARGO_TARGET_DIR/debug/omb-tui
+(cd "$R" && "$TOOL" lock-head 0.1.0 && "$TOOL" artifact-line "$tgt" "$bin" https://example.invalid/omb-tui) >"$T/lock.body" 2>"$T/lock.err"
+assert_rc "$?" 0 "the lock lines are printed ($(cat "$T/lock.err"))"
+if command -v shasum >/dev/null 2>&1; then seal=$(shasum -a 256 <"$T/lock.body" | cut -c1-64); else seal=$(sha256sum <"$T/lock.body" | cut -c1-64); fi
+{
+  cat "$T/lock.body"
+  printf 'seal\tsha256=%s\n' "$seal"
+} >"$T/frontend.lock"
+assert_contains "$(cat "$T/lock.body")" "source_commit=$(git_ rev-parse HEAD)	inputs_digest=$(digest)	rust=1.88.0" "the frontend line names the commit, its inputs and its toolchain"
+if command -v shasum >/dev/null 2>&1; then sum=$(shasum -a 256 <"$bin" | cut -c1-64); else sum=$(sha256sum <"$bin" | cut -c1-64); fi
+assert_contains "$(cat "$T/lock.body")" "target=$tgt	url=https://example.invalid/omb-tui	size=$(wc -c <"$bin" | tr -d ' ')	sha256=$sum" "the artifact line pins the binary's size and SHA-256"
+r=$(
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  if rec_admit_file lock - "$T/frontend.lock"; then echo admitted; else echo "refused: $REC_REASON"; fi
+)
+assert_eq "$r" admitted "the launcher's reader admits the lock the release prints"
 
 t_done test-frontend-inputs
