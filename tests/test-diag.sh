@@ -38,6 +38,16 @@ assert_eq "$(c_size "$(diag)")" $((H + 65280)) "65 281 bytes: the last 65 280 ke
 assert_contains "$(head -1 "$(diag)")" "kept=65280	discarded=1" "and marked discarded"
 assert_eq "$(c_size "$(summ)")" 128 "the request's summary is exactly 128 bytes"
 
+# --- diag-functional-not-budgeted: functional output is outside the limits --------------
+# Gate 1's functional output is a read child's stdout, under its own 64 KiB
+# file limit; qualification's stream and an export's objects come with the
+# gates that build them.
+c_conf read stderr_bytes=100 stdout_bytes=60000
+c_exec test.read ""
+assert_eq "$(c_result)" "done ok" "diag-functional-not-budgeted: a read child writing 60 000 bytes of functional output"
+assert_eq "$(c_size "$(diag)")" $((H + 100)) "diag-functional-not-budgeted: its block holds only its 100 bytes of diagnostics"
+assert_contains "$(head -1 "$(diag)")" "kept=00100	discarded=0" "diag-functional-not-budgeted: none of the functional output counted"
+
 # --- diag-bound-read: 10 MiB of stderr, unblocked, one bounded block --------------------
 c_conf read stderr_bytes=10485760
 t0=$SECONDS
