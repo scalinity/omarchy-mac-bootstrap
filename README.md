@@ -74,7 +74,10 @@ macOS ─▶ storage plan ─▶ Asahi Alarm installer ─▶ reboot ─▶ Arch
 - Internet on both sides. Wi-Fi works on the Linux side via `nmtui`.
 
 Nothing to install first: it runs on stock macOS (`/bin/bash` 3.2) and on the
-minimal Asahi Alarm image.
+minimal Asahi Alarm image. Start it as `./omarchy-bootstrap` or
+`bash ./omarchy-bootstrap`; started with `sh` (on macOS, bash in POSIX mode)
+it starts itself again under `bash`, in bash's own mode, before loading
+anything.
 
 ## How dual boot works
 

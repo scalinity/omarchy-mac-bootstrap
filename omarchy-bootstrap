@@ -7,10 +7,26 @@
 # non-secret progress. The one partition it creates itself is the planned
 # Shared partition, after checking the whole disk and a typed confirmation.
 
-# Started with sh? Continue under bash (stock macOS has /bin/bash 3.2).
-if [ -z "${BASH_VERSION:-}" ]; then
+# Started with sh? Start again under bash, in bash's own mode, as the #! line
+# does (stock macOS has /bin/bash 3.2). macOS's sh is bash in POSIX mode: it
+# sets BASH_VERSION but rejects the bash syntax in lib/, and so does bash with
+# POSIXLY_CORRECT set, so POSIX mode is restarted too. Written in plain sh,
+# because this is the part a non-bash shell reads.
+_omb_mode=bash
+[ -n "${BASH_VERSION:-}" ] || _omb_mode="sh"
+case ":${SHELLOPTS:-}:" in *:posix:*) _omb_mode=posix ;; esac
+if [ "$_omb_mode" != bash ]; then
+  # Started again and still not in bash's own mode: stop rather than loop.
+  if [ -n "${OMB_RESTARTED:-}" ]; then
+    printf 'omarchy-bootstrap: bash is still in POSIX mode; run it as: bash %s\n' "$0" >&2
+    exit 1
+  fi
+  OMB_RESTARTED=1
+  export OMB_RESTARTED
+  unset POSIXLY_CORRECT
   exec bash "$0" "$@"
 fi
+unset _omb_mode OMB_RESTARTED
 
 set -u
 # No pipefail: probes are written as `producer | grep -q`, and grep -q exits on
@@ -24,28 +40,34 @@ done
 OMB_HOME=$(cd "$(dirname "$_self")" && pwd -P)
 unset _self _link
 
+# A library that does not load leaves part of the program undefined: stop
+# before any command runs, --version and --help included.
+_omb_unloaded() {
+  printf 'omarchy-bootstrap: lib/%s.sh could not be loaded; nothing was run.\n' "$1" >&2
+  exit 1
+}
 # shellcheck source=lib/common.sh
-. "$OMB_HOME/lib/common.sh"
+. "$OMB_HOME/lib/common.sh" || _omb_unloaded common
 # shellcheck source=lib/ui.sh
-. "$OMB_HOME/lib/ui.sh"
+. "$OMB_HOME/lib/ui.sh" || _omb_unloaded ui
 # shellcheck source=lib/state.sh
-. "$OMB_HOME/lib/state.sh"
+. "$OMB_HOME/lib/state.sh" || _omb_unloaded state
 # shellcheck source=lib/sources.sh
-. "$OMB_HOME/lib/sources.sh"
+. "$OMB_HOME/lib/sources.sh" || _omb_unloaded sources
 # shellcheck source=lib/storage.sh
-. "$OMB_HOME/lib/storage.sh"
+. "$OMB_HOME/lib/storage.sh" || _omb_unloaded storage
 # shellcheck source=lib/macos.sh
-. "$OMB_HOME/lib/macos.sh"
+. "$OMB_HOME/lib/macos.sh" || _omb_unloaded macos
 # shellcheck source=lib/asahi.sh
-. "$OMB_HOME/lib/asahi.sh"
+. "$OMB_HOME/lib/asahi.sh" || _omb_unloaded asahi
 # shellcheck source=lib/shared.sh
-. "$OMB_HOME/lib/shared.sh"
+. "$OMB_HOME/lib/shared.sh" || _omb_unloaded shared
 # shellcheck source=lib/linux.sh
-. "$OMB_HOME/lib/linux.sh"
+. "$OMB_HOME/lib/linux.sh" || _omb_unloaded linux
 # shellcheck source=lib/doctor.sh
-. "$OMB_HOME/lib/doctor.sh"
+. "$OMB_HOME/lib/doctor.sh" || _omb_unloaded doctor
 # shellcheck source=lib/dev.sh
-. "$OMB_HOME/lib/dev.sh"
+. "$OMB_HOME/lib/dev.sh" || _omb_unloaded dev
 
 usage() {
   ui_header "v$OMB_VERSION"

@@ -32,6 +32,17 @@ flowchart LR
 | `doctor.sh` | `doctor` and `status` for both systems |
 | `dev.sh` | developer modules and their outcomes |
 
+## Starting
+
+The entrypoint is bash and its libraries are bash; only its first lines are
+plain sh, so any shell can read them. They start bash again (`exec bash "$0"`)
+when the shell is not bash, or is bash in POSIX mode (`posix` in
+`SHELLOPTS`): macOS's `sh` is bash 3.2 in POSIX mode, which keeps
+`BASH_VERSION` but rejects bash syntax such as process substitution. A
+restarted shell still in POSIX mode stops the run instead of looping. Each
+library is sourced with `|| _omb_unloaded NAME`, so one that does not load
+stops everything before a command, `--version` included, can answer.
+
 ## Intent before state
 
 The entrypoint decides what a run may do from the command alone, before any

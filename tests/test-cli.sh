@@ -30,6 +30,47 @@ logs|log location and recent entries
 EOF
 t_cli mac-m1pro-1tb-roomy "" --version
 assert_eq "$T_OUT" "omarchy-bootstrap 0.2.0" "--version"
+
+# --- The launcher -------------------------------------------------------------
+# macOS's sh is bash in POSIX mode: BASH_VERSION is set, and the bash syntax
+# in lib/ is an error there. Every way of starting the tool must reach bash's
+# own mode before a library loads, and a library that does not load must stop
+# everything, --version included. launch ENTRY SHELL ARGS... — runs ENTRY with
+# SHELL (split into words), sealed, on the installed Linux fixture; sets
+# L_OUT and L_ERR separately, L_RC, and L_STATE (which nothing may create).
+launch() {
+  local entry=$1 shell=$2 d
+  shift 2
+  d=$(t_tmp)
+  L_STATE="$d/state"
+  # shellcheck disable=SC2086 # the shell and its options, as words
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" HOME="$d/home" TERM=dumb LANG=en_US.UTF-8 \
+    OMB_STATE_DIR="$L_STATE" OMB_FIXTURE="$FIX/linux-omarchy-installed" \
+    $shell "$entry" "$@" >"$d/out" 2>"$d/err"
+  L_RC=$?
+  L_OUT=$(cat "$d/out")
+  L_ERR=$(cat "$d/err")
+}
+for shell in sh "$T_BASH --posix" "env POSIXLY_CORRECT=1 $T_BASH" "$T_BASH"; do
+  launch "$REPO/omarchy-bootstrap" "$shell" --version
+  assert_eq "$L_OUT|$L_ERR|$L_RC" "omarchy-bootstrap 0.2.0||0" "$shell: --version, and nothing on stderr"
+  launch "$REPO/omarchy-bootstrap" "$shell" doctor --ascii
+  assert_eq "$L_ERR" "" "$shell: doctor writes nothing to stderr"
+  assert_contains "$L_OUT" "[PASS] Omarchy 4" "$shell: doctor runs (lib/doctor.sh loads after lib/shared.sh)"
+  assert_rc "$L_RC" 0 "$shell: doctor exits 0"
+  [ ! -e "$L_STATE" ] && ok || fail "$shell: nothing is recorded"
+done
+launch "$REPO/omarchy-bootstrap" "env OMB_RESTARTED=1 $T_BASH --posix" --version
+assert_eq "$L_OUT|$L_RC" "|1" "started again and still in POSIX mode: it stops instead of looping"
+assert_contains "$L_ERR" "bash is still in POSIX mode" "and says why"
+copy=$(t_tmp)
+cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$copy/"
+printf 'if then\n' >>"$copy/lib/dev.sh"
+for args in --version --help doctor; do
+  launch "$copy/omarchy-bootstrap" "$T_BASH" $args
+  assert_eq "$L_OUT|$L_RC" "|1" "a library that does not load: '$args' answers nothing and exits 1"
+  assert_contains "$L_ERR" "lib/dev.sh could not be loaded; nothing was run" "'$args': the library is named"
+done
 t_cli mac-m1pro-1tb-roomy "" frobnicate
 assert_rc "$T_RC" 2 "unknown command exits 2"
 assert_contains "$T_OUT" "Unknown command: frobnicate" "unknown command named"

@@ -45,6 +45,13 @@ arbitrary partitions.
   Minimal image (bash 5, no git, no sudo) with no extra dependencies.
 - Bash 3.2 compatible everywhere: no associative arrays, `mapfile`, `${x,,}`,
   `declare -n`, or `printf '%(…)T'`.
+- Bash, not POSIX sh. The launcher is `./omarchy-bootstrap` (`#!/usr/bin/env
+  bash`) or `bash ./omarchy-bootstrap`. Its first lines are plain sh: without
+  `BASH_VERSION`, or with `posix` in `SHELLOPTS` (macOS's `sh` is bash in
+  POSIX mode; also `POSIXLY_CORRECT`), it runs `exec bash` on itself before
+  any library is read, and stops rather than loop if the restarted shell is
+  still in POSIX mode. A library that does not load stops the run before any
+  command answers, `--version` and `--help` included.
 - Structured output is parsed where a structured mode exists: `plutil -extract`
   over `system_profiler -xml` and `diskutil … -plist`; `lsblk -P` on Linux.
 - Colour and Unicode are progressive: 256-colour → 16-colour → none; Unicode →
@@ -520,7 +527,8 @@ record argv and execute nothing.
 ## Acceptance criteria
 
 1. `./omarchy-bootstrap --help` works on stock macOS bash 3.2 and on bash 5, and
-   touches nothing.
+   touches nothing; started with `sh` it restarts under bash in bash's own
+   mode, and prints nothing on stderr.
 2. On an unsupported Mac, or a disk whose layout cannot be read exactly, the
    tool stops before planning with a clear reason.
 3. Every accepted plan satisfies the eight invariants on the resulting layout,

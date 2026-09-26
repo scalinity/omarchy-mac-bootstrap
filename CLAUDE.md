@@ -28,7 +28,12 @@ afterwards, and records.
   disk and the fail-closed record.
 - **Stock bash 3.2 everywhere**, because the entrypoint must start on a fresh
   Mac. Write with indexed arrays, `case`, and `eval` into `CFG_*`-style globals;
-  verify with `/bin/bash` (bash 5 as an extra run, never instead).
+  verify with `/bin/bash` (bash 5 as an extra run, never instead). Bash, not
+  POSIX sh: the entrypoint's first lines are plain sh and `exec bash` when the
+  shell is not bash or is bash in POSIX mode (macOS's `sh`), and every library
+  is sourced with `|| _omb_unloaded NAME`, so a library that does not load
+  stops the run before `--version` can answer. A green exit status is not a
+  clean start: check stderr too.
 - **Read the machine through `sys_cmd` / `sys_path` / `sys_has` / `sys_net` /
   `sys_reachable`; change it only through `run`.** That is what makes
   `--dry-run`, fixtures, and the recording test harness work. New probes must

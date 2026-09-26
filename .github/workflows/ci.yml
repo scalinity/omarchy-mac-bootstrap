@@ -57,9 +57,24 @@ jobs:
           # Everything runs on macOS: no skip is allowed.
           OMB_STRICT_SKIPS: "1"
         run: tests/run.sh
-      - name: The entrypoint starts under sh and stock bash, touching nothing
+      # macOS's sh is bash 3.2 in POSIX mode. A green exit status is not
+      # enough: stderr must be empty, the version exact, and a command whose
+      # code loads after lib/shared.sh must run.
+      - name: The entrypoint starts under sh and stock bash, with nothing on stderr, recording nothing
         run: |
-          state=$(mktemp -d)
-          OMB_STATE_DIR=$state/s sh ./omarchy-bootstrap --version
-          OMB_STATE_DIR=$state/s /bin/bash ./omarchy-bootstrap --help --ascii >/dev/null
-          test ! -e "$state/s"
+          set -eu
+          tmp=$(mktemp -d)
+          want="omarchy-bootstrap $(sed -n 's/^OMB_VERSION="\(.*\)"$/\1/p' lib/common.sh)"
+          for shell in sh /bin/bash; do
+            echo "== $shell"
+            OMB_STATE_DIR=$tmp/state $shell ./omarchy-bootstrap --version >"$tmp/out" 2>"$tmp/err"
+            if [ -s "$tmp/err" ]; then echo "stderr from --version:"; cat "$tmp/err"; exit 1; fi
+            if [ "$(cat "$tmp/out")" != "$want" ]; then echo "stdout from --version: $(cat "$tmp/out")"; exit 1; fi
+            echo "--version: $(cat "$tmp/out")"
+            # doctor lives in lib/doctor.sh, which loads after lib/shared.sh.
+            OMB_STATE_DIR=$tmp/state OMB_FIXTURE=$PWD/tests/fixtures/linux-omarchy-installed \
+              $shell ./omarchy-bootstrap doctor --ascii >"$tmp/out" 2>"$tmp/err"
+            if [ -s "$tmp/err" ]; then echo "stderr from doctor:"; cat "$tmp/err"; exit 1; fi
+            grep -F '[PASS] Omarchy 4' "$tmp/out"
+            test ! -e "$tmp/state"
+          done
