@@ -91,6 +91,22 @@ the tool re-reads the disk instead.
    the step-2 prompts). The Alarm bootstrap also asks whether to report the
    install.
 
+**What the handoff holds `installer_data.json` to** (`osinstall.py`
+`min_size`, `partition_disk`, v0.9.2): the template's partitions are created
+in order, each at `align_up(psize(size))`, and every one with a truthy
+`expand` also receives `total_size - min_size`, the whole remainder. The
+stub is not in the manifest (`main.py` `STUB_SIZE`, pinned by the installer
+version). So the check (`storage_contract_ok`, reading the JSON with Apple's
+`plutil`) requires the chosen template named exactly once, exactly two
+partitions, the first `type` `EFI` with `size` exactly `524288000B` and no
+`expand` key, the second `type` `Linux` with `expand` `true` and a `size` in
+bytes whose installer minimum (`STUB_SIZE` + 2 x the aligned template, the
+non-expert minimum at `main.py:313`) fits the planner's 54 GB. Other keys
+(`format`, `volume_id`, `image`, `source`, …) do not change the layout and
+are not checked. The live manifest, read on 2026-09-25, passes: the
+Minimal (BTRFS) template is EFI `524288000B` (`format` `fat`), then Root
+`2209614225B`, `expand` true.
+
 **Difference from the commonly quoted flow:** there is no "Linux storage"
 prompt during a resize install. The value to type first is the new macOS size;
 the Linux size is the remainder, accepted with `max`, or typed exactly when

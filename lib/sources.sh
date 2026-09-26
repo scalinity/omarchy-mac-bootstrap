@@ -242,23 +242,20 @@ sources_check() {
 
   if body=$(sys_net asahi_data "$ASAHI_ALARM_DATA_URL") && [ -n "$body" ]; then
     storage_contract_ok "$ASAHI_INSTALLER_VERIFIED" "$body"
-    case "$CONTRACT_PROBLEMS" in
-      '')
-        ui_tag pass "OS choice" "$ASAHI_ALARM_OS_CHOICE is offered"
-        ui_tag pass "EFI partition" "$ASAHI_EFI_BYTES bytes, as planned"
-        ;;
-      *"no longer offers"*)
-        ui_tag fail "OS choice" "$ASAHI_ALARM_OS_CHOICE is no longer in installer_data.json — handoff refuses"
-        fails=$((fails + 1))
-        ;;
-      *)
-        ui_tag pass "OS choice" "$ASAHI_ALARM_OS_CHOICE is offered"
-        ui_tag fail "EFI partition" "no longer $ASAHI_EFI_BYTES bytes — handoff refuses"
-        fails=$((fails + 1))
-        ;;
-    esac
+    if [ -z "$CONTRACT_PROBLEMS" ]; then
+      ui_tag pass "OS template" "$ASAHI_ALARM_OS_CHOICE: a $ASAHI_EFI_BYTES-byte EFI partition, then an expanding Linux root"
+    elif [ "$CONTRACT_UNCHECKED" = 1 ]; then
+      ui_tag warn "OS template" "not checked here: installer_data.json is read with Apple's plutil; the handoff checks it on macOS"
+    else
+      while IFS= read -r v; do
+        [ -n "$v" ] && ui_tag fail "OS template" "$v — handoff refuses"
+      done <<EOF
+$CONTRACT_PROBLEMS
+EOF
+      fails=$((fails + 1))
+    fi
   else
-    ui_tag warn "OS choice" "could not fetch installer_data.json"
+    ui_tag warn "OS template" "could not fetch installer_data.json"
   fi
 
   if body=$(sys_net asahi_faq "$ASAHI_DOCS_FAQ_RAW") && [ -n "$body" ]; then
@@ -332,34 +329,93 @@ sources_check() {
 
 # storage_contract_ok VERSION INSTALLER_DATA_JSON — does upstream still behave
 # the way the storage answers assume? The installer version must be the one
-# whose sizing code was read, and the chosen OS must still have the EFI size
-# the planner reserves. Sets CONTRACT_PROBLEMS (one per line); returns 1 when
-# any holds, and the handoff then refuses rather than guessing.
+# whose sizing code was read (the stub's size, the alignment and the resize
+# rules live there, not in the manifest), and the chosen OS template must
+# still have the structure the planner builds on (_contract_template). Sets
+# CONTRACT_PROBLEMS (one per line), and CONTRACT_UNCHECKED=1 when the
+# manifest cannot be read as JSON on this system; returns 1 when any problem
+# holds, and the handoff then refuses rather than guessing.
 storage_contract_ok() {
-  local version=$1 flat seg name
-  CONTRACT_PROBLEMS=""
+  local version=$1
+  CONTRACT_PROBLEMS="" CONTRACT_UNCHECKED=0
   if [ "$version" != "$ASAHI_INSTALLER_VERIFIED" ]; then
-    CONTRACT_PROBLEMS="The installer is ${version:-of unknown version}, not $ASAHI_INSTALLER_VERIFIED, whose resize and allocation rules this tool models."
+    _contract_problem "The installer is ${version:-of unknown version}, not $ASAHI_INSTALLER_VERIFIED, whose resize and allocation rules this tool models."
   fi
-  flat=$(printf '%s' "$2" | tr -d ' \t\r\n')
-  name=$(printf '%s' "$ASAHI_ALARM_OS_CHOICE" | tr -d ' ')
-  seg=${flat#*"\"name\":\"$name\""}
-  if [ -z "$flat" ]; then
-    CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
-}installer_data.json could not be read, so the OS template's partition sizes are unknown."
-  elif [ "$seg" = "$flat" ]; then
-    CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
-}installer_data.json no longer offers \"$ASAHI_ALARM_OS_CHOICE\"."
+  if [ -z "$(printf '%s' "$2" | tr -d ' \t\r\n')" ]; then
+    _contract_problem "installer_data.json could not be read, so the OS template's partitions are unknown."
+  elif ! command -v plutil >/dev/null 2>&1; then
+    CONTRACT_UNCHECKED=1
+    _contract_problem "installer_data.json cannot be read as JSON here: it is read with Apple's plutil, on macOS."
   else
-    # The EFI entry comes before the Linux root in the template.
-    seg=${seg%%\"type\":\"Linux\"*}
-    case "$seg" in
-      *"\"size\":\"${ASAHI_EFI_BYTES}B\""*) ;;
-      *) CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
-}\"$ASAHI_ALARM_OS_CHOICE\" no longer has a ${ASAHI_EFI_BYTES}-byte EFI partition." ;;
-    esac
+    _contract_template "$2"
   fi
   [ -z "$CONTRACT_PROBLEMS" ]
+}
+
+_contract_problem() {
+  CONTRACT_PROBLEMS="${CONTRACT_PROBLEMS:+$CONTRACT_PROBLEMS
+}$1"
+}
+
+# _contract_template JSON — the chosen template, read as JSON by plutil and
+# held to what asahi-installer v0.9.2 does with it (osinstall.py min_size,
+# partition_disk): each partition is created in order, at its size, and every
+# one marked expand also gets all the space the New OS size leaves. So the
+# template must be named exactly once and hold exactly two partitions: first
+# EFI, type EFI, exactly ASAHI_EFI_BYTES and with no expand key; then the
+# Linux root, type Linux, expand true, whose minimum the planned Linux minimum
+# covers. An extra fixed partition would come out of Linux's space; a second
+# expanding one would receive the remainder twice.
+_contract_template() {
+  local json=$1 n i t="" count=0 p np v size need min q="\"$ASAHI_ALARM_OS_CHOICE\""
+  n=$(plist_get "$json" os_list)
+  if ! _uint "$n" || [ "$n" = 0 ]; then
+    _contract_problem "installer_data.json could not be read as a list of OS templates (os_list)."
+    return 0
+  fi
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    if [ "$(plist_get "$json" "os_list.$i.name")" = "$ASAHI_ALARM_OS_CHOICE" ]; then
+      count=$((count + 1)) t=$i
+    fi
+    i=$((i + 1))
+  done
+  case "$count" in
+    0) _contract_problem "installer_data.json no longer offers $q." ; return 0 ;;
+    1) ;;
+    *) _contract_problem "installer_data.json offers $q $count times; which one the installer lists is a guess." ; return 0 ;;
+  esac
+  p="os_list.$t.partitions"
+  np=$(plist_get "$json" "$p")
+  if [ "$np" != 2 ]; then
+    _contract_problem "$q no longer has exactly two partitions, EFI then the Linux root (it lists $(printf '%s' "${np:-none}" | tr '\n' ' ' | sed 's/ $//'))."
+    return 0
+  fi
+  v=$(plist_get "$json" "$p.0.type")
+  [ "$v" = EFI ] || _contract_problem "$q no longer starts with its EFI partition (the first is type ${v:-missing})."
+  v=$(plist_get "$json" "$p.0.size")
+  [ "$v" = "${ASAHI_EFI_BYTES}B" ] || _contract_problem "$q no longer has a ${ASAHI_EFI_BYTES}-byte EFI partition (its size is ${v:-missing})."
+  if plist_get "$json" "$p.0.expand" >/dev/null; then
+    _contract_problem "$q now marks its EFI partition expand, which would give it the space planned for Linux."
+  fi
+  v=$(plist_get "$json" "$p.1.type")
+  [ "$v" = Linux ] || _contract_problem "$q no longer ends with the Linux root (the second partition is type ${v:-missing})."
+  v=$(plist_get "$json" "$p.1.expand")
+  [ "$v" = true ] || _contract_problem "$q no longer lets the Linux root expand (expand: ${v:-missing}), so it would not take the New OS size."
+  size=$(plist_get "$json" "$p.1.size")
+  if ! _uint "${size%B}" || [ "$size" != "${size%B}B" ] || [ "$size" = B ]; then
+    _contract_problem "$q gives the Linux root no size this tool can read (${size:-missing})."
+    return 0
+  fi
+  # The installer's own minimum for this template (main.py: the stub plus
+  # twice the template, each part aligned up) must fit the smallest Linux
+  # allocation the planner offers (plan_init's PLAN_LINUX_MIN).
+  need=$(( ASAHI_STUB_BYTES + 2 * ( (ASAHI_EFI_BYTES + MIB - 1) / MIB * MIB + (${size%B} + MIB - 1) / MIB * MIB ) ))
+  min=$(( (OMARCHY_ROOT_MIN_BYTES + ASAHI_STUB_BYTES + ASAHI_EFI_BYTES + GB - 1) / GB * GB ))
+  if [ "$need" -gt "$min" ]; then
+    _contract_problem "$q now needs at least $need bytes, more than the $min this tool plans for Linux at the least."
+  fi
+  return 0
 }
 
 # setup_missing_flags SCRIPT_TEXT — prints the flags we use that the setup

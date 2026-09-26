@@ -14,7 +14,7 @@ Start with `./omarchy-bootstrap doctor` and `./omarchy-bootstrap logs`.
 | Safe Linux maximum is far below free space | APFS snapshots or a pending update (`APFS resize overhead` in doctor), or free space split across separate regions | Finish macOS updates, delete Time Machine local snapshots (<https://alx.sh/tmcleanup>), re-plan. Separate regions are never added together |
 | "Not enough space for Linux yet" | Less than 54 GB in one region after macOS keeps used + 38 GB + margin | Free space in macOS; the message says how much |
 | "leading zero" / "too large" at a size prompt | ambiguous or impossible input | Type the number plainly, e.g. `8` or `250GB` |
-| "the installer's storage behaviour may have changed" | a new installer version or OS template | `sources --check`; re-verify upstream (docs/UPSTREAM.md) before updating `lib/sources.sh` |
+| "the installer's storage behaviour may have changed" | a new installer version, or the OS template no longer has the planned shape (EFI of the planned size, then one expanding Linux root) | `sources --check` names what changed; re-verify upstream (docs/UPSTREAM.md) before updating `lib/sources.sh` |
 | "layout changed since it was surveyed" / "answers shown no longer hold" | the disk or macOS's free space changed before the launch | Run `./omarchy-bootstrap` again for a fresh plan |
 | "stopped before finishing its first stage" | the installer was interrupted early | docs/RECOVERY.md, *Removing an unfinished install* |
 | "not an administrator" | The login user is not an admin | Log in as an admin user |
@@ -27,6 +27,7 @@ Start with `./omarchy-bootstrap doctor` and `./omarchy-bootstrap logs`.
 | --- | --- | --- |
 | No network | Wi-Fi not connected | `nmtui` → Activate a connection. If it errors right after connecting, reboot and retry |
 | "must run as root" | Phase 2 needs root on the minimal image | Log in as `root` / `root` |
+| `sources --check`: "OS template: not checked here" | the Asahi manifest is read with Apple's plutil, which Linux lacks | Nothing to do: the macOS handoff checks it before anything launches |
 | "carries Omarchy 3.x" | The branch changed upstream | `sources --check`; decide deliberately before editing `lib/sources.sh` |
 | "no longer declares: --keymap" | The setup script's flags changed | Same: re-verify upstream, then update `OMARCHY_MAC_SETUP_FLAGS` |
 | Setup "in progress" but nothing happens | The unit ran and stopped | `./omarchy-bootstrap resume` as root; upstream prints to tty1 only (Ctrl+Alt+F1) and keeps no log file |

@@ -53,8 +53,9 @@ afterwards, and records.
   versions, installer constants, device table, `STORAGE_CONTRACT`). Change a
   target only after reading upstream source, then update `docs/UPSTREAM.md`
   and `SOURCES_VERIFIED_ON` in the same commit. A storage-contract drift
-  (installer version, EFI size) blocks the handoff; a display-string drift
-  warns.
+  (installer version, or the chosen template's structure in
+  `installer_data.json`: exactly EFI of the planned size, then one expanding
+  Linux root) blocks the handoff; a display-string drift warns.
 - **Upstream exit statuses are not evidence.** The Asahi installer exits 0 on
   quit, error and success; Omarchy's helpers exit 0 without installing. Read
   the machine afterwards and report what it shows.
@@ -96,9 +97,10 @@ afterwards, and records.
   pass: an optional argument no caller passes (SC2119/SC2120) and
   `A && B || continue` (SC2015). Write for both: explicit `if`, and no
   parameter a function never receives.
-- Every macOS fixture is read through Apple's `plutil`, which Linux CI lacks:
-  a test section that drives one goes inside `if t_plutil "<section>"; then`.
-  Ungated, it fails on Linux, or passes there for the wrong reason.
+- Every macOS fixture, and the Asahi manifest `installer_data.json`, is read
+  through Apple's `plutil`, which Linux CI lacks: a test section that drives
+  one goes inside `if t_plutil "<section>"; then`. Ungated, it fails on
+  Linux, or passes there for the wrong reason.
 - Never let `sort` decide the order of text that is shown or compared: glibc's
   UTF-8 collation ignores punctuation where macOS compares bytes. Keep
   insertion order and drop duplicates with `awk '!seen[$0]++'`.

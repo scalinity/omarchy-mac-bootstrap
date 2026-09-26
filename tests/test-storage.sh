@@ -372,4 +372,59 @@ for pair in "13.5 13.5 0" "13.10 13.5 0" "14 13.5 0" "27.0 13.5 0" "13.4.1 13.5 
   assert_rc $? "$3" "ver_ge $1 >= $2"
 done
 
+# --- The storage contract: the chosen OS template, read structurally ----------------------
+# Templates shaped like upstream's installer_data.json: another OS first, then
+# the chosen one with the partitions given. Every partition marked expand gets
+# the whole remainder of the New OS size, and every fixed one comes out of it,
+# so anything but "EFI of the planned size, then one expanding Linux root"
+# changes what the planner's answers produce.
+if t_plutil "the storage contract"; then
+  EFI='{"name": "EFI", "type": "EFI", "size": "524288000B", "format": "fat", "volume_id": "0x2abf9f91", "copy_firmware": true, "copy_installer_data": true, "source": "esp"}'
+  ROOT='{"name": "Root", "type": "Linux", "size": "2209614225B", "expand": true, "image": "root.img"}'
+  CHOSEN='"name": "Asahi Alarm Minimal (BTRFS)", "default_os_name": "Asahi Alarm Minimal (BTRFS)", "boot_object": "m1n1.bin", "supported_fw": ["12.3", "13.5"], "extras": {}'
+  # manifest PARTITION... — the manifest with the chosen template holding these.
+  manifest() {
+    local parts
+    parts=$(printf '%s, ' "$@")
+    printf '{"os_list": [{"name": "Asahi Alarm Minimal", "partitions": [%s, %s]}, {%s, "partitions": [%s]}]}' "$EFI" "$ROOT" "$CHOSEN" "${parts%, }"
+  }
+  sub() { printf '%s' "$1" | sed "$2"; } # sub JSON SED — one partition changed
+  contract_case() { # LABEL WANT_RC PHRASE VERSION JSON
+    storage_contract_ok "$4" "$5"
+    assert_rc $? "$2" "contract: $1"
+    [ -z "$3" ] || assert_contains "$CONTRACT_PROBLEMS" "$3" "contract: $1: the reason"
+  }
+  contract_case "the template as upstream ships it" 0 "" v0.9.2 "$(manifest "$EFI" "$ROOT")"
+  assert_eq "$CONTRACT_PROBLEMS" "" "contract: no problem is reported for it"
+  contract_case "an extra fixed partition" 1 "no longer has exactly two partitions" v0.9.2 \
+    "$(manifest "$EFI" '{"name": "Data", "type": "Linux", "size": "20000000000B"}' "$ROOT")"
+  contract_case "an extra expanding partition" 1 "no longer has exactly two partitions" v0.9.2 \
+    "$(manifest "$EFI" "$ROOT" '{"name": "Home", "type": "Linux", "size": "1000000000B", "expand": true}')"
+  contract_case "a second Linux root" 1 "no longer has exactly two partitions" v0.9.2 "$(manifest "$EFI" "$ROOT" "$ROOT")"
+  contract_case "the root no longer expanding" 1 "no longer lets the Linux root expand (expand: false)" v0.9.2 \
+    "$(manifest "$EFI" "$(sub "$ROOT" 's/"expand": true/"expand": false/')")"
+  contract_case "the root without expand" 1 "expand: missing" v0.9.2 "$(manifest "$EFI" "$(sub "$ROOT" 's/, "expand": true//')")"
+  contract_case "expand as a number" 1 "expand: 1" v0.9.2 "$(manifest "$EFI" "$(sub "$ROOT" 's/"expand": true/"expand": 1/')")"
+  contract_case "the wrong EFI type" 1 "the first is type APFS" v0.9.2 "$(manifest "$(sub "$EFI" 's/"type": "EFI"/"type": "APFS"/')" "$ROOT")"
+  contract_case "an EFI typed Linux" 1 "the first is type Linux" v0.9.2 "$(manifest "$(sub "$EFI" 's/"type": "EFI"/"type": "Linux"/')" "$ROOT")"
+  contract_case "a larger EFI" 1 "no longer has a 524288000-byte EFI partition (its size is 1073741824B)" v0.9.2 \
+    "$(manifest "$(sub "$EFI" 's/524288000B/1073741824B/')" "$ROOT")"
+  contract_case "an expanding EFI" 1 "marks its EFI partition expand" v0.9.2 "$(manifest "$(sub "$EFI" 's/"format"/"expand": false, "format"/')" "$ROOT")"
+  contract_case "the root before the EFI" 1 "no longer starts with its EFI partition" v0.9.2 "$(manifest "$ROOT" "$EFI")"
+  contract_case "an EFI without a size" 1 "its size is missing" v0.9.2 "$(manifest "$(sub "$EFI" 's/"size": "524288000B", //')" "$ROOT")"
+  contract_case "a root without a type" 1 "type missing" v0.9.2 "$(manifest "$EFI" "$(sub "$ROOT" 's/"type": "Linux", //')")"
+  contract_case "a root size that is not bytes" 1 "no size this tool can read (2GB)" v0.9.2 "$(manifest "$EFI" "$(sub "$ROOT" 's/2209614225B/2GB/')")"
+  contract_case "a root minimum beyond the planned Linux minimum" 1 "more than the 54000000000 this tool plans" v0.9.2 \
+    "$(manifest "$EFI" "$(sub "$ROOT" 's/2209614225B/30000000000B/')")"
+  twice=$(manifest "$EFI" "$ROOT" | sed "s/\]}\$/, {$CHOSEN, \"partitions\": [$EFI, $ROOT]}]}/")
+  contract_case "the chosen template listed twice" 1 "offers \"Asahi Alarm Minimal (BTRFS)\" 2 times" v0.9.2 "$twice"
+  contract_case "the chosen template gone" 1 "no longer offers \"Asahi Alarm Minimal (BTRFS)\"" v0.9.2 \
+    "$(manifest "$EFI" "$ROOT" | sed 's/Minimal (BTRFS)/Minimal (ZFS)/g')"
+  contract_case "partitions that are not a list" 1 "no longer has exactly two partitions" v0.9.2 \
+    "$(printf '{"os_list": [{%s, "partitions": {"EFI": %s, "Root": %s}}]}' "$CHOSEN" "$EFI" "$ROOT")"
+  contract_case "a manifest that is not JSON" 1 "could not be read as a list of OS templates" v0.9.2 "<html>Please sign in</html>"
+  contract_case "an empty manifest" 1 "installer_data.json could not be read" v0.9.2 ""
+  contract_case "another installer version" 1 "not v0.9.2" v0.9.3 "$(manifest "$EFI" "$ROOT")"
+fi
+
 t_done test-storage

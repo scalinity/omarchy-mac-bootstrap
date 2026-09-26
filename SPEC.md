@@ -272,9 +272,24 @@ is rounded down to whole GB, visibly.
 
 ### Storage contract
 
-The installer version and the chosen OS template's EFI size are checked at the
-handoff (`storage_contract_ok`): a difference refuses the launch and fails
-`sources --check`. Right before the launch the disk is read again; a changed
+Checked at the handoff (`storage_contract_ok`); any difference refuses the
+launch and fails `sources --check`:
+
+- the installer version is the one whose sizing code was read (the stub's
+  size, the alignment and the resize rules are in its source, not in the
+  manifest);
+- `installer_data.json`, read as JSON by Apple's `plutil`, names the chosen
+  template exactly once, and that template holds exactly two partitions:
+  first EFI (type `EFI`, exactly 524 288 000 B, no `expand` key), then the
+  Linux root (type `Linux`, `expand` true, a size in bytes whose installer
+  minimum — the stub plus twice the template — fits `Linux_min`). The
+  installer gives every partition marked `expand` the whole remainder, and
+  every fixed one comes out of it, so any other shape changes what the
+  answers produce.
+
+A manifest that cannot be read or parsed refuses the launch. Where `plutil`
+is absent (Linux), `sources --check` reports the template as not checked,
+never as passed. Right before the launch the disk is read again; a changed
 layout, or answers that no longer hold, stop it.
 
 ## Shared storage

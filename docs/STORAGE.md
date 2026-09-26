@@ -129,7 +129,14 @@ Shared its room; created later, after Linux is installed. See
 
 ## Before the launch
 
-The installer version and the OS template's EFI size are checked against the
-values this model is built on; a difference refuses the launch. The disk is
-read again right before it runs: a changed layout, or answers that no longer
-hold because macOS filled up, stop it.
+The installer version and the structure of the chosen OS template are checked
+against what this model is built on. `installer_data.json` is read as JSON
+(with Apple's `plutil`): `Asahi Alarm Minimal (BTRFS)` must appear exactly
+once, with exactly two partitions — an EFI partition of exactly 524 288 000 B
+that does not expand, then an expanding Linux root. The installer gives the
+whole remainder of the New OS size to every partition marked `expand`, and
+takes every fixed one out of it, so an extra partition, a root that no
+longer expands or a different EFI would change the layout the answers
+produce. Any difference, or a manifest that cannot be read, refuses the
+launch. The disk is read again right before it runs: a changed layout, or
+answers that no longer hold because macOS filled up, stop it.

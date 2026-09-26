@@ -309,16 +309,23 @@ assert_contains "$T_OUT" "quattro" "sources lists the branch"
 t_cli net-current "" sources --check
 assert_rc "$T_RC" 0 "sources --check passes when upstream matches"
 assert_not_contains "$T_OUT" "[FAIL]" "no failures when current"
-assert_contains "$T_OUT" "[PASS] EFI partition" "the storage contract is checked when current"
-t_cli net-efi-drift "" sources --check
-assert_rc "$T_RC" 1 "sources --check fails when the storage contract drifts"
-assert_contains "$T_OUT" "[FAIL] EFI partition" "EFI drift is a failure, not a warning"
-assert_contains "$T_OUT" "[PASS] Asahi installer" "the version still matches in that case"
+if t_plutil "sources --check reads the OS template"; then
+  assert_contains "$T_OUT" "[PASS] OS template" "the storage contract is checked when current"
+  t_cli net-efi-drift "" sources --check
+  assert_rc "$T_RC" 1 "sources --check fails when the storage contract drifts"
+  assert_contains "$(t_flat "$T_OUT")" "[FAIL] OS template \"Asahi Alarm Minimal (BTRFS)\" no longer has a 524288000-byte EFI partition" "EFI drift is a failure, not a warning"
+  assert_contains "$T_OUT" "[PASS] Asahi installer" "the version still matches in that case"
+fi
+if ! command -v plutil >/dev/null 2>&1; then
+  assert_contains "$(t_flat "$T_OUT")" "[WARN] OS template not checked here" "without plutil the template is reported unchecked, never passed"
+fi
 t_cli net-drifted "" sources --check
 assert_rc "$T_RC" 1 "sources --check fails on drift"
 assert_contains "$T_OUT" "[FAIL] Asahi installer" "installer version drift is a failure: it blocks the handoff"
 assert_contains "$T_OUT" "v0.10.0, verified v0.9.2" "installer drift"
-assert_contains "$T_OUT" "no longer in installer_data.json" "OS choice drift"
+if t_plutil "sources --check names a missing OS template"; then
+  assert_contains "$(t_flat "$T_OUT")" "no longer offers \"Asahi Alarm Minimal (BTRFS)\"" "OS choice drift"
+fi
 assert_contains "$T_OUT" "not Omarchy 4" "Omarchy 3 drift"
 assert_contains "$T_OUT" "upstream default is now 'main'" "branch drift, not followed"
 assert_contains "$T_OUT" "missing: --hostname --keymap --resume" "flag drift"
