@@ -3,6 +3,21 @@
 Each milestone lists its objective, the work, how it is verified, and what must
 hold before it counts as done. Status lives at the end of each entry.
 
+## Accepted baseline
+
+Commit `2edb76a7de3f78ec90927ac93d5eec3a84636253` is the installer and
+storage safety baseline, accepted by an independent review on 2026-09-26
+before any product-expansion work: the storage planner, the Asahi and Omarchy
+Mac handoffs, install classification, the one Shared creation and its
+activation, state, routing and the launcher, as tested by CI run 36220127446
+(M13). No real hardware has run it; that is M14.
+
+Later work does not inherit this acceptance. Each change is reviewed as a
+delta against this commit, and a change that touches disk authority, `sudo`,
+the storage planner, the Shared creation or activation, or the allowlists in
+`tests/test-safety.sh` is reviewed as a safety change, whichever milestone
+carries it.
+
 ## M0 — Upstream validation + architecture
 
 - **Objective:** ground every assumption in current upstream source.
@@ -166,7 +181,17 @@ hold before it counts as done. Status lives at the end of each entry.
   the plutil-gated sections, the macOS job skipping nothing, and the macOS
   launcher step clean on stderr — judged from the job logs, not the
   workflow's conclusion alone.
-- **Status:** not yet accepted.
+- **Status:** accepted on 2026-09-26 for commit
+  `2edb76a7de3f78ec90927ac93d5eec3a84636253`, run 36220127446, logs read:
+  Linux (bash 5.2.21, ShellCheck 0.9.0 clean) 1,809 passed, 0 failed, 27
+  skips, every one a plutil-gated section; macOS (`/bin/bash` 3.2.57) 2,971
+  passed, 0 failed, no skips, the launcher step clean on stderr under `sh`
+  and `/bin/bash`, fixtures what the generator writes. The independent
+  review of the two later findings, DV1 and DV2 — the mounted Shared
+  identity (154db40) and the noninteractive creation after the last read
+  (4f37810) — closed both and found no new code-level blocker. This is
+  acceptance of the code and CI only: it is not evidence that any real
+  hardware has run the tool (M14).
   - Run 36198289764 (commit 5ce30ae): the macOS job passed with no skips;
     the Linux job failed on macOS sections not gated on plutil, a
     locale-dependent conflict order, and ShellCheck 0.9.0 findings.

@@ -13,6 +13,8 @@ afterwards, and records.
 - `docs/ARCHITECTURE.md` — the seams, module map, bash 3.2 conventions.
 - `docs/SHARED.md` — the Shared lifecycle and its one partition creation; read before touching `lib/shared.sh`.
 - `MILESTONES.md` — mark a milestone done only when its acceptance criteria hold.
+  Its accepted baseline names the reviewed commit every later change is a
+  delta against; new work does not inherit that review.
 
 ## Rules
 
