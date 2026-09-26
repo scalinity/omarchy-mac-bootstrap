@@ -16,9 +16,13 @@ jobs:
     # Pinned: ubuntu-latest moves to a new release on GitHub's schedule, which
     # would change bash, coreutils and ShellCheck under this suite unannounced.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
+      # Full history: tests/test-baseline.sh runs the accepted baseline,
+      # 2edb76a, beside this commit.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Tools
         run: |
           bash --version | head -1
@@ -40,9 +44,11 @@ jobs:
   macos:
     name: macOS · stock /bin/bash 3.2 · BSD userland
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Stock bash is 3.2
         run: |
           /bin/bash --version | head -1
@@ -78,3 +84,167 @@ jobs:
             grep -F '[PASS] Omarchy 4' "$tmp/out"
             test ! -e "$tmp/state"
           done
+
+  # The frontend (docs/TESTING.md → CI). Build output goes outside the
+  # repository, and the checkout must be exactly the commit before any build
+  # (docs/FRONTEND.md → Four identities).
+  frontend:
+    name: Frontend · fmt · clippy · layers A–F and H · build inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+    steps:
+      - uses: actions/checkout@v7
+      - name: The checkout is exactly the commit
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal --component rustfmt,clippy
+      - name: Tools
+        working-directory: frontend
+        run: |
+          uname -sm
+          bash --version | head -1
+          rustc --version
+          cargo --version
+          grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
+      - name: cargo fmt --check
+        working-directory: frontend
+        run: cargo fmt --check
+      - name: Crates from Cargo.lock; no build script, path or git source of its own; no other Cargo configuration
+        run: |
+          (cd frontend && cargo fetch --locked)
+          tests/frontend-inputs.sh metadata
+          tests/frontend-inputs.sh config
+      - name: inputs_digest against release/frontend.lock (3 = no release pinned yet)
+        run: |
+          tests/frontend-inputs.sh digest
+          rc=0
+          tests/frontend-inputs.sh lock || rc=$?
+          [ "$rc" = 0 ] || [ "$rc" = 3 ]
+      - name: clippy -D warnings, with and without the test hooks
+        working-directory: frontend
+        run: |
+          cargo clippy --locked --offline --all-targets -- -D warnings
+          cargo clippy --locked --offline --all-targets --features test-hooks -- -D warnings
+      - name: Layers A–F (state, frames, snapshots, emphasis, degraded modes, lifecycle), H against the Bash 5 core, proto-diff-*
+        working-directory: frontend
+        run: |
+          cargo test --locked --offline --lib --bins --test frames --test contract --test proto_diff
+          cargo test --locked --offline --features test-hooks --test contract
+      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/debug/deps"
+      - name: No pending snapshot, nothing written into frontend/
+        run: tests/frontend-inputs.sh clean
+      - name: frontend-input-* and frontend-lock-not-input
+        run: tests/run.sh frontend-inputs
+
+  frontend-linux-arm64:
+    name: Frontend · Linux aarch64 · build, PTY, supervision, frontend-compat-linux
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      OMB_STRICT_SKIPS: "1"
+      OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
+    steps:
+      - uses: actions/checkout@v7
+      - name: The checkout is exactly the commit
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal --component rustfmt,clippy
+      - name: Tools
+        working-directory: frontend
+        run: |
+          uname -sm
+          getconf PAGESIZE
+          bash --version | head -1
+          ldd --version | head -1
+          rustc --version
+          cargo --version
+      - name: Build the release artifact
+        working-directory: frontend
+        run: |
+          cargo fetch --locked
+          cargo build --release --locked --offline
+      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+      - name: frontend-compat-linux
+        run: tests/frontend-inputs.sh compat-linux "$CARGO_TARGET_DIR/release/omb-tui"
+      - name: Layer G (pty-*, the real L→F→C→X topology) and the launcher starting the verified artifact
+        working-directory: frontend
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+      - name: sup-* and diag-* under Bash 5 on aarch64
+        run: |
+          s=0
+          for t in core diag frontend static; do tests/run.sh "$t" || s=1; done
+          exit "$s"
+
+  frontend-macos-arm64:
+    # macos-15: the oldest arm64 image GitHub still runs reliably; macOS 14's
+    # images are being withdrawn (failing jobs on scheduled days, removed on
+    # 2026-11-02). The 13.5 floor itself is checked from the binary (minos).
+    name: Frontend · macOS arm64 · build, PTY, contract under /bin/bash 3.2, frontend-compat-macos
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      OMB_TEST_BASH: /bin/bash
+      OMB_STRICT_SKIPS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: The checkout is exactly the commit
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal --component rustfmt,clippy
+      - name: Tools
+        working-directory: frontend
+        run: |
+          uname -sm
+          sw_vers
+          /bin/bash --version | head -1
+          rustc --version
+          cargo --version
+      - name: Build the release artifact
+        working-directory: frontend
+        run: |
+          cargo fetch --locked
+          cargo build --release --locked --offline
+      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+      - name: frontend-compat-macos
+        run: tests/frontend-inputs.sh compat-macos "$CARGO_TARGET_DIR/release/omb-tui"
+      - name: Layers G and H with the /bin/bash 3.2 core, and the launcher starting the verified artifact
+        working-directory: frontend
+        run: |
+          OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+          cargo test --locked --offline --features test-hooks --test contract --test proto_diff
+      # diag-* and sup-overflow run under /bin/bash on arm64 in the macOS job
+      # above; these are the other sup-* suites.
+      - name: sup-* under /bin/bash 3.2 on arm64
+        run: |
+          s=0
+          for t in core frontend static; do tests/run.sh "$t" || s=1; done
+          exit "$s"

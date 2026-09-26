@@ -1,0 +1,140 @@
+# Builds and publishes the frontend for a frontend-v<version> tag
+# (docs/FRONTEND.md → Building): native builds on both arm64 runners from
+# the tagged commit, the closure and compatibility checks on every artifact,
+# SHA256SUMS, an artifact attestation per binary, and the lock lines. It
+# never runs for a branch, and it changes nothing in the repository: the
+# lines it prints become release/frontend.lock in a separate reviewed commit.
+name: release
+
+on:
+  push:
+    tags:
+      - "frontend-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CARGO_TERM_COLOR: never
+      TAG: ${{ github.ref_name }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag names the crate's version
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"$/\1/p' frontend/Cargo.toml | head -1)
+          [ "$TAG" = "frontend-v$v" ] || { echo "tag $TAG, crate version $v"; exit 1; }
+          echo "VERSION=$v" >>"$GITHUB_ENV"
+      - name: The checkout is exactly the commit
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal
+          # From here on: an empty Cargo home (no configuration, no cached
+          # crates) and build output outside the repository.
+          mkdir -p "$RUNNER_TEMP/cargo-home"
+          echo "CARGO_HOME=$RUNNER_TEMP/cargo-home" >>"$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+      - name: Tools
+        working-directory: frontend
+        run: |
+          uname -sm
+          rustc --version
+          cargo --version
+      - name: inputs_digest from the commit; crates from Cargo.lock; no build script or other source of its own; no other Cargo configuration
+        run: |
+          tests/frontend-inputs.sh digest
+          (cd frontend && cargo fetch --locked)
+          tests/frontend-inputs.sh metadata
+          tests/frontend-inputs.sh config
+      - name: Build
+        working-directory: frontend
+        run: cargo build --release --locked --offline
+      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+      - name: Compatibility, from the artifact
+        run: |
+          case "$TARGET" in
+            aarch64-apple-darwin) tests/frontend-inputs.sh compat-macos "$CARGO_TARGET_DIR/release/omb-tui" ;;
+            aarch64-unknown-linux-gnu) tests/frontend-inputs.sh compat-linux "$CARGO_TARGET_DIR/release/omb-tui" ;;
+          esac
+      - name: The named artifact and its lock line
+        run: |
+          name=omb-tui-$VERSION-$TARGET
+          mkdir -p "$RUNNER_TEMP/out"
+          cp "$CARGO_TARGET_DIR/release/omb-tui" "$RUNNER_TEMP/out/$name"
+          url=https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$name
+          tests/frontend-inputs.sh artifact-line "$TARGET" "$RUNNER_TEMP/out/$name" "$url" >"$RUNNER_TEMP/out/$name.lockline"
+          cat "$RUNNER_TEMP/out/$name.lockline"
+          echo "ARTIFACT=$RUNNER_TEMP/out/$name" >>"$GITHUB_ENV"
+      - name: Attest the artifact's provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ env.ARTIFACT }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release and print the lock
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/dl
+      - name: SHA256SUMS and the lock
+        run: |
+          out=$RUNNER_TEMP/release
+          mkdir -p "$out"
+          for t in aarch64-apple-darwin aarch64-unknown-linux-gnu; do
+            cp "$RUNNER_TEMP/dl/$t/"omb-tui-*-"$t" "$out/"
+          done
+          (cd "$out" && sha256sum omb-tui-* >SHA256SUMS && cat SHA256SUMS)
+          v=${TAG#frontend-v}
+          {
+            tests/frontend-inputs.sh lock-head "$v" "$GITHUB_SHA"
+            cat "$RUNNER_TEMP/dl/aarch64-apple-darwin/"*.lockline "$RUNNER_TEMP/dl/aarch64-unknown-linux-gnu/"*.lockline
+          } >"$RUNNER_TEMP/lock.body"
+          {
+            cat "$RUNNER_TEMP/lock.body"
+            printf 'seal\tsha256=%s\n' "$(sha256sum <"$RUNNER_TEMP/lock.body" | cut -c1-64)"
+          } >"$RUNNER_TEMP/frontend.lock"
+          echo "release/frontend.lock for this release:"
+          cat "$RUNNER_TEMP/frontend.lock"
+      - name: Publish
+        run: |
+          gh release create "$TAG" --verify-tag --title "$TAG" \
+            --notes "The frontend built from $GITHUB_SHA. Its lock lines are in this run's log; release/frontend.lock pins them in a reviewed commit." \
+            "$RUNNER_TEMP"/release/omb-tui-* "$RUNNER_TEMP/release/SHA256SUMS"
