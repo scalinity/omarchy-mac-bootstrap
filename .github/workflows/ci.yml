@@ -187,6 +187,8 @@ jobs:
         run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
       - name: frontend-compat-linux
         run: tests/frontend-inputs.sh compat-linux "$CARGO_TARGET_DIR/release/omb-tui"
+      - name: The lock line this build would have (evidence only; nothing is published)
+        run: tests/frontend-inputs.sh artifact-line aarch64-unknown-linux-gnu "$CARGO_TARGET_DIR/release/omb-tui" unreleased
       - name: Layer G (pty-*, the real L→F→C→X topology) and the launcher starting the verified artifact
         working-directory: frontend
         run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
@@ -241,6 +243,8 @@ jobs:
         run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
       - name: frontend-compat-macos
         run: tests/frontend-inputs.sh compat-macos "$CARGO_TARGET_DIR/release/omb-tui"
+      - name: The lock line this build would have (evidence only; nothing is published)
+        run: tests/frontend-inputs.sh artifact-line aarch64-apple-darwin "$CARGO_TARGET_DIR/release/omb-tui" unreleased
       - name: Layers G and H with the /bin/bash 3.2 core, and the launcher starting the verified artifact
         working-directory: frontend
         run: |
