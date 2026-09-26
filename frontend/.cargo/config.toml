@@ -1,0 +1,11 @@
+# The only Cargo configuration the frontend's build reads (docs/FRONTEND.md →
+# Four identities). It is a tracked input like every other file here.
+
+[target.aarch64-unknown-linux-gnu]
+# Every LOAD segment aligned for the Asahi kernel's 16 KiB pages: a 64 KiB
+# maximum page size covers them (docs/FRONTEND.md → Compatibility).
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=0x10000"]
+
+[env]
+# The macOS floor (13.5, the baseline's): becomes LC_BUILD_VERSION's minos.
+MACOSX_DEPLOYMENT_TARGET = { value = "13.5", force = true }

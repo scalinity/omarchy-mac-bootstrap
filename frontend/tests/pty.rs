@@ -51,6 +51,12 @@ struct Opts<'a> {
     /// Run the launcher from an interactive shell (job control), as a person
     /// does, instead of as the terminal's first process.
     shell: bool,
+    /// The tool to launch (a copy with its own lock), instead of this checkout.
+    home: Option<PathBuf>,
+    /// Start this build through the fixture-mode development override.
+    dev: bool,
+    /// Keep the scratch folder of an earlier start with the same name.
+    keep: bool,
 }
 
 impl Default for Opts<'_> {
@@ -60,6 +66,9 @@ impl Default for Opts<'_> {
             cols: 80,
             env: Vec::new(),
             shell: false,
+            home: None,
+            dev: true,
+            keep: false,
         }
     }
 }
@@ -80,8 +89,14 @@ fn fixture(dir: &Path) -> PathBuf {
 }
 
 fn scratch(name: &str) -> PathBuf {
+    scratch_keep(name, false)
+}
+
+fn scratch_keep(name: &str, keep: bool) -> PathBuf {
     let d = std::env::temp_dir().join(format!("omb-pty-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
+    if !keep {
+        let _ = std::fs::remove_dir_all(&d);
+    }
     std::fs::create_dir_all(d.join("tmp")).unwrap();
     std::fs::create_dir_all(d.join("home")).unwrap();
     d
@@ -89,8 +104,13 @@ fn scratch(name: &str) -> PathBuf {
 
 impl Pty {
     fn start(name: &str, o: Opts) -> Pty {
-        let dir = scratch(name);
-        let fix = fixture(&dir);
+        let dir = scratch_keep(name, o.keep);
+        let fix = if o.keep && dir.join("fixture").exists() {
+            dir.join("fixture")
+        } else {
+            fixture(&dir)
+        };
+        let home = o.home.clone().unwrap_or_else(repo);
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: o.rows,
@@ -103,7 +123,7 @@ impl Pty {
         if o.shell {
             cmd.args(["--noprofile", "--norc", "-i"]);
         } else {
-            cmd.arg(repo().join("omarchy-bootstrap"));
+            cmd.arg(home.join("omarchy-bootstrap"));
         }
         cmd.cwd(repo());
         cmd.env_clear();
@@ -124,7 +144,14 @@ impl Pty {
             ("HISTFILE", "/dev/null".into()),
             ("OMB_FIXTURE", fix.display().to_string()),
             ("OMB_STATE_DIR", dir.join("state").display().to_string()),
-            ("OMB_FRONTEND_DEV", env!("CARGO_BIN_EXE_omb-tui").into()),
+            (
+                "OMB_FRONTEND_DEV",
+                if o.dev {
+                    env!("CARGO_BIN_EXE_omb-tui").into()
+                } else {
+                    String::new()
+                },
+            ),
             ("OMB_TUI_LOG", dir.join("trace").display().to_string()),
         ];
         for (k, v) in base.iter().cloned().chain(o.env) {
@@ -171,7 +198,7 @@ impl Pty {
         };
         if o.shell {
             p.wait_for("$ ");
-            let launcher = repo().join("omarchy-bootstrap");
+            let launcher = home.join("omarchy-bootstrap");
             p.send(format!("{} {}\r", bash(), launcher.display()).as_bytes());
         }
         p
@@ -778,4 +805,128 @@ fn sup_frontend_death_core_live() {
         raw.contains("status"),
         "it says what to run to see the machine's state"
     );
+}
+
+// --- The launcher starts the verified artifact -------------------------------------------
+
+/// A copy of the tool whose release/frontend.lock pins ARTIFACT (sealed),
+/// for this host's target.
+#[cfg(target_arch = "aarch64")]
+fn tool_with_lock(dir: &Path, artifact: &[u8], target: &str) -> PathBuf {
+    let tool = dir.join("tool");
+    std::fs::create_dir_all(tool.join("release")).unwrap();
+    std::fs::create_dir_all(tool.join("tests")).unwrap();
+    for p in ["omarchy-bootstrap", "lib", "data"] {
+        assert!(
+            Command::new("cp")
+                .arg("-R")
+                .arg(repo().join(p))
+                .arg(&tool)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    assert!(
+        Command::new("cp")
+            .arg("-R")
+            .arg(repo().join("tests/children"))
+            .arg(tool.join("tests"))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let body = format!(
+        "omb-frontend-lock 1\nfrontend\tversion={}\tproto=1\tsource_commit={}\tinputs_digest={}\trust=1.88.0\nartifact\ttarget={target}\turl=https://example.invalid/omb-tui\tsize={}\tsha256={}\tminos=\tglibc_max=\tinterp=\talign_min=\n",
+        omb_tui::core::VERSION,
+        "0".repeat(40),
+        "0".repeat(64),
+        artifact.len(),
+        omb_tui::record::sha256_hex(artifact),
+    );
+    let seal = omb_tui::record::sha256_hex(body.as_bytes());
+    std::fs::write(
+        tool.join("release/frontend.lock"),
+        format!("{body}seal\tsha256={seal}\n"),
+    )
+    .unwrap();
+    tool
+}
+
+/// MILESTONES.md → Gate 1's exit: the artifact built, verified and started by
+/// the launcher. The artifact is OMB_TEST_ARTIFACT (CI's release build) or
+/// this test build; the launcher acquires it from the fixture's network after
+/// [Y/n], checks its size and SHA-256 against the lock, and starts it; a
+/// second run starts it from the cache; a tampered cache copy is never run.
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn the_launcher_starts_the_verified_artifact() {
+    let artifact =
+        std::env::var("OMB_TEST_ARTIFACT").unwrap_or_else(|_| env!("CARGO_BIN_EXE_omb-tui").into());
+    let bytes = std::fs::read(&artifact).unwrap();
+    let target = if cfg!(target_os = "macos") {
+        "aarch64-apple-darwin"
+    } else {
+        "aarch64-unknown-linux-gnu"
+    };
+    let name = "verified";
+    let dir = scratch(name);
+    let tool = tool_with_lock(&dir, &bytes, target);
+    let opts = || Opts {
+        home: Some(tool.clone()),
+        dev: false,
+        keep: true,
+        ..Opts::default()
+    };
+    let mut p = Pty::start(name, opts());
+    std::fs::write(p.fix.join(format!("net/frontend-{target}")), &bytes).unwrap();
+    p.wait_until("the download prompt", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("Download and check it now?")
+    });
+    let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()).to_string();
+    assert!(
+        raw.contains(&omb_tui::record::sha256_hex(&bytes)),
+        "the pinned SHA-256 is shown before the download"
+    );
+    p.send(b"y\r");
+    p.dashboard();
+    p.idle();
+    p.keys("q");
+    assert_eq!(p.wait_exit(), 0);
+    let cached = p.dir.join(format!(
+        "home/.cache/omarchy-mac-bootstrap/frontend/{}/omb-tui",
+        omb_tui::record::sha256_hex(&bytes)
+    ));
+    assert_eq!(
+        std::fs::read(&cached).unwrap(),
+        bytes,
+        "the verified bytes are cached under their digest"
+    );
+    // A second run: from the cache, nothing downloaded, no prompt.
+    std::fs::remove_file(p.fix.join(format!("net/frontend-{target}"))).unwrap();
+    let mut p = Pty::start(name, opts());
+    p.dashboard();
+    p.idle();
+    let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()).to_string();
+    assert!(
+        !raw.contains("Download and check it now?"),
+        "no download when the cache holds the pinned bytes"
+    );
+    p.keys("q");
+    assert_eq!(p.wait_exit(), 0);
+    // A tampered cache copy is never started; declining the move falls back.
+    let mut b = bytes.clone();
+    b.push(0);
+    std::fs::write(&cached, &b).unwrap();
+    let mut p = Pty::start(name, opts());
+    p.wait_until("the mismatch", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("Move it aside")
+    });
+    p.send(b"n\r");
+    p.wait_until("the text interface", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("Interface: mismatch")
+    });
+    assert!(p.sessions().is_empty(), "the frontend was never started");
+    p.send(b"q\r");
+    p.wait_exit();
 }
