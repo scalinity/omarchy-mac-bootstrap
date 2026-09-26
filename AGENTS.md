@@ -104,7 +104,8 @@ afterwards, and records.
   state is history only.
 - Test seams `OMB_FIXTURE`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER` (the machine
   after a recorded command) and `OMB_TEST_RC` (that command's exit status) are
-  refused as root and never execute anything.
+  refused as root and never execute anything. A recorded `sudo -v` changes
+  nothing and succeeds; both belong to the command after it.
 
 ## Verify
 

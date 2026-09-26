@@ -95,8 +95,9 @@ if t_plutil "the macOS Shared plan and creation"; then
   assert_contains "$flat" "completion code matches this disk" "the right code is accepted"
   assert_contains "$T_OUT" "Partition before    disk0s6" "the partition before is shown"
   assert_contains "$T_OUT" "Partition after     disk0s3" "the partition after is shown"
-  assert_eq "$(cat "$T_DIR/record")" "sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" \
-    "exactly one command: addPartition after the Linux root, the planned size in whole MiB"
+  assert_eq "$(cat "$T_DIR/record")" "sudo -v
+sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" \
+    "sudo authenticates first; then exactly one change: addPartition after the Linux root, the planned size in whole MiB"
   assert_contains "$flat" "Shared storage created: disk0s7" "the result is checked and reported"
   st=$(cat "$d/state.env")
   assert_contains "$st" "shared_uuid=$U_SHARED" "its GUID is recorded"
@@ -149,7 +150,40 @@ if t_plutil "the macOS Shared plan and creation"; then
   chmod 500 "$d"
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create
   chmod 700 "$d"
-  assert_empty_file "$T_DIR/record" "an unrecordable change does not happen"
+  assert_eq "$(grep -c addPartition "$T_DIR/record")" 0 "an unrecordable change does not happen"
+  # The creation record itself cannot be written: nothing is created.
+  d=$(with_receipt)
+  rec=$(t_tmp)/record
+  out=$(
+    OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$d OMB_TEST_RECORD=$rec
+    state_init
+    mac_survey
+    shared_mac_state
+    # shellcheck disable=SC2329 # called by shared_txn_save
+    state_put_file() { return 1; }
+    printf 'yes\ncreate\n' | shared_create_flow
+  )
+  assert_contains "$(t_flat "$out")" "Could not record the creation" "an unwritable creation record stops the creation"
+  assert_eq "$(cat "$rec" 2>/dev/null | grep -c addPartition)" 0 "and nothing is created"
+  # sudo authenticates after the gates and before the last read of the disk;
+  # when it does not, nothing is read, recorded or created.
+  d=$(with_receipt)
+  rec=$(t_tmp)/record
+  out=$(
+    OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$d
+    state_init
+    mac_survey
+    shared_mac_state
+    # shellcheck disable=SC2329 # called by shared_create_flow
+    run() { printf '%s\n' "$*" >>"$rec"; [ "$*" != "sudo -v" ]; }
+    # shellcheck disable=SC2329 # called by shared_create_flow
+    mac_detect_geometry() { printf 'READ AGAIN\n'; }
+    printf 'yes\ncreate\n' | shared_create_flow
+  )
+  assert_eq "$(cat "$rec")" "sudo -v" "a failed sudo -v: nothing runs after it"
+  assert_contains "$(t_flat "$out")" "sudo did not authenticate; nothing was created" "and it says so"
+  assert_not_contains "$out" "READ AGAIN" "the disk is not read again for a creation that cannot run"
+  [ ! -e "$d/shared-create.env" ] && ok || fail "and no creation is recorded"
 
   # --- What the disk may look like, and what stops -----------------------------------------
   # variant CHANGE... — a copy of the reserved disk changed by sed scripts on

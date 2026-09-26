@@ -183,6 +183,10 @@ run() {
   if [ -n "${OMB_TEST_RECORD:-}" ]; then
     printf '%s\n' "$argv" >>"$OMB_TEST_RECORD"
     log_event exit "0 (recorded by test harness, not executed)"
+    # sudo -v only refreshes sudo's credentials: the machine after it is the
+    # machine before it, so a test's changed machine and exit status belong
+    # to the command that follows.
+    [ "$argv" = "sudo -v" ] && return 0
     # A test may say what the machine looks like once a recorded command
     # "ran", so the checks that follow it read a changed machine.
     [ -n "${OMB_TEST_AFTER:-}" ] && OMB_FIXTURE=$OMB_TEST_AFTER

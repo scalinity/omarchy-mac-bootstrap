@@ -60,7 +60,8 @@ suite holds each one to an allowlist.
 **Changing** — `run CMD…`. In `--dry-run` it prints `would run` and returns;
 with `OMB_TEST_RECORD` set it appends the argv to that file and returns (with
 `OMB_TEST_AFTER`, the machine then reads as that fixture; with `OMB_TEST_RC`,
-the command "exits" with that status); otherwise it runs the command in the
+the command "exits" with that status; `sudo -v`, which changes nothing, is
+recorded and succeeds, leaving both to the command after it); otherwise it runs the command in the
 foreground on your terminal and logs the command and its exit code, never
 its output. `state_set` follows the same rules for state.
 

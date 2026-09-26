@@ -68,9 +68,10 @@ assert_eq "$(grep -hF "$ADDPART" $CODE | grep -c .)" 1 "exactly one addPartition
 assert_eq "$(grep -lF "$ADDPART" $CODE)" "$REPO/lib/shared.sh" "and it lives in lib/shared.sh"
 assert_eq "$(grep -c '^SHARED_FS_MAC="ExFAT"$' "$REPO/lib/shared.sh") $(grep -c '^SHARED_LABEL="Shared"$' "$REPO/lib/shared.sh")" "1 1" "its filesystem and name are constants"
 body=$(awk '/^shared_create_flow\(\) \{/ {f = 1} f {print} f && /^}/ {exit}' "$REPO/lib/shared.sh")
-seq=$(printf '%s\n' "$body" | grep -oE 'ui_confirm_word yes|ui_confirm_word create|mac_detect_geometry|shared_txn_save|run sudo diskutil addPartition' | tr '\n' '|')
-assert_eq "$seq" "ui_confirm_word yes|ui_confirm_word create|mac_detect_geometry|shared_txn_save|run sudo diskutil addPartition|" \
-  "addPartition runs only after both typed gates, a fresh read of the disk, and the creation record"
+seq=$(printf '%s\n' "$body" | grep -oE 'ui_confirm_word yes|ui_confirm_word create|run sudo -v|mac_detect_geometry|shared_txn_save|run sudo diskutil addPartition' | tr '\n' '|')
+assert_eq "$seq" "ui_confirm_word yes|ui_confirm_word create|run sudo -v|mac_detect_geometry|shared_txn_save|run sudo diskutil addPartition|" \
+  "addPartition runs only after both typed gates, sudo's authentication, a fresh read of the disk, and the creation record"
+assert_eq "$(grep -ho 'run sudo -[a-z]*' $CODE | tr '\n' ';')" "run sudo -v;" "sudo is given an option only to authenticate, once, before the Shared creation's last read"
 # Nothing reaches the device argument from a file: it is the fresh read's id.
 assert_eq "$(printf '%s\n' "$body" | grep -c 'SHARED_PRED_ID=')" 0 "the creation never sets the device itself"
 assert_eq "$(grep -c 'SHARED_PRED_ID=\$GP_ID' "$REPO/lib/shared.sh")" 1 "the device is the partition found on the disk right before the region"

@@ -293,7 +293,9 @@ Detailed in `docs/SHARED.md`. Summary:
   after the typed gates), Apple's and every earlier partition unchanged, the container at the planned
   size, Asahi's three partitions in order, one free region after the root at
   least the planned size, nothing else new, Linux's code accepted, power.
-  Typed `yes` and `create`; the disk read again and matched; the creation
+  Typed `yes` and `create`; `sudo -v` (sudo authenticates before the last
+  read, so no password prompt separates that read from the change; a
+  failure stops); the disk read again and matched; the creation
   record `shared-create.env` written (or nothing runs): the disk, every
   partition on it byte for byte, the free region the creation may use, the
   Linux root before it, the partition after it, the interval and the minimum
@@ -306,7 +308,10 @@ Detailed in `docs/SHARED.md`. Summary:
   stop clears only when the record's own check passes, or when the record is
   removed by hand after checking the disk. Without a record, an existing
   partition is taken for Shared only after the root Linux's code names.
-  Reruns reconcile, never recreate.
+  Reruns reconcile, never recreate. The run lock is not a disk lock: another
+  program could still change the partition table between the last read and
+  `addPartition`; the window is kept short and the creation record judges
+  the result.
 - **Activation (Linux)** as the everyday user: found by the code's GUID (or the
   managed fstab entry), on root's disk right after root, exFAT, Basic Data, at
   least the planned size; conflicts refused; typed `mount`; one managed

@@ -749,7 +749,7 @@ shared_create_flow() {
   if [ "$SHARED_GAP_START" -lt "$INT_shared_start" ]; then
     ui_warn "Linux ends $(fmt_gb $((INT_shared_start - SHARED_GAP_START))) earlier than planned (the installer was given a smaller size). Shared is created at its planned size; the difference stays free."
   fi
-  ui_section "Command" "sudo asks for your password; diskutil needs it for the internal disk"
+  ui_section "Command" "sudo asks for your password first; then the disk is read again and this runs at once"
   ui_cmd "sudo diskutil addPartition $SHARED_PRED_ID $SHARED_FS_MAC $SHARED_LABEL $SH_SIZE"
   ui_callout warn "This adds one partition in free space, right after the Linux root." \
     "It does not resize, move, erase or reformat anything else. Before it runs, the whole disk is read again and must match what is shown here exactly." \
@@ -762,6 +762,13 @@ shared_create_flow() {
   if ! ui_confirm_word create "Create the Shared partition now."; then
     printf '\n'
     ui_info "Stopped. Nothing changed."
+    return 1
+  fi
+  # sudo asks for the password now, before the last read of the disk, so
+  # typing it never sits between that read and the change. It narrows the
+  # window; it is not a lock: another disk tool can still act meanwhile.
+  if ! run sudo -v; then
+    ui_fail "sudo did not authenticate; nothing was created."
     return 1
   fi
   # Read everything again; only an identical disk goes ahead.

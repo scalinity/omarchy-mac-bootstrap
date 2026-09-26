@@ -108,7 +108,10 @@ Before anything runs, the whole disk is read and must show:
 
 It shows the physical disk, the interval in bytes, the size, the partitions
 before and after, and the filesystem, and asks for `yes` (a current backup)
-and `create`. Then it reads the disk again; any difference stops it. It
+and `create`. Then `sudo` asks for your password (`sudo -v`; if it does not
+authenticate, nothing more happens), so that typing it never sits between
+the last read of the disk and the change. Then it reads the disk again; any
+difference stops it. It
 writes the creation record, `shared-create.env`: the disk, every partition on
 it byte for byte, the free region the creation may use, the Linux root
 before it, the partition after it, and the size it creates. A record that
@@ -120,8 +123,17 @@ sudo diskutil addPartition <the Linux root, e.g. disk0s6> ExFAT Shared <bytes>
 
 `<bytes>` is the planned size rounded up to a whole MiB, placed at the
 region's first MiB boundary; the rest of the region stays free, which leaves
-diskutil room for its own alignment. `sudo` asks for your password, because
-diskutil must own the internal disk to change its partition map.
+diskutil room for its own alignment. `sudo` needs your password because
+diskutil must own the internal disk to change its partition map; it was
+asked for before the last read, so this runs straight after it.
+
+**What the last read cannot rule out.** This tool's lock keeps two of its own
+runs apart; it is not a lock on the disk. Another program (Disk Utility, an
+installer, another `diskutil`) could still change the partition table in the
+moment between the last read and `addPartition`. That moment is kept short —
+nothing waits for you after the read — and the creation record catches any
+result that is not what was allowed. Close other disk tools while Shared is
+created.
 
 Afterwards the disk is read again and judged by the creation record: every
 partition in it unchanged, byte for byte, and exactly one new partition,
