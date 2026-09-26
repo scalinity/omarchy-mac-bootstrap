@@ -12,8 +12,9 @@ installation.
 resolution = resolve(items, registry, local registry, the person's decisions, availability)
 ```
 
-The same inputs give byte-identical output, in inventory order, under Bash
-3.2 and Bash 5, in any locale (nothing is sorted by collation). Every
+The same inputs give byte-identical output under Bash 3.2 and Bash 5, in
+any locale (nothing is sorted by collation): resolutions are listed in
+inventory order, and the order of work is the graph's (*The graph*). Every
 resolution names the registry rule, local rule or decision that produced it.
 
 ## Dispositions
@@ -44,7 +45,7 @@ before Linux exists (advisory) and a check on the target (authoritative).
 | 0 | already there | anything Omarchy installs | the registry's capability list, from Omarchy's package lists | `pacman -Q`, or the command on `PATH` |
 | 1 | pacman, through `omarchy-pkg-add` | system packages and CLIs in the repositories | the aarch64 repository databases: a name or `%PROVIDES%` match with `%ARCH%` `aarch64` or `any` | `LC_ALL=C pacman -Sp --print-format '%r/%n %v %a' <name>` (no root; follows provides) |
 | 2 | Omarchy's own helpers | what Omarchy installs a particular way (`omarchy-install-terminal ghostty`, `omarchy-install-dev-env <language>`) | the helper and its arguments are in the registry | the helper exists; its result is checked afterwards, never its exit status |
-| 3 | mise, core runtimes | node, python, go, ruby, java, bun, deno, rust tooling | `mise lock --platform linux-arm64` (when mise is on the Mac) produces a platform URL, glibc unless intended | the same lock check, then `mise ls --json` after installing |
+| 3 | mise, core runtimes | node, python, go, ruby, java, bun, deno, rust tooling | `mise lock --platform linux-arm64` (when mise is on the Mac) produces a platform URL, glibc unless intended | the same lock check, then the version folder under mise's installs after installing |
 | 4 | mise, `aqua:`/`github:` backends | single-binary CLIs not in the repositories | as 3 | as 3 |
 | 5 | Flathub | desktop applications | Flathub's summary API lists `aarch64` | `flatpak remote-info --arch=aarch64`, then a launch test |
 | 6 | `uv tool` (then pipx) | Python CLIs | `uv pip compile --python-platform aarch64-manylinux_2_28 --only-binary :all:` resolves | installed with `--no-build` |
@@ -56,12 +57,15 @@ before Linux exists (advisory) and a check on the target (authoritative).
 
 Rules that come with the sources:
 
-- **Nothing compiles by surprise.** mise runs with `compile` off for
-  python, ruby, node and erlang, and versions are pinned (mise's default
-  24-hour release age makes `latest` depend on the day). cargo-binstall may
-  not compile; `uv` may not build. A source that would build something large
-  is not chosen; `go install`, which compiles small modules quickly, is the
-  one exception, and says so in review.
+- **No implicit source build.** mise runs with `compile` off for python,
+  ruby, node and erlang, and versions are pinned (mise's default 24-hour
+  release age makes `latest` depend on the day); cargo-binstall runs with its
+  `compile` and `quick-install` strategies disabled; uv and pipx install
+  binary wheels only (`--no-build`, `--only-binary :all:`); the AUR is never
+  used automatically. A build happens only when the chosen method *is* a
+  build and the review says so: `go install module@version` compiles by
+  design (small, quick, deterministic), and the person approves it like any
+  other item. An unsupported package never falls back to building.
 - **The repository is qualified when it must be.** Omarchy Mac lists the
   `[omarchy]` repository with `Usage = Sync`: `pacman -Si` finds its
   packages but an unqualified `pacman -S` will not install them, and
@@ -205,33 +209,127 @@ it (`ALTERNATIVE`, with choices); or it is Mac-only. Application data
 application; where an application keeps portable settings in a known
 place, its adapter says so explicitly (the editors do).
 
-## The dependency graph
+## The graph
 
-Resolution produces edges (`dep` records): an MCP server whose command is
-`npx` needs `sw:node`; a Flathub application needs `sw:flatpak` and the
-Flathub remote; a uv tool needs `sw:uv`; Git's `credential.helper
-osxkeychain` is replaced by GitHub CLI's helper, which needs `sw:github-cli`
-and a sign-in. Edges come from the registry (tools that need a runtime), from
-adapters (commands named in configuration), and from decisions.
+The order of work is a **bounded, deterministic directed acyclic graph**.
+The seven *layers* below remain, but only as the groups the screens show and
+the terminal mode each group needs; they do not decide the order.
 
-Installation runs in fixed **layers**, and an edge may only point to an
-earlier layer, which makes cycles impossible and the order obvious:
+### Nodes and edges
+
+| Node | Is | Example |
+| --- | --- | --- |
+| `need` | one consumer's requirement for a capability, with a version constraint (`any`, `major N`, `minor N.M`, `exact V`) | the GitHub MCP server needs a Node runtime, major 22 |
+| `instance` | one provider installing one version of one software id: method, target, version | `mise node@22`, `mise node@24`, `pacman ripgrep` |
+| `config` | writing or transforming configuration | re-create an MCP server; place `starship.toml`; add the Bash line |
+| `verify` | a check after the fact | `mise exec node@22 -- node --version` |
+
+Capabilities (`cap` in the registry) connect needs to the instances that can
+satisfy them; software ids stay the display grouping. Edges are `requires`
+(the consumer runs only if its target succeeded or was already satisfied),
+`optional` (the consumer runs regardless; a failed target leaves it
+`degraded`), `orders` (sequence without dependency: a package before
+configuration of the same program) and `conflicts` (two instances that
+cannot both be present: the registry's conflicts, or two instances that
+would put the same command first on `PATH`), which is never ordered but
+always a decision — keep one, or leave both out. Edges come from the
+registry, from adapters (the commands a configuration names) and from
+decisions.
+
+### From needs to instances
+
+1. Collect every need for a capability with its constraint.
+2. A capability already satisfied on the target (its `cap` check, read-only)
+   satisfies its needs; no instance is made.
+3. Otherwise take the capability's providers in preference order (the
+   registry's, then *Where software comes from*) and the first that can meet
+   the constraints.
+4. When one version meets every consumer's constraint, one instance serves
+   them all. When none does, it is a **decision**: one version for all (the
+   screen names whose constraint breaks), side-by-side instances where the
+   provider supports them (mise installs several versions; the global default
+   is one, and a consumer pinned to another has its command wrapped as `mise
+   exec <tool>@<version> --`, shown as a rewrite), or leaving consumers out.
+   With no supported option the conflicting consumers are `unsupported`.
+5. Alternatives (an `ALTERNATIVE`, or providers of equal rank) are decisions.
+
+There is no solver: every step is deterministic, and every non-obvious choice
+is put to the person.
+
+### Order and bounds
+
+Topological order by Kahn's algorithm; among nodes ready at the same time,
+the order is by layer, then node kind (`instance`, `config`, `verify`), then
+node id as bytes — the same on every system and in every locale, and
+independent of inventory order. At most 5 000 nodes and 20 000 edges; a
+larger graph is refused. A cycle makes every node on it, and everything that
+requires them, `needs-decision`, and the cycle is shown.
+
+### Outcomes
+
+- A failed node blocks every node that `requires` it (the chain is
+  recorded: "GitHub MCP: blocked — needs Node 22; mise could not install
+  node 22: …") and degrades every node that only `optional`-ly needs it.
+- A need whose provider the person left out blocks its consumers, unless
+  the capability is already satisfied.
+- Nothing retries inside a run. Running `restore` again retries failed nodes
+  and the nodes they blocked.
+- Nothing is reported migrated until it and everything it requires
+  verified (docs/RESTORE.md).
+
+### Examples: MCP servers
+
+An MCP server whose command is a tool from the repositories:
+
+```text
+need      fetch-mcp  needs cap:uv (any)            from the command /opt/homebrew/bin/uvx
+instance  pacman uv                                provider of cap:uv
+config    re-create fetch-mcp for Claude Code      command rewritten /opt/homebrew/bin/uvx → uvx (p:brew-bin)
+verify    fetch-mcp answers (live, with consent)
+
+edges     need → instance (requires); config → instance (requires); verify → config (requires)
+```
+
+MCP → runtime → tool → configuration, with two versions of one runtime:
+
+```text
+need      gh-mcp      needs cap:node (major 22)          the server's package declares node 22
+need      lint-tool   needs cap:node (major 24)          a global npm tool the person kept
+instance  mise node@24                                   the global default, first in preference
+instance  mise node@22                                   the decision: side by side
+instance  npm @modelcontextprotocol/server-github@2.3.1  installed under node@22
+instance  npm lint-tool@5.0.0                            installed under node@24
+config    re-create gh-mcp for Codex                     command wrapped: mise exec node@22 -- npx … (rewrite, shown)
+verify    gh-mcp answers (live, with consent)
+
+edges     gh-mcp need → node@22 (requires); lint-tool need → node@24 (requires);
+          server-github → node@22 (requires); lint-tool → node@24 (requires);
+          config → server-github (requires); verify → config (requires)
+```
+
+A tool that needs another tool in the same layer is one more `requires`
+edge between two `instance` nodes; layers never forbid it.
+
+### Layers, for the screens
 
 | Layer | Holds | Terminal |
 | --- | --- | --- |
 | 1 | system packages (`omarchy-pkg-add`), Omarchy's install helpers | handoff: pacman, the helpers and `sudo` show their own output and prompts |
 | 2 | runtimes (mise) | managed |
 | 3 | ecosystem tools (uv, pipx, cargo-binstall, go, npm), Flathub applications | managed |
-| 4 | AI tools (docs/AI-TOOLS.md) | managed |
+| 4 | AI tools, installed the way Omarchy's wrappers do (docs/AI-TOOLS.md) | managed |
 | 5 | files: configuration and folders | managed |
-| 6 | structured configuration: Git settings, MCP servers, the Bash file; the default agent through `omarchy-default-agent` | managed, except the Omarchy helper and a sign-in, which are handoffs |
+| 6 | structured configuration: Git settings, MCP servers, the Bash file | managed, except a sign-in, which is a handoff |
 | 7 | verification | managed; live checks only with consent |
 
-Within a layer, items keep inventory order. An item whose dependency did not
-finish is **blocked**, not attempted, and says through which chain ("GitHub
-MCP: blocked — needs Node.js; mise could not install node 22: …"). Nothing
-is reported migrated until it and everything it needs verified
-(docs/RESTORE.md).
+### Graph records
+
+| Record | Schema |
+| --- | --- |
+| `node` | `id:id kind:enum(need\|instance\|config\|verify) layer:uint item:bytes? sw:id? cap:id? method:enum(omarchy\|omarchy-helper\|pacman\|mise\|mise-backend\|flatpak\|uv\|pipx\|cargo-binstall\|go\|npm\|file\|structured\|check)? target:bytes? version:bytes? constraint:enum(any\|major\|minor\|exact)? value:bytes? rule:id? state:enum(planned\|ready\|unavailable\|needs-decision\|unsupported\|applied\|verified\|failed\|blocked\|degraded\|skipped\|accepted)` |
+| `edge` | `from:id to:id kind:enum(requires\|optional\|orders\|conflicts)` |
+| `decision` | `node:id question:id answer:id` |
+| `rewrite` | `item:bytes field:id from:bytes to:bytes rule:id state:enum(auto\|review\|approved\|declined)` |
 
 ## Paths
 
@@ -266,25 +364,44 @@ The source shell is Zsh; the target stays **Bash**, deliberately, as a
 Linux and Bash learning environment. Nothing tries to make Bash behave like
 Zsh; the shell adapter carries what is portable and explains the rest.
 
-- **Read statically.** Zsh files are read as text, line by line; nothing is
-  sourced or evaluated. Recognised: `alias name=value` in its simple quoted
-  forms, `export NAME=value`, function headers (`name() {`, `function name`),
-  `source` lines, `setopt`, plugin-manager and framework markers (Oh My Zsh,
-  zinit, antidote, zplug).
-- **Aliases** are checked for Zsh-only syntax (global and suffix aliases,
-  parameter flags such as `${(…)`, glob qualifiers, `=cmd`, `noglob`,
-  `print -P`) and for macOS-only commands. The registry's `alias` records
-  give analogues: `pbcopy` → `wl-copy`, `pbpaste` → `wl-paste`, `open` →
-  `xdg-open`, `caffeinate` → `systemd-inhibit`. An alias that shadows one
-  Omarchy defines (`ls`, `cd`, `a`, `c`, `cx`, `cy`, `lt`, `lsa`) is shown
-  beside Omarchy's: keep yours or keep Omarchy's.
-- **Functions** are listed with their bodies for review and carried only when
-  the person approves each one, after a warning if they use Zsh-only
-  syntax; they are never converted automatically.
-- **Exports** are reviewed: `EDITOR`, `VISUAL`, `PAGER`, `LESS` and the like
-  carry over; `PATH` changes never do (the target's `PATH` is Omarchy's plus
-  mise); `HOMEBREW_*` is dropped; anything secret-shaped is `SECRET`;
-  values under `/Users/` pass through the path rules.
+- **Read statically, with a lexical tracker.** Zsh files are read as text;
+  nothing is sourced or evaluated. Before any line is considered, a
+  conservative tracker follows, from the top of each file: single and double
+  quotes, backslash line continuation, here-documents (`<<WORD` to `WORD`,
+  `<<-`, quoted words), function bodies (`name() {`, `function name {`),
+  compound commands (`if`…`fi`, `case`…`esac`, `for`/`while`/`until` …
+  `done`, `{`…`}`, `(`…`)`), and `$(`…`)` and backquotes. A line is
+  **top-level** only if it starts and ends outside all of these. From the
+  first line the tracker cannot follow (end of file inside a quote, a body or
+  a here-document; a construct it does not know) to the end of that file,
+  every line is review-only.
+- **Imported automatically: two forms, whole-line matches on top-level
+  lines, nothing else.**
+  - `alias NAME='VALUE'` or `alias NAME="VALUE"`: `NAME` is
+    `[A-Za-z0-9_.][A-Za-z0-9_.-]*`; `VALUE` is one line of printable ASCII
+    without the quote character, `$`, a backquote, `\` or `!` (no expansion,
+    no substitution, no history). Not `alias -g` or `alias -s` (Zsh-only).
+  - `export NAME=VALUE` (unquoted `VALUE` in `[A-Za-z0-9_./:@%+=,-]*`) or
+    quoted as above, only for names on the adapter's allowlist (`EDITOR`,
+    `VISUAL`, `PAGER`, `MANPAGER`, `LESS`, `BAT_THEME`, `FZF_DEFAULT_OPTS`,
+    `HISTSIZE`, `HISTFILESIZE`, and the like), and only if the value passes
+    the credential rules; values under `/Users/` pass through the path rules.
+- **Aliases** are then checked for macOS-only commands. The registry's
+  `alias` records give analogues: `pbcopy` → `wl-copy`, `pbpaste` →
+  `wl-paste`, `open` → `xdg-open`, `caffeinate` → `systemd-inhibit`. An
+  alias that shadows one Omarchy defines (`ls`, `cd`, `a`, `c`, `cx`, `cy`,
+  `lt`, `lsa`) is shown beside Omarchy's: keep yours or keep Omarchy's.
+- **Review-only**: functions, command substitutions, conditional or
+  multi-line definitions, arrays, `source` and `.`, `setopt`, `bindkey`,
+  `autoload`, `zstyle`, prompt settings, plugin managers, any other export.
+  Each is listed with its text; an export can be included by the person one
+  at a time.
+- **Functions are code.** A function the person approves is carried as code,
+  into a marked block of the shell file headed as reviewed code carried from
+  Zsh, after a warning if it uses Zsh-only syntax. It is never described as
+  portable data and never converted automatically.
+- **Never carried**: `PATH` changes (the target's `PATH` is Omarchy's plus
+  mise), `HOMEBREW_*`, `DYLD_*`, `LD_*`, anything credential-shaped.
 - **Plugins and frameworks** are not migrated. The review names the Bash
   way to the same end where there is one: completion and key bindings for
   fzf and zoxide, and Starship, which Omarchy already sets up.
@@ -295,10 +412,8 @@ Zsh; the shell adapter carries what is portable and explains the rest.
   overwrite. `~/.bashrc` is otherwise left alone. `omarchy reinstall
   configs` rewrites `~/.bashrc` without a backup; rerunning `restore` puts
   the line back.
-- **History** is `SENSITIVE` and opt-in: Zsh's extended history becomes Bash
-  history format in a separate file, `~/.bash_history_macos`, and the review
-  shows the one command that merges it into `~/.bash_history` if wanted.
-  History settings (`HISTSIZE`, `HISTFILESIZE`) carry with the shell file.
+- **History** content does not travel in v1; history settings (`HISTSIZE`,
+  `HISTFILESIZE`) carry with the shell file.
 - **Terminal tools**: Starship's configuration carries (Omarchy seeds its
   own, so it is a conflict decided at restore); tmux configuration carries
   with macOS-only lines (clipboard helpers, `reattach-to-user-namespace`)
