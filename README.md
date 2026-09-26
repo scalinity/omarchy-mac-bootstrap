@@ -309,4 +309,8 @@ OMB_FIXTURE=$PWD/tests/fixtures/mac-m1pro-1tb-roomy ./omarchy-bootstrap --dry-ru
 CI runs every test on Linux (bash 5, ShellCheck) and macOS (`/bin/bash` 3.2).
 Design and boundaries: [SPEC.md](SPEC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [MILESTONES.md](MILESTONES.md). The planning and Shared logic is tested against
-recorded disk layouts; qualification on real hardware is milestone M14.
+recorded disk layouts; qualification on real hardware is milestone M17, the
+first real install with the finished product. The next milestones (a Ratatui
+interface, migrating this Mac's environment to Omarchy, rescue tools and
+cross-system checks) are designed in [docs/DECISIONS.md](docs/DECISIONS.md)
+and the documents it cites; none of it is built yet.

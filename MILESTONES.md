@@ -10,7 +10,7 @@ storage safety baseline, accepted by an independent review on 2026-09-26
 before any product-expansion work: the storage planner, the Asahi and Omarchy
 Mac handoffs, install classification, the one Shared creation and its
 activation, state, routing and the launcher, as tested by CI run 36220127446
-(M13). No real hardware has run it; that is M14.
+(M13). No real hardware has run it; that is M17.
 
 `main` carries it at `e33714195c767f94de41cbea2a51d7c04d8e3fe0`, a
 fast-forward (no merge commit) to the reviewed commit plus one
@@ -141,7 +141,7 @@ carries it.
 - **Acceptance:** separate gaps are never summed; Linux and Shared get at least
   what was asked; the root keeps 50 GB; overflow and leading zeros are
   refused; an unreadable layout blocks.
-- **Status:** done (model verified against upstream source; see M14).
+- **Status:** done (model verified against upstream source; see M17).
 
 ## M10 — Install classification and recovery
 
@@ -168,7 +168,7 @@ carries it.
   only after both typed gates and a matching re-read; nothing ever formatted,
   deleted or repaired; mounted by PARTUUID for the everyday user.
 - **Status:** implemented and tested against recorded layouts; real-hardware
-  qualification is M14.
+  qualification is M17.
 
 ## M12 — Developer outcomes
 
@@ -200,7 +200,7 @@ carries it.
   identity (154db40) and the noninteractive creation after the last read
   (4f37810) — closed both and found no new code-level blocker. This is
   acceptance of the code and CI only: it is not evidence that any real
-  hardware has run the tool (M14).
+  hardware has run the tool (M17).
   - Run 36198289764 (commit 5ce30ae): the macOS job passed with no skips;
     the Linux job failed on macOS sections not gated on plutil, a
     locale-dependent conflict order, and ShellCheck 0.9.0 findings.
@@ -222,25 +222,138 @@ carries it.
     `/bin/bash`). A later review then found the mounted-identity and
     creation-timing gaps fixed after it.
 
-## M14 — Real-hardware qualification
+## The product expansion: M14–M18
 
-- **Objective:** evidence from the target Mac (2021 16-inch M1 Pro) that the
-  modelled behaviour is the real behaviour.
-- **Work, in order:** full current backup; `./omarchy-bootstrap doctor` and the
-  survey compared with `diskutil list`; Asahi and Omarchy installed with the
-  planned answers, and the resulting layout compared with the plan record;
-  macOS, Recovery and Linux each boot; encryption confirmed finished (as
-  root, the LUKS header reads as finished before the completion code shows);
-  back on macOS, `shared` shows `awaiting-macos-creation`; no other disk tool
-  running while Shared is created (the run lock is not a disk lock); Shared
-  created, `sudo -n` running it without asking again after `sudo -v` under
-  this Mac's sudo policy; the partition checked with `diskutil info` against
-  the size and start the command showed, and written to from macOS; back on
-  Linux, `shared activate`, and doctor shows the partition mounted at
-  `/mnt/shared` with its PARTUUID matched through the kernel's device number
-  (`lsblk` on this system reports `MAJ:MIN`); a file over 4 GB copied and hashed macOS → Linux and
-  back; clean reboots between the systems; the mount persists;
-  `./omarchy-bootstrap` rerun on both systems changes nothing.
-- **Acceptance:** every step above holds on the real machine, and the planned
-  and actual extents match.
+The tool becomes a Mac → Omarchy migration and bootstrap assistant with a
+required Ratatui interface, and the product is finished **before** the first
+real install, which is itself the hardware qualification. The design is on
+branch `product-expansion-design`: SPEC.md, docs/DECISIONS.md, and the
+subsystem documents each milestone names. Every milestone here is a delta
+reviewed against the accepted baseline above; a change to a baseline file is
+reviewed as a safety change. Implementation begins only after the design has
+passed an independent architecture review, and the review's changes are
+made to the design first.
+
+## M14 — Frontend foundation, Migration Profile and macOS scanner
+
+- **Objective:** the product's interface proven on both systems before
+  anything is built on it; then a truthful, read-only inventory of this Mac
+  and a sealed Migration Profile.
+- **Work, in order:**
+  1. **The frontend gate.** The record format (`lib/records.sh`); protocol
+     v1 with `hello`, a read-only `snapshot`, one managed action and one
+     handoff action (a test child in fixture mode); the launcher's side
+     (`lib/frontend.sh`: lock, acquisition, cache, digest check, fallback);
+     the Rust crate with the terminal lifecycle, the handoff, the theme and
+     glyph sets, the too-small state and a read-only journey dashboard; the
+     release workflow and the frontend CI jobs (docs/FRONTEND.md,
+     docs/PROTOCOL.md, docs/TESTING.md).
+  2. The scan adapters, the dotfolder picker, the AI tools' scan side,
+     sensitivity, the registry v1 and planned resolution, the availability
+     check, the profile and its seal, `prof=` in the resume token, export to
+     a folder; screens 3–11 and the gate screen (13), which every typed
+     word uses from here on (docs/MIGRATION.md, docs/RESOLVER.md,
+     docs/AI-TOOLS.md, docs/UX.md). `profile` and `export` move to the
+     frontend; every installer command stays in the text interface until
+     M16 exposes its actions.
+- **Verification:** `test-records.sh`, `test-protocol.sh`, the frontend's
+  layers A–H; then `test-scan.sh`, `test-profile.sh`, `test-resolve.sh`,
+  `test-bundle.sh` (export), `test-agents.sh` (scan side), over every
+  `mac-home-*`, `profile-*`, `registry-*`, `avail-*` and `mcp-*` fixture.
+- **Acceptance — the gate, before any migration screen:** the macOS arm64
+  artifact is built, verified and started by the launcher, on CI and on this
+  Mac's macOS; the Linux aarch64 artifact starts on the aarch64 runner, and
+  its `LOAD` segments are aligned for 16 KiB pages; the handshake works and a
+  version or digest mismatch falls back to text; the core stays the
+  authority (the protocol's refusals, and equivalence for every action it
+  exposes); the terminal is restored after exit, error, panic and SIGTERM;
+  a handoff gives the child every key and returns to a fresh screen; 80×24
+  and 60 columns render; acquisition shows provenance and every failure path
+  in docs/FRONTEND.md behaves as written; request latency measured on this
+  Mac's macOS and O1 answered. **Then:** the scanner runs no tool and reads
+  nothing outside its allowlist; every adversarial fixture passes; the
+  resolver is byte-identical across shells and locales; a profile seals
+  only when complete and is stale on another Mac; an exported bundle
+  verifies.
+- **Status:** not started. Designed.
+
+## M15 — Linux restore, AI environment, rescue and debugging
+
+- **Objective:** the profile arrives on Omarchy truthfully, and the fresh
+  system can be debugged with an agent from its first networked minute.
+- **Work, in order:** the debug report and the agent brief (smallest, and
+  useful for everything after); the rescue screen, local agents as root, the
+  workspace, remote rescue, `rescue remove`; import and the target checks;
+  the restore's layers, conflicts, journal, reconciliation and undo; the AI
+  providers' restore and health; Omarchy's default agent; the developer
+  module's alignment with Omarchy's agent stubs (O5, O6); screens 16, 17 and
+  20–22; `restore` and `rescue` move to the frontend (docs/RESCUE.md,
+  docs/RESTORE.md, docs/AI-TOOLS.md).
+- **Verification:** `test-debug.sh`, `test-rescue.sh`, `test-bundle.sh`
+  (import), `test-restore.sh`, `test-agents.sh`, over every `bundle-*`,
+  `linux-restore-*`, `rescue-*` and `debug-*` fixture; the frontend's layers
+  for the new screens.
+- **Acceptance:** every restore fixture ends `complete` or says exactly why
+  not; an interruption at every step reconciles; a rerun changes nothing;
+  undo is exact; no bundle or report fixture contains a planted secret;
+  `rescue remove` leaves nothing it made; nothing runs as the wrong user.
+- **Status:** not started. Designed.
+
+## M16 — Cross-boot journey through the frontend, and qualification
+
+- **Objective:** one continuous journey across both systems in the
+  frontend, and the cross-system check automated.
+- **Work:** the ten stages on both systems and journey notes on Shared; the
+  baseline's actions exposed through the protocol (plan, the backup gate, the
+  Asahi fetch and launch, network, Omarchy start and resume, Shared creation,
+  activation and the write test), each with an equivalence test; Shared's
+  creation gains `sudo -k` before `sudo -v` in both interfaces (a change to
+  a baseline file); screens 1, 2, 12, 14, 15, 18, 19 and 23–25; the default
+  run and the installer commands move to the frontend; the qualification
+  steps, the round trip and the names test; stage records and `report`; the
+  journey simulation (docs/QUALIFICATION.md).
+- **Verification:** `test-journey.sh`, `test-qualify.sh`,
+  `test-equivalence.sh`, the simulation, and the frontend's layers, on both
+  CI systems.
+- **Acceptance:** equivalence holds for every exposed baseline action; the
+  simulation passes on both systems; every `qual-*` fixture passes, the wrong
+  partition among them; the deterministic stream matches on both systems;
+  every stage's screen holds at 80×24 and 60 columns; the changes to baseline
+  files have their own independent review as safety changes.
+- **Status:** not started. Designed.
+
+## M17 — Real-hardware qualification: the first real install
+
+- **Objective:** evidence from the target Mac (2021 16-inch MacBook Pro, M1
+  Pro, 16 GB, 1 TB) that the modelled behaviour is the real behaviour,
+  obtained by running the finished product.
+- **Work:** the whole journey, from the Mac's macOS restored from Time
+  Machine to `done`, with the tool; every check in docs/QUALIFICATION.md →
+  *What the tool checks and what only the person can*, which includes the
+  earlier hardware list (the survey against `diskutil list`; planned and
+  actual extents; macOS, Recovery and Linux booting; encryption finished,
+  with the LUKS header read as root before the completion code shows;
+  `awaiting-macos-creation`; no other disk tool during creation; `sudo -n`
+  running the creation without asking again under this Mac's sudo policy;
+  the partition against the size and start shown; Shared matched through
+  `MAJ:MIN`; a file over 4 GB both ways; clean reboots; a persisting mount; a
+  rerun that changes nothing); the open facts in docs/DECISIONS.md → O9.
+- **Verification:** `report` on both systems, from the stage records and a
+  fresh read.
+- **Acceptance:** every automatic check passes on the real machine; the
+  attested steps are confirmed; planned and actual extents match; restore
+  is `complete`; qualification passed; a rerun changes nothing; every way
+  the machine differed from the fixtures has become a fixture and a fix
+  before M18, under the stage rule.
+- **Status:** not started. Not before M14–M16 are accepted.
+
+## M18 — Hardware-validated release
+
+- **Objective:** a commit that is known to work on this Mac model.
+- **Work:** the M17 report committed as `docs/hardware/<model>-<date>.md`;
+  the README's tested-on row; the `hw-<model>-<date>` tag on the validated
+  commit (docs/QUALIFICATION.md → *Hardware-validated release*).
+- **Acceptance:** the report shows every check passing and every warning
+  explained; each stage's commit satisfies the stage rule; the validation
+  names `MacBookPro18,2` and the M1 Pro, and nothing else.
 - **Status:** not started.
