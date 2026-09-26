@@ -209,7 +209,7 @@ case "$cmd" in
     d=$("$0" digest "$commit") || exit 1
     proto=$(git show "$commit:lib/records.sh" | sed -n 's/^REC_PROTO=\([0-9]*\)$/\1/p')
     rust=$(git show "$commit:frontend/rust-toolchain.toml" | sed -n 's/^channel = "\(.*\)"$/\1/p')
-    [ -n "$proto" ] && [ -n "$rust" ] || die "the protocol or the toolchain cannot be read at $commit"
+    if [ -z "$proto" ] || [ -z "$rust" ]; then die "the protocol or the toolchain cannot be read at $commit"; fi
     printf 'omb-frontend-lock 1\nfrontend\tversion=%s\tproto=%s\tsource_commit=%s\tinputs_digest=%s\trust=%s\n' "$version" "$proto" "$commit" "$d" "$rust"
     ;;
   artifact-line)
@@ -226,7 +226,7 @@ case "$cmd" in
         interp=$(readelf -l "$f" | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p')
         top=$(objdump -T "$f" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
         align=$(readelf -lW "$f" | awk '$1 == "LOAD" { print $NF }')
-        [ -n "$interp" ] && [ -n "$top" ] && [ -n "$align" ] || die "the ELF facts of $f cannot be read"
+        if [ -z "$interp" ] || [ -z "$top" ] || [ -z "$align" ]; then die "the ELF facts of $f cannot be read"; fi
         min=""
         for a in $align; do
           if [ -z "$min" ] || [ $((a)) -lt "$min" ]; then min=$((a)); fi
