@@ -165,7 +165,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
     state_init
     mac_survey
     shared_mac_state
-    # shellcheck disable=SC2329 # called by shared_txn_save
+    # shellcheck disable=SC2317,SC2329 # called by shared_txn_save
     state_put_file() { return 1; }
     printf 'yes\ncreate\n' | shared_create_flow
   )
@@ -180,9 +180,9 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
     state_init
     mac_survey
     shared_mac_state
-    # shellcheck disable=SC2329 # called by shared_create_flow
+    # shellcheck disable=SC2317,SC2329 # called by shared_create_flow
     run() { printf '%s\n' "$*" >>"$rec"; [ "$*" != "sudo -v" ]; }
-    # shellcheck disable=SC2329 # called by shared_create_flow
+    # shellcheck disable=SC2317,SC2329 # called by shared_create_flow
     mac_detect_geometry() { printf 'READ AGAIN\n'; }
     printf 'yes\ncreate\n' | shared_create_flow
   )
@@ -272,7 +272,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
     state_init
     mac_survey
     shared_mac_state
-    # shellcheck disable=SC2329 # called by shared_create_flow
+    # shellcheck disable=SC2317,SC2329 # called by shared_create_flow
     ui_confirm_word() { [ "$1" = create ] && OMB_FIXTURE=$ext; return 0; }
     shared_create_flow </dev/null
   )
@@ -640,7 +640,7 @@ assert_contains "$rec" "rm -f /mnt/shared/.omarchy-bootstrap-test-" "and removes
 io=$(t_tmp)
 awk 'BEGIN { for (i = 0; i < 64; i++) print i }' >"$io/src"
 out=$(
-  # shellcheck disable=SC2329 # called by shared_test_io
+  # shellcheck disable=SC2317,SC2329 # called by shared_test_io
   run() { "$@"; }
   shared_test_io "$io/src" "$io/dst" "$(sha256_of "$io/src")" && printf 'RC=0\n'
 )
@@ -648,7 +648,7 @@ assert_contains "$out" "read back identical, and removed" "the write test report
 assert_contains "$out" "RC=0" "and exits 0"
 [ ! -e "$io/dst" ] && ok || fail "and the test file is gone"
 out=$(
-  # shellcheck disable=SC2329 # called by shared_test_io
+  # shellcheck disable=SC2317,SC2329 # called by shared_test_io
   run() { [ "$1" = rm ] && return 1; "$@"; }
   shared_test_io "$io/src" "$io/dst2" "$(sha256_of "$io/src")" || printf 'RC=1\n'
 )
@@ -656,7 +656,7 @@ assert_contains "$(t_flat "$out")" "The test file could not be removed: $io/dst2
 assert_not_contains "$out" "read back identical" "and success is not claimed"
 assert_contains "$out" "RC=1" "and it exits non-zero"
 out=$(
-  # shellcheck disable=SC2329 # called by shared_test_io
+  # shellcheck disable=SC2317,SC2329 # called by shared_test_io
   run() { [ "$1" = cp ] && { printf 'other\n' >"$3"; return 0; }; "$@"; }
   shared_test_io "$io/src" "$io/dst3" "$(sha256_of "$io/src")" || printf 'RC=1\n'
 )
