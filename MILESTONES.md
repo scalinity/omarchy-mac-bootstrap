@@ -294,10 +294,11 @@ of docs/TESTING.md.
   corpus and the golden examples; `frontend-lock-not-input` passing; no
   path that changes the machine.
 - **Status:** implemented — awaiting independent review; not accepted. On
-  branch `m14-gate1-frontend-foundation` from `21904d6`; CI run
-  36265218139 at `4e2c6a4` passes every job (Linux x86_64 Bash 5.2.21 with
-  ShellCheck 0.9.0, macOS `/bin/bash` 3.2.57, the frontend on Linux x86_64,
-  `ubuntu-24.04-arm` and `macos-15` arm64). Open for the review:
+  branch `m14-gate1-frontend-foundation` from `21904d6`; CI runs every job
+  on each push (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS
+  `/bin/bash` 3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and
+  `macos-15` arm64), and the implementation report names the runs and their
+  logs. Open for the review:
   `release/frontend.lock` does not exist until a first `frontend-v0.1.0`
   release, whose publication is a separate decision (until then the lock
   check reports the frontend unreleased, and the verified start is proved
