@@ -171,14 +171,16 @@ core_boot_read() {
 # alive only if that PID exists now, with that start time, in this boot
 # session; a reused PID is never the recorded process. ps is first held to
 # a process known to be alive (this one): a ps that cannot report it cannot
-# vouch for any other.
+# vouch for any other. Start times are always read in the C locale: macOS
+# writes lstart in the reader's language, and a later launcher in another
+# one must still recognise a live process.
 core_alive() {
   local pid=$1 start=$2 boot=$3 now
   case "$pid" in '' | *[!0-9]*) return 2 ;; esac
   [ -n "$CORE_BOOT" ] || return 2
   [ "$boot" = "$CORE_BOOT" ] || return 1
-  [ -n "$(_proc_started "$$")" ] || return 2
-  now=$(_proc_started "$pid")
+  [ -n "$(LC_ALL=C _proc_started "$$")" ] || return 2
+  now=$(LC_ALL=C _proc_started "$pid")
   [ -n "$now" ] || return 1
   [ "$now" = "$start" ] || return 1
   return 0
@@ -188,7 +190,7 @@ core_alive() {
 # (0600), sealed.
 core_proc_write() {
   local f=$1 start
-  start=$(_proc_started "$3")
+  start=$(LC_ALL=C _proc_started "$3")
   [ -n "$start" ] && [ -n "$CORE_BOOT" ] || return 1
   (
     umask 077
@@ -217,12 +219,45 @@ core_file_alive() {
 # The process group: the snapshot and the workers still present
 # ---------------------------------------------------------------------------
 
+# _core_wait PID — PID's own exit status (docs/PROTOCOL.md → When something
+# dies: a signal interrupting a wait, the call is retried). A caught signal
+# ends a wait early, above 128, while the process is still there: wait
+# again. Bash keeps an ended process's status and returns it to every later
+# wait, so one more wait after the loop reads the true status of a process
+# that ended just after an interrupted wait, and changes nothing otherwise.
+_core_wait() {
+  local st n=0
+  wait "$1"
+  st=$?
+  while [ "$st" -gt 128 ] && [ "$n" -lt 10000 ] && kill -0 "$1" 2>/dev/null; do
+    wait "$1"
+    st=$?
+    n=$((n + 1))
+  done
+  if [ "$st" -gt 128 ]; then
+    wait "$1"
+    st=$?
+  fi
+  return "$st"
+}
+
 # _core_ps FILE — read the process table (pid, pgid, start) into FILE. The
-# reading's own process is its PID, CORE_READER, never a worker.
+# reading's own process is its PID, CORE_READER, never a worker. A reading
+# ended by a signal (it is in the group Ctrl-C reaches) is done again, a few
+# times at most.
 _core_ps() {
-  ps -axo pid=,pgid=,lstart= >"$1" 2>/dev/null &
-  CORE_READER=$!
-  wait "$CORE_READER"
+  local st n=0
+  while :; do
+    LC_ALL=C ps -axo pid=,pgid=,lstart= >"$1" 2>/dev/null &
+    CORE_READER=$!
+    _core_wait "$CORE_READER"
+    st=$?
+    if [ "$st" -gt 128 ] && [ "$n" -lt 5 ]; then
+      n=$((n + 1))
+      continue
+    fi
+    return "$st"
+  done
 }
 
 # core_group_snapshot — CORE_SNAP: "pid start" of every process now in this
@@ -270,7 +305,8 @@ core_quiescent() {
 # The child registry (docs/PROTOCOL.md → *Children*)
 # ---------------------------------------------------------------------------
 
-CORE_REGISTRY=""
+# Set here, so nothing in the environment stands for a loaded registry.
+CORE_REGISTRY="" CORE_REG_N=""
 
 # core_registry_check FILE — the registry's static rules; CORE_REG_WHY on
 # failure. Adding or changing an entry is a reviewed change.
@@ -471,6 +507,16 @@ core_child() {
     test.*) [ -n "${OMB_FIXTURE:-}" ] || { CORE_CHILD_WHY="test children run only in fixture mode"; return 1; } ;;
     *) CORE_CHILD_WHY="no baseline child is exposed in this gate"; return 1 ;;
   esac
+  # How the child meets the terminal is the registry's to say; the action's
+  # own table must agree, or nothing runs.
+  case "$CC_CLASS:${CA_TERMINAL:-}" in
+    handoff:handoff | read:managed | mutating:managed) ;;
+    *) CORE_CHILD_WHY="$action is a $CA_TERMINAL action but a $CC_CLASS child in the registry"; return 1 ;;
+  esac
+  # A child whose effect runs on after it exits is complete only when its
+  # completion check holds; no child of this version has one, so none runs
+  # unchecked.
+  [ "$CC_DETACHES" = no ] || { CORE_CHILD_WHY="$action detaches ($CC_DETACHES), and its completion check is not part of this version"; return 1; }
   cmd=$OMB_HOME/$CC_CMD
   if [ "$CC_CLASS" = handoff ] && [ -n "${OMB_TEST_HANDOFF_CHILD:-}" ]; then
     cmd=$OMB_TEST_HANDOFF_CHILD
@@ -548,7 +594,7 @@ core_child_read() {
       CORE_DIAG_NOTE="diagnostics not available: a process the child started still holds its output"
       rm -f "$cap"
     else
-      wait "$drain"
+      _core_wait "$drain"
       st=$?
       [ "$st" = 0 ] || CORE_DIAG_NOTE="diagnostics not available: the drain failed"
     fi
@@ -632,7 +678,7 @@ core_op_write() {
   if {
     printf 'omb-op 1\n' &&
       rec_line op action "$2" scope "$1" basis "$3" session "$CORE_SESSION" state "$4" pid "$$" \
-        start "$(_proc_started "$$")" boot "$CORE_BOOT" at "$(now_utc)"
+        start "$(LC_ALL=C _proc_started "$$")" boot "$CORE_BOOT" at "$(now_utc)"
   } >"$tmp" && rec_seal_write "$tmp" && mv -f "$tmp" "$f"; then
     log_event record "operation $2 ($4) in scope $1"
     return 0
@@ -728,7 +774,7 @@ core_reconcile() {
 # core_action_info ACTION — CA_SCOPE CA_INTENT CA_TERMINAL CA_CANCEL CA_GATE
 # CA_LABEL CA_EXPLAIN CA_LIMIT; 1 for an action this core does not have.
 core_action_info() {
-  CA_SCOPE=journey CA_GATE="" CA_CANCEL=0 CA_LIMIT=3
+  CA_SCOPE=journey CA_GATE="" CA_CANCEL=0 CA_LIMIT=3 CA_TERMINAL=""
   case "$1" in
     test.read)
       CA_INTENT=read CA_TERMINAL=managed CA_CANCEL=1 CA_LABEL="Read the fixture (test)"
@@ -893,6 +939,8 @@ core_main() {
   # operation's response schema, even when the request is refused.
   CORE_OP=$op
   umask 077
+  # First, so every way out removes the request's copy.
+  trap core_exit EXIT
   platform_init
   if ! core_env_check && [ -z "$CORE_EVENTS" ]; then
     printf 'omarchy-bootstrap core: %s; no answer can be written.\n' "$CORE_ENV_WHY" >&2
@@ -900,7 +948,6 @@ core_main() {
   fi
   OMB_DRY_RUN=${OMB_CORE_ENV_DRY:-1}
   case "$OMB_DRY_RUN" in 0 | 1) ;; *) OMB_DRY_RUN=1 ;; esac
-  trap core_exit EXIT
   trap core_on_int INT QUIT
   trap core_on_term TERM HUP
   state_init || return 2
@@ -1013,9 +1060,13 @@ _core_snapshot_body() {
     *) rec_line fact scope journey key operation label "Operation" value "${CORE_BAR_ACTION:-unknown} unsupervised" state fail ;;
   esac
   case "$CORE_BAR" in
-    unsupervised | corrupt)
+    unsupervised)
       rec_line blocker id unsupervised text "The outcome of ${CORE_BAR_ACTION:-an operation} is unknown and a process it started may still be running." \
         fix "Restart this Mac (or this Linux system), then run the tool again."
+      ;;
+    corrupt)
+      rec_line blocker id unsupervised text "The operation record $(tildify "$(core_op_path journey)") cannot be read, so what it recorded is unknown; a restart does not change that." \
+        fix "Nothing in this scope runs while it is there. Look at it: remove it only once you know the operation it recorded has ended."
       ;;
   esac
   for a in $CORE_TEST_ACTIONS; do
@@ -1146,8 +1197,12 @@ core_execute_act() {
       core_result refused busy "$CORE_BAR_ACTION is still running under a live core."
       return
       ;;
-    unsupervised | corrupt)
+    unsupervised)
       core_result refused unsupervised "The outcome of ${CORE_BAR_ACTION:-an operation} is unknown and it may still be running: restart this Mac (or this Linux system), then run the tool again."
+      return
+      ;;
+    corrupt)
+      core_result refused unsupervised "The operation record $(tildify "$(core_op_path "$scope")") cannot be read, so what it recorded is unknown, and a restart does not change that: nothing in this scope runs while it is there."
       return
       ;;
     stale)

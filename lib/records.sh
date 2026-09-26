@@ -19,6 +19,8 @@
 REC_SCOPES="journey|disk|plan|profile|resolve|asahi|network|omarchy|shared|export|restore|rescue|qualify|debug"
 REC_STAGES="survey|profile|resolve|plan|asahi|omarchy|shared|restore|verify|done"
 REC_PROTO=1
+# Set here, so admission copies go only where this library makes them.
+REC_TMP=""
 
 # _rec_family FAMILY — the family's header, limits, seal and the order of its
 # record types. Stored families are sealed; protocol messages are not. A
@@ -386,16 +388,27 @@ rec_admit_copied() {
   [ "$REC_NUM" -le "$REC_MAX_BYTES" ] || { _rec_refuse too-large; return 1; }
   REC_SIZE=$REC_NUM
 
+  # Every stage's status is its own $?, never PIPESTATUS: a trap handler that
+  # runs after a pipeline (a caught cancel or hangup) replaces PIPESTATUS
+  # before the next command can read it. The size is checked, so the files
+  # between stages are bounded.
+
   # 3. Byte class: TAB, LF and 0x20–0x7E only.
-  LC_ALL=C tr -d '\011\012\040-\176' <"$f" | wc -c >"$out"
-  st="${PIPESTATUS[*]}"
-  if [ "$st" != "0 0" ] || ! _rec_num "$out"; then _rec_refuse io; return 1; fi
+  LC_ALL=C tr -d '\011\012\040-\176' <"$f" >"$out.bytes"
+  st=$?
+  [ "$st" = 0 ] || { _rec_refuse io; return 1; }
+  wc -c <"$out.bytes" >"$out"
+  st=$?
+  if [ "$st" != 0 ] || ! _rec_num "$out"; then _rec_refuse io; return 1; fi
   [ "$REC_NUM" = 0 ] || { _rec_refuse byte; return 1; }
 
   # 4. Termination: not empty, and the last byte is LF.
-  tail -c 1 <"$f" | od -An -tx1 >"$out"
-  st="${PIPESTATUS[*]}"
-  [ "$st" = "0 0" ] || { _rec_refuse io; return 1; }
+  tail -c 1 <"$f" >"$out.bytes"
+  st=$?
+  [ "$st" = 0 ] || { _rec_refuse io; return 1; }
+  od -An -tx1 <"$out.bytes" >"$out"
+  st=$?
+  [ "$st" = 0 ] || { _rec_refuse io; return 1; }
   [ "$(tr -d ' \n' <"$out")" = 0a ] || { _rec_refuse eof; return 1; }
 
   # 5. Framing and canonical form: one C-locale awk pass, lines from the
@@ -444,16 +457,19 @@ rec_admit_copied() {
 }
 
 # _rec_sha256_prefix FILE N — REC_SHA: the SHA-256 of FILE's first N bytes,
-# every stage's status checked.
+# every stage's status checked (its own $?, as in rec_admit_copied).
 _rec_sha256_prefix() {
   local out=$REC_TMP/sha st
+  head -c "$2" "$1" >"$out.bytes"
+  st=$?
+  [ "$st" = 0 ] || return 1
   if command -v shasum >/dev/null 2>&1; then
-    head -c "$2" "$1" | shasum -a 256 >"$out"
+    shasum -a 256 <"$out.bytes" >"$out"
   else
-    head -c "$2" "$1" | sha256sum >"$out"
+    sha256sum <"$out.bytes" >"$out"
   fi
-  st="${PIPESTATUS[*]}"
-  [ "$st" = "0 0" ] || return 1
+  st=$?
+  [ "$st" = 0 ] || return 1
   read -r REC_SHA _ <"$out" || return 1
   _whole "$REC_SHA" '^[0-9a-f]{64}$'
 }
@@ -529,6 +545,11 @@ _rec_schema() {
   REC_OP=$op
   if [ "$family" = res ] && [ "$result" = 0 ]; then
     _rec_refuse result 0
+    return 1
+  fi
+  # A request's operation comes from its `req` record: none, no request.
+  if [ "$family" = req ] && [ "$REC_N" = 0 ]; then
+    _rec_refuse schema 0
     return 1
   fi
   for t in $REC_ORDER; do

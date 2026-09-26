@@ -544,7 +544,15 @@ pub mod proctable {
                 )
             };
             if n != size {
-                // Ended since the listing, or not ours to read.
+                // Ended since the listing, or another user's (the full record
+                // needs the same user; a setuid program is one). The short
+                // record needs no permission and names the group: a process
+                // of this group whose start cannot be read has no identity,
+                // and counts as present (docs/PROTOCOL.md → an identity that
+                // cannot be established is possibly alive).
+                if short_group(pid) == Some(pgid) {
+                    out.push((pid, UNKNOWN_START));
+                }
                 continue;
             }
             // SAFETY: fully written by the call above (n == size).
@@ -561,10 +569,60 @@ pub mod proctable {
         Ok(out)
     }
 
+    /// The start of a process whose start cannot be read: never equal to a
+    /// real one, so such a process is never taken for one in a snapshot.
+    #[cfg(target_os = "macos")]
+    pub const UNKNOWN_START: u64 = u64::MAX;
+
+    /// A process's group from its short record, which any user may read.
+    #[cfg(target_os = "macos")]
+    fn short_group(pid: std::os::raw::c_int) -> Option<i32> {
+        use std::mem::{MaybeUninit, size_of};
+        use std::os::raw::{c_int, c_void};
+        let mut short = MaybeUninit::<ffi::ProcBsdShortInfo>::zeroed();
+        let size = size_of::<ffi::ProcBsdShortInfo>() as c_int;
+        // SAFETY: the buffer is one ProcBsdShortInfo, zeroed, whose size is
+        // passed; the call fills at most that many bytes and returns how
+        // many. Only a full struct is read.
+        let n = unsafe {
+            ffi::proc_pidinfo(
+                pid,
+                ffi::PROC_PIDT_SHORTBSDINFO,
+                0,
+                short.as_mut_ptr() as *mut c_void,
+                size,
+            )
+        };
+        if n != size {
+            return None;
+        }
+        // SAFETY: fully written by the call above (n == size).
+        Some(unsafe { short.assume_init() }.pbsi_pgid as i32)
+    }
+
     #[cfg(target_os = "macos")]
     mod ffi {
         use std::os::raw::{c_char, c_int, c_void};
         pub const PROC_PIDTBSDINFO: c_int = 3;
+        pub const PROC_PIDT_SHORTBSDINFO: c_int = 13;
+        /// `struct proc_bsdshortinfo` from <sys/proc_info.h>: 64 bytes,
+        /// checked by a test. Readable for any process (no same-user check).
+        #[repr(C)]
+        pub struct ProcBsdShortInfo {
+            pub pbsi_pid: u32,
+            pub pbsi_ppid: u32,
+            pub pbsi_pgid: u32,
+            pub pbsi_status: u32,
+            pub pbsi_comm: [c_char; 16],
+            pub pbsi_flags: u32,
+            pub pbsi_uid: u32,
+            pub pbsi_gid: u32,
+            pub pbsi_ruid: u32,
+            pub pbsi_rgid: u32,
+            pub pbsi_svuid: u32,
+            pub pbsi_svgid: u32,
+            pub pbsi_rfu: u32,
+        }
         /// `struct proc_bsdinfo` from <sys/proc_info.h> (MAXCOMLEN 16): 136
         /// bytes, checked by a test.
         #[repr(C)]
@@ -637,6 +695,14 @@ pub mod proctable {
         #[test]
         fn proc_bsdinfo_has_the_kernels_size() {
             assert_eq!(std::mem::size_of::<ffi::ProcBsdInfo>(), 136);
+            assert_eq!(std::mem::size_of::<ffi::ProcBsdShortInfo>(), 64);
+        }
+
+        #[cfg(target_os = "macos")]
+        #[test]
+        fn the_short_record_names_the_group() {
+            let me = std::process::id() as std::os::raw::c_int;
+            assert_eq!(short_group(me), Some(my_group()));
         }
 
         #[test]

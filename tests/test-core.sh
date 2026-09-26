@@ -306,6 +306,69 @@ case " $base " in *" 3 "*) fail "the harness itself held fd 3" ;; *) ok ;; esac
 rm -f "$T/test-children-none"
 rm -f "$C_FIX/test-children/read"
 
+# sup-eintr in the core: a signal while the process table is read (a second
+# Ctrl-C, a hangup) cuts a wait short, or ends the reading; the table is read
+# again, never taken for one that cannot be read, which would be a barrier.
+c_conf mutate linger=1
+c_prepare execute "exec	action=test.mutate	basis=$(c_basis test.mutate)	confirm=test"
+n=$C_N
+(c_run_raw execute "$T/request-$n") &
+bg=$!
+core=""
+while [ -z "$core" ] && kill -0 "$bg" 2>/dev/null; do core=$(pgrep -P "$bg" | head -1); done
+# Its identity file is written once its handlers are in place. The signals
+# come from one process in a group of its own: this harness shares the
+# core's group, where anything it started would count as a worker.
+c_wait_file "$SESS/req-$n.core"
+perl -e 'setpgrp(0, 0); my ($p, $n) = @ARGV; while (kill 0, $p) { kill "HUP", $p and $n++; select(undef, undef, undef, 0.03) } print "$n\n"' "$core" 0 >"$T/sent"
+wait "$bg"
+[ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"
+assert_eq "$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")" "status=done code=ok" \
+  "sup-eintr: signals during the reading leave a supervised completion"
+[ ! -e "$OPS" ] || ! grep -q 'state=unsupervised' "$OPS" && ok || fail "sup-eintr: no barrier from a signal"
+rm -f "$EFFECT"
+c_conf mutate
+
+# --- The registry decides how a child runs; an unchecked detaching child never runs --------
+# tool_with_entry ACTION LINE — a copy of the tool whose registry has LINE for
+# ACTION, resealed; its path.
+tool_with_entry() {
+  local d=$T/tool-$1
+  rm -rf "$d"
+  mkdir -p "$d/tests"
+  cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$d/"
+  cp -R "$REPO/tests/children" "$d/tests/"
+  awk -F'\t' -v a="action=$1" -v l="$2" '$1 == "seal" { next } $1 == "child" && $2 == a { print l; next } { print }' \
+    "$REPO/data/children.omb" >"$d/data/children.omb"
+  (
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    rec_seal_write "$d/data/children.omb"
+  )
+  printf '%s' "$d"
+}
+d=$(tool_with_entry test.mutate "child	action=test.mutate	cmd=tests/children/fake-mutate	class=mutating	stdout=null	stderr=null	tty=none	detaches=owned	owner=test%20owner	check=test.check")
+C_HOME=$d c_exec test.mutate test
+assert_eq "$(c_result)" "failed child" "a detaching child whose completion check this version does not run is refused"
+assert_contains "$C_OUT" "detaches%20%28owned%29" "and says why"
+[ ! -e "$EFFECT" ] && ok || fail "and nothing ran"
+d=$(tool_with_entry test.read "child	action=test.read	cmd=tests/children/fake-read	class=handoff	stdout=functional	stderr=functional	tty=needs	detaches=no	owner=	check=")
+C_HOME=$d c_exec test.read ""
+assert_eq "$(c_result)" "failed child" "an action and its registry entry that disagree on the terminal run nothing"
+assert_contains "$C_OUT" "a%20managed%20action%20but%20a%20handoff%20child" "and say how"
+
+# An operation record that cannot be read: what it recorded is unknown, and
+# a restart does not make it readable, so the text does not promise one.
+mkdir -p "$T/state/ops"
+printf 'omb-op 1\ntorn' >"$OPS"
+c_exec test.mutate test
+assert_eq "$(c_result)" "refused unsupervised" "an unreadable operation record refuses act in its scope"
+assert_contains "$C_OUT" "cannot%20be%20read" "and says the record cannot be read"
+c_run snapshot "scope	name=journey"
+assert_contains "$C_OUT" "blocker	id=unsupervised	text=The%20operation%20record" "the snapshot names the record"
+rm -f "$OPS"
+
 # --- Lost supervision: the barrier ----------------------------------------------------------
 # sup-completion-worker-lingers: a descendant stays in the group past the limit.
 c_conf mutate linger=20

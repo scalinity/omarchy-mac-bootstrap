@@ -122,6 +122,9 @@ req "$REQ_SNAP" "scope	name=shared" "bogus	x=1" | case_ proto-diff-unknown-recor
 req "$REQ_EXEC" "exec	basis=$H64	action=shared.create	confirm=create" | case_ proto-diff-order req - schema
 req "$REQ_EXEC" "exec	action=shared.create	confirm=create" | case_ proto-diff-missing req - schema
 req "req	op=hello	proto=	frontend=0.1.0	session=$S" | case_ proto-diff-empty-required req - schema
+# A request of its header alone: the grammar wants one record or more, and
+# `req` is required.
+lines "omb-req 1" | case_ proto-diff-header-only req - schema
 req "$REQ_EXEC" "exec	action=shared.create	basis=$H64" | case_ proto-diff-optional-absent req - schema
 res "$HELLO" "generation	id=$GEN	total=1" "row	kind=k	key=x	col=a	col=	col=b" "$RESULT" | case_ proto-diff-list-empty.bytes res detail ok
 res "$HELLO" "generation	id=$GEN	total=0" "param	action=a	name=n	type=choice	kind=	required=1	choice=c1	choice=" "$RESULT" | case_ proto-diff-list-empty.id res snapshot type

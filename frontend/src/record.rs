@@ -989,6 +989,13 @@ impl Schema {
                 at: 0,
             });
         }
+        // A request's operation comes from its `req` record: none, no request.
+        if self.family == Family::Req && self.op.is_none() {
+            return Err(Refusal {
+                reason: Reason::Schema,
+                at: 0,
+            });
+        }
         for (i, ty) in self.family.order().iter().enumerate() {
             if let Some('1' | '+') = card(self.family, self.op, ty)
                 && self.counts[i] == 0
