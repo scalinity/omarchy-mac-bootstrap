@@ -290,6 +290,18 @@ assert_eq "$(cat "$T/fds-read")" "$base" "sup-fd-child: the read child holds onl
 assert_eq "$(cat "$T/fds-grand")" "$base" "sup-fd-grandchild: the grandchild holds only what its caller held"
 assert_contains "$C_OUT" "diagnostics%20not%20available" "the grandchild holding stderr leaves the diagnostics not available, not the core waiting"
 pkill -f "sleep 30" 2>/dev/null
+# The grace the drain gets is wall time: where every fork is slow (each
+# `sleep` here costs 50 ms more), the core still gives up on the held stderr
+# after about 5 seconds, not after hundreds of slow tries.
+mkdir -p "$T/slowbin"
+printf '#!/bin/sh\n/bin/sleep 0.05\nexec /bin/sleep "$@"\n' >"$T/slowbin/sleep"
+chmod +x "$T/slowbin/sleep"
+c_conf read "grandchild=30"
+t0=$SECONDS
+C_PATH="$T/slowbin:/usr/bin:/bin:/usr/sbin:/sbin" c_exec test.read ""
+assert_eq "$(c_result)" "done ok" "sup-fd-grandchild on a slow host: the read completes"
+[ $((SECONDS - t0)) -lt 12 ] && ok || fail "sup-fd-grandchild on a slow host: the drain's grace is wall time ($((SECONDS - t0)) s)"
+pkill -f "sleep 30" 2>/dev/null
 case " $base " in *" 3 "*) fail "the harness itself held fd 3" ;; *) ok ;; esac
 rm -f "$T/test-children-none"
 rm -f "$C_FIX/test-children/read"

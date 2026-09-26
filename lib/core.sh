@@ -250,18 +250,19 @@ core_workers_present() {
   return 0
 }
 
-# core_quiescent SECONDS — wait up to SECONDS for no worker to be present.
-# 0 quiescent, 1 workers still present, 2 the table could not be read.
+# core_quiescent SECONDS — wait at least SECONDS of wall time for no worker
+# to be present: the limit is time, not a count of tries, since each try
+# reads the process table. $SECONDS counts whole seconds, hence the one
+# added. 0 quiescent, 1 workers still present, 2 the table could not be read.
 core_quiescent() {
-  local tries=$(($1 * 10)) i=0 rc
+  local end=$((SECONDS + $1 + 1)) rc
   while :; do
     core_workers_present
     rc=$?
     [ "$rc" = 0 ] || return 2
     [ -z "$CORE_PRESENT" ] && return 0
-    [ "$i" -ge "$tries" ] && return 1
+    [ "$SECONDS" -ge "$end" ] && return 1
     sleep 0.1
-    i=$((i + 1))
   done
 }
 
@@ -370,19 +371,23 @@ _core_size() {
 }
 
 # _core_until TEST ARG — wait for a condition that is usually met at once:
-# checked without sleeping first, then every 10 ms, up to about 5 seconds.
-# TEST is ready (ARG exists) or gone (process ARG has ended).
+# checked without sleeping first, then every 10 ms, for at most about 5
+# seconds of wall time (each sleep is a fork, which a slow host makes slow:
+# the bound is time, not a count of tries). TEST is ready (ARG exists) or
+# gone (process ARG has ended).
 _core_until() {
-  local i=0
-  while [ "$i" -lt 600 ]; do
+  local i=0 end=$((SECONDS + 5))
+  while :; do
     case "$1" in
       ready) [ -e "$2" ] && return 0 ;;
       gone) kill -0 "$2" 2>/dev/null || return 0 ;;
     esac
     i=$((i + 1))
-    [ "$i" -gt 100 ] && sleep 0.01
+    if [ "$i" -gt 100 ]; then
+      [ "$SECONDS" -ge "$end" ] && return 1
+      sleep 0.01
+    fi
   done
-  return 1
 }
 
 # core_diag_room HEADER — CORE_ROOM: the most a new block may hold, header
