@@ -60,14 +60,17 @@ arbitrary partitions.
 - Repairing filesystems or partition tables.
 - Intel Macs, virtual machines, Windows, uninstall automation, GUIs, accounts,
   telemetry, cloud services.
-- (M14–M16) Changing the target shell to Zsh, or reproducing the macOS Zsh
-  setup; migrating secrets (sign-ins are redone; the one exception is a
-  passphrase-encrypted SSH key); migrating application data from
-  `~/Library`; cloning the home folder; Linuxbrew as a package manager; the
-  AUR automatically; compiling large software without being asked; any
-  language model deciding an installation; an auto-updater for the frontend;
-  a Rust reimplementation of the core; a sandbox for rescue agents; network
-  or cloud transfer between the two systems; Linux reading APFS.
+- (M14–M16) Changing the target shell from Bash to Zsh, or reproducing the
+  macOS Zsh setup; migrating secrets (sign-ins are redone; the one
+  exception is a passphrase-encrypted SSH key); agent sessions,
+  transcripts, prompt and shell histories (not in v1); migrating
+  application data from `~/Library`; cloning the home folder or promising a
+  faithful filesystem copy; Linuxbrew as a package manager; the AUR
+  automatically; compiling software as a fallback, or without being asked;
+  any language model deciding an installation; an auto-updater for the
+  frontend; a Rust reimplementation of the core; a sandbox for rescue
+  agents; network or cloud transfer between the two systems; Linux reading
+  APFS.
 
 ## Runtime constraints
 
@@ -90,12 +93,14 @@ arbitrary partitions.
 - (M14) **The frontend.** Interactive commands on a terminal run in
   `omb-tui`, a Rust/Ratatui binary for `aarch64-apple-darwin` and
   `aarch64-unknown-linux-gnu`. It is not needed to start: the launcher stays
-  stock Bash 3.2, acquires the binary pinned by `frontend/frontend.lock`
-  (version, size, SHA-256) with provenance, checks its digest on every
-  launch, and falls back to the text interface when it cannot verify or
-  start it. No Rust toolchain is ever needed on the Mac. The frontend spawns
-  only the core, one short-lived `omarchy-bootstrap core <op>` per request,
-  speaking the record-format protocol (docs/FRONTEND.md, docs/PROTOCOL.md).
+  stock Bash 3.2, acquires the binary pinned by `release/frontend.lock`
+  (version, size, SHA-256) with provenance in act sessions only, checks its
+  digest on every launch, and falls back to the text interface when it
+  cannot verify or start it. No Rust toolchain is ever needed on the Mac.
+  The frontend spawns only the core, one short-lived `omarchy-bootstrap
+  core <op>` per request, speaking the record-format protocol, whose bytes
+  are admitted before anything parses them (docs/FRONTEND.md,
+  docs/PROTOCOL.md).
 - (M14) New Bash modules stay Bash 3.2-compatible, Linux-only ones
   included, and load only for the commands that need them; the installer's
   act paths load none of the migration modules (docs/ARCHITECTURE.md).
@@ -123,14 +128,16 @@ is in.
 | `logs` | read | Log location and recent entries | Same |
 | `scan` (M14) | read | The environment inventory (docs/MIGRATION.md); runs no tool, writes nothing | — |
 | `profile` (M14) | act, scoped | Scan, select, resolve, seal the Migration Profile; only the profile and resolve actions are reachable, and only the availability check downloads | — |
-| `profile show` (M14) | read | The profile's review view | The imported profile's |
-| `export [DIR]` (M14) | act | The bundle, to verified Shared or `DIR` | — |
-| `restore [DIR]` (M15) | act | — | As the everyday user: import, check, review, typed `restore`, apply, verify (docs/RESTORE.md) |
-| `restore status`, `restore why NAME` (M15) | read | — | Per-item state from the machine; an item's provenance |
-| `restore verify`, `restore undo` (M15) | act | — | Live health checks with consent; typed `undo` |
-| `rescue`, `rescue remove` (M15) | act | — | As root: rescue agents, remote rescue, removal (docs/RESCUE.md) |
-| `debug`, `debug context` (M15) | read | The debug report; the agent brief | Same |
-| `debug save` (M15) | act | The report into the state directory | Same |
+| `profile show`, `profile show --select`, `profile show --unresolved` (M14) | read | The profile's review view; its choices as a record file; the unresolved items | The imported profile's |
+| `export [DIR]` (M14) | act | The bundle, to verified Shared or `DIR`, then its approval code | — |
+| `export status` (M14) | read | The last exports and their approval codes, from the export records | — |
+| `restore [DIR]` (M15) | act | — | As the everyday user: admit, typed approval code, check, review, typed `restore`, apply, verify (docs/RESTORE.md) |
+| `restore status`, `restore why NAME`, `restore --plan-out` (M15) | read | — | Per-item state from the machine; an item's provenance; the review's conflicts as a record file |
+| `restore verify`, `restore undo`, `restore accept NAME` (M15) | act | — | Live checks with consent; typed `undo`; yes/no |
+| `rescue`, `rescue remove` (M15) | act | — | As root: rescue agents, closing or hardening SSH, remote rescue; removal (docs/RESCUE.md) |
+| `debug`, `debug context` (M15) | read | The field-allowlisted report; the agent brief | Same |
+| `debug raw` (M15) | read | Raw diagnostics, headed potentially sensitive | Same |
+| `debug save [--raw]` (M15) | act | The safe report and the brief into the state directory; with `--raw`, the raw diagnostics too, after a yes/no | Same |
 | `qualify`, `qualify clean` (M16) | act | The step due on this system; typed `test`, `clean` | Same (docs/QUALIFICATION.md) |
 | `qualify status`, `report` (M16) | read | The check's state; the hardware report | Same |
 | `core OP` (M14) | per operation | The frontend's protocol entry (docs/PROTOCOL.md); not for people | Same |
@@ -477,64 +484,79 @@ docs/SECURITY.md, the tests in docs/TESTING.md.
 ### The frontend and the protocol (M14)
 
 A Ratatui frontend presents the journey and collects choices; the Bash core
-reads the machine, lists the actions that are legal now, validates every
-request (session ceiling and scopes, availability, the basis the person
-reviewed, parameters, the typed word) and runs the baseline's own flows with
-all their checks. Programs that need the terminal — the installers,
-`nmtui`, `sudo`, sign-ins, rescue agents — get it through a handoff: the
-frontend restores the terminal and stops reading it, the core runs the
-program in the foreground, and the frontend returns to a fresh read.
-Typed-word gates stay typed words. docs/FRONTEND.md, docs/PROTOCOL.md,
-docs/UX.md.
+reads the machine, lists the actions that are legal now, admits every
+request's bytes before parsing them, validates it (session ceiling and
+scopes, availability, the canonical basis of what the person reviewed,
+rebuilt from a fresh read, parameters, the typed word) and runs the
+baseline's own flows with all their checks. Programs that need the terminal
+— the installers, `nmtui`, `sudo`, sign-ins, rescue agents — get it through
+a handoff: the frontend restores the terminal and stops reading it while
+still following the request's event spool, the core runs the program in the
+foreground, and the frontend returns to a fresh read. No protocol
+descriptor reaches a child; a core that ends without its result leaves the
+outcome unknown until the machine is read again; mutations keep an
+operation record that outlives their processes. Typed-word gates stay
+typed words. docs/FRONTEND.md, docs/PROTOCOL.md, docs/UX.md.
 
 ### Migration (M14, M15)
 
-- **Scan** (macOS, read-only): package managers read from their own
-  records (never run), applications, the Zsh setup, terminals, editors, the
-  AI tools, Git, SSH, and dotfolders the person picks. docs/MIGRATION.md.
+- **Scan** (macOS, read-only): package managers' own records read through
+  versioned adapters (never run), applications, the Zsh setup (two literal
+  forms imported, everything else reviewed), terminals, editors, the AI
+  tools, Git, SSH, and dotfolders the person picks; every item carries its
+  evidence. docs/MIGRATION.md.
 - **Migration Profile**: a sealed record of what was found, chosen and
-  resolved, and how sensitive it is; bound to this Mac; never contents or
-  secrets; its id rides in the resume token.
+  resolved, and how sensitive it is; bound to this Mac; never file contents;
+  its id rides in the resume token for journey matching only.
+- **Sensitivity**: supported adapters carry allowlisted fields and drop
+  credential fields; a credential-shape scan only rejects; custom paths no
+  adapter understands are opaque, carried only with typed `opaque`, outside
+  the secret guarantee; no sessions or histories in v1.
 - **Resolution**: deterministic, from a versioned registry, the person's
   local registry and decisions; planned on macOS (with an advisory aarch64
-  availability check), checked again on the target; installation in fixed
-  dependency layers; paths rewritten only inside fields an adapter parses.
-  docs/RESOLVER.md.
-- **Bundle and transport**: a content-addressed folder on Shared, or on
-  removable media; before Shared, nothing but the token, the repository and
-  the frontend needs to cross to Linux (a bundle on removable media may,
-  if the person chooses).
+  availability check), checked again on the target; ordered by a bounded
+  DAG of needs, capabilities and versioned instances; paths rewritten only
+  inside fields an adapter parses. docs/RESOLVER.md.
+- **Bundle and transport**: a content-addressed folder of plain objects on
+  Shared, or on removable media, placed only through a validated
+  destination graph; macOS shows an approval code after export, which Linux
+  requires before restoring anything; before Shared, nothing but the token,
+  the repository and the frontend needs to cross to Linux.
 - **Restore** (Linux, the everyday user): through the owners' interfaces
   where they exist, file placement otherwise; conflicts default to Keep;
-  journal, reconciliation, undo; nothing is "migrated" until verified.
-  docs/RESTORE.md, docs/AI-TOOLS.md.
+  journaled, resumable and conditionally reversible, not a transaction;
+  nothing is "migrated" until verified. docs/RESTORE.md, docs/AI-TOOLS.md.
 
 ### Rescue and debugging (M15)
 
 Optional agents as root on the fresh system (Claude Code preferred; Codex;
 OpenCode when a verified release is pinned), each signed in separately,
-starting in a workspace with the agent brief and guardrail rules; remote
-rescue over key-only SSH; nothing crosses from root to the everyday user;
-`rescue remove` deletes exactly what rescue made. `debug` prints a
-non-secret report built from an allowlist of probes; `debug context` prints
-a vendor-neutral brief. docs/RESCUE.md.
+starting in a workspace with the agent brief and guidance rules (not a
+sandbox); remote rescue opens only after key-only SSH is verified in its
+effective policy and by a real login, and cleanup ends in a verified safe
+state; nothing crosses from root to the everyday user; `rescue remove`
+deletes exactly what rescue recorded. `debug` prints a field-allowlisted
+report; `debug context` a vendor-neutral brief; `debug raw` the raw
+diagnostics, marked potentially sensitive. docs/RESCUE.md.
 
 ### Journey and qualification (M16)
 
 Ten stages (`survey`, `profile`, `resolve`, `plan`, `asahi`, `omarchy`,
 `shared`, `restore`, `verify`, `done`) derived from the machine on each
 system, the other system's progress shown as recorded; nothing starts by
-itself after a reboot. Once Shared exists, a deterministic file over 4 GiB
-and a set of test names travel macOS → Linux → macOS through Shared with
-digests recorded beside them, each side checking Shared's identity before
-reading anything; stage records feed the hardware report of M17.
-docs/QUALIFICATION.md.
+itself after a reboot. Once Shared exists, a deterministic AES-256-CTR
+stream of 4 296 015 889 bytes and a set of test names travel macOS → Linux
+→ macOS through Shared, each side checking Shared's identity, the plan and
+its own active round before reading anything; stage records carry the
+executed source's digest and feed the hardware report of M17, and evidence
+is invalidated by behaviour. docs/QUALIFICATION.md.
 
 ### Trust boundaries
 
 1. The home folder is read as text, never run.
-2. Profiles and bundles are data; the registry and adapters decide what they
-   mean on the target, and the target is checked.
+2. Profiles and bundles are data: integrity by seals and digests, approval
+   by the code the person carries across, meaning by the registry and
+   adapters, and the target is checked.
 3. The frontend is input to the core, however it was built.
 4. Only the core changes the machine, through `run` and the gates.
 5. Everything from the network is checked against a pinned digest (the
@@ -549,8 +571,10 @@ docs/QUALIFICATION.md.
 | --- | --- |
 | profile | `not-scanned`, `scanned`, `selected`, `sealed`, `stale`, `invalid` |
 | resolution (per item) | `unresolved`, `needs-decision`, `resolved`, `unsupported`, then on Linux `ready` or `unavailable` |
-| restore | `not-started`, `partial`, `blocked`, `complete`; per item `planned`, `ready`, `applied`, `verified`, `kept`, `skipped`, `failed`, `blocked`, `needs-sign-in`, `needs-secret` |
-| rescue (per option) | `unavailable`, `available`, `installed`, `signed-in`, `open` (remote rescue), `failed`, `skipped` |
+| restore | `not-started`, `partial`, `blocked`, `complete`; per item `planned`, `ready`, `applied`, `verified`, `kept`, `skipped`, `unsupported`, `failed`, `blocked`, `degraded`, `needs-sign-in`, `needs-secret`, `accepted` |
+| AI tool (observed) | `wrapper_present`, `artifact_installed`, `selected_version`, `tool_runnable`, `configured`, `authenticated`, each on its own |
+| rescue (per option) | `unavailable`, `available`, `installed`, `signed-in`, `open` (remote rescue), `failed`, `skipped`; SSH `closed`, `key-only`, `exposed` |
+| operation (per scope) | none, or unresolved until reconciled |
 | qualification | `not-started`, `waiting-for-linux`, `waiting-for-macos`, `in-progress`, `passed`, `failed`, `blocked` |
 | journey (per stage) | `done`, `current`, `todo`, `skipped`, `blocked`; each `machine` or `recorded` |
 | frontend (launcher) | `verified`, `missing`, `mismatch`, `unrunnable`, `fallback` |
@@ -570,7 +594,7 @@ records are input.
 | Plan, provenance, progress record, routing, health checks | this repository |
 | (M14) Presentation, layout, input | the frontend, under the core's authority |
 | (M14) What software becomes on Omarchy aarch64 | this repository's registry, checked on the target |
-| (M15) Packages, runtimes, Omarchy's configuration and default agent | Omarchy (`omarchy-pkg-add`, its helpers, mise, `omarchy-default-agent`) |
+| (M15) Packages, runtimes, Omarchy's configuration, its agent wrappers and default agent | Omarchy (`omarchy-pkg-add`, its helpers, mise, the wrappers; the default agent is the person's choice through Omarchy's picker) |
 | (M15) The AI tools' configuration formats, sign-ins and MCP management | each tool (its own commands and files) |
 
 All upstream URLs, branches, verified versions, constants, the storage
@@ -623,16 +647,24 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
   commands, exit codes, upstream URLs/checksums/versions, non-secret choices.
   Upstream installers' output is never captured.
 - `downloads/` — fetched upstream scripts, kept for provenance.
+- (M14) `ops/<scope>.omb` — an act action's operation record, written before
+  its effect and removed after its result is recorded; one still present is
+  unresolved (docs/PROTOCOL.md → *Operations and exclusion*).
 - (M14) `profile-draft.omb` and `profile.omb` — the Migration Profile being
   made, and finished (macOS); `availability/` — the advisory aarch64
-  check's downloads and their provenance.
+  check's downloads and their provenance; `exports/<name>.omb` — each
+  export's folder, manifest digest and approval code (macOS).
 - (M15) `rescue.omb` in root's state directory — what rescue installed and
   changed, readable by the everyday user.
-- (M15) `restore/journal.omb`, `restore/backups/<run>/` — the restore's
-  journal and the files it replaced (Linux, the everyday user); `debug/` —
-  saved debug reports.
-- (M16) `qualify/stages/<stage>.omb` — the stage records for the hardware
-  report.
+- (M15) `restore/runs/<run>/` (`run.omb` and one sealed record per step and
+  phase) and `restore/backups/<run>/` — the restore's journal and the files
+  it replaced (Linux, the everyday user); `debug/` — saved debug reports.
+- (M16) `qualify/active.omb`, `qualify/rounds/<round>.omb` (macOS),
+  `qualify/stages/<stage>.omb` — the active round, the rounds this Mac
+  created, and the stage records for the hardware report.
+- (M14) The per-session scratch folder `omb-session.*` in `$TMPDIR` — the
+  request spool and diagnostics; temporary, never read by a later session
+  except to remove it.
 - (M14) The frontend cache is outside the state directory:
   `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/`, root's under
   `/var/cache/omarchy-mac-bootstrap/`, checked like the state directory. The
@@ -652,10 +684,10 @@ omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,loc=en_US.UTF-8,ssh=
 
 Fields are whitelisted and validated on decode (`omb1:` tokens are still read);
 unknown fields are ignored with a warning; decoded values are shown before use.
-(M14) A new field, `prof=<8 hex>`, names the sealed Migration Profile, so
-Linux recognises this journey's bundle; the prefix stays `omb2:` because an
-older reader ignores the field with a warning, and a token without it simply
-has no profile.
+(M14) A new field, `prof=<8 hex>`, names the finished Migration Profile, so
+Linux recognises this journey's bundle (journey matching, never approval);
+the prefix stays `omb2:` because an older reader ignores the field with a
+warning, and a token without it simply has no profile.
 
 ## Failure and recovery paths
 
@@ -679,9 +711,12 @@ has no profile.
 | (M14) Frontend missing, unverifiable, unrunnable, or a version mismatch | Never run unverified; explain; continue in the text interface |
 | (M14) Frontend crash | Its hook and the launcher restore the terminal; report, with the log and `debug` |
 | (M14) The machine changed between review and action | The core refuses the stale basis; the frontend shows the fresh state |
+| (M14) The core ends without its result (crash, kill) | Outcome unknown, never "failed"; the machine is read again; the scope's operation record is reconciled before any new act in it, and refused as busy while its processes live |
 | (M14) Records from another Mac (a Time Machine restore) | Shown as history; a new scan and plan are made here |
-| (M15) A bundle that fails its seal, digests or binding | Not used; a foreign bundle needs typed `import` |
-| (M15) A restore interrupted | The next run reconciles every begun step against the machine, then continues |
+| (M15) A bundle that fails admission, its seal, digests, destination graph or approval code | Not used; a foreign bundle also needs typed `import` |
+| (M15) A restore interrupted | The next run judges every begun step from its records and the filesystem, then continues |
+| (M15) Undo after the person changed a restored file | Refused for that item, with what is there now |
+| (M15) Remote rescue fails a check, or cleanup cannot verify its final state | Rescue's changes undone and not open; cleanup reports "not clean", never success |
 | (M15) A package the helper skipped or a tool that will not start | That item `failed` with the reason; what needs it `blocked`; the rest goes on |
 | (M15) A rescue agent will not install or start | That option `failed`; the next is offered; the install is never blocked by rescue |
 | (M16) Qualification on the wrong or a tampered partition | Nothing read or written; `blocked` with the reason |
@@ -704,31 +739,37 @@ has no profile.
   never proceeds.
 - No secret is read by this tool. Passwords, passphrases and tokens are typed
   into upstream programs directly on the terminal. (M14–M16) The migration
-  reads configuration files, and a file may contain a secret-shaped value:
-  such files are read only to detect it and leave it behind; no secret is
-  stored, logged, shown or carried (docs/SECURITY.md).
+  reads configuration files, some of which may hold credentials. Supported
+  adapters carry only allowlisted fields and never their credential fields;
+  every carried object passes a credential-shape scan, which rejects and
+  never approves; opaque custom paths travel only with typed `opaque` and
+  are outside that guarantee; no value found by a scan is stored, logged or
+  shown (docs/SECURITY.md).
 - Upstream scripts are downloaded to a private (0700) directory, fingerprinted,
   optionally inspected (control characters shown, not interpreted), re-hashed
   immediately before execution, then executed; never piped into a shell.
 - Unknown flags and malformed `OMB_DRY_RUN` values stop the run. Test seams
   (`OMB_FIXTURE`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER`, `OMB_TEST_RC`) are
   refused as root, and fixture mode never executes. (M14–M16) So are the
-  new seams `OMB_TEST_QUAL_BYTES`, `OMB_TEST_HANDOFF_CHILD` and
+  new seams `OMB_TEST_QUAL_BYTES`, `OMB_TEST_HANDOFF_CHILD`,
+  `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT`, `OMB_TEST_PAUSE_AT` and
   `OMB_FRONTEND_DEV`, which also work only in fixture mode.
 - (M14–M16) **The product expansion adds no disk authority.** Nothing new
   partitions, formats, mounts APFS or touches the boot chain. The new
   privileged changes are exactly: in `restore`, packages and system setup
   through Omarchy's own commands (`omarchy-pkg-add`, `omarchy-install-terminal`,
-  `omarchy-install-dev-env`, `omarchy-default-agent` — the developer modules'
-  existing category), each as a handoff; and, for rescue only, as root, the
-  rescue tools in `/root`, marked lines in `/root/.ssh/authorized_keys`, one
-  `sshd` drop-in, and reloading or starting (never enabling) `sshd` — each
-  recorded in rescue's record and removed by `rescue remove`. `restore`
-  never runs as root, and its own writes are only in the everyday user's
-  home. Managed actions use only `sudo -n`. One baseline change is
-  designed, in M16 and reviewed as a safety change: Shared's creation runs
-  `sudo -k` before `sudo -v`, so the password is asked every time. The frontend holds no authority: it
-  runs nothing but the core, and the core checks every request as input.
+  `omarchy-install-dev-env` — the developer modules' existing category),
+  each as a handoff; and, for rescue only, as root, the rescue tools in
+  `/root`, marked lines in `/root/.ssh/authorized_keys`, one `sshd` drop-in,
+  and stopping, reloading or starting (never enabling or disabling) `sshd` —
+  each recorded in rescue's record and removed or ended by `rescue remove`
+  in a verified safe state. `restore` never runs as root, and its own writes
+  are only in the everyday user's home. Managed actions use only `sudo -n`.
+  The baseline's Shared sequence is unchanged: the typed gates, `sudo -v`,
+  the final topology read, the creation record, `sudo -n diskutil
+  addPartition`, the postcondition, with nothing added between the final
+  read and `addPartition`. The frontend holds no authority: it runs nothing
+  but the core, and the core admits and checks every request as input.
   Every new probe, command and `sudo` joins the allowlists in
   `tests/test-safety.sh` with its reason (docs/SECURITY.md).
 
@@ -805,40 +846,59 @@ expansion*.
 16. No test invokes a forbidden command; no secret appears in state or logs.
 17. Output degrades to no-colour and ASCII cleanly.
 
-Designed, for the milestones named (MILESTONES.md holds each milestone's
-full acceptance):
+Designed, for the milestones named (MILESTONES.md holds each gate's full
+acceptance; the test ids are in docs/TESTING.md):
 
-18. (M14) The launcher starts only a frontend whose digest matches the lock,
-    falls back to text for every failure in docs/FRONTEND.md, and the
-    terminal is restored after exit, error, panic, SIGTERM and every handoff.
-19. (M14) The core refuses every request the protocol's execute rules
-    refuse; for every baseline action the protocol exposes, the recorded
-    commands and records equal the text flow's.
-20. (M14) Every screen renders at 80×24 and 60 columns, in 16 colours, no
-    colour and ASCII, with a truthful too-small state below 60×20.
-21. (M14) The scanner runs no package tool and executes no configuration;
-    each adapter's output over its fixtures, adversarial ones included, is
-    exact.
-22. (M14) A profile seals only with every included item resolved or
-    unsupported, is stale on another Mac, and resolution is byte-identical
-    under Bash 3.2 and 5 and in any locale.
-23. (M14, M15) No secret-shaped value from any fixture reaches a profile, a
-    bundle, a debug report, a log or state; an encrypted SSH key travels only
-    after typed `carry`.
-24. (M15) Import refuses a bundle whose seal, digests or binding fail; no
-    manifest entry can place a file outside its item's root in the everyday
-    user's home.
-25. (M15) Restore never runs as root, defaults every conflict to Keep,
-    reconciles an interruption at any step, changes nothing on rerun, and
-    undoes placed files exactly.
-26. (M15) Nothing is reported migrated until verified on the machine; live
-    health checks run only with consent.
-27. (M15) Rescue never blocks the install, never copies anything from root
-    to the everyday user, and `rescue remove` leaves nothing it made.
-28. (M16) Every stage is derived from the machine on each system; nothing
+18. (M14) The launcher starts only a frontend whose digest matches the
+    reviewed lock; the lock is not a build input; read, plan, dry-run and
+    `--no-tui` sessions change no persistent frontend state; the text
+    interface takes over for every failure in docs/FRONTEND.md; the
+    terminal is restored after exit, error, panic, SIGTERM and every
+    handoff.
+19. (M14) Every protocol document is admitted byte by byte before it is
+    parsed, identically in Bash and Rust; no protocol descriptor reaches a
+    child; a missing result is an unknown outcome; an operation is never
+    reclaimed because a PID vanished; nothing is added inside Shared's
+    critical interval.
+20. (M14) The core refuses every request the execute rules refuse, including
+    a stale basis; for every baseline action the protocol exposes, the
+    recorded commands and records equal the accepted baseline's (`2edb76a`).
+21. (M14) Every screen renders at 80×24 and 60 columns, in 16 colours, no
+    colour and ASCII, with a truthful too-small state below 60×20; the O1
+    benchmark meets its budgets or its finding is recorded.
+22. (M14) The scanner runs no inventoried tool and executes no
+    configuration; each versioned adapter's output over its fixtures,
+    adversarial ones included, is exact, with its uncertainty kept; only
+    the two literal Zsh forms are imported.
+23. (M14) A profile is finished only with every included item resolved or
+    unsupported, is stale on another Mac, and resolution and the graph's
+    order are byte-identical under Bash 3.2 and 5 and in any locale.
+24. (M14, M15) For every supported adapter, only allowlisted fields travel
+    and no planted credential reaches a profile, bundle, debug report, log
+    or state; opaque content travels only after typed `opaque`; an
+    encrypted SSH key only after typed `carry`; no session or history
+    travels.
+25. (M15) Import refuses a bundle whose admission, seals, digests,
+    destination graph or approval code fail; a bundle recomputed after
+    export is refused for its approval code; no manifest entry can place a
+    file outside its item's root.
+26. (M15) Restore never runs as root, defaults every conflict to Keep,
+    re-checks each item just before placing it, recovers from a stop at
+    every journal boundary, changes nothing on rerun, and undoes only what
+    is still exactly as it wrote it.
+27. (M15) Nothing is reported migrated until verified on the machine; no
+    static check runs an agent, its wrapper, a mise shim or mise; live
+    checks run only with consent.
+28. (M15) Rescue never blocks the install, never copies anything from root
+    to the everyday user; remote rescue opens only with key-only access
+    verified in its effective policy and by a real login; `rescue remove`
+    leaves nothing it made and ends SSH in a verified safe state; `debug`
+    and `debug context` hold only allowlisted fields.
+29. (M16) Every stage is derived from the machine on each system; nothing
     runs after a reboot until its word is typed.
-29. (M16) Qualification reads and writes only on the partition the baseline
-    identifies as Shared, bound to the plan, the Shared GUID and one round,
+30. (M16) Qualification reads and writes only on the partition the baseline
+    identifies as Shared, bound to the plan, the Shared GUID and the active
+    round; its stream matches the reference vectors on both systems; it
     removes its data automatically only after a pass, and otherwise only
-    after typed `clean`.
-30. (M16) The journey simulation passes on both CI systems.
+    after typed `clean`, and only what its records own.
+31. (M16) The journey simulation passes on both CI systems.

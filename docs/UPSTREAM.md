@@ -250,9 +250,8 @@ unless noted; local install 6.0.19 compared read-only.
 | Fact | Where |
 | --- | --- |
 | `brew bundle` is built in; `dump` writes `tap`, `brew`, `cask`, then `mas`, `vscode`, `go`, `cargo`, `uv`, `flatpak`, `winget`, `krew`, `npm` lines; only requested formulae; every cask; `--file=-` is stdout | `bundle/dumper.rb`, `bundle/extensions.rb`, `bundle/brew.rb`, `bundle/cask.rb`, `bundle/brewfile.rb` |
-| `bundle` is an auto-update command (a `git fetch` when `FETCH_HEAD` is a day old, unless `HOMEBREW_NO_AUTO_UPDATE`); every Ruby command may fetch and write the API cache; analytics unless `HOMEBREW_NO_ANALYTICS`; the dump runs `code`/`cursor`, `mas`, `go`, `cargo install --list`, `uv tool list`, `npm list -g`, `kubectl-krew` | `utils/auto-update.sh`, `brew.rb`, `api.rb`, `utils/analytics.rb` |
-| the dump records the extensions of one VS Code-family editor, not which | `bundle/extensions/vscode_extension.rb` |
-| formula receipts `Cellar/<name>/<version>/INSTALL_RECEIPT.json`: `installed_on_request`, `runtime_dependencies`, `source.tap`; `installed_as_dependency` removed 2026-04-27 (`916f6a1711`); cask receipts `Caskroom/<token>/.metadata/INSTALL_RECEIPT.json` with `uninstall_artifacts` (since 4.3.11); receipts are internal (`@api internal`) | `tab.rb`, `tab/tab.rb`, `cask/tab.rb`; <https://docs.brew.sh/rubydoc/> |
+| `bundle` is an auto-update command (a `git fetch` when `FETCH_HEAD` is a day old, unless `HOMEBREW_NO_AUTO_UPDATE`); every Ruby command may fetch and write the API cache; analytics unless `HOMEBREW_NO_ANALYTICS`; the dump runs `code`/`cursor`, `mas`, `go`, `cargo install --list`, `uv tool list`, `npm list -g`, `kubectl-krew` — which is why the scanner never runs it | `utils/auto-update.sh`, `brew.rb`, `api.rb`, `utils/analytics.rb` |
+| formula receipts `Cellar/<name>/<version>/INSTALL_RECEIPT.json`: `installed_on_request`, `runtime_dependencies`, `source.tap`; `installed_as_dependency` removed 2026-04-27 (`916f6a1711`); cask receipts `Caskroom/<token>/.metadata/INSTALL_RECEIPT.json` with `uninstall_artifacts` (since 4.3.11); receipts are internal (`@api internal`), so the adapter's contract is versioned and a shape outside it is `unknown` | `tab.rb`, `tab/tab.rb`, `cask/tab.rb`; <https://docs.brew.sh/rubydoc/> |
 | `cargo install --list` creates `.crates.toml`/`.crates2.json` when missing; `uv tool list` writes a lock and cache; `npm ls` checks the registry unless `--no-update-notifier`; `go version -m` may fetch a toolchain unless `GOTOOLCHAIN=local` | observed in a scratch directory; <https://go.dev/doc/toolchain> |
 | file locations for npm (Homebrew, nvm, fnm, Volta, mise prefixes), pnpm, bun, cargo, cargo-binstall, uv (`uv-receipt.toml`), pipx (`pipx_metadata.json`), Go, mise, asdf, VS Code/VSCodium/Cursor extensions and settings | <https://docs.npmjs.com/cli/v11/configuring-npm/folders>, <https://pnpm.io/10.x/settings>, <https://doc.rust-lang.org/cargo/guide/cargo-home.html>, <https://docs.astral.sh/uv/reference/storage/>, <https://mise.jdx.dev/directories.html>, <https://asdf-vm.com/manage/configuration.html>, <https://code.visualstudio.com/docs/configure/settings> |
 | protected folders: Desktop, Documents, Downloads, iCloud Drive and removable volumes prompt; Mail, Messages, Safari need Full Disk Access; other apps' containers are denied without a prompt on macOS 27 | <https://support.apple.com/guide/security/controlling-app-access-to-files-secddd1d86a6/web>, macOS 27 release notes |
@@ -260,32 +259,66 @@ unless noted; local install 6.0.19 compared read-only.
 
 ## Omarchy 4 on Omarchy Mac
 
-Read at `omacom/omarchy-mac` `quattro` `ba546a61f881` (version `4.0.3rc4`)
-and `omacom/omarchy` `quattro` `7b336b1b0da7` (tags `v4.0.3` `0534987`,
+Read at `omacom/omarchy-mac` `quattro` `ba546a61f881c1fe9d79d75ec050eab048b8cb63`
+(version `4.0.3rc4`) and `omacom/omarchy` `quattro`
+`7b336b1b0da722e7bb864a7136f91e784ef731bf` (tags `v4.0.3` `0534987`,
 `v4.0.4` `c668141`); paths in the Mac repository unless noted.
 
 | Fact | Where |
 | --- | --- |
 | `omarchy-pkg-add` filters with `pacman -Q \|\| pacman -Si`, skips what it cannot find, exits 0 when nothing is left, then checks `pacman -Q` | `bin/omarchy-pkg-add` |
 | pacman's `-Si` searches every sync database, an unqualified `-S` skips `Usage = Sync` repositories; Omarchy Mac lists `[omarchy]` with `Usage = Sync` and installs from it by qualified name | pacman `src/pacman/sync.c`, `lib/libalpm/deps.c`; `default/pacman/pacman-edge.conf`, `install/helpers/arm-package-sources.sh` |
-| repositories: `[omarchy]` (OPR, `pkgs.omarchy.org/edge/$arch`), `[omarchy-aarch64]` (GitHub releases, `SigLevel = Optional TrustAll`), `[asahi-alarm]`, Arch Linux ARM `core`, `extra`, `alarm`, `aur`; the edge channel on aarch64 | `default/pacman/pacman-edge.conf`, `install/post-install/pacman.sh` |
-| the coding agent: `omarchy-agent`, `omarchy-default-agent <name>` (stored in `~/.config/omarchy/defaults/agent`, no default set), `Super+Shift+Ctrl+A`, aliases `a`, `c`, `cx`, `cy`; launch modes `claude --permission-mode auto`, `codex --approve-for-me`, `opencode --auto` and others | `bin/omarchy-agent`, `bin/omarchy-default-agent`, `default/hypr/bindings/utilities.lua`, `default/bash/aliases` |
-| agents install as lazy stubs in `~/.local/bin` that run `mise use -g` on first use (Claude Code `aqua:anthropics/claude-code`, Codex `aqua:openai/codex`, OpenCode `aqua:anomalyco/opencode`); Omarchy links its own skill into `~/.{agents,claude,codex,pi/agent}/skills/` | `install/user/mise.sh`, `bin/omarchy-mise-install`, `docs/file-layout.md` |
-| Bash is the login shell; `~/.bashrc` sources `/usr/share/omarchy/default/bash/rc` and is the documented place for personal additions, not overwritten by updates; `OMARCHY_PATH` is `/usr/share/omarchy` | `bin/omarchy-mac-setup`, `default/bashrc`, `manual/31-dotfiles.md` |
+| repositories: `[omarchy]` (OPR, `pkgs.omarchy.org/edge/$arch`), `[omarchy-aarch64]` (GitHub releases `edge` and `rc`; `stable` answers 404; `SigLevel = Optional TrustAll`), `[asahi-alarm]`, Arch Linux ARM `core`, `extra`, `alarm`, `aur`; the edge channel on aarch64 | `default/pacman/pacman-edge.conf`, `install/post-install/pacman.sh`; fetched 2026-09-26 |
+| Bash is the login shell; `~/.bashrc` sources `/usr/share/omarchy/default/bash/rc` and is the documented place for personal additions, not overwritten by updates; `OMARCHY_PATH` is `/usr/share/omarchy`; `PATH` puts `~/.local/share/mise/shims` before `~/.local/bin` | `bin/omarchy-mac-setup`, `default/bashrc`, `default/bash/env-bootstrap` (lines 33–40), `manual/31-dotfiles.md` |
 | seeded into `~/.config` and user-owned afterwards: alacritty, btop, foot, ghostty, git, herdr, hypr, kitty, lazygit, omarchy, opencode, tmux, `starship.toml` and more; `omarchy-reinstall-configs` copies `/etc/skel` over the home without a backup; theme state in `~/.local/state/omarchy` | `config/`, `docs/file-layout.md`, `bin/omarchy-reinstall-configs` |
-| foot is the default terminal; Ghostty only from `[omarchy-aarch64]`; Flatpak not installed by default; `jq`, `git`, `curl`, `openssl` and `mise` present after install; `visual-studio-code-bin` only in the `Usage = Sync` repository (issue #297) | `manual/15-terminal.md`, `install/omarchy-base.packages` |
-| the image: Arch Linux ARM plus Asahi packages, `sudo` present since `7b00e16`, no git; Arch Linux ARM documents `root`/`root`, a user `alarm`/`alarm` and `sshd` started; setup removes `alarm` from `wheel` without locking it and locks root's password; `/root` survives the in-place encryption | `asahi-alarm/asahi-alarm-builder` `58cc158c7fda` `scripts/base/`; `bin/omarchy-mac-setup`; `bin/omarchy-system-btrfs-migrate` |
+| foot is the default terminal; Ghostty only from `[omarchy-aarch64]`; Flatpak not installed by default; `jq`, `git`, `curl`, `openssl` and `mise` (`mise-bin` 2026.9.12) present after install; `visual-studio-code-bin` only in the `Usage = Sync` repository (issue #297) | `manual/15-terminal.md`, `install/omarchy-base.packages` (line 80) |
+| Omarchy's firewall denies incoming connections (`ufw default deny incoming`); setup locks root's password and removes `alarm` from `wheel`, but neither changes `alarm`'s password nor disables `sshd`; `omarchy-setup-security-sshd` writes a key-only drop-in, checks it with `sshd -t` and `sshd -T -C` | `install/config/firewall.sh` (line 23), `bin/omarchy-mac-setup` (lines 742–801), `bin/omarchy-setup-security-sshd` (lines 148–188), `migrations/1788124236.sh` |
+| `/root` survives the in-place encryption | `bin/omarchy-system-btrfs-migrate` |
+
+## Omarchy's agent wrappers
+
+Read at the same commits, and mise `v2026.9.12`
+(`1698dd8ff8308b6e39fee8ce1537ddf93f246a2a`, the version Omarchy installs).
+
+| Fact | Where |
+| --- | --- |
+| `install/user/mise.sh` writes a wrapper in `~/.local/bin` for codex, claude, crush, agy, gh, copilot, opencode, playwright, pi, omp, grok, ghui, hunk, hey and ori; generated under a throwaway home, Claude Code's is 123 bytes: `export MISE_MINIMUM_RELEASE_AGE=0`, `mise use -g --quiet "claude" \|\| exit 1`, `exec mise x "claude" -- "claude" "$@"`; nothing is downloaded until it first runs | `bin/omarchy-mise-install` (lines 21–27), `install/user/mise.sh`, `manual/17-ai.md` |
+| the wrapper checks nothing first: every run runs `mise use -g`; after the first, the command name reaches mise's shim, earlier on `PATH`; a wrapper is at most 1 024 bytes, and four older wrapper shapes may still be on disk | as above; `migrations/1787573629.sh` |
+| `mise use -g claude` without a version requests `latest`: with a version installed it picks the newest installed one without the network, otherwise resolves over the network; it then rewrites `~/.config/mise/config.toml` on every call and writes `claude = "latest"`, replacing a pinned version | mise `src/cli/use.rs` (lines 277, 298–318, 352–374), `src/toolset/tool_version.rs` (lines 739–745), `src/config/config_file/mise_toml.rs` (lines 1491–1498) |
+| installed versions live in `~/.local/share/mise/installs/<tool>/<version>/` (skip links and a real `latest` folder, left by a 2026.4 regression); shims in `~/.local/share/mise/shims/`; global selection in `~/.config/mise/config.toml` and `conf.d/*.toml` beside it, or `MISE_GLOBAL_CONFIG_FILE`; `mise ls` and `mise where` resolve the toolset and may reach the network | mise `src/backend/backend_arg.rs` (lines 280–289), `src/runtime_symlinks.rs` (line 427), `src/config/mod.rs` (lines 3030–3035), `src/cli/ls.rs` (line 373) |
+| `omarchy-default-agent <name>` accepts an allowlisted name, installs a missing agent with `mise use -g` inside a new graphical terminal, writes `~/.config/omarchy/defaults/agent` after a successful install, and always ends by `exec omarchy-agent`; without arguments it prints the current default | `bin/omarchy-default-agent` (lines 13–81) |
+| `omarchy-agent` treats `command -v` success as installed; launch modes: `claude --permission-mode auto`, `codex --approve-for-me`, `opencode --auto`, `crush --yolo`, `copilot --allow-all`, and bypass modes for others; from `$HOME` it starts in `~/Work` | `bin/omarchy-agent` (lines 36–123) |
+| Omarchy links its own skill into `~/.{agents,claude,codex,pi/agent}/skills/` | `bin/omarchy-provision-user`, `docs/file-layout.md` |
+
+## The Asahi image and OpenSSH
+
+| Fact | Where |
+| --- | --- |
+| "Asahi Alarm Minimal (BTRFS)" is `asahi-base-btrfs.zip`, built from Arch Linux ARM's root filesystem by the base scripts only (the desktop script's `userdel -r alarm` does not run); nothing disables `sshd` | `installer_data.json` (fetched 2026-09-26); `asahi-alarm/asahi-alarm-builder` `58cc158c7fda3ef6aeae36606f84a63b4b0867e7` `build.sh` (lines 5, 48, 172–174), `scripts/base/10-base-packages.sh` |
+| the root filesystem (`ArchLinuxARM-aarch64-latest.tar.gz`, md5 `23eec86365b24f7913c403e8f4e8719b`, 2026-08-05) holds Bash 5.3.15, gawk 5.4.1, coreutils 9.11 (`head`, `tail`, `tr`, `od`, `wc`, `sync`, `mktemp`, `sha256sum`), OpenSSL 3.6.3, iproute2 (`ss`), `readelf`, `objdump`, openssh 10.4p1 with `sshd.service` enabled and no host keys (made at first boot), `alarm` (uid 1000, in `wheel`) and `20-systemd-userdb.conf` | its pacman database and file list, read 2026-09-26 |
+| Arch Linux ARM documents `root`/`root`, `alarm`/`alarm` and `sshd` started | <https://archlinuxarm.org/platforms/armv8/generic> |
+| Arch's (and Arch Linux ARM's, identical) `sshd_config` starts with `Include /etc/ssh/sshd_config.d/*.conf`; `99-archlinux.conf` sets `KbdInteractiveAuthentication no`, `UsePAM yes`; `PasswordAuthentication` stays at its default, yes | `archlinux/packaging/packages/openssh` `87ce57139f3b40e1fb20b85128fb5b10b9128f40` (10.5p1-1) `PKGBUILD` (lines 93–95, 159); the Arch Linux ARM package inspected |
+| OpenSSH 10.5p1: `-t` checks the configuration and keys; `-T` prints the effective configuration, `-C` sets `addr`, `user`, `host`, `laddr`, `lport`, `rdomain` (and `invalid-user`), and an attribute left out makes a `Match` on it false; both need root (they load the host keys); the first value of a keyword wins; included files are read in name order; a satisfied `Match` overrides the global value; since 10.4 the dump's keywords are in mixed case | openssh-portable `V_10_5_P1` `b3f7344209832eea8ece447d871ea748767c444b` `servconf.c` (lines 893–897, 2649–2681), `sshd.c` (lines 1506, 1567–1745); sshd(8), sshd_config(5); release notes 10.4 |
+| with `BatchMode=yes` the client never sends a password and fails with `Permission denied (<methods>)`, listing the server's methods for that account | openssh-portable `sshconnect2.c` (lines 405–414, 543, 2414), `auth2.c` |
+
+## Platform tools the core relies on
+
+| Fact | Where |
+| --- | --- |
+| admission uses `head -c`, `wc -c`, `tr -d`, `tail -c`, `od`, and `awk` in the C locale: BSD `awk` 20200816 on stock macOS, gawk on the image and Omarchy | this Mac; the image's package list above |
+| GNU `sync FILE` flushes that file (and a directory given as an argument); macOS's `sync` ignores arguments and flushes everything | coreutils 9.11 `src/sync.c`, `NEWS` 8.24; `apple-oss-distributions/system_cmds` `408bba7453608006b89772db185defbac8fe2fd0` `sync/sync.c`; `/bin/sync /nonexistent` exits 0 on macOS 27.0 |
+| Bash's `noclobber` refuses `>` onto an existing regular file or any link and creates a new file with `O_EXCL`; `>|` and `>>` bypass it; an existing FIFO or device is opened without `O_EXCL` | Bash `redir.c` `noclobber_open` (Apple bash-3.2 `51bf3fc6f26e9517c3a2e4bc3d208f9b39b87178`, lines 525–548; bash-5.3); *Experiments* |
 
 ## aarch64 availability
 
 | Fact | Where |
 | --- | --- |
 | Arch Linux ARM databases at `http://mirror.archlinuxarm.org/aarch64/<repo>/<repo>.db` (gzip; `extra` 10.6 MB, 12,929 packages); HTTPS fails certificate validation, no `.db.sig`; `%PROVIDES%` in a separate `depends` file | fetched 2026-09-26; archlinuxarm issue #400 |
-| Asahi Alarm `https://github.com/asahi-alarm/asahi-alarm/releases/download/aarch64/asahi-alarm.db`; OPR `https://pkgs.omarchy.org/{edge,stable}/aarch64/omarchy.db` (zstd, provides in `desc`); `[omarchy-aarch64]` database name unconfirmed (one pass read 54 packages on `edge`, another got 404) | fetched 2026-09-26 |
+| Asahi Alarm `https://github.com/asahi-alarm/asahi-alarm/releases/download/aarch64/asahi-alarm.db`; OPR `https://pkgs.omarchy.org/{edge,stable}/aarch64/omarchy.db` (zstd, provides in `desc`); `[omarchy-aarch64]` `…/releases/download/{edge,rc}/omarchy-aarch64.db` | fetched 2026-09-26 |
 | `pacman -Si`, `-Sl`, `-Ss`, `-Sp` need no root; `-Si` matches names only; `-Sp --print-format '%r/%n %v %a'` follows provides | pacman `src/pacman/util.c`, `sync.c` |
 | the AUR's RPC has no architecture field; `.SRCINFO` does | <https://aur.archlinux.org/rpc/v5/info>; <https://aur.archlinux.org/cgit/aur.git/plain/.SRCINFO> |
 | Flathub's summary API lists `arches` | <https://flathub.org/api/v2/summary/org.mozilla.firefox> |
-| `mise lock --platform linux-arm64` records a platform URL without installing, skips (exit 0) when no artifact exists; mise's 24-hour release age makes `latest` time-dependent; `compile=false` settings forbid source builds; ubi deprecated, asdf legacy | <https://mise.jdx.dev/cli/lock.html>, <https://mise.jdx.dev/dev-tools/backends/>; run from macOS against mise v2026.9.14 |
+| `mise lock --platform linux-arm64` records a platform URL without installing, skips (exit 0) when no artifact exists; mise's 24-hour release age makes `latest` time-dependent; `compile=false` settings forbid source builds | <https://mise.jdx.dev/cli/lock.html>, <https://mise.jdx.dev/dev-tools/backends/>; run from macOS against mise v2026.9.14 |
 | prebuilt linux-arm64 runtimes: Node, python-build-standalone, Go, rustup, Bun, Deno, Temurin, jdx/ruby; Arch Linux ARM has nodejs, python, go, rust, ruby, zig, JDKs, uv, pipx, cargo-binstall, flatpak but not mise, bun or deno | the projects' release indexes; the `extra` database |
 | 16 KiB pages: `LOAD` segments aligned below `0x4000` fail before start; jemalloc built for 4 KiB pages aborts; Electron before Chromium 134 crashed; x86_64 runs only through FEX in muvm | <https://asahilinux.org/docs/sw/broken-software/>; electron issue #45560 |
 | Homebrew supports ARM64 Linux, but Arch Linux ARM is outside its first tier | <https://github.com/Homebrew/brew/blob/main/docs/Support-Tiers.md> |
@@ -294,37 +327,99 @@ and `omacom/omarchy` `quattro` `7b336b1b0da7` (tags `v4.0.3` `0534987`,
 
 | Fact | Where |
 | --- | --- |
-| Claude Code 2.1.283: `https://claude.ai/install.sh` checks the binary's SHA-256 from its manifest, installs `~/.local/bin/claude`; runs as root, refuses its installer under `sudo`; sign-in without a browser by copying a URL and pasting a code; credentials in `~/.claude/.credentials.json` on Linux, the Keychain on macOS | <https://code.claude.com/docs/en/setup>, <https://code.claude.com/docs/en/authentication> |
-| Claude Code layout (`settings.json`, `CLAUDE.md`, `rules/`, `skills/`, `agents/`, `commands/`, `plugins/` with `installed_plugins.json` and `known_marketplaces.json`, `projects/<encoded path>/` sessions, `history.jsonl`; `~/.claude.json` with user-scope `mcpServers`, per-project state and account metadata); `claude mcp add-json … --scope user`; `claude mcp list` connects to every server; `${VAR}` expands in user-scope servers; `AGENTS.md` read only without a `CLAUDE.md` | <https://code.claude.com/docs/en/claude-directory>, <https://code.claude.com/docs/en/mcp>, <https://code.claude.com/docs/en/memory> |
-| Codex 0.157.1: `https://chatgpt.com/codex/install.sh` (musl build, checksums checked, `CODEX_NON_INTERACTIVE=1`); `auth.json` is a file on macOS too; `config.toml` with `[mcp_servers]`, `env_vars`; skills in `~/.agents/skills`; `codex login --device-auth`; `codex mcp list` starts no stdio server; `codex mcp add --url` may start a browser sign-in | <https://github.com/openai/codex>, <https://learn.chatgpt.com/docs/auth>, <https://learn.chatgpt.com/docs/extend/mcp> |
+| Claude Code 2.1.283: `https://claude.ai/install.sh` (redirecting to `downloads.claude.ai/claude-code-releases/bootstrap.sh`, SHA-256 `3a68d340…aa766a944` on 2026-09-25) checks the binary's SHA-256 from its manifest and installs `~/.local/bin/claude` → `~/.local/share/claude/versions/`; it refuses to run under `sudo` (`SUDO_USER` set) unless `CLAUDE_INSTALL_ALLOW_SUDO` is set, and allows real root; it does not check memory first, and says it needs about 512 MB when the install is killed; run from `/` it scans the whole filesystem; `--dangerously-skip-permissions` is refused as root; the supported systems listed are macOS 13+, Ubuntu 20.04+, Debian 10+, Alpine 3.19+ | `bootstrap.sh` (lines 20, 39, 249–251); <https://code.claude.com/docs/en/setup>, <https://code.claude.com/docs/en/troubleshoot-install>, <https://code.claude.com/docs/en/permission-modes> |
+| Claude Code layout (`settings.json`, `CLAUDE.md`, `rules/`, `skills/`, `agents/`, `commands/`, `plugins/` with `installed_plugins.json` and `known_marketplaces.json`, `projects/<encoded path>/` sessions, `history.jsonl`; `~/.claude.json` with user-scope `mcpServers`, per-project state and account metadata); `claude mcp add-json … --scope user`; `claude mcp list` connects to every server; `${VAR}` expands in user-scope servers; `AGENTS.md` read only without a `CLAUDE.md`; sign-in without a browser by copying a URL and pasting a code | <https://code.claude.com/docs/en/claude-directory>, <https://code.claude.com/docs/en/mcp>, <https://code.claude.com/docs/en/memory>, <https://code.claude.com/docs/en/authentication> |
+| Codex 0.157.1: `https://chatgpt.com/codex/install.sh` (musl build, checksums checked, `CODEX_NON_INTERACTIVE=1`); `auth.json` is a file on macOS too; skills in `~/.agents/skills`; `codex login --device-auth`; `codex mcp list` starts no stdio server; `codex mcp add --url` may start a browser sign-in | <https://github.com/openai/codex>, <https://learn.chatgpt.com/docs/auth>, <https://learn.chatgpt.com/docs/extend/mcp> |
 | OpenCode 1.18.32 (`anomalyco/opencode`): its installer verifies nothing; `~/.config/opencode/opencode.json` (`mcp`, `agent`, `command`, `plugin`, `permission`), `{env:VAR}`; credentials in `~/.local/share/opencode/auth.json`; `opencode mcp list` starts every local server; plugins run code | <https://opencode.ai/docs/config>, <https://opencode.ai/docs/plugins> |
 | Crush's `crushrc` runs in a shell and `$(…)` in `crush.json` runs at load | <https://github.com/charmbracelet/crush> |
 | the Bun-built binaries (Claude Code, OpenCode) are 64 KiB-aligned; Bun's own 16 KiB check is open (oven-sh/bun #17627); Codex links jemalloc 5.3.1, whose aarch64 default suits 16 KiB | binaries inspected with `llvm-objdump`; <https://github.com/oven-sh/bun/issues/17627> |
+
+## Codex's configuration file
+
+Read at `openai/codex` `rust-v0.157.1`
+(`36650394c5b38c2990ccf2a3457165ca3e9d9726`), which uses `toml_edit`
+0.24.0 and `toml` 0.9.11, both TOML 1.1; documentation at
+`learn.chatgpt.com/docs/config-file/` (config-reference, config-advanced,
+config-sample) as fetched on 2026-09-26.
+
+| Fact | Where |
+| --- | --- |
+| every writer edits the file in place with `toml_edit`, keeping comments and layout, and writes it atomically | `codex-rs/core/src/config/edit.rs` |
+| `codex mcp add` writes `[mcp_servers.<name>]` tables: `command`, a single-line `args`, `env` as a sub-table `[mcp_servers.<name>.env]` with sorted keys, `env_vars` entries as strings or `{ name, source }`, timeouts as floats; server names may hold `:`, `@`, `/`, `.`, and are then quoted; it replaces a server's table wholesale, dropping keys Codex does not model | `core/src/config/edit/document_helpers.rs`, `edit.rs` (lines 220, 431–477), `cli/src/mcp_cmd.rs` (line 1079), `edit_tests.rs` (line 1052) |
+| strings are written basic when possible, else literal, else multi-line (only with a newline); keys bare when possible, else quoted; arrays on one line; Codex never writes dotted keys but keeps those the person wrote; it also writes `[[skills.config]]`, arrays of inline tables, integers for times and quoted keys containing dots | `toml_writer` 1.0.6 `crates/toml_writer/src/string.rs`; `edit.rs` |
+| documented keys include `model`, `model_provider`, `model_reasoning_effort`, `model_providers.<id>`, `approval_policy` (`on-request`, `never`, granular; `untrusted` is refused at start), `sandbox_mode`, `notify`, the `mcp_servers.<id>` keys, `projects.<path>.trust_level`, `plugins."<p>@<m>".enabled`, `features`, `shell_environment_policy`, `tui`, `history`; an inline `bearer_token` is refused | config-reference.md; `core/src/config/mod.rs` (line 227), `config/src/mcp_edit.rs` (line 33) |
+| since 0.134.0 profiles are separate files `~/.codex/<name>.config.toml`; a top-level `profile` stops Codex at start | config-advanced.md; `core/src/config/mod.rs` (line 3344), `config/src/loader/mod.rs` (lines 299–319) |
+| unknown keys are ignored unless `--strict-config`; syntax errors and wrong types stop Codex | `config/src/config_toml.rs` (line 165), `config/src/loader/layer_io.rs` (line 162) |
+| the documentation's examples use inline `env = { … }`, sub-tables, literal strings, multi-line arrays of inline tables and quoted keys with dots | config-sample.md, mcp.md |
 
 ## Ratatui and distribution
 
 | Fact | Where |
 | --- | --- |
-| Ratatui 0.30.2 (2026-06-19), MSRV 1.88; applications depend on `ratatui` and reach Crossterm 0.29 through `ratatui::crossterm` | <https://crates.io/api/v1/crates/ratatui>, `ratatui/src/lib.rs` at `ratatui-v0.30.2` |
-| `try_init()` installs a restoring panic hook, raw mode and the alternate screen; `try_restore()` does not show the cursor; neither touches mouse, paste or keyboard modes; `run()` wraps both | `ratatui/src/init.rs` at `ratatui-v0.30.2` |
+| Ratatui 0.30.2 (2026-06-19), MSRV 1.88; applications depend on `ratatui` and reach Crossterm 0.29 through `ratatui::crossterm` | <https://crates.io/api/v1/crates/ratatui>, `ratatui/src/lib.rs` at `ratatui-v0.30.2` (`e665c36c`) |
+| `try_init()` installs a restoring panic hook, raw mode and the alternate screen; `try_restore()` leaves both and does not show the cursor; neither touches mouse, paste or keyboard modes | `ratatui/src/init.rs` (lines 365, 397, 554) |
 | the official way to run a child: leave the alternate screen, raw mode off, run, raw mode on, enter, `terminal.clear()`; a thread still reading input steals the child's replies | <https://ratatui.rs/recipes/apps/spawn-vim/> |
-| raw mode clears `ISIG` (Ctrl-C is a key); a caught signal is reset to default by `exec`, an ignored one stays ignored | Crossterm `terminal/sys/unix.rs`; POSIX `exec` |
-| Crossterm saves the terminal settings at each `enable_raw_mode` and restores those | Crossterm `terminal/sys/unix.rs` |
-| `TestBackend` with `assert_buffer_lines`, `insta` snapshots carry no colour; PTY testing for the event loop and teardown | <https://ratatui.rs/recipes/testing/snapshots/> |
+| raw mode clears `ISIG` (Ctrl-C is a key); Crossterm saves the terminal settings when raw mode is enabled and restores exactly those; the terminal is stdin if it is one, else `/dev/tty` | Crossterm 0.29 `src/terminal/sys/unix.rs` (lines 30, 108–168), `src/terminal/sys/file_descriptor.rs` |
+| a caught signal is reset to default by `exec`, an ignored one stays ignored | POSIX `exec` |
+| Rust's `Command` duplicates only 0, 1 and 2 into the child and closes nothing else; everything the standard library opens is close-on-exec; a `pre_exec` closure (with `dup2`) places another descriptor and forces fork and exec | Rust 1.98.1 `library/std/src/sys/process/unix/unix.rs` (lines 283–297, 470, 705–719), `sys/fs/unix.rs` (line 1382), `sys/pipe/unix.rs` (line 28), `os/unix/process.rs` |
+| `TestBackend` with `assert_buffer_lines`; `insta` snapshots carry no colour; PTY testing for the event loop and teardown | <https://ratatui.rs/recipes/testing/snapshots/> |
 | Crossterm 0.29.0's `NO_COLOR` handling resets bold and reverse (fixed, unreleased); Ratatui 0.30.2 mis-positions text after a wide character (fixed, unreleased); no ASCII border set is shipped | crossterm PR #1069; ratatui issues #2651, #2652 |
 | the Linux console: at most 512 glyphs; a normal-intensity colour cancels bold; the alternate screen exists only since August 2025 (`23743ba64709`) | `drivers/tty/vt/vt.c` |
-| native arm64 runners `macos-latest` and `ubuntu-24.04-arm`; Ubuntu 24.04 has glibc 2.39, Arch Linux ARM 2.43 | <https://docs.github.com/en/actions/reference/runners/github-hosted-runners> |
+| native arm64 runners `macos-latest` and `ubuntu-24.04-arm`; Ubuntu 24.04 has glibc 2.39, Arch Linux ARM 2.43 (`glibc` 2.43+r22), and its `base` brings `libgcc_s.so.1` through `libgcc` | <https://docs.github.com/en/actions/reference/runners/github-hosted-runners>; packages.ubuntu.com noble libc6; <https://archlinuxarm.org/packages/aarch64/libgcc> |
+| a Rust binary built on Ubuntu 24.04 for `aarch64-unknown-linux-gnu` needs `/lib/ld-linux-aarch64.so.1`, `libc.so.6` and `libgcc_s.so.1`, and glibc symbol versions up to `GLIBC_2.39` (from `std::process`'s `pidfd_spawnp`), all required; Rust's glibc 2.17 floor holds only for a build against an old glibc | an inspected Codex `rust-v0.157.1` aarch64 artifact (`readelf`, `objdump -T`); Rust `library/std/src/sys/pal/unix/weak/weak_linkage.rs`; glibc `elf/dl-version.c` |
 | aarch64 linkers default to 64 KiB page alignment | binutils `bfd/elfnn-aarch64.c`, lld `ELF/Arch/AArch64.cpp` |
+| Rust's default macOS arm64 deployment target is 11.0; `MACOSX_DEPLOYMENT_TARGET` raises it and it becomes `LC_BUILD_VERSION`'s `minos` | Rust `compiler/rustc_target/src/spec/base/apple/mod.rs` (line 332), `compiler/rustc_session/src/session.rs` (lines 909–940) |
 | arm64 macOS binaries are signed ad hoc by the linker; `curl` sets no quarantine attribute, browsers do | Apple's Big Sur universal-apps release notes; Apple developer forums thread 706442 |
 | artifact attestations record repository, workflow and commit, SLSA build level 2, verified with `gh attestation verify` | <https://docs.github.com/en/actions/concepts/security/artifact-attestations> |
-| LibreSSL 3.3.6 on stock macOS produces a deterministic AES-256-CTR stream with `-nosalt`, explicit key and IV (first MiB for `round-abc`: `0979b94a…ada19`) | run on this Mac, 2026-09-26 |
+
+## Experiments
+
+Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
+5.3.20, BSD `awk` 20200816, LibreSSL 3.3.6), outside the repository.
+
+- **Bash's `read` normalises before any check.** `IFS= read -r line`, then
+  splitting on TAB into an array: a doubled, a leading and a trailing TAB
+  give the same fields as the canonical line, on both shells; an embedded
+  NUL truncates the line on 3.2 and is dropped on 5.3, so the 5.3 fields
+  equal the canonical ones. CR, non-ASCII, ESC and DEL pass through.
+- **Admission catches all of them first.** The steps of docs/PROTOCOL.md →
+  §2 over 21 cases, on both shells: canonical and `%20` admitted; refused
+  with the right reason — doubled, leading and trailing TAB; NUL, CR,
+  non-ASCII, ESC, DEL; no final LF; a blank line; `%2f`, `%4`, a raw space,
+  a raw `=`; `%41`; `%00`; an upper-case key; 70 KB against 64 KiB; a 17 KB
+  line against 16 KiB.
+- **The qualification stream** (docs/QUALIFICATION.md → *The stream*):
+  every reference value there was produced with `openssl enc
+  -aes-256-ctr -nosalt` over `head -c N /dev/zero`, every `PIPESTATUS` 0;
+  the MiB at offset 2³² generated from its counter equals the same MiB cut
+  from the full stream; the full stream took 96 s.
+- **`noclobber`** on `/bin/bash` 3.2.57 and Bash 5.3.20: `>` onto a new file
+  succeeds; onto an existing file, a dangling link, or a link to a file it
+  fails; `>|` and `>>` succeed.
 
 ## Not verified yet
 
-Each is checked live in M14 or on the Mac in M17 (docs/DECISIONS.md → O9):
-`omarchy-pkg-add` with a repository-qualified target from a `Usage = Sync`
-repository; the `[omarchy-aarch64]` database name; whether the Asahi image
-starts `sshd` with the `alarm` account; the Asahi kernel's console
-alternate screen; whether Claude Code and OpenCode start on 16 KiB pages;
-whether the stripped macOS binary keeps its ad hoc signature; the console
-font's glyph coverage; Codex, OpenCode, Gemini CLI and Crush as root.
+Split by what can answer it (docs/DECISIONS.md → O9). Nothing is left for
+the Mac that source, package metadata or a CI runner can answer.
+
+### Before a feature's gate closes
+
+| Fact | How | Gate |
+| --- | --- | --- |
+| a stable Rust toolchain gives the same loader, libraries and glibc symbol versions as the inspected artifact; C dependencies follow `MACOSX_DEPLOYMENT_TARGET`; the stripped macOS binary keeps its ad hoc signature | `frontend-compat-linux`, `frontend-compat-macos` on the first build | M14 gate 1 |
+| the Asahi kernel in `asahi-alarm` includes the console alternate screen (`23743ba64709`) | the `linux-asahi` package's version and source | M14 gate 1 |
+| the delivered `asahi-base-btrfs.zip` has the root filesystem's packages, `sshd` enabled and `alarm` present, as inferred from its builder | list the image's package database and enabled units | M15-C |
+| Codex, OpenCode, Gemini CLI and Crush refuse or change behaviour as root | their source | M15-C |
+| `claude install` refuses root in any case beyond bypass mode; its working-directory scan | an install as root in a container on the aarch64 runner | M15-C |
+| `ssh`'s exit status and `BatchMode`'s handling of an unknown host key, for the loopback test | ssh(1), ssh_config(5) at 10.5p1 | M15-C |
+| which mise backend Claude Code resolves to on linux-arm64, the executable's path under `installs/claude/<version>/`, and whether mise reaches the network beyond version resolution | mise's source and a run in a container on the aarch64 runner | M15-B |
+| how mise quotes keys for tools outside its registry in `config.toml` | mise's source | M15-B |
+| `omarchy-pkg-add` with a repository-qualified target from a `Usage = Sync` repository | its source and pacman's | M15-B |
+
+### Only the Mac can show (M17)
+
+The Asahi kernel's 16 KiB pages under the frontend, Claude Code, OpenCode
+and Codex; the Linux console's glyphs and whether any frame is left behind
+after a handoff; the image's `sshd -T` on its first-boot host keys; the
+installers' behaviour on this disk, and everything else in
+docs/QUALIFICATION.md → *Real-hardware qualification (M17)*.

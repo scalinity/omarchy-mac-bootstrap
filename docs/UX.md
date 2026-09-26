@@ -156,9 +156,10 @@ Friction follows consequence, and the core checks every word
 | Level | For | Form |
 | --- | --- | --- |
 | none | moving, selecting, filtering, looking | — |
-| yes / no, default no | saving a plan, sealing a profile, exporting a bundle, the availability check, starting a rescue agent, live health checks | a one-line question; Enter alone answers no |
+| yes / no, default no | saving a plan, finishing a profile, exporting a bundle, the availability check, starting a rescue agent, closing SSH for this boot, live checks, accepting an item as it is, saving raw diagnostics | a one-line question; Enter alone answers no |
 | yes / no, default yes | the first download of the frontend itself, in the text launcher (a pinned file, checked by digest) | `[Y/n]` |
-| **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` — and the new `restore`, `undo`, `import` (a foreign bundle), `carry` (an encrypted SSH key), `ssh` (remote rescue), `remove` (rescue tools), `clean` (qualification files) | the gate screen |
+| **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` — and the new `restore`, `undo`, `import` (a foreign bundle), `opaque` (a custom path no adapter understands), `carry` (an encrypted SSH key), `ssh` (hardening SSH, or remote rescue), `remove` (rescue tools), `clean` (qualification files) | the gate screen |
+| **approval code** | restoring a bundle: the `ombbundle-…` code macOS showed after the export | the gate screen, with the code's field in place of the word |
 
 **The gate screen** says what will happen, on what, what it does not touch,
 what cannot be undone, and what will ask next (a password, a passphrase, an
@@ -247,7 +248,8 @@ paths underlined and secret-shaped values masked):
      ○ gh               8 KB   personal · hosts.yml is secret and stays
      ○ karabiner       60 KB   Mac-only
  ▸ .ssh                24 KB   personal · 2 keys, 1 encrypted
-   ◌ .zsh_history     2.1 MB   sensitive · opt in
+   ◌ .scripts         120 KB   opaque · type opaque to carry
+   – .zsh_history     2.1 MB   history · not carried in v1
 ```
 
 **AI environment** (providers across, components down; narrow shows one
@@ -263,7 +265,7 @@ provider at a time, `Tab` to switch):
  agents · commands          ◉ 7 · 12          ◉ 2              ◉ 3 · 1
  plugins                    ◉ 5 reinstalled   –                ◌ 1 runs code
  hooks                      ! 3 run commands  –                –
- sessions                   ◌ 1.1 GB          ◌ 380 MB         ◌ 90 MB
+ sessions · history         – not in v1       – not in v1      – not in v1
  sign-in                    again on Linux    again            again
 ```
 
@@ -295,7 +297,7 @@ provider at a time, `Tab` to switch):
    Where         after disk0s6 (Linux) · 150.0 GB free, read just now
    Creates       one exFAT partition named Shared, 143051 MiB
    Leaves        macOS, Linux and every other partition as they are
-   Next          sudo asks for your password in the terminal
+   Next          sudo may ask for your password, as its policy says
 
    Type create to continue    create▏
  ──────────────────────────────────────────────────────────────────────────
@@ -321,10 +323,10 @@ provider at a time, `Tab` to switch):
 ```text
  Health                                               static · c live checks
  ──────────────────────────────────────────────────────────────────────────
- Claude Code   ✓ 2.1.283    ✓ settings    ✓ skills 23
-               MCP 8 ok · ! 1 needs you: xcode-mcp is macOS-only
- Codex         ✓ 0.157.1    ✓ config      ✓ skills 6    ✓ MCP 4
- OpenCode      ✓ 1.18.32    ! kept Omarchy's opencode.json
+ Claude Code   ✓ installed 2.1.283 · wrapper Omarchy's · ran at restore
+               ✓ settings  ✓ skills 23  MCP 8 ok · ! xcode-mcp macOS-only
+ Codex         ✓ installed 0.157.1   ✓ config   ✓ skills 6   ✓ MCP 4
+ OpenCode      ✓ installed 1.18.32   ! kept Omarchy's opencode.json
  Runtimes      ✓ node 22.20.0    ✓ python 3.13.15    ✓ go 1.27.1
  Packages      ✓ 58 of 61    ✗ 3 unavailable   ⏎ details
 ```
@@ -363,12 +365,12 @@ provider at a time, `Tab` to switch):
 | 14 | Asahi handoff | provenance, inspection, answer card, boot guide, token | sections scroll | `i` inspect `y` copy; `launch` |
 | 15 | Linux continuation | token decoded, network, Omarchy Mac provenance | same | `n` network (nmtui); `start` |
 | 16 | Rescue | the options and their states (docs/RESCUE.md) | same | `⏎` |
-| 17 | Debug report | sections with sizes and redaction counts, preview | preview on Enter | `s` save `⏎` |
+| 17 | Debug report | the safe fields by group, preview; raw diagnostics offered separately, marked potentially sensitive | preview on Enter | `s` save `⏎` |
 | 18 | Omarchy progress | upstream's signals as a checklist; where upstream prints (tty1) | same | `r` |
 | 19 | Shared creation | the region on the strip, the checks, two gates | strip hidden below 70 | `yes`, `create` |
-| 20 | Restore progress | the seven layers, the current item, handoffs announced | the current layer only | Ctrl-C between items |
+| 20 | Restore progress | the graph's work grouped by layer, the current node, blocked chains, handoffs announced | the current group only | Ctrl-C between items |
 | 21 | Conflict and diff | both sides, the choices | unified only | `k` `R` `m` `s` `n` `v` |
-| 22 | Health | tools × checks, live checks on request | one tool per group | `c` |
+| 22 | Health | tools × observed states (docs/AI-TOOLS.md → *What is observed*), live checks on request | one tool per group | `c` |
 | 23 | Qualification | the steps, identity, digests | digests shortened | `⏎`; `test` |
 | 24 | Logs and diagnostics | the tool's log, the core's diagnostics, the restore journal; filter by level | same | `/` `Tab` `f` |
 | 25 | Completion | every stage and the report; on quit, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` | same | `q` |
