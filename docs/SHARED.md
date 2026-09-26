@@ -201,12 +201,23 @@ Running it again when the entry is in place changes nothing.
 
 - `./omarchy-bootstrap shared` — the state and the next step (read-only).
 - `./omarchy-bootstrap doctor` — identity, type, filesystem, size, disk, the
-  fstab entry, whether it is mounted, with which options, free space, a
-  read-only remount after an error, and a second mount of the same
-  partition. Reading proves presence, not that it can be written.
-- `./omarchy-bootstrap shared test` — after typing `test`: writes one uniquely
-  named file, flushes it, reads it back, compares the checksum, and removes
-  that file only.
+  fstab entry, what is mounted at `/mnt/shared`, with which options, free
+  space, a read-only remount after an error, and a second mount of the same
+  partition. What is mounted there is matched to Shared by PARTUUID (from the
+  kernel's mount table: a partition name on the Linux root's disk, or
+  `/dev/disk/by-partuuid/…`), and reported as one of: Shared mounted (pass);
+  automount armed, nothing mounted yet (information: nothing to match yet);
+  another partition or filesystem, or more than one filesystem stacked there
+  (fail); a source that cannot be matched (warning). Reading proves presence,
+  not that it can be written.
+- `./omarchy-bootstrap shared test` — after typing `test`: first the
+  filesystem at the mount point must be Shared, matched as doctor matches it
+  (on Linux an armed automount is asked to mount by listing the directory,
+  which writes nothing; on macOS the mount point is the one diskutil reports
+  for Shared's GUID); anything else and nothing is written. Then it writes
+  one uniquely named file, flushes it, reads it back, compares the checksum,
+  and removes that file only. It reports success only when the removal
+  worked too; a file it could not remove is named, for you to remove.
 
 ## Switching between the systems
 

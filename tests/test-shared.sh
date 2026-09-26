@@ -566,9 +566,10 @@ assert_rc "$T_RC" 2 "create is macOS's"
 
 # --- Linux: status, doctor and the write test ----------------------------------------------------
 t_cli linux-shared-ready "" doctor
-for w in "[PASS] Shared storage" "[PASS] Shared identity" "[PASS] Shared on boot" "[PASS] Shared mounted" "[INFO] Shared writing"; do
+for w in "[PASS] Shared storage" "[PASS] Shared identity" "[PASS] Shared on boot" "[INFO] Shared writing"; do
   assert_contains "$T_OUT" "$w" "doctor: $w"
 done
+assert_contains "$(t_flat "$T_OUT")" "[INFO] Shared mounted automount armed, nothing mounted yet" "doctor: an armed automount is not reported as the partition mounted"
 fx=$(t_variant linux-shared-ready)
 printf '/dev/mapper/root / btrfs rw 0 0\n/dev/nvme0n1p7 /mnt/shared exfat ro,nodev,nosuid,noexec,uid=1000 0 0\n/dev/nvme0n1p7 /run/media/alex/Shared exfat rw 0 0\n' >"$fx/root/proc/self/mounts"
 t_cli "$fx" "" doctor
@@ -576,13 +577,92 @@ assert_contains "$T_OUT" "[WARN] Shared mounted" "doctor: a read-only remount af
 assert_contains "$T_OUT" "[WARN] Shared mounted twice" "doctor: a second mount of the same partition warns"
 t_cli linux-shared-conflict "" doctor
 assert_contains "$T_OUT" "[FAIL] Shared storage" "doctor: a conflict fails"
-t_cli linux-shared-ready "\n" shared test
-assert_empty_file "$T_DIR/record" "the write test needs consent"
+
+# What is mounted at /mnt/shared is bound to the partition chosen by PARTUUID
+# before doctor vouches for it or the write test writes a byte. mounted
+# LINE... — the ready machine (automount armed) with LINEs mounted too.
+mounted() {
+  local fx
+  fx=$(t_variant linux-shared-ready)
+  printf '%s\n' "$@" >>"$fx/root/proc/self/mounts"
+  printf '%s' "$fx"
+}
+OPTS="rw,nosuid,nodev,noexec,relatime,uid=1000,gid=1000,fmask=0177,dmask=0077 0 0"
+BY=/dev/disk/by-partuuid
+for c in \
+  "the Shared partition|/dev/nvme0n1p7 /mnt/shared exfat $OPTS|[PASS] Shared mounted|/dev/nvme0n1p7 at /mnt/shared, PARTUUID matches|1" \
+  "the Shared partition by PARTUUID|$BY/4a7b1c2d-0007-4e5f-8a9b-000000000007 /mnt/shared exfat $OPTS|[PASS] Shared mounted|PARTUUID matches|1" \
+  "another disk's exFAT volume|/dev/sda1 /mnt/shared exfat $OPTS|[FAIL] Shared mounted|/dev/sda1 is mounted at /mnt/shared; it is not a partition on the disk holding the Linux root|0" \
+  "another partition on root's disk|/dev/nvme0n1p5 /mnt/shared exfat $OPTS|[FAIL] Shared mounted|its PARTUUID is 4a7b1c2d-0005-4e5f-8a9b-000000000005, not Shared's|0" \
+  "another partition by PARTUUID|$BY/4a7b1c2d-0005-4e5f-8a9b-000000000005 /mnt/shared exfat $OPTS|[FAIL] Shared mounted|not Shared's (4a7b1c2d-0007-4e5f-8a9b-000000000007)|0" \
+  "Shared, but not as exFAT|/dev/nvme0n1p7 /mnt/shared vfat $OPTS|[FAIL] Shared mounted|as vfat, not exFAT|0" \
+  "a source that cannot be matched|/dev/mapper/shared /mnt/shared exfat $OPTS|[WARN] Shared mounted|cannot be matched to a partition here|0"; do
+  IFS='|' read -r label line doc why write <<EOF
+$c
+EOF
+  fx=$(mounted "$line")
+  t_cli "$fx" "" doctor
+  assert_contains "$T_OUT" "$doc" "doctor, $label: $doc"
+  assert_contains "$(t_flat "$T_OUT")" "$why" "doctor, $label: the reason"
+  t_cli "$fx" "test\n" shared test
+  if [ "$write" = 1 ]; then
+    assert_contains "$(cat "$T_DIR/record")" "cp $T_DIR/tmp/omarchy-bootstrap." "write test, $label: writes"
+  else
+    assert_empty_file "$T_DIR/record" "write test, $label: writes nothing"
+    assert_contains "$(t_flat "$T_OUT")" "Nothing was written" "write test, $label: and says so"
+  fi
+done
+fx=$(mounted "/dev/nvme0n1p7 /mnt/shared exfat $OPTS" "/dev/sda1 /mnt/shared exfat $OPTS")
+t_cli "$fx" "" doctor
+assert_contains "$(t_flat "$T_OUT")" "[FAIL] Shared mounted 2 filesystems are mounted at /mnt/shared (/dev/nvme0n1p7,/dev/sda1)" "doctor: two filesystems stacked at /mnt/shared fail"
+t_cli "$fx" "test\n" shared test
+assert_empty_file "$T_DIR/record" "write test: nothing written on a doubled mount"
+fx=$(t_variant linux-shared-ready)
+printf '/dev/mapper/root / btrfs rw 0 0\n' >"$fx/root/proc/self/mounts"
+t_cli "$fx" "" doctor
+assert_contains "$T_OUT" "[WARN] Shared mounted" "doctor: neither mounted nor armed warns"
+# An armed automount is asked to mount by listing the directory (which
+# writes nothing); when nothing is mounted then, nothing is written.
 t_cli linux-shared-ready "test\n" shared test
+assert_empty_file "$T_DIR/record" "write test: nothing written while nothing is mounted"
+assert_contains "$(t_flat "$T_OUT")" "Nothing is mounted at /mnt/shared, even after asking the automount" "and it says so"
+fx=$(mounted "/dev/nvme0n1p7 /mnt/shared exfat $OPTS")
+t_cli "$fx" "\n" shared test
+assert_empty_file "$T_DIR/record" "the write test needs consent"
+t_cli "$fx" "test\n" shared test
 rec=$(cat "$T_DIR/record")
 assert_contains "$rec" "cp $T_DIR/tmp/omarchy-bootstrap." "the write test copies one file"
 assert_contains "$rec" "/mnt/shared/.omarchy-bootstrap-test-" "to a uniquely named file on Shared"
 assert_contains "$rec" "rm -f /mnt/shared/.omarchy-bootstrap-test-" "and removes only that file"
+# The I/O itself, on a real directory: success only when the bytes read back
+# match and the file is removed again; a removal that fails is a failure,
+# with the file it left named.
+io=$(t_tmp)
+awk 'BEGIN { for (i = 0; i < 64; i++) print i }' >"$io/src"
+out=$(
+  # shellcheck disable=SC2329 # called by shared_test_io
+  run() { "$@"; }
+  shared_test_io "$io/src" "$io/dst" "$(sha256_of "$io/src")" && printf 'RC=0\n'
+)
+assert_contains "$out" "read back identical, and removed" "the write test reports success when every step worked"
+assert_contains "$out" "RC=0" "and exits 0"
+[ ! -e "$io/dst" ] && ok || fail "and the test file is gone"
+out=$(
+  # shellcheck disable=SC2329 # called by shared_test_io
+  run() { [ "$1" = rm ] && return 1; "$@"; }
+  shared_test_io "$io/src" "$io/dst2" "$(sha256_of "$io/src")" || printf 'RC=1\n'
+)
+assert_contains "$(t_flat "$out")" "The test file could not be removed: $io/dst2 is still on Shared" "a failed removal is reported with the path left behind"
+assert_not_contains "$out" "read back identical" "and success is not claimed"
+assert_contains "$out" "RC=1" "and it exits non-zero"
+out=$(
+  # shellcheck disable=SC2329 # called by shared_test_io
+  run() { [ "$1" = cp ] && { printf 'other\n' >"$3"; return 0; }; "$@"; }
+  shared_test_io "$io/src" "$io/dst3" "$(sha256_of "$io/src")" || printf 'RC=1\n'
+)
+assert_contains "$(t_flat "$out")" "the bytes read back were not the bytes written" "different bytes read back fail"
+assert_contains "$out" "RC=1" "and exit non-zero"
+[ ! -e "$io/dst3" ] && ok || fail "and the file is still removed"
 t_cli linux-shared-present "" shared test
 assert_contains "$T_OUT" "nothing to test yet" "no test before Shared is mounted"
 t_cli linux-shared-ready "" shared

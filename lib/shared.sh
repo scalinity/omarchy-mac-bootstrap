@@ -1346,9 +1346,63 @@ shared_mountpoint() {
   esac
 }
 
+# shared_lx_mount — what is mounted at /mnt/shared now, from the kernel's
+# mount table, bound to the Shared partition chosen by PARTUUID (after
+# shared_lx_state). A source is matched only as a kernel name on the disk
+# holding root, or as /dev/disk/by-partuuid. Sets SH_MOUNT, SH_MOUNT_SRC,
+# SH_MOUNT_OPTS and SH_MOUNT_WHY:
+#   verified    the Shared partition, exFAT
+#   armed       the automount, with nothing mounted yet
+#   none        nothing at all
+#   wrong       another partition or filesystem
+#   unresolved  a source that cannot be matched to a partition here
+#   duplicate   more than one filesystem mounted there
+shared_lx_mount() {
+  local mounts rows n src fs opts name="" puuid="" row
+  SH_MOUNT=none SH_MOUNT_SRC="" SH_MOUNT_OPTS="" SH_MOUNT_WHY=""
+  mounts=$(cat "$(sys_path /proc/self/mounts)" 2>/dev/null)
+  rows=$(printf '%s\n' "$mounts" | awk -v m="$SHARED_MNT" '$2 == m && $3 != "autofs" {print $1, $3, $4}')
+  n=$(printf '%s' "$rows" | grep -c .)
+  if [ "$n" = 0 ]; then
+    printf '%s\n' "$mounts" | awk -v m="$SHARED_MNT" '$2 == m && $3 == "autofs"' | grep -q . && SH_MOUNT=armed
+    return 0
+  fi
+  if [ "$n" != 1 ]; then
+    SH_MOUNT=duplicate SH_MOUNT_WHY="$n filesystems are mounted at $SHARED_MNT ($(printf '%s' "$rows" | awk '{print $1}' | paste -sd, -)); unmount the extra ones"
+    return 0
+  fi
+  read -r src fs opts <<EOF
+$rows
+EOF
+  SH_MOUNT_SRC=$src SH_MOUNT_OPTS=$opts
+  case "$src" in
+    /dev/disk/by-partuuid/*) puuid=$(printf '%s' "${src#/dev/disk/by-partuuid/}" | tr 'A-F' 'a-f') ;;
+    /dev/*/*) ;;
+    /dev/?*)
+      name=${src#/dev/}
+      row=$(printf '%s\n' "$SH_ROWS" | awk -F'|' -v n="$name" '$1 == n {print $4; exit}')
+      if [ -z "$row" ]; then
+        SH_MOUNT=wrong SH_MOUNT_WHY="$src is mounted at $SHARED_MNT; it is not a partition on the disk holding the Linux root, and Shared is /dev/$SH_NAME"
+        return 0
+      fi
+      puuid=$row
+      ;;
+  esac
+  if [ -z "$puuid" ]; then
+    SH_MOUNT=unresolved SH_MOUNT_WHY="$src is mounted at $SHARED_MNT, and it cannot be matched to a partition here, so it is not known to be Shared (/dev/$SH_NAME)"
+  elif [ "$puuid" != "$SH_PARTUUID" ]; then
+    SH_MOUNT=wrong SH_MOUNT_WHY="$src is mounted at $SHARED_MNT, but its PARTUUID is $puuid, not Shared's ($SH_PARTUUID)"
+  elif [ "$fs" != exfat ]; then
+    SH_MOUNT=wrong SH_MOUNT_WHY="$src is mounted at $SHARED_MNT as $fs, not exFAT"
+  else
+    SH_MOUNT=verified
+  fi
+  return 0
+}
+
 # shared_test — write, flush, read back and remove one uniquely named file.
 shared_test() {
-  local mp dst src sum rc
+  local mp dst src sum
   ui_header "$OMB_PLATFORM $G_DOT shared storage test"
   if [ "$OMB_PLATFORM" = macos ]; then
     mac_survey
@@ -1372,29 +1426,57 @@ shared_test() {
     ui_info "Stopped. Nothing written."
     return 1
   }
+  # Nothing is written until the filesystem at the mount point is known to be
+  # Shared. On macOS the mount point is the one diskutil reports for the
+  # partition with Shared's GUID. On Linux an automount not yet triggered is
+  # mounted by listing the directory, which writes nothing.
+  if [ "$OMB_PLATFORM" = linux ]; then
+    shared_lx_mount
+    if [ "$SH_MOUNT" = armed ]; then
+      ls -A "$(sys_path "$SHARED_MNT")" >/dev/null 2>&1
+      shared_lx_mount
+    fi
+    if [ "$SH_MOUNT" != verified ]; then
+      case "$SH_MOUNT" in
+        armed | none) ui_fail "Nothing is mounted at $SHARED_MNT, even after asking the automount; nothing was written." ;;
+        *) ui_fail "$SH_MOUNT_WHY. Nothing was written." ;;
+      esac
+      return 1
+    fi
+  fi
   omb_tmp_init || return 1
   src="$OMB_TMP/shared-test"
   dst="$mp/.omarchy-bootstrap-test-$(now_stamp)-$$"
   awk 'BEGIN { for (i = 0; i < 16384; i++) printf "omarchy-bootstrap shared test %08d\n", i }' >"$src"
   sum=$(sha256_of "$src")
-  if run cp "$src" "$dst" && run sync; then rc=0; else rc=1; fi
-  if [ "$OMB_PLATFORM" = linux ] && [ "$OMB_DRY_RUN" != 1 ] && [ -z "${OMB_TEST_RECORD:-}" ] &&
-    ! awk -v m="$SHARED_MNT" '$2 == m && $3 == "exfat"' "$(sys_path /proc/self/mounts)" | grep -q .; then
-    ui_fail "$SHARED_MNT is not an exFAT mount after the write; nothing was verified."
-    rc=1
-  fi
   if [ "$OMB_DRY_RUN" = 1 ] || [ -n "${OMB_TEST_RECORD:-}" ]; then
+    run cp "$src" "$dst"
+    run sync
     run rm -f "$dst"
     ui_info "Not run for real: the write, flush and removal above were only shown."
     return 0
   fi
-  if [ "$rc" = 0 ] && [ -f "$dst" ] && [ "$(sha256_of "$dst")" = "$sum" ]; then
-    run rm -f "$dst"
+  shared_test_io "$src" "$dst" "$sum"
+}
+
+# shared_test_io SRC DST SUM — copy SRC to DST, flush, read DST back and
+# compare with SUM, then remove exactly DST. Success only when all of it
+# worked, the removal included; a file that could not be removed is named.
+shared_test_io() {
+  local src=$1 dst=$2 sum=$3 wrote=0 removed=1
+  if run cp "$src" "$dst" && run sync && [ -f "$dst" ] && [ "$(sha256_of "$dst")" = "$sum" ]; then
+    wrote=1
+  fi
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    run rm -f "$dst" || removed=0
+    if [ -e "$dst" ] || [ -L "$dst" ]; then removed=0; fi
+  fi
+  [ "$wrote" = 1 ] || ui_fail "The write test failed on ${dst%/*}: the bytes read back were not the bytes written. Nothing was repaired; see docs/SHARED.md."
+  [ "$removed" = 1 ] || ui_fail "The test file could not be removed: $dst is still on Shared; remove it yourself."
+  if [ "$wrote" = 1 ] && [ "$removed" = 1 ]; then
     ui_ok "Shared storage is writable: $(wc -c <"$src" | tr -d ' ') bytes written, flushed, read back identical, and removed."
     return 0
   fi
-  [ -f "$dst" ] && run rm -f "$dst"
-  ui_fail "The write test failed on $mp: the bytes read back were not the bytes written. Nothing was repaired; see docs/SHARED.md."
   return 1
 }
 
@@ -1487,7 +1569,7 @@ shared_intent_matches_plan() {
 # shared_doctor — read-only checks. Reading proves presence, identity and
 # mount configuration; only `shared test` proves writing.
 shared_doctor() {
-  local mounts line dev mp fs opts others avail
+  local mounts others avail
   case "$OMB_PLATFORM" in macos) shared_mac_state ;; linux) shared_lx_state ;; esac
   case "$SHARED_STATE" in
     off) return 0 ;;
@@ -1509,24 +1591,21 @@ shared_doctor() {
   doc pass "Shared identity" "/dev/$SH_NAME $G_DOT PARTUUID=$SH_PARTUUID $G_DOT exFAT $G_DOT $(fmt_gb "$SH_SIZE")"
   doc pass "Shared on boot" "/etc/fstab: $SHARED_MNT, uid $SH_UID, nofail, automount"
   mounts=$(cat "$(sys_path /proc/self/mounts)" 2>/dev/null)
-  line=$(printf '%s\n' "$mounts" | awk -v m="$SHARED_MNT" '$2 == m && $3 == "exfat"' | head -1)
-  if [ -n "$line" ]; then
-    set -f
-    # shellcheck disable=SC2086 # /proc/mounts fields are whitespace-separated
-    set -- $line
-    set +f
-    opts=$4
-    case ",$opts," in
-      *,ro,*) doc warn "Shared mounted" "read-only: the kernel remounts exFAT read-only after an error; check it from macOS (First Aid)" ;;
-      *) doc pass "Shared mounted" "$1 at $SHARED_MNT ($opts)" ;;
-    esac
-    avail=$(sys_cmd df_shared df -Pk "$SHARED_MNT" | awk 'NR==2 {print $4}')
-    [ -n "$avail" ] && doc info "Shared free space" "$((avail / 1000000)) GB"
-  elif printf '%s\n' "$mounts" | awk -v m="$SHARED_MNT" '$2 == m && $3 == "autofs"' | grep -q .; then
-    doc pass "Shared mounted" "automount armed; mounts on first use"
-  else
-    doc warn "Shared mounted" "not mounted and no automount active: sudo systemctl start $SHARED_UNIT"
-  fi
+  shared_lx_mount
+  case "$SH_MOUNT" in
+    verified)
+      case ",$SH_MOUNT_OPTS," in
+        *,ro,*) doc warn "Shared mounted" "read-only: the kernel remounts exFAT read-only after an error; check it from macOS (First Aid)" ;;
+        *) doc pass "Shared mounted" "$SH_MOUNT_SRC at $SHARED_MNT, PARTUUID matches ($SH_MOUNT_OPTS)" ;;
+      esac
+      avail=$(sys_cmd df_shared df -Pk "$SHARED_MNT" | awk 'NR==2 {print $4}')
+      [ -n "$avail" ] && doc info "Shared free space" "$((avail / 1000000)) GB"
+      ;;
+    armed) doc info "Shared mounted" "automount armed, nothing mounted yet; it mounts on first use, and which partition it mounts is checked once it has" ;;
+    wrong | duplicate) doc fail "Shared mounted" "$SH_MOUNT_WHY" ;;
+    unresolved) doc warn "Shared mounted" "$SH_MOUNT_WHY" ;;
+    *) doc warn "Shared mounted" "not mounted and no automount active: sudo systemctl start $SHARED_UNIT" ;;
+  esac
   others=$(printf '%s\n' "$mounts" | awk -v d="/dev/$SH_NAME" -v m="$SHARED_MNT" '$1 == d && $2 != m {print $2}' | head -1)
   [ -n "$others" ] && doc warn "Shared mounted twice" "also at $others; unmount that copy"
   doc info "Shared writing" "not checked by doctor; ./omarchy-bootstrap shared test writes and removes one file"
