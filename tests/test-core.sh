@@ -319,12 +319,19 @@ while [ -z "$core" ] && kill -0 "$bg" 2>/dev/null; do core=$(pgrep -P "$bg" | he
 # Its identity file is written once its handlers are in place. The signals
 # come from one process in a group of its own: this harness shares the
 # core's group, where anything it started would count as a worker.
-c_wait_file "$SESS/req-$n.core"
+c_wait_file "$SESS/req-$n.core" && ok || fail "sup-eintr: the core (pid $core) never recorded itself"
 perl -e 'setpgrp(0, 0); my ($p, $n) = @ARGV; while (kill 0, $p) { kill "HUP", $p and $n++; select(undef, undef, undef, 0.03) } print "$n\n"' "$core" 0 >"$T/sent"
 wait "$bg"
+st=$?
 [ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"
-assert_eq "$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")" "status=done code=ok" \
-  "sup-eintr: signals during the reading leave a supervised completion"
+r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
+assert_eq "$r" "status=done code=ok" "sup-eintr: signals during the reading leave a supervised completion"
+if [ "$r" != "status=done code=ok" ]; then
+  printf '    the run: status %s; its spool:\n' "$st"
+  sed 's/^/      /' "$SESS/req-$n.events" | cut -c1-200
+  printf '    its stderr:\n'
+  sed 's/^/      /' "$T/stderr" | head -20
+fi
 [ ! -e "$OPS" ] || ! grep -q 'state=unsupervised' "$OPS" && ok || fail "sup-eintr: no barrier from a signal"
 rm -f "$EFFECT"
 c_conf mutate
