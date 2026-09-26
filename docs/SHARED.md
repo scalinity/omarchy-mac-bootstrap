@@ -108,8 +108,11 @@ Before anything runs, the whole disk is read and must show:
 
 It shows the physical disk, the interval in bytes, the size, the partitions
 before and after, and the filesystem, and asks for `yes` (a current backup)
-and `create`. Then it reads the disk again; any difference stops it. Then,
-and only then:
+and `create`. Then it reads the disk again; any difference stops it. It
+writes the creation record, `shared-create.env`: the disk, every partition on
+it byte for byte, the free region the creation may use, the Linux root
+before it, the partition after it, and the size it creates. A record that
+cannot be written stops it. Then, and only then:
 
 ```bash
 sudo diskutil addPartition <the Linux root, e.g. disk0s6> ExFAT Shared <bytes>
@@ -120,17 +123,27 @@ region's first MiB boundary; the rest of the region stays free, which leaves
 diskutil room for its own alignment. `sudo` asks for your password, because
 diskutil must own the internal disk to change its partition map.
 
-Afterwards the disk is read again and must show every earlier partition
-unchanged and exactly one new partition, inside the region, of type
-Microsoft Basic Data, formatted exFAT, at least the planned size. Anything
-else stops with an explanation. **Nothing is ever repaired, formatted or
-deleted automatically.**
+Afterwards the disk is read again and judged by the creation record: every
+partition in it unchanged, byte for byte, and exactly one new partition,
+inside the free region it was given, of type Microsoft Basic Data, formatted
+exFAT, at least the planned size. Anything else stops with an explanation,
+and the stop is recorded. **Nothing is ever repaired, formatted or deleted
+automatically.**
 
-Running it again is safe: a Shared partition already in the region is
-recognised and recorded, never created a second time. A partition in the
-region that is not the planned exFAT volume (another type, another
-filesystem, too small, unformatted) blocks; this tool never formats a
-partition that exists.
+Running it again is safe. While the creation record exists, every run —
+`shared`, `shared create`, the guided flow — judges the disk by that same
+check, never by reading it afresh: when it passes (the run that created
+Shared ended before recording it), Shared is recorded and the record
+removed; when diskutil left nothing new and no stop was recorded, it can be
+created again; anything else stays stopped, even on a later run that could
+otherwise make sense of the disk. A stop clears only when the check passes
+(for example, an unformatted result you erased as exFAT yourself, below), or
+when you remove the record after checking the disk yourself. Without a
+record, a Shared partition already in the region is recognised and recorded
+only if it follows the Linux root that Linux's completion code named, and it
+is never created a second time. A partition in the region that is not the
+planned exFAT volume (another type, another filesystem, too small,
+unformatted) blocks; this tool never formats a partition that exists.
 
 ## Mounting it (Linux)
 
@@ -202,6 +215,8 @@ never runs a filesystem repair itself.
 | the free region after Linux is smaller than reserved | the installer was given a different Linux size than planned; Shared can still be created by hand in the space there is (below) |
 | made on a different Linux partition / belongs to a different plan | type the code the current Linux shows (`./omarchy-bootstrap` on Linux) |
 | not the exFAT volume planned (filesystem …) | the partition in Shared's place is not a finished exFAT volume. If it is yours to erase: `diskutil eraseVolume ExFAT Shared <id>` from macOS, then run `./omarchy-bootstrap shared create` to record it |
+| the Shared creation started … did not leave the disk as planned / stopped | the one creation did something other than what it was allowed to (the message names what). Nothing more will run while it stands. Compare `diskutil list` with the message; when the disk is as it should be after all, `shared create` records it. When you have settled it another way, remove `shared-create.env` from the state directory: the disk is then read afresh, and still refused if it does not match the plan |
+| an exFAT partition follows the Linux root, but Linux's completion code for this root is not recorded | the Linux root is not the one Linux vouched for; nothing is taken for Shared after it |
 | /etc/fstab already has an entry … | remove or change that entry yourself, then run `shared activate` again |
 | /mnt/shared already holds files | move them elsewhere first; mounting would hide them |
 

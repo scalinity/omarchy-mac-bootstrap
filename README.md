@@ -261,7 +261,8 @@ state, no log, no download), `--no-color`, `--ascii`, `--help`, `--version`.
 - root on Linux: `/var/lib/omarchy-mac-bootstrap/` (readable by your user later)
 
 `state.env` holds non-secret progress and choices; `shared-intent.env` the
-Shared plan; `logs/` one readable log per day (commands, exit codes,
+Shared plan; `shared-create.env`, between Shared's creation and its recorded
+result, what that creation was allowed to produce; `logs/` one readable log per day (commands, exit codes,
 checksums, choices); `downloads/` each fetched upstream script, for
 provenance. The directory must be yours and private; override it with
 `OMB_STATE_DIR` (an absolute path). Read-only commands and dry runs write none

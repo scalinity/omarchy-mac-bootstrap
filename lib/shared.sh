@@ -32,6 +32,12 @@ SHARED_INTENT_FILE=shared-intent.env
 SHARED_INTENT_SCHEMA="omb-shared-intent/1"
 SHARED_INTENT_KEYS="schema contract planned_at disk_size disk_block disk_media isc macos recovery parts_before mode macos_after linux_request linux_answer shared_request region_pred region_succ region_start region_end shared_start shared_end"
 SHARED_UUID_RE='^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$'
+# The creation record, written before addPartition runs: what the one
+# creation was allowed to produce, judged the same way right after it and on
+# every later run until its result is recorded.
+SHARED_TXN_FILE=shared-create.env
+SHARED_TXN_SCHEMA="omb-shared-create/1"
+SHARED_TXN_KEYS="schema txn started_at plan disk_size disk_block disk_media store root succ gap_start gap_end shared_start shared_end shared_min"
 
 # ---------------------------------------------------------------------------
 # The plan record (macOS). Versioned, digested, parsed field by field.
@@ -159,6 +165,171 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# The creation record (macOS). Written once, before the one addPartition;
+# sealed like the plan record; removed once the result is recorded.
+# ---------------------------------------------------------------------------
+
+# shared_txn_body — the record, from the read that authorized the creation
+# (after shared_region): the disk, every partition on it as it was, the free
+# region the creation may use, the Linux root before it, the partition
+# after it, and the interval and minimum size of what it creates.
+shared_txn_body() {
+  printf 'schema=%s\n' "$SHARED_TXN_SCHEMA"
+  printf 'txn=%s-%s\n' "$(now_stamp)" "$$"
+  printf 'started_at=%s\n' "$(now_utc)"
+  printf 'plan=%s\n' "$INT_digest"
+  printf 'disk_size=%s\ndisk_block=%s\ndisk_media=%s\n' "$GEO_DISK_SIZE" "$GEO_BLOCK" "$(shared_media)"
+  printf 'store=%s\n' "$MAC_STORE_UUID"
+  printf 'root=%s\n' "$(_part_rec "$SHARED_PRED_UUID")"
+  printf 'succ=%s\n' "$INT_region_succ"
+  printf 'gap_start=%s\ngap_end=%s\n' "$SHARED_GAP_START" "$SHARED_GAP_END"
+  printf 'shared_start=%s\nshared_end=%s\nshared_min=%s\n' "$SH_START" "$SH_END" "$INT_shared_request"
+  geo_canon | sed 's/^/part=/'
+}
+
+# shared_txn_save — write the record; non-zero when it cannot be written.
+shared_txn_save() {
+  local body
+  body=$(shared_txn_body)
+  state_put_file "$SHARED_TXN_FILE" "$body
+digest=$(sha256_str "$body" | cut -c1-16)"
+}
+
+# shared_txn_load — read and check the record; sets TXN_<key> and TXN_PARTS
+# (one "offset|size|guid|content" per line). Returns 1 with TXN_ERR when it
+# is unreadable, edited, from another version or for another plan.
+shared_txn_load() {
+  local file="$OMB_STATE_DIR/$SHARED_TXN_FILE" line k v body="" ok=1 off size u rest
+  TXN_ERR="" TXN_PARTS=""
+  for k in $SHARED_TXN_KEYS digest; do eval "TXN_$k="; done
+  if ! _state_file_ok "$file"; then
+    TXN_ERR="the Shared creation record is not a plain file owned by you"
+    return 1
+  fi
+  while IFS= read -r line; do
+    k=${line%%=*} v=${line#*=}
+    [ "$line" = "$k" ] && { ok=0; break; }
+    case $k in "" | *[!a-z_]*) ok=0; break ;; esac
+    if [ "$k" = digest ]; then
+      TXN_digest=$v
+      continue
+    fi
+    body="$body$line
+"
+    if [ "$k" = part ]; then
+      TXN_PARTS="$TXN_PARTS$v
+"
+      continue
+    fi
+    case " $SHARED_TXN_KEYS " in *" $k "*) ;; *) ok=0; break ;; esac
+    eval "TXN_$k=\$v"
+  done <"$file"
+  if [ "$ok" != 1 ]; then
+    TXN_ERR="the Shared creation record has a line this tool did not write"
+    return 1
+  fi
+  if [ "$TXN_schema" != "$SHARED_TXN_SCHEMA" ]; then
+    TXN_ERR="the Shared creation record is from another version of this tool (${TXN_schema:-none})"
+    return 1
+  fi
+  if [ "$(sha256_str "${body%
+}" | cut -c1-16)" != "$TXN_digest" ]; then
+    TXN_ERR="the Shared creation record was changed after it was written"
+    return 1
+  fi
+  for k in disk_size disk_block gap_start gap_end shared_start shared_end shared_min; do
+    eval "v=\$TXN_$k"
+    _uint "$v" || { TXN_ERR="the Shared creation record has an unreadable $k"; return 1; }
+  done
+  if [ -z "$TXN_PARTS" ] || ! _intent_rec_ok "$TXN_root"; then
+    TXN_ERR="the Shared creation record does not describe the disk"
+    return 1
+  fi
+  while IFS='|' read -r off size u rest; do
+    [ -n "$off" ] || continue
+    if ! _uint "$off" || ! _uint "$size" || ! _whole "$u" "$SHARED_UUID_RE" || [ -z "$rest" ]; then
+      TXN_ERR="the Shared creation record lists an unreadable partition"
+      return 1
+    fi
+  done <<EOF
+$TXN_PARTS
+EOF
+  if [ "$TXN_plan" != "$INT_digest" ]; then
+    TXN_ERR="the Shared creation record belongs to another plan"
+    return 1
+  fi
+  return 0
+}
+
+# shared_txn_check — after a fresh read of the disk: is it exactly what the
+# recorded creation was allowed to produce? Every partition from before it
+# byte for byte, and exactly one new partition, inside the free region the
+# creation was given, Microsoft Basic Data, formatted exFAT, at least the
+# planned size. Sets TXN_RESULT: done (with TXN_NEW_UUID, _ID, _SIZE,
+# _MOUNT), none (nothing new is on the disk) or broken (TXN_WHY). The same
+# check decides right after the creation and on every run after it.
+shared_txn_check() {
+  local canon line new n off size uuid content info fs
+  TXN_RESULT=broken TXN_WHY="" TXN_NEW_UUID="" TXN_NEW_ID="" TXN_NEW_SIZE=0 TXN_NEW_MOUNT=""
+  if [ "$GEO_OK" != 1 ]; then
+    TXN_WHY="the disk could not be read exactly ($GEO_ERR)"
+    return 1
+  fi
+  if [ "$GEO_DISK_SIZE" != "$TXN_disk_size" ] || [ "$GEO_BLOCK" != "$TXN_disk_block" ]; then
+    TXN_WHY="this is not the disk the creation was started on"
+    return 1
+  fi
+  canon=$(geo_canon)
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ! printf '%s\n' "$canon" | grep -qxF "$line"; then
+      TXN_WHY="a partition that was there before the creation changed: $line"
+      return 1
+    fi
+  done <<EOF
+$TXN_PARTS
+EOF
+  new=$(printf '%s\n' "$canon" | grep -vxF "${TXN_PARTS%
+}")
+  n=$(printf '%s' "$new" | grep -c .)
+  if [ "$n" = 0 ]; then
+    TXN_RESULT=none TXN_WHY="no new partition is on the disk"
+    return 1
+  fi
+  if [ "$n" != 1 ]; then
+    TXN_WHY="$n new partitions appeared; exactly one was expected"
+    return 1
+  fi
+  IFS='|' read -r off size uuid content <<EOF
+$new
+EOF
+  if [ "$off" -lt "$TXN_gap_start" ] || [ $((off + size)) -gt "$TXN_gap_end" ]; then
+    TXN_WHY="the new partition ($uuid) is outside the free region the creation was given"
+    return 1
+  fi
+  case "$content" in
+    Microsoft\ Basic\ Data | EBD0A0A2-B9E5-4433-87C0-68B6B72699C7) ;;
+    *)
+      TXN_WHY="the new partition ($uuid) is $content, not Microsoft Basic Data"
+      return 1
+      ;;
+  esac
+  geo_part "$uuid"
+  info=$(sys_cmd "diskutil_info_$GP_ID" diskutil info -plist "$GP_ID")
+  fs=$(plist_get "$info" FilesystemType)
+  if [ "$fs" != exfat ]; then
+    TXN_WHY="the new partition ($GP_ID) is not the exFAT volume planned (filesystem: ${fs:-none}); this tool never formats a partition that exists"
+    return 1
+  fi
+  if [ "$size" -lt "$TXN_shared_min" ]; then
+    TXN_WHY="the new partition ($GP_ID) is $(fmt_gb "$size"), smaller than the $(fmt_gb "$TXN_shared_min") planned"
+    return 1
+  fi
+  TXN_RESULT="done" TXN_NEW_UUID=$uuid TXN_NEW_ID=$GP_ID TXN_NEW_SIZE=$size TXN_NEW_MOUNT=$(plist_get "$info" MountPoint)
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Codes typed between the two systems: PREFIX-plan8-id12-check4, hex. They
 # bind a partition GUID to the plan; the receiving side checks the disk.
 #   ombdone   Linux -> macOS: Linux is completely installed (root's GUID)
@@ -201,7 +372,7 @@ _blocked() {
 shared_mac_state() {
   local u off size rec
   SHARED_STATE=off SHARED_WHY="" SHARED_GAP_START=0 SHARED_GAP_END=0 SHARED_PRED_ID="" SHARED_PRED_UUID=""
-  SHARED_SUCC_ID="" SHARED_UUID="" SHARED_ID="" SHARED_SIZE=0 SHARED_MOUNT="" SHARED_DIGEST=""
+  SHARED_SUCC_ID="" SHARED_UUID="" SHARED_ID="" SHARED_SIZE=0 SHARED_MOUNT="" SHARED_DIGEST="" TXN_RESULT=""
   [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ] || return 0
   if ! shared_intent_load; then
     _blocked "$INT_ERR"
@@ -261,15 +432,19 @@ shared_mac_state() {
   done <<EOF
 $(intent_parts)
 EOF
+  # A creation that reached diskutil is judged by what it was allowed to
+  # produce, never by reading the disk afresh.
+  if [ -e "$OMB_STATE_DIR/$SHARED_TXN_FILE" ] && ! shared_mac_txn_state; then
+    return 0
+  fi
   geo_part "$ASAHI_ROOT_UUID"
   SHARED_PRED_UUID=$ASAHI_ROOT_UUID SHARED_PRED_ID=$GP_ID
   SHARED_GAP_START=$GP_END
-  local root_end=$GP_END
   if geo_next "$ASAHI_ROOT_UUID"; then
     if [ "$GN_UUID" != "$INT_region_succ" ]; then
       # Something sits right after the Linux root: the Shared partition, or
       # something this tool will not touch.
-      shared_mac_existing "$root_end" || return 0
+      shared_mac_existing
       return 0
     fi
     SHARED_GAP_END=$GN_OFFSET SHARED_SUCC_ID=$GN_ID
@@ -325,9 +500,42 @@ shared_mac_target() {
   return 0
 }
 
-# shared_mac_existing ROOT_END — a partition follows the Linux root. It is
-# Shared only if it is the exFAT Basic Data partition in the planned region,
-# at least the size planned, followed by what the plan expected.
+# shared_mac_txn_state — Shared's state while a creation record exists.
+# Returns 1 when the record decides it: created (what the recorded creation
+# was allowed to produce is on the disk) or blocked (anything else, or a stop
+# already recorded for it); 0 when the creation left nothing and no stop was
+# recorded, so the disk reads as if it had not been started. A recorded stop
+# clears only when the creation's own check passes, or when the record is
+# removed by hand (docs/SHARED.md).
+shared_mac_txn_state() {
+  local stopped
+  if ! shared_txn_load; then
+    _blocked "$TXN_ERR"
+    return 1
+  fi
+  shared_txn_check
+  case "$TXN_RESULT" in
+    "done")
+      SHARED_UUID=$TXN_NEW_UUID SHARED_ID=$TXN_NEW_ID SHARED_SIZE=$TXN_NEW_SIZE SHARED_MOUNT=$TXN_NEW_MOUNT
+      SHARED_STATE=created
+      SHARED_WHY="$SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT, made by the creation started $TXN_started_at$([ "$(state_get shared_uuid)" = "$SHARED_UUID" ] || printf ' (not recorded yet)')"
+      return 1
+      ;;
+    none)
+      stopped=$(state_get shared_blocked_reason)
+      [ -n "$stopped" ] || return 0
+      _blocked "the Shared creation started $TXN_started_at stopped ($stopped); the disk does not show what it was allowed to produce"
+      return 1
+      ;;
+  esac
+  _blocked "the Shared creation started $TXN_started_at did not leave the disk as planned: $TXN_WHY"
+  return 1
+}
+
+# shared_mac_existing — a partition follows the Linux root, and no creation
+# record is left. It is Shared only if it is the exFAT Basic Data partition
+# in the planned region, at least the size planned, followed by what the
+# plan expected, after the Linux root Linux's completion code names.
 shared_mac_existing() {
   local info fs content mp
   info=$(sys_cmd "diskutil_info_$GN_ID" diskutil info -plist "$GN_ID")
@@ -353,6 +561,12 @@ shared_mac_existing() {
   recorded=$(state_get shared_uuid)
   if [ -n "$recorded" ] && [ "$recorded" != "$GN_UUID" ]; then
     _blocked "the exFAT partition after the Linux root is not the one recorded ($recorded)"
+    return 1
+  fi
+  # Taken on only after the root Linux vouched for: a partition after some
+  # other root is not one this tool made.
+  if ! shared_receipt_ok "${SHARED_TYPED_RECEIPT:-$(state_get shared_linux_done)}"; then
+    _blocked "an exFAT partition ($GN_ID) follows the Linux root, but Linux's completion code for this root is not recorded here, so it is not taken for Shared"
     return 1
   fi
   SHARED_UUID=$GN_UUID SHARED_ID=$GN_ID SHARED_SIZE=$GN_SIZE SHARED_MOUNT=$mp
@@ -499,7 +713,7 @@ shared_create() {
 # shared_create_flow [COMPLETION_CODE] — after shared_mac_state; used by
 # `shared create` and by the guided flow.
 shared_create_flow() {
-  local code=${1:-} canon before rc
+  local code=${1:-} canon rc
   case "$SHARED_STATE" in
     off | reserved)
       printf '\n'
@@ -564,9 +778,13 @@ shared_create_flow() {
   fi
   case "$SHARED_PRED_ID" in disk[0-9]*s[0-9]*) ;; *) ui_fail "Unexpected device identifier."; return 1 ;; esac
   case "$SHARED_PRED_ID$SH_SIZE" in *[!a-z0-9]*) ui_fail "Unexpected device identifier."; return 1 ;; esac
-  state_must_set shared_create_started_at "$(now_utc)" || return 1
-  state_must_set shared_create_region "$SH_START-$SH_END" || return 1
-  before=$(geo_canon)
+  # What this creation may produce is recorded before it runs; a stop left
+  # from a record removed by hand does not carry over to this one.
+  state_unset shared_blocked_reason
+  if ! shared_txn_save; then
+    ui_fail "Could not record the creation in $(tildify "$OMB_STATE_DIR"); stopping before anything changes."
+    return 1
+  fi
   printf '\n'
   run sudo diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"
   rc=$?
@@ -575,7 +793,7 @@ shared_create_flow() {
     ui_info "Dry run: nothing was created."
     return 0
   fi
-  shared_mac_after "$before" "$rc"
+  shared_mac_after "$rc"
 }
 
 # shared_take_receipt [CODE] — the completion code Linux shows once it has
@@ -610,73 +828,52 @@ shared_take_receipt() {
   done
 }
 
-# shared_mac_after BEFORE EXIT — what the disk looks like after addPartition.
-# Anything but exactly one new exFAT partition in the reserved region, with
-# every other partition unchanged, stops: nothing is repaired automatically.
+# shared_mac_after EXIT — what the disk looks like after addPartition, judged
+# by the creation record exactly as every later run judges it (shared_mac_state
+# → shared_txn_check). Anything but exactly one new exFAT partition in the
+# region it was given, with every other partition unchanged, stops, and the
+# stop is recorded: nothing is repaired automatically.
 shared_mac_after() {
-  local before=$1 rc=$2 new n line
+  local rc=$1
   mac_read_container
   mac_detect_geometry
   ui_section "After diskutil" "the disk, read again"
-  if [ "$GEO_OK" != 1 ]; then
-    shared_after_stop "the disk could not be read exactly afterwards ($GEO_ERR)"
-    return 1
+  shared_mac_state
+  if [ "$SHARED_STATE" = created ]; then
+    [ "$rc" = 0 ] || ui_warn "diskutil exited with status $rc, but the partition it was asked for is there and checks out."
+    shared_mac_record
+    return
   fi
-  # Every partition from before, unchanged.
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    if ! printf '%s\n' "$(geo_canon)" | grep -qxF "$line"; then
-      shared_after_stop "an existing partition changed: $line"
-      return 1
-    fi
-  done <<EOF
-$before
-EOF
-  new=$(printf '%s\n' "$(geo_canon)" | grep -vxF "$before")
-  n=$(printf '%s' "$new" | grep -c .)
-  if [ "$n" = 0 ]; then
+  if [ "$TXN_RESULT" = none ] && [ "$SHARED_STATE" != blocked ]; then
     if [ "$rc" != 0 ]; then
       ui_fail "diskutil reported an error (exit $rc) and no partition was created. The disk is as it was; it is safe to try again."
     else
       ui_fail "diskutil reported success, but no new partition is on the disk. Nothing else changed; check diskutil list before trying again."
     fi
-    state_unset shared_create_started_at
+    # Nothing happened, so there is nothing for the record to vouch for.
+    state_remove_file "$SHARED_TXN_FILE"
     return 1
   fi
-  if [ "$n" != 1 ]; then
-    shared_after_stop "$n new partitions appeared; exactly one was expected"
-    return 1
-  fi
-  local off size uuid content
-  IFS='|' read -r off size uuid content <<EOF
-$new
-EOF
-  if [ "$off" -lt "$SHARED_GAP_START" ] || [ $((off + size)) -gt "$SHARED_GAP_END" ]; then
-    shared_after_stop "the new partition is outside the reserved region"
-    return 1
-  fi
-  shared_mac_state
-  if [ "$SHARED_STATE" != created ] || [ "$SHARED_UUID" != "$uuid" ]; then
-    shared_after_stop "the new partition is not the exFAT volume planned: $SHARED_WHY"
-    return 1
-  fi
-  [ "$rc" = 0 ] || ui_warn "diskutil exited with status $rc, but the partition it was asked for is there and checks out."
-  shared_mac_record
+  shared_after_stop "$SHARED_WHY"
+  return 1
 }
 
+# shared_after_stop REASON — the creation's result is not what it may be. The
+# creation record stays, so every later run is held to the same check.
 shared_after_stop() {
   state_set shared_blocked_reason "$1"
   ui_blockers "Stopped: the result is not what was planned." "$(printf "%s\n" "$1" "Nothing will be repaired automatically. Before running any installer or this command again, read docs/SHARED.md; diskutil list shows the disk as it is now.")"
 }
 
 # shared_mac_record — the identity Linux will look for, recorded and shown.
+# Once it is recorded, the creation record has done its job.
 shared_mac_record() {
   state_must_set shared_uuid "$SHARED_UUID" || return 1
   state_set shared_size "$SHARED_SIZE"
   state_set shared_mount "$SHARED_MOUNT"
   state_set shared_created_at "$(now_utc)"
-  state_unset shared_create_started_at
   state_unset shared_blocked_reason
+  state_remove_file "$SHARED_TXN_FILE"
   ui_ok "Shared storage created: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT${SHARED_MOUNT:+, mounted at $SHARED_MOUNT}."
   shared_linux_next
 }

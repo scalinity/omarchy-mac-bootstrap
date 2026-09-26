@@ -293,11 +293,20 @@ Detailed in `docs/SHARED.md`. Summary:
   after the typed gates), Apple's and every earlier partition unchanged, the container at the planned
   size, Asahi's three partitions in order, one free region after the root at
   least the planned size, nothing else new, Linux's code accepted, power.
-  Typed `yes` and `create`; the disk read again and matched; the start
-  recorded; `sudo diskutil addPartition <Linux root> ExFAT Shared <bytes>`, the
-  planned size in whole MiB at the region's start (the rest stays free); then
-  every earlier partition byte-identical and exactly one new exFAT Basic Data
-  partition inside the region, or a stop. Reruns reconcile, never recreate.
+  Typed `yes` and `create`; the disk read again and matched; the creation
+  record `shared-create.env` written (or nothing runs): the disk, every
+  partition on it byte for byte, the free region the creation may use, the
+  Linux root before it, the partition after it, the interval and the minimum
+  size, sealed by a digest; `sudo diskutil addPartition <Linux root> ExFAT
+  Shared <bytes>`, the planned size in whole MiB at the region's start (the
+  rest stays free); then, judged by that record, every earlier partition
+  byte-identical and exactly one new exFAT Basic Data partition inside the
+  region, or a recorded stop. Every later run is held to the same record
+  until its result is recorded — the disk is never read afresh around it: a
+  stop clears only when the record's own check passes, or when the record is
+  removed by hand after checking the disk. Without a record, an existing
+  partition is taken for Shared only after the root Linux's code names.
+  Reruns reconcile, never recreate.
 - **Activation (Linux)** as the everyday user: found by the code's GUID (or the
   managed fstab entry), on root's disk right after root, exFAT, Basic Data, at
   least the planned size; conflicts refused; typed `mount`; one managed
@@ -396,6 +405,8 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
   file). Keys matching `pass|secret|token|credential|recovery|key_material`
   are refused.
 - `shared-intent.env` — the Shared plan record.
+- `shared-create.env` — the Shared creation record, from just before the
+  one `addPartition` until its result is recorded.
 - `lock/` — one recording run at a time; a lock whose owner is gone is cleared.
 - `logs/omarchy-bootstrap-YYYYMMDD.log` — timestamp, phase, environment,
   commands, exit codes, upstream URLs/checksums/versions, non-secret choices.

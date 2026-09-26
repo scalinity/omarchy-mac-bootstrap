@@ -243,10 +243,105 @@ if t_plutil "the macOS Shared plan and creation"; then
   fx=$(variant mac-shared-created "diskutil_info_disk0s7:s#<string>exfat</string>#<string>msdos</string>#")
   expect_blocked "the new partition has the wrong filesystem" mac-shared-reserved "not the exFAT volume planned" "$fx"
   fx=$(variant mac-shared-created "diskutil_info_disk0s3:s#000000000003#00000000000B#" "diskutil_list_disk0:s#000000000003#00000000000B#")
-  expect_blocked "an existing partition changed during the create" mac-shared-reserved "an existing partition changed" "$fx"
+  expect_blocked "an existing partition changed during the create" mac-shared-reserved "the result is not what was planned. an Apple system partition is not where the plan found it" "$fx"
   d=$(with_receipt)
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create
   assert_contains "$(t_flat "$T_OUT")" "reported success, but no new partition is on the disk" "success with no new partition is not believed"
+  [ ! -e "$d/shared-create.env" ] && ok || fail "a creation that left nothing leaves no creation record"
+
+  # --- The creation record: every run judges the disk against what the one
+  # creation was allowed to produce, until its result is recorded -----------------------
+  # Two runs on a disk where the Linux root's identity changed during the
+  # create. The first stops; the second, on the same disk, must not read it
+  # afresh and take the new partition after the changed root for Shared.
+  swapped=$(variant mac-shared-created "diskutil_info_disk0s6:s#4A7B1C2D-0006#4A7B1C2D-000A#" "diskutil_list_disk0:s#4A7B1C2D-0006#4A7B1C2D-000A#")
+  d=$(with_receipt)
+  T_ENV="OMB_STATE_DIR=$d OMB_TEST_AFTER=$swapped" t_cli mac-shared-reserved "yes\ncreate\n" shared create
+  assert_rc "$T_RC" 1 "run 1: a Linux root that changed during the create stops it"
+  assert_contains "$(t_flat "$T_OUT")" "a partition that was there before the creation changed: 598191661056|246976348160|$U_ROOT" "run 1: and names what changed"
+  [ -f "$d/shared-create.env" ] && ok || fail "run 1: the creation record is kept"
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$swapped" "yes\ncreate\n" shared create
+  assert_rc "$T_RC" 1 "run 2: still stopped"
+  assert_empty_file "$T_DIR/record" "run 2: nothing is created again"
+  assert_contains "$(t_flat "$T_OUT")" "did not leave the disk as planned: a partition that was there before the creation changed" "run 2: judged against the creation, not read afresh"
+  st=$(cat "$d/state.env")
+  assert_not_contains "$st" "shared_uuid=" "run 2: the new partition is not taken for Shared"
+  assert_contains "$st" "shared_blocked_reason=" "run 2: the recorded stop stays"
+  [ -f "$d/shared-create.env" ] && ok || fail "run 2: the creation record stays"
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$swapped" "yes\ncreate\n"
+  assert_empty_file "$T_DIR/record" "the guided flow on that disk creates nothing"
+  assert_not_contains "$(cat "$d/state.env")" "shared_uuid=" "and records nothing as created"
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$swapped" "" shared
+  assert_contains "$T_OUT" "blocked" "shared status shows the stop"
+  # Without the record (removed by hand), the partition after a root Linux
+  # did not vouch for is still not taken for Shared.
+  rm -f "$d/shared-create.env"
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$swapped" "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "completion code for this root is not recorded here" "a partition after an unvouched root is not taken for Shared"
+  assert_empty_file "$T_DIR/record" "and nothing is created"
+  assert_not_contains "$(cat "$d/state.env")" "shared_uuid=" "and nothing recorded"
+
+  # txn_state — a state directory holding the record a creation writes just
+  # before addPartition on the reserved disk, as if the run ended right after.
+  txn_state() {
+    local r
+    r=$(with_receipt)
+    (
+      OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$r
+      state_init
+      mac_survey
+      shared_mac_state
+      shared_region
+      shared_txn_save
+    ) >/dev/null 2>&1
+    printf '%s' "$r"
+  }
+  # Created, and the run stopped before recording it: the record's own check
+  # passes, so it is recorded; nothing is created again.
+  d=$(txn_state)
+  [ -f "$d/shared-create.env" ] && ok || fail "the creation record is written"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "yes\ncreate\n" shared create
+  assert_empty_file "$T_DIR/record" "a created partition whose success was not recorded is not created again"
+  assert_contains "$(t_flat "$T_OUT")" "Recording it now" "it is recorded from the creation's own check"
+  assert_contains "$(cat "$d/state.env")" "shared_uuid=$U_SHARED" "with its GUID"
+  [ ! -e "$d/shared-create.env" ] && ok || fail "the creation record is removed once the result is recorded"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "Shared storage is in place" "and later runs find it in place"
+  assert_empty_file "$T_DIR/record" "creating nothing"
+  # The run stopped before diskutil changed anything: nothing to reconcile,
+  # and the creation can run again.
+  d=$(txn_state)
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create --dry-run
+  assert_contains "$T_OUT" "would run  sudo diskutil addPartition disk0s6 ExFAT Shared" "a creation that never ran can run again"
+  # The result was not the exFAT volume (a stop is recorded); once it is, by
+  # hand, the creation's own check passes and the stop clears.
+  unformatted=$(t_variant mac-shared-created)
+  sed -i.bak 's#<key>FilesystemType</key><string>exfat</string>##' "$unformatted/cmd/diskutil_info_disk0s7" && rm -f "$unformatted/cmd/"*.bak
+  d=$(with_receipt)
+  T_ENV="OMB_STATE_DIR=$d OMB_TEST_AFTER=$unformatted" t_cli mac-shared-reserved "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "not the exFAT volume planned (filesystem: none)" "an unformatted result stops"
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$unformatted" "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "did not leave the disk as planned" "and stays stopped while it is unformatted"
+  assert_empty_file "$T_DIR/record" "and is never formatted by this tool"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "Recording it now" "formatted by hand, it passes the creation's check and is recorded"
+  assert_not_contains "$(cat "$d/state.env")" "shared_blocked_reason=" "and the stop clears"
+  # A stop recorded for a creation whose partition is gone again stays a stop
+  # until the record is removed by hand.
+  d=$(with_receipt)
+  T_ENV="OMB_STATE_DIR=$d OMB_TEST_AFTER=$unformatted" t_cli mac-shared-reserved "yes\ncreate\n" shared create
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "stopped (" "a recorded stop is not cleared by the partition disappearing"
+  assert_empty_file "$T_DIR/record" "nothing is created while it stands"
+  rm -f "$d/shared-create.env"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create --dry-run
+  assert_contains "$T_OUT" "would run  sudo diskutil addPartition" "with the record removed by hand, it can be created again"
+  # A record that was edited is not a creation record.
+  d=$(txn_state)
+  sed -i.bak 's/^gap_end=\([0-9]*\)$/gap_end=9\1/' "$d/shared-create.env" && rm -f "$d/shared-create.env.bak"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "creation record was changed after it was written" "an edited creation record blocks"
+  assert_empty_file "$T_DIR/record" "an edited creation record: nothing runs"
 
   # A partition entry diskutil lists but this tool cannot read: the rest of
   # the map is never taken for free space.

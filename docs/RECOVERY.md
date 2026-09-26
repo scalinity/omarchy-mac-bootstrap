@@ -105,8 +105,11 @@ next boot through `omarchy-mac-setup.service` on tty1.
 Every case, and what to do about it, is in [SHARED.md](SHARED.md#when-it-stops).
 In short: a Shared partition that exists is found and recorded, never created
 twice; anything in Shared's place that is not the planned exFAT volume stops
-everything, and this tool never formats or deletes it. After a crash, check
-the exFAT volume with Disk Utility's First Aid on macOS before relying on it.
+everything, and this tool never formats or deletes it. A creation whose
+result was not what it was allowed to produce stays stopped on every later
+run, until its own check passes or you remove `shared-create.env` after
+checking the disk. After a crash, check the exFAT volume with Disk Utility's
+First Aid on macOS before relying on it.
 
 ## Back to macOS only
 
@@ -130,4 +133,6 @@ Everything it records is in `~/.local/state/omarchy-mac-bootstrap/` (root on
 Linux: `/var/lib/omarchy-mac-bootstrap/`). Deleting that directory forgets the
 plan and history; it changes nothing on the disk. On macOS, keep
 `shared-intent.env` while Shared storage is still to be created: it is the
-record creation is checked against.
+record creation is checked against. `shared-create.env` exists only between
+the creation and its recorded result; remove it only as docs/SHARED.md
+describes.
