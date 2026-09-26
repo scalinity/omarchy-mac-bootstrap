@@ -228,99 +228,182 @@ The tool becomes a Mac → Omarchy migration and bootstrap assistant with a
 required Ratatui interface, and the product is finished **before** the first
 real install, which is itself the hardware qualification. The design is on
 branch `product-expansion-design`: SPEC.md, docs/DECISIONS.md, and the
-subsystem documents each milestone names. Every milestone here is a delta
-reviewed against the accepted baseline above; a change to a baseline file is
-reviewed as a safety change. Implementation begins only after the design has
-passed an independent architecture review, and the review's changes are
-made to the design first.
+subsystem documents each gate names. Every gate is a delta reviewed against
+the accepted baseline above; a change to a baseline file is reviewed as a
+safety change, on its own. Work proceeds through the gates in order; a gate
+is done only when its exit holds, judged from the tests and CI logs, and
+no gate's work starts before the one before it is done.
 
-## M14 — Frontend foundation, Migration Profile and macOS scanner
+Screen numbers are those of docs/UX.md → *Every screen*; test ids are those
+of docs/TESTING.md.
 
-- **Objective:** the product's interface proven on both systems before
-  anything is built on it; then a truthful, read-only inventory of this Mac
-  and a sealed Migration Profile.
-- **Work, in order:**
-  1. **The frontend gate.** The record format (`lib/records.sh`); protocol
-     v1 with `hello`, a read-only `snapshot`, one managed action and one
-     handoff action (a test child in fixture mode); the launcher's side
-     (`lib/frontend.sh`: lock, acquisition, cache, digest check, fallback);
-     the Rust crate with the terminal lifecycle, the handoff, the theme and
-     glyph sets, the too-small state and a read-only journey dashboard; the
-     release workflow and the frontend CI jobs (docs/FRONTEND.md,
-     docs/PROTOCOL.md, docs/TESTING.md).
-  2. The scan adapters, the dotfolder picker, the AI tools' scan side,
-     sensitivity, the registry v1 and planned resolution, the availability
-     check, the profile and its seal, `prof=` in the resume token, export to
-     a folder; screens 3–11 and the gate screen (13), which every typed
-     word uses from here on (docs/MIGRATION.md, docs/RESOLVER.md,
-     docs/AI-TOOLS.md, docs/UX.md). `profile` and `export` move to the
-     frontend; every installer command stays in the text interface until
-     M16 exposes its actions.
-- **Verification:** `test-records.sh`, `test-protocol.sh`, the frontend's
-  layers A–H; then `test-scan.sh`, `test-profile.sh`, `test-resolve.sh`,
-  `test-bundle.sh` (export), `test-agents.sh` (scan side), over every
-  `mac-home-*`, `profile-*`, `registry-*`, `avail-*` and `mcp-*` fixture.
-- **Acceptance — the gate, before any migration screen:** the macOS arm64
-  artifact is built, verified and started by the launcher, on CI and on this
-  Mac's macOS; the Linux aarch64 artifact starts on the aarch64 runner, and
-  its `LOAD` segments are aligned for 16 KiB pages; the handshake works and a
-  version or digest mismatch falls back to text; the core stays the
-  authority (the protocol's refusals, and equivalence for every action it
-  exposes); the terminal is restored after exit, error, panic and SIGTERM;
-  a handoff gives the child every key and returns to a fresh screen; 80×24
-  and 60 columns render; acquisition shows provenance and every failure path
-  in docs/FRONTEND.md behaves as written; request latency measured on this
-  Mac's macOS and O1 answered. **Then:** the scanner runs no tool and reads
-  nothing outside its allowlist; every adversarial fixture passes; the
-  resolver is byte-identical across shells and locales; a profile seals
-  only when complete and is stale on another Mac; an exported bundle
-  verifies.
-- **Status:** not started. Designed.
+## Gate 0 — Specification remediation
+
+- **Objective:** turn the reviewed architecture (independent review of
+  `6600fff`: approved with required specification fixes) into a precise
+  implementation contract.
+- **Work:** close findings H1–H10 and M1–M4 in the documents; record the
+  review's answers to O1–O9 (docs/DECISIONS.md); remove the rejected
+  `sudo`-cache change; resolve every fact source or package metadata can
+  answer (docs/UPSTREAM.md); define the gates below.
+- **Exit:** every finding closed in the documents; O1–O9 recorded; the
+  documentation checks of docs/TESTING.md → *Documentation checks* pass
+  when run by hand; an independent review of the remediated documents
+  passes. No code, workflow, test or fixture changes.
+- **Status:** remediated; awaiting the independent review of the delta.
+
+## M14 — Frontend, protocol, scanner, profile, resolver and bundle
+
+### Gate 1 — Frontend and transport foundation
+
+- **Work:** the Rust crate: terminal lifecycle, theme and glyph sets, the
+  too-small state, a read-only journey dashboard (screen 2) and the gate
+  component (13) driven by a test action; protocol `hello`; the record
+  format and admission in both languages (`lib/records.sh`, `record.rs`);
+  the process model (`lib/core.sh`, `core.rs`): descriptors, the spool,
+  supervision, operation records; the launcher's side (`lib/frontend.sh`):
+  the lock, acquisition, cache, intent rules, fallback; one fake managed and
+  one fake handoff child (`OMB_TEST_HANDOFF_CHILD`); `release/frontend.lock`
+  and the release workflow; the frontend CI jobs; `tests/test-docs.sh`.
+  **No baseline action is exposed.**
+- **Verification:** `proto-diff-*`, `proto-env`, `proto-version`,
+  `proto-exit`, `sup-*`, `pty-*`, `frontend-*`, `docs-*`; frontend layers
+  A–H for the two screens.
+- **Exit:** the macOS arm64 artifact built, verified and started by the
+  launcher on CI and on this Mac's macOS; the Linux aarch64 artifact
+  passing `frontend-compat-linux` and starting on the aarch64 runner; start
+  and every cleanup path verified; every descriptor and process-death test
+  passing; Bash and Rust admission agreeing on the whole differential
+  corpus; `frontend-lock-not-input` passing; no path that changes the
+  machine.
+- **Status:** not started.
+
+### Gate 2 — Read-only equivalence
+
+- **Work:** `snapshot`, `detail` with generations and paging, `validate` for
+  the plan; `status`, `doctor` and details presented in the frontend; the
+  welcome screen (1); the dashboard (2) and the logs screen (24) over real
+  reads.
+- **Verification:** contract tests (layer H) against the baseline's read
+  commands over every baseline fixture; `debug-intent`-style filesystem
+  snapshots around every read; `frontend-intent-*`; `bench-*`.
+- **Exit:** read paths have no persistent effect; what the frontend shows
+  means what the accepted core's read commands say, fixture by fixture; the
+  O1 benchmark run on both arm64 systems, cold and warm, small and
+  representative, with its numbers recorded here, and either within its
+  budgets or with the finding and its decision recorded in
+  docs/DECISIONS.md.
+- **Status:** not started.
+
+### Gate 3 — The action contract under fixtures
+
+- **Work:** `execute` for the baseline's actions (plan save, the backup gate,
+  the Asahi fetch and launch, network, Omarchy start and resume, Shared
+  creation, activation and the write test), with their basis families,
+  typed gates, exclusion, handoff and cancellation, **in fixture mode
+  only**: no installer command moves to the frontend yet.
+- **Verification:** `proto-ceiling`, `proto-scope`, `proto-unavailable`,
+  `proto-word`, `proto-arg`, `proto-handoff`, `proto-managed-prompt`,
+  `proto-no-shell-text`, `stale-*`, `sup-shared-critical`,
+  `sup-mutator-survives`, `equiv-*` against the accepted baseline.
+- **Exit:** every refusal and fault test passes; three-way equivalence with
+  `2edb76a` holds for every exposed action; nothing enters the Shared
+  critical interval; no real hardware is touched.
+- **Status:** not started.
+
+### Gate 4 — Scanner and profile
+
+- **Work:** the versioned scan adapters, the Zsh tracker, sensitivity and
+  the opaque path consent, the dotfolder picker, the AI tools' scan side,
+  the TOML subset reader, the host binding, selection and profile states;
+  screens 3, 4, 5, 8, 9 and 11.
+- **Verification:** `scan-*`, `zsh-*`, `toml-*`, `secret-*` (capture side),
+  `profile-*`, over every `mac-home-*` fixture.
+- **Exit:** adversarial inventories are reported truthfully, uncertainty
+  kept; unsupported formats refuse; no tool is run and no configuration
+  executed; every planted credential stays out of the profile.
+- **Status:** not started.
+
+### Gate 5 — Resolver and bundle
+
+- **Work:** the registry v1, the graph, providers and version instances,
+  decisions, the availability check; `prof=` in the resume token; export:
+  capture, classification of the captured bytes, objects, the manifest,
+  the approval code; screens 6, 7 and 10; `profile` and `export` move to
+  the frontend.
+- **Verification:** `dag-*`, `registry-*`, `avail-*`, `mcp-*`,
+  `secret-toctou`, `secret-deep`, `bundle-*` (export side),
+  `bundle-forged-cleanup`.
+- **Exit:** the graph is byte-identical across shells, locales and inventory
+  orders; no implicit build is ever planned; an exported bundle's objects
+  are exactly the classified captured bytes, and its approval code is shown
+  and kept.
+- **Status:** not started.
 
 ## M15 — Linux restore, AI environment, rescue and debugging
 
-- **Objective:** the profile arrives on Omarchy truthfully, and the fresh
-  system can be debugged with an agent from its first networked minute.
-- **Work, in order:** the debug report and the agent brief (smallest, and
-  useful for everything after); the rescue screen, local agents as root, the
-  workspace, remote rescue, `rescue remove`; import and the target checks;
-  the restore's layers, conflicts, journal, reconciliation and undo; the AI
-  providers' restore and health; Omarchy's default agent; the developer
-  module's alignment with Omarchy's agent stubs (O5, O6); screens 16, 17 and
-  20–22; `restore` and `rescue` move to the frontend (docs/RESCUE.md,
-  docs/RESTORE.md, docs/AI-TOOLS.md).
-- **Verification:** `test-debug.sh`, `test-rescue.sh`, `test-bundle.sh`
-  (import), `test-restore.sh`, `test-agents.sh`, over every `bundle-*`,
-  `linux-restore-*`, `rescue-*` and `debug-*` fixture; the frontend's layers
-  for the new screens.
-- **Acceptance:** every restore fixture ends `complete` or says exactly why
-  not; an interruption at every step reconciles; a rerun changes nothing;
-  undo is exact; no bundle or report fixture contains a planted secret;
-  `rescue remove` leaves nothing it made; nothing runs as the wrong user.
-- **Status:** not started. Designed.
+### M15-A — Restore and safe debugging
 
-## M16 — Cross-boot journey through the frontend, and qualification
+- **Work:** import, admission and the approval code; the destination graph;
+  the journal, placement, backups, conflicts, conditional undo; the target
+  checks; the field-allowlisted `debug`, `debug context`, `debug raw`,
+  `debug save`; screens 17, 20, 21, and the journal in 24; `restore` moves
+  to the frontend.
+- **Verification:** `bundle-*` (import side), `restore-*`, `persist-*`,
+  `stale-dest-*`, `stale-between-items`, `debug-*`, over every
+  `linux-restore-*` fixture.
+- **Exit:** a stop or a full disk at every persistence boundary reconciles
+  correctly on real temporary filesystems; a recomputed bundle is refused;
+  undo refuses after later edits; the debug report holds only allowlisted
+  fields.
+- **Status:** not started.
 
-- **Objective:** one continuous journey across both systems in the
-  frontend, and the cross-system check automated.
-- **Work:** the ten stages on both systems and journey notes on Shared; the
-  baseline's actions exposed through the protocol (plan, the backup gate, the
-  Asahi fetch and launch, network, Omarchy start and resume, Shared creation,
-  activation and the write test), each with an equivalence test; Shared's
-  creation gains `sudo -k` before `sudo -v` in both interfaces (a change to
-  a baseline file); screens 1, 2, 12, 14, 15, 18, 19 and 23–25; the default
-  run and the installer commands move to the frontend; the qualification
-  steps, the round trip and the names test; stage records and `report`; the
-  journey simulation (docs/QUALIFICATION.md).
-- **Verification:** `test-journey.sh`, `test-qualify.sh`,
-  `test-equivalence.sh`, the simulation, and the frontend's layers, on both
-  CI systems.
-- **Acceptance:** equivalence holds for every exposed baseline action; the
-  simulation passes on both systems; every `qual-*` fixture passes, the wrong
-  partition among them; the deterministic stream matches on both systems;
-  every stage's screen holds at 80×24 and 60 columns; the changes to baseline
-  files have their own independent review as safety changes.
-- **Status:** not started. Designed.
+### M15-B — Packages and AI providers
+
+- **Work:** the providers shared by `dev` and `restore` (the change to the
+  baseline's `dev` module is its own reviewed safety delta); installation
+  the way Omarchy's wrappers do; Claude Code, Codex and OpenCode
+  configuration transforms and writers; explicit live checks and sign-in
+  handoffs; the health screen (22).
+- **Verification:** `omarchy-*`, `toml-merge`, `toml-target-refused`,
+  `restore-consent`, `test-agents.sh` over the `mcp-*` fixtures; the
+  equivalence list's `dev` delta reviewed.
+- **Exit:** no static path runs a wrapper, shim, mise or agent; no second
+  copy of any tool is installed and no wrapper overwritten; every outcome
+  reflects the machine; the M15-B facts in docs/UPSTREAM.md → *Not verified
+  yet* verified first.
+- **Status:** not started.
+
+### M15-C — Optional rescue
+
+- **Work:** the rescue screen (16), the root workspace, the agents as root,
+  closing and hardening SSH, remote rescue and its checks, `rescue remove`
+  and the safe final states.
+- **Verification:** `rescue-*`, `ssh-*`.
+- **Exit:** no failure leaves a newly opened password path; cleanup reports
+  success only in a verified safe state; nothing crosses from root to the
+  everyday user; the M15-C facts in docs/UPSTREAM.md → *Not verified yet*
+  verified first.
+- **Status:** not started.
+
+## M16 — The full journey through the frontend, and qualification
+
+- **Work:** the baseline's actions move to the frontend on real machines,
+  one family at a time (plan and survey; the Asahi handoff; network and the
+  Omarchy handoff; Shared creation, activation and test), each with its
+  equivalence; screens 12, 14, 15, 18, 19, 23 and 25; the ten stages on
+  both systems and journey notes on Shared; qualification: the stream, the
+  round trip, the names test, active rounds, stage records with the
+  executed source's digest, `report`; the journey simulation.
+- **Verification:** `equiv-*` for each family as it moves, `qual-*`,
+  `test-journey.sh`, the simulation, and the frontend's layers, on both CI
+  systems.
+- **Exit:** each family's move reviewed as a separate safety delta against
+  the accepted baseline; the simulation passes on both systems; every
+  `qual-*` passes, the wrong partition and the stale round among them; the
+  stream matches the reference vectors on both systems; every stage's
+  screen holds at 80×24 and 60 columns.
+- **Status:** not started.
 
 ## M17 — Real-hardware qualification: the first real install
 
@@ -337,23 +420,26 @@ made to the design first.
   running the creation without asking again under this Mac's sudo policy;
   the partition against the size and start shown; Shared matched through
   `MAJ:MIN`; a file over 4 GB both ways; clean reboots; a persisting mount; a
-  rerun that changes nothing); the open facts in docs/DECISIONS.md → O9.
+  rerun that changes nothing); the hardware-only facts in docs/UPSTREAM.md
+  → *Not verified yet*.
 - **Verification:** `report` on both systems, from the stage records and a
   fresh read.
 - **Acceptance:** every automatic check passes on the real machine; the
   attested steps are confirmed; planned and actual extents match; restore
-  is `complete`; qualification passed; a rerun changes nothing; every way
-  the machine differed from the fixtures has become a fixture and a fix
-  before M18, under the stage rule.
-- **Status:** not started. Not before M14–M16 are accepted.
+  is `complete`; qualification passed; a rerun changes nothing; every stage
+  record's executed source matches its commit; every way the machine
+  differed from the fixtures has become a fixture and a fix before M18,
+  with the evidence it invalidates run again.
+- **Status:** not started. Not before M14–M16 are done.
 
 ## M18 — Hardware-validated release
 
 - **Objective:** a commit that is known to work on this Mac model.
 - **Work:** the M17 report committed as `docs/hardware/<model>-<date>.md`;
   the README's tested-on row; the `hw-<model>-<date>` tag on the validated
-  commit (docs/QUALIFICATION.md → *Hardware-validated release*).
+  commit (docs/QUALIFICATION.md → *Hardware-validated release (M18)*).
 - **Acceptance:** the report shows every check passing and every warning
-  explained; each stage's commit satisfies the stage rule; the validation
-  names `MacBookPro18,2` and the M1 Pro, and nothing else.
+  explained; every stage's evidence is valid for the tagged commit under
+  the behaviour rule; the validation names `MacBookPro18,2` and the M1 Pro,
+  and nothing else.
 - **Status:** not started.
