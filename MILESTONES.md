@@ -256,11 +256,9 @@ of docs/TESTING.md.
   documentation checks of docs/TESTING.md → *Documentation checks* pass
   when run by hand; an independent review of the remediated documents
   passes. No code, workflow, test or fixture changes.
-- **Status:** third remediation done — the two remaining Gate 1 blockers
-  (controllers told apart from workers for completion and session cleanup;
-  diagnostic limits over every retained byte) and four test-oracle
-  corrections; awaiting the independent verification of this candidate.
-  Gate 1 is not authorized until that verification passes.
+- **Status:** done. The independent verification of
+  `21904d699e0b55fc75c16054a8c83bccbdc25249` (CI run 36243099184) accepted
+  the Gate 1 contract and authorized Gate 1.
 
 ## M14 — Frontend, protocol, scanner, profile, resolver and bundle
 
@@ -295,8 +293,21 @@ of docs/TESTING.md.
   (`diag-*`); Bash and Rust admission agreeing on the whole differential
   corpus and the golden examples; `frontend-lock-not-input` passing; no
   path that changes the machine.
-- **Status:** not started, and not authorized until the independent
-  verification of Gate 0's third remediation passes.
+- **Status:** implemented — awaiting independent review; not accepted. On
+  branch `m14-gate1-frontend-foundation` from `21904d6`; CI run
+  36265218139 at `4e2c6a4` passes every job (Linux x86_64 Bash 5.2.21 with
+  ShellCheck 0.9.0, macOS `/bin/bash` 3.2.57, the frontend on Linux x86_64,
+  `ubuntu-24.04-arm` and `macos-15` arm64). Open for the review:
+  `release/frontend.lock` does not exist until a first `frontend-v0.1.0`
+  release, whose publication is a separate decision (until then the lock
+  check reports the frontend unreleased, and the verified start is proved
+  with test locks pinning each native build); the order of the frontend's
+  panic hook and Ratatui's (docs/FRONTEND.md → *The terminal*) restores the
+  terminal when the spool reader thread panics, where docs/PROTOCOL.md →
+  *When something dies* has the state re-derived; the documents do not say
+  how an operation record that cannot be read is cleared; and on Ubuntu's
+  Bash 5.2 (not a target) the core can die of that shell's own parser bug
+  under a stream of signals, which the signal-storm test names as a skip.
 
 ### Gate 2 — Read-only equivalence
 
