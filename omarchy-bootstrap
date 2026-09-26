@@ -32,6 +32,20 @@ set -u
 # No pipefail: probes are written as `producer | grep -q`, and grep -q exits on
 # its first match, which can SIGPIPE the producer and turn a match into a failure.
 
+# The core's protocol entry (docs/PROTOCOL.md → §3): the request on fd 3 is
+# copied, bounded, and fd 3 closed before any library loads, so no process
+# the core starts can hold it. The session values the core checks are taken
+# before the libraries set defaults of their own.
+if [ "${1:-}" = core ]; then
+  OMB_CORE_ENV_HOME=${OMB_HOME:-} OMB_CORE_ENV_DRY=${OMB_DRY_RUN-} OMB_CORE_COPY="" OMB_CORE_HEAD=1
+  if OMB_TMP=$(mktemp -d "${TMPDIR:-/tmp}/omarchy-bootstrap.XXXXXX" 3<&-); then
+    OMB_CORE_COPY=$OMB_TMP/request
+    head -c 65537 2>/dev/null <&3 >"$OMB_CORE_COPY" 3<&-
+    OMB_CORE_HEAD=$?
+  fi
+  exec 3<&-
+fi
+
 _self=${BASH_SOURCE[0]}
 while [ -L "$_self" ]; do
   _link=$(readlink "$_self")
@@ -146,6 +160,26 @@ main() {
   if [ "$(id -u)" = 0 ] && [ -n "${OMB_FIXTURE:-}${OMB_TEST_RECORD:-}${OMB_TEST_AFTER:-}${OMB_TEST_RC:-}" ]; then
     _usage_error "OMB_FIXTURE, OMB_TEST_RECORD, OMB_TEST_AFTER and OMB_TEST_RC are for tests and are refused as root"
     return 2
+  fi
+  # The frontend's seams work only against fixtures, never as root: an
+  # unreleased frontend or a test child never drives a real machine.
+  if [ -n "${OMB_TEST_HANDOFF_CHILD:-}${OMB_FRONTEND_DEV:-}" ]; then
+    if [ "$(id -u)" = 0 ] || [ -z "${OMB_FIXTURE:-}" ]; then
+      _usage_error "OMB_TEST_HANDOFF_CHILD and OMB_FRONTEND_DEV work only in fixture mode (OMB_FIXTURE), never as root"
+      return 2
+    fi
+  fi
+  # The core answers on its event spool, never on the terminal.
+  if [ "$cmd" = core ]; then
+    [ "$#" = 2 ] || { _usage_error "core takes exactly one operation" ; return 2; }
+    case "${rest[0]}" in hello | snapshot | detail | validate | execute) ;; *) _usage_error "unknown core operation" ; return 2 ;; esac
+    ui_init
+    # shellcheck source=lib/records.sh
+    . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
+    # shellcheck source=lib/core.sh
+    . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
+    core_main "${rest[0]}" "${OMB_CORE_COPY:-}" "${OMB_CORE_HEAD:-1}"
+    return
   fi
   case "${OMB_TEST_RC:-0}" in
     [0-9] | [0-9][0-9] | [0-9][0-9][0-9]) ;;

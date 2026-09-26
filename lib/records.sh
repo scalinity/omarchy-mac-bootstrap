@@ -141,24 +141,35 @@ _rec_ord() {
   return 0
 }
 
-# rec_enc VALUE — the one canonical written form: a safe byte as itself,
-# every other byte as % and two upper-case hex digits.
-rec_enc() {
-  local LC_ALL=C s=$1 out="" c n i=0 h
+# rec_enc_v VALUE — REC_ENC: the one canonical written form, a safe byte as
+# itself and every other byte as % and two upper-case hex digits. No
+# subshell: the core writes records by the thousand.
+rec_enc_v() {
+  local LC_ALL=C s=$1 c n i=0 h
+  REC_ENC=""
+  case "$s" in
+    *[!A-Za-z0-9._~/:@+,-]*) ;;
+    *) REC_ENC=$s && return 0 ;;
+  esac
   n=${#s}
   while [ "$i" -lt "$n" ]; do
     c=${s:i:1}
     case "$c" in
-      [A-Za-z0-9._~/:@+,-]) out="$out$c" ;;
+      [A-Za-z0-9._~/:@+,-]) REC_ENC="$REC_ENC$c" ;;
       *)
         _rec_ord "$c"
         printf -v h '%%%02X' "$REC_ORD"
-        out="$out$h"
+        REC_ENC="$REC_ENC$h"
         ;;
     esac
     i=$((i + 1))
   done
-  printf '%s' "$out"
+}
+
+# rec_enc VALUE — the canonical written form, printed.
+rec_enc() {
+  rec_enc_v "$1"
+  printf '%s' "$REC_ENC"
 }
 
 # rec_dec VALUE — the decoded bytes of an admitted value. No NUL is possible:
@@ -499,7 +510,7 @@ _rec_schema() {
         return 1
       fi
       _rec_index "$t"
-      [ "$REC_IDX" -gt 0 ] && [ "$REC_IDX" -ge "$lastidx" ] || { _rec_refuse schema "$no"; return 1; }
+      if [ "$REC_IDX" -le 0 ] || [ "$REC_IDX" -lt "$lastidx" ]; then _rec_refuse schema "$no"; return 1; fi
       lastidx=$REC_IDX
       _rec_card "$family" "$op" "$t" || { _rec_refuse schema "$no"; return 1; }
       _rec_count "$t"
@@ -642,23 +653,33 @@ rec_find() {
   return 1
 }
 
-# rec_line TYPE KEY VALUE [KEY VALUE ...] — one record, each value in its
-# canonical written form.
-rec_line() {
-  local out=$1 e
+# rec_line_v TYPE KEY VALUE [KEY VALUE ...] — REC_LINE: one record (no LF),
+# each value in its canonical written form.
+rec_line_v() {
+  REC_LINE=$1
   shift
   while [ $# -ge 2 ]; do
-    e=$(rec_enc "$2")
-    out="$out	$1=$e"
+    rec_enc_v "$2"
+    REC_LINE="$REC_LINE	$1=$REC_ENC"
     shift 2
   done
-  printf '%s\n' "$out"
+}
+
+# rec_line TYPE KEY VALUE [KEY VALUE ...] — one record, printed with its LF.
+rec_line() {
+  rec_line_v "$@"
+  printf '%s\n' "$REC_LINE"
 }
 
 # rec_seal_write FILE — append the seal: the SHA-256 of every byte so far.
 rec_seal_write() {
   local sha
-  sha=$(sha256_of "$1") || return 1
+  if command -v shasum >/dev/null 2>&1; then
+    sha=$(shasum -a 256 "$1") || return 1
+  else
+    sha=$(sha256sum "$1") || return 1
+  fi
+  sha=${sha%% *}
   _whole "$sha" '^[0-9a-f]{64}$' || return 1
   printf 'seal\tsha256=%s\n' "$sha" >>"$1"
 }

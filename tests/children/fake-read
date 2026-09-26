@@ -1,0 +1,28 @@
+#!/bin/sh
+# The fake read child of M14 gate 1 (data/children.omb → test.read). Its
+# behaviour comes from the fixture, $OMB_FIXTURE/test-children/read, lines of
+# key=value; without it, one line of functional output and a little
+# diagnostic noise. Never writes outside the paths the fixture names.
+conf=${OMB_FIXTURE:-/nonexistent}/test-children/read
+here=$(dirname "$0")
+get() { [ -f "$conf" ] && sed -n "s/^$1=//p" "$conf" | tail -n 1; }
+if [ ! -f "$conf" ]; then
+  echo "fake read child: a line of diagnostics" >&2
+  echo "fixture read: ok"
+  exit 0
+fi
+
+v=$(get fds) && [ -n "$v" ] && "$here/probe-fds" >"$v"
+v=$(get grandchild) && [ -n "$v" ] && {
+  f=$(get grandchild_fds)
+  sh -c 'if [ -n "$1" ]; then "$2/probe-fds" >"$1"; fi; exec sleep "$0"' "$v" "$f" "$here" &
+}
+v=$(get stderr_text) && [ -n "$v" ] && printf '%s\n' "$v" >&2
+# BSD head refuses -c 0: nothing to write is written as nothing.
+v=$(get stderr_bytes) && [ -n "$v" ] && [ "$v" != 0 ] && head -c "$v" /dev/zero >&2
+[ -z "$(get stderr_bytes)" ] && [ -z "$(get stderr_text)" ] && echo "fake read child: a line of diagnostics" >&2
+v=$(get stdout_bytes) && [ -n "$v" ] && head -c "$v" /dev/zero
+v=$(get sleep) && [ -n "$v" ] && sleep "$v"
+echo "fixture read: ok"
+v=$(get exit) && [ -n "$v" ] && exit "$v"
+exit 0

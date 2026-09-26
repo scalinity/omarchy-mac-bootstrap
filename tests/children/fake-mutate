@@ -1,0 +1,36 @@
+#!/bin/sh
+# The fake mutating child of M14 gate 1 (data/children.omb → test.mutate):
+# writes WANT into EFFECT, a file in the test state folder the core names.
+# Its behaviour comes from $OMB_FIXTURE/test-children/mutate (key=value).
+# Runs with no terminal and its output going nowhere, as a mutating child must.
+effect=$1 want=$2
+conf=${OMB_FIXTURE:-/nonexistent}/test-children/mutate
+here=$(dirname "$0")
+get() { [ -f "$conf" ] && sed -n "s/^$1=//p" "$conf" | tail -n 1; }
+
+v=$(get fds) && [ -n "$v" ] && "$here/probe-fds" >"$v"
+v=$(get grandchild) && [ -n "$v" ] && {
+  f=$(get grandchild_fds)
+  sh -c 'if [ -n "$1" ]; then "$2/probe-fds" >"$1"; fi; exec sleep "$0"' "$v" "$f" "$here" &
+}
+v=$(get out_bytes) && [ -n "$v" ] && { head -c "$v" /dev/zero; head -c "$v" /dev/zero >&2; }
+v=$(get sleep) && [ -n "$v" ] && sleep "$v"
+case "$(get effect)" in
+  none) ;;
+  unexpected) printf 'something else' >"$effect" ;;
+  *) printf '%s' "$want" >"$effect" ;;
+esac
+# A descendant left in the process group: a worker still present.
+v=$(get linger) && [ -n "$v" ] && sleep "$v" &
+# A descendant that leaves the group (its own session) and keeps writing:
+# invisible to the group snapshot, which is why the registry, not
+# inspection, is the guarantee.
+v=$(get escape) && [ -n "$v" ] && perl -e '
+  use POSIX ();
+  exit 0 if fork;
+  POSIX::setsid();
+  my ($secs, $out) = @ARGV;
+  for (1 .. $secs * 10) { open(my $f, ">>", $out) or exit 1; print $f "x"; close $f; select(undef, undef, undef, 0.1) }
+' "$v" "$(get escape_out)"
+v=$(get exit) && [ -n "$v" ] && exit "$v"
+exit 0

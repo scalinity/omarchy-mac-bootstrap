@@ -1,0 +1,20 @@
+#!/bin/sh
+# probe-fds — print the descriptors this process was given that stay open
+# across exec, space-separated: the fcntl-level probe of docs/TESTING.md →
+# sup-fd-child, the same on Linux and macOS.
+#
+# Not a shell loop: a shell holds its script open, and Bash 3.2 saves stdin
+# to the lowest free descriptor from 10 before applying a redirection, so
+# a probe written as `(exec <&N)` finds its own saved copy at 10. Perl's
+# POSIX::dup asks the kernel directly; `perl -e` has no script file of its
+# own, and each duplicate it makes is closed before the next probe.
+exec perl -MPOSIX -e '
+  my @open;
+  for my $fd (0 .. 255) {
+    my $d = POSIX::dup($fd);
+    next unless defined $d;
+    push @open, $fd;
+    POSIX::close($d);
+  }
+  print join(" ", @open), "\n";
+'

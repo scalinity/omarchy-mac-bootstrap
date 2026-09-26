@@ -1,0 +1,24 @@
+#!/bin/sh
+# The fake handoff child of M14 gate 1 (data/children.omb → test.handoff): it
+# owns the real terminal while it runs, reads a line from it, and writes WANT
+# into EFFECT. Its behaviour comes from $OMB_FIXTURE/test-children/handoff
+# (key=value). Ctrl-C makes it say so and exit, as its author intends.
+effect=$1 want=$2
+conf=${OMB_FIXTURE:-/nonexistent}/test-children/handoff
+here=$(dirname "$0")
+get() { [ -f "$conf" ] && sed -n "s/^$1=//p" "$conf" | tail -n 1; }
+
+v=$(get fds) && [ -n "$v" ] && "$here/probe-fds" >"$v"
+if v=$(get report) && [ -n "$v" ] && [ -r /proc/self/status ]; then
+  grep -E '^(SigBlk|SigIgn):' /proc/$$/status >"$v"
+fi
+trap 'echo "fake handoff child: interrupted"; exit 130' INT
+echo "fake handoff child: type a line and press Enter"
+IFS= read -r line || line=""
+v=$(get keys_out) && [ -n "$v" ] && printf '%s' "$line" >"$v"
+# Leave the terminal odd, as a careless program might: the frontend puts its
+# saved settings back.
+[ "$(get leave_raw)" = 1 ] && stty raw -echo
+[ "$(get effect)" = none ] || printf '%s' "$want" >"$effect"
+echo "fake handoff child: done"
+exit 0
