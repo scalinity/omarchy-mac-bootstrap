@@ -51,6 +51,10 @@ esac
 case "$b" in
   *sleep*) sleep 2 ;;
 esac
+# A core left running in the session: a live process recorded as one.
+case "$b" in
+  *core*) sleep 3 & printf 'omb-proc 1\nproc\trole=core\tpid=%s\n' "$!" >"$dir/req-1.core" ;;
+esac
 code=${b%% *}
 exit "${code:-0}"
 EOF
@@ -419,5 +423,24 @@ sleep 0.8
 pkill -TERM -f "bash -c .*fe_run act journey" 2>/dev/null
 wait "$bg"
 assert_contains "$(cat "$T/eintr")" "status 143" "SIGTERM to the launcher reaches the frontend"
+
+# While a core of the session may be supervising a child, the launcher waits
+# for it starting no process: anything that joins the group then is a worker
+# to that core (docs/PROTOCOL.md → worker quiescence). The fake records a
+# live core and exits; the launcher's children are sampled through the wait.
+printf '0 core' >"$T/fake-behaviour"
+(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/waitcore") &
+bg=$!
+sleep 0.6
+l=$(pgrep -f "bash -c .*fe_run act journey" | head -1)
+busy=0
+for k in 1 2 3 4 5 6 7 8 9 10; do
+  [ -n "$(pgrep -P "$l")" ] && busy=$((busy + 1))
+  sleep 0.15
+done
+wait "$bg"
+[ -n "$l" ] && ok || fail "the launcher was found"
+assert_eq "$busy" 0 "the launcher starts no process while it waits for the session's core (samples with a child, of 10)"
+assert_contains "$(cat "$T/waitcore")" "0|verified|" "and finishes once the core has ended"
 
 t_done test-frontend

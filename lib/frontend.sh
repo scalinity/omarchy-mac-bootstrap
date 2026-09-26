@@ -11,7 +11,7 @@
 #
 # Needs lib/common.sh, lib/state.sh, lib/ui.sh, lib/records.sh, lib/core.sh.
 
-FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA="" FE_FPID=""
+FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA="" FE_FPID="" FE_PAUSE=""
 
 # The scopes a default-command session carries (SPEC.md → Commands).
 FE_ALL_SCOPES="journey,disk,plan,profile,resolve,asahi,network,omarchy,shared,export,restore,rescue,qualify,debug"
@@ -374,6 +374,47 @@ fe_reclaim() {
 
 fe_on_signal() { :; }
 
+# fe_wait_cores DIR — wait while a core or worker recorded in the session DIR
+# still runs, for up to an hour, starting no process: the launcher shares the
+# group, and a process joining it while a core supervises a child is counted
+# by that core as a worker (docs/PROTOCOL.md → worker quiescence). So the
+# PIDs are read with builtins and asked with kill -0, and each pause is
+# `read -t` on FE_PAUSE. A reused PID only makes the wait longer; the
+# identities are judged in full afterwards (fe_owner_cleanup).
+fe_wait_cores() {
+  local f line pid live n=0
+  if [ -n "$FE_PAUSE" ] && [ -p "$FE_PAUSE" ]; then
+    exec 9<>"$FE_PAUSE"
+  else
+    FE_PAUSE=""
+  fi
+  while [ "$n" -lt 3600 ]; do
+    live=0
+    for f in "$1"/req-*.core "$1"/req-*.worker-*; do
+      [ -f "$f" ] || continue
+      pid=""
+      while IFS= read -r line; do
+        case "$line" in
+          "proc	"*)
+            pid=${line#*	pid=}
+            pid=${pid%%	*}
+            ;;
+        esac
+      done <"$f"
+      case "$pid" in '' | *[!0-9]*) ;; *) kill -0 "$pid" 2>/dev/null && live=1 ;; esac
+    done
+    [ "$live" = 0 ] && break
+    if [ -n "$FE_PAUSE" ]; then
+      read -r -t 1 -u 9 _
+    else
+      sleep 1
+    fi
+    n=$((n + 1))
+  done
+  if [ -n "$FE_PAUSE" ]; then exec 9<&-; fi
+  return 0
+}
+
 # fe_forward SIGNAL — SIGTERM and SIGHUP reach the frontend, which cancels
 # or waits, restores and exits (docs/PROTOCOL.md → Signals). A launcher that
 # leads its session, as over SSH, is the only process a hangup signals.
@@ -388,7 +429,7 @@ fe_forward() {
 # interface (FE_STATE, FE_WHY say why); any other status is a failure that
 # has been reported.
 fe_run() {
-  local intent=$1 scopes=$2 saved="" fpid st rc i
+  local intent=$1 scopes=$2 saved="" fpid st rc
   fe_select "$intent"
   rc=$?
   if [ "$rc" != 0 ]; then
@@ -413,6 +454,11 @@ fe_run() {
     [ "$intent" = plan ] && ui_note "OMB_TUI_LOG is ignored outside an act session."
     unset OMB_TUI_LOG
   fi
+  # The pause fe_wait_cores uses: a FIFO held open for reading and writing
+  # never has data, so `read -t` on it waits without starting a process. It
+  # is made now, before any core can be supervising a child.
+  FE_PAUSE=$OMB_TMP/pause
+  mkfifo -m 600 "$FE_PAUSE" 2>/dev/null || FE_PAUSE=""
   # Ctrl-C and Ctrl-\ are caught (never ignored), so a child after exec has
   # the default disposition; SIGTERM and SIGHUP are passed to the frontend,
   # and the launcher waits for it.
@@ -427,13 +473,9 @@ fe_run() {
   _core_wait "$fpid"
   st=$?
   FE_FPID=""
-  # A handoff child may still own the terminal: wait while any recorded core
-  # of this session is alive.
-  i=0
-  while ! fe_scratch_idle "$FE_SESSION" && [ "$i" -lt 36000 ]; do
-    sleep 0.1
-    i=$((i + 1))
-  done
+  # A core of this session may still be supervising a child, and a handoff
+  # child may own the terminal: wait while any recorded one runs.
+  fe_wait_cores "$FE_SESSION"
   [ -n "$saved" ] && stty "$saved" </dev/tty 2>/dev/null
   trap - INT QUIT TERM HUP
   case "$st" in
