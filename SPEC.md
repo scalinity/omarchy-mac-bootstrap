@@ -323,9 +323,12 @@ Detailed in `docs/SHARED.md`. Summary:
   record `shared-create.env` written (or nothing runs): the disk, every
   partition on it byte for byte, the free region the creation may use, the
   Linux root before it, the partition after it, the interval and the minimum
-  size, sealed by a digest; `sudo diskutil addPartition <Linux root> ExFAT
+  size, sealed by a digest; `sudo -n diskutil addPartition <Linux root> ExFAT
   Shared <bytes>`, the planned size in whole MiB at the region's start (the
-  rest stays free); then, judged by that record, every earlier partition
+  rest stays free), non-interactive so nothing waits for input after the
+  last read: if sudo's authorization has lapsed, sudo refuses without
+  running diskutil, nothing is created, and a retry starts over from the
+  gates; then, judged by that record, every earlier partition
   byte-identical and exactly one new exFAT Basic Data partition inside the
   region, or a recorded stop. Every later run is held to the same record
   until its result is recorded — the disk is never read afresh around it: a
@@ -492,7 +495,8 @@ unknown fields are ignored with a warning; decoded values are shown before use.
   `reboot`, `csrutil`, writable APFS mounts. The only `resizeContainer` use is
   the literal `limits -plist` query; the only `addPartition` is the Shared
   creation, with ExFAT and the name Shared as constants and the device a
-  fresh read's Linux root.
+  fresh read's Linux root, run as `sudo -n` after `sudo -v` and never
+  through an interactive `sudo`.
 - Privileged changes on Linux are exactly the Shared mount point, the managed
   fstab entry (by rename, with a backup), `daemon-reload` and starting its
   automount, plus packages, timezone and locale in the developer modules.

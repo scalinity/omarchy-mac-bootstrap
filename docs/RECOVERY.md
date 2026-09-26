@@ -109,8 +109,11 @@ twice; anything in Shared's place that is not the planned exFAT volume stops
 everything, and this tool never formats or deletes it. A creation whose
 result was not what it was allowed to produce stays stopped on every later
 run, until its own check passes or you remove `shared-create.env` after
-checking the disk. After a crash, check the exFAT volume with Disk Utility's
-First Aid on macOS before relying on it.
+checking the disk. A creation that did not run because sudo's authorization
+had run out (`sudo -n` never asks again after the disk was checked) left
+nothing behind: run `./omarchy-bootstrap shared create` again, which asks
+sudo, reads the disk and checks everything anew. After a crash, check the
+exFAT volume with Disk Utility's First Aid on macOS before relying on it.
 
 ## Back to macOS only
 

@@ -96,7 +96,7 @@ if t_plutil "the macOS Shared plan and creation"; then
   assert_contains "$T_OUT" "Partition before    disk0s6" "the partition before is shown"
   assert_contains "$T_OUT" "Partition after     disk0s3" "the partition after is shown"
   assert_eq "$(cat "$T_DIR/record")" "sudo -v
-sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" \
+sudo -n diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" \
     "sudo authenticates first; then exactly one change: addPartition after the Linux root, the planned size in whole MiB"
   assert_contains "$flat" "Shared storage created: disk0s7" "the result is checked and reported"
   st=$(cat "$d/state.env")
@@ -132,12 +132,44 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   assert_empty_file "$T_DIR/record" "Enter at the gates creates nothing"
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\nCREATE\nn\n" shared create
   assert_empty_file "$T_DIR/record" "the wrong word creates nothing"
+  # sudo -v succeeds, and by the time of the change sudo's authorization has
+  # run out: sudo -n refuses (exit 1) without running diskutil, and never
+  # asks again after the disk was checked. OMB_TEST_RC belongs to the command
+  # after sudo -v, which is the one recorded as sudo -n.
   T_ENV="OMB_STATE_DIR=$d OMB_TEST_RC=1" t_cli mac-shared-reserved "yes\ncreate\n" shared create
-  assert_rc "$T_RC" 1 "a failed diskutil stops"
-  assert_contains "$(t_flat "$T_OUT")" "no partition was created. The disk is as it was; it is safe to try again" "and says it is safe to retry"
+  assert_rc "$T_RC" 1 "sudo -n refusing stops the creation"
+  assert_eq "$(cat "$T_DIR/record")" "sudo -v
+sudo -n diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "the change is only ever asked of sudo -n, which cannot prompt"
+  assert_contains "$(t_flat "$T_OUT")" "no partition was created; the disk is as it was. Either diskutil reported an error, or sudo's authorization had run out and sudo -n refused" "it says what may have happened"
+  assert_contains "$(t_flat "$T_OUT")" "Run ./omarchy-bootstrap shared create again: it asks sudo first, reads the disk again and checks everything before creating" "and that a retry starts from the gates"
   assert_not_contains "$(cat "$d/state.env")" "shared_uuid=" "nothing is recorded as created"
+  [ ! -e "$d/shared-create.env" ] && ok || fail "a creation that did not run leaves no creation record"
+  assert_empty_file "$T_DIR/shims.log" "no real sudo or diskutil ran"
+  # The retry goes through the whole guarded path again, then creates.
+  T_ENV="OMB_STATE_DIR=$d OMB_TEST_AFTER=$FIX/mac-shared-created" t_cli mac-shared-reserved "yes\ncreate\n" shared create
+  assert_eq "$(cat "$T_DIR/record")" "sudo -v
+sudo -n diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "the retry authenticates again before the change"
+  assert_contains "$(t_flat "$T_OUT")" "Shared storage created: disk0s7" "and completes"
+  # The disk changes after sudo -v, before the last read: nothing is created.
+  d=$(with_receipt)
+  rec=$(t_tmp)/record
+  : >"$rec"
+  moved=$(t_variant mac-shared-reserved)
+  sed -i.bak 's#000000000003#00000000000B#' "$moved/cmd/diskutil_info_disk0s3" "$moved/cmd/diskutil_list_disk0" && rm -f "$moved/cmd/"*.bak
+  out=$(
+    OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$d
+    state_init
+    mac_survey
+    shared_mac_state
+    # shellcheck disable=SC2317,SC2329 # called by shared_create_flow
+    run() { printf '%s\n' "$*" >>"$rec"; [ "$*" = "sudo -v" ] && OMB_FIXTURE=$moved; return 0; }
+    printf 'yes\ncreate\n' | shared_create_flow
+  )
+  assert_eq "$(cat "$rec")" "sudo -v" "a disk that changes after sudo -v: nothing runs after it"
+  assert_contains "$(t_flat "$out")" "The disk changed since it was shown" "and it says so"
+  [ ! -e "$d/shared-create.env" ] && ok || fail "and no creation is recorded"
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create --dry-run
-  assert_contains "$T_OUT" "would run  sudo diskutil addPartition disk0s6 ExFAT Shared" "a dry run shows the command"
+  assert_contains "$T_OUT" "would run  sudo -n diskutil addPartition disk0s6 ExFAT Shared" "a dry run shows the command"
   assert_empty_file "$T_DIR/record" "a dry run creates nothing"
   # On battery below half: stop before the gates.
   fx=$(t_variant mac-shared-reserved)
@@ -150,7 +182,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   : >"$fx/cmd/pmset_batt"
   T_ENV="OMB_STATE_DIR=$d" t_cli "$fx" "yes\ncreate\n" shared create --dry-run
   assert_contains "$T_OUT" "Power state unverified: pmset reported nothing" "an empty power report is unverified"
-  assert_contains "$T_OUT" "would run  sudo diskutil addPartition" "and is left to the person, not blocked"
+  assert_contains "$T_OUT" "would run  sudo -n diskutil addPartition" "and is left to the person, not blocked"
   # The record that must precede the change cannot be written: fail closed.
   d=$(with_receipt)
   chmod 500 "$d"
@@ -382,7 +414,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   # and the creation can run again.
   d=$(txn_state)
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create --dry-run
-  assert_contains "$T_OUT" "would run  sudo diskutil addPartition disk0s6 ExFAT Shared" "a creation that never ran can run again"
+  assert_contains "$T_OUT" "would run  sudo -n diskutil addPartition disk0s6 ExFAT Shared" "a creation that never ran can run again"
   # The result was not the exFAT volume (a stop is recorded); once it is, by
   # hand, the creation's own check passes and the stop clears.
   unformatted=$(t_variant mac-shared-created)
@@ -405,7 +437,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   assert_empty_file "$T_DIR/record" "nothing is created while it stands"
   rm -f "$d/shared-create.env"
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "yes\ncreate\n" shared create --dry-run
-  assert_contains "$T_OUT" "would run  sudo diskutil addPartition" "with the record removed by hand, it can be created again"
+  assert_contains "$T_OUT" "would run  sudo -n diskutil addPartition" "with the record removed by hand, it can be created again"
   # A record that was edited is not a creation record.
   d=$(txn_state)
   sed -i.bak 's/^gap_end=\([0-9]*\)$/gap_end=9\1/' "$d/shared-create.env" && rm -f "$d/shared-create.env.bak"
@@ -428,7 +460,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   d=$(fresh_state)
   before=$(t_snapshot "$d")
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-reserved "$done_code\nyes\ncreate\n" shared create --dry-run
-  assert_contains "$T_OUT" "would run  sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "a dry run with a typed code shows the command"
+  assert_contains "$T_OUT" "would run  sudo -n diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "a dry run with a typed code shows the command"
   assert_not_contains "$(t_flat "$T_OUT")" "The disk changed since it was shown" "the typed code survives the re-read"
   assert_empty_file "$T_DIR/record" "a dry run with a typed code creates nothing"
   assert_eq "$(t_snapshot "$d")" "$before" "and records nothing"
@@ -439,7 +471,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   d=$(with_receipt)
   T_ENV="OMB_STATE_DIR=$d" t_cli "$fx" "\n" shared create
   assert_contains "$(t_flat "$T_OUT")" "earlier than planned" "a smaller Linux root is pointed out"
-  assert_contains "$T_OUT" "sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "and Shared keeps its planned size"
+  assert_contains "$T_OUT" "sudo -n diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1048576 * 1048576 ))" "and Shared keeps its planned size"
 fi
 
 # --- Linux: the completion code, and activation ----------------------------------------------

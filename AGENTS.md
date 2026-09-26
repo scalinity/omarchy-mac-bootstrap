@@ -23,9 +23,10 @@ afterwards, and records.
   user confirmation, it may create the one planned Shared cross-OS partition
   inside the previously reserved free region. It never deletes, resizes,
   reformats, or generically edits arbitrary partitions. That creation is the
-  single `run sudo diskutil addPartition` in `lib/shared.sh`;
-  `tests/test-safety.sh` pins it behind both typed gates, a fresh read of the
-  disk and the fail-closed record.
+  single `run sudo -n diskutil addPartition` in `lib/shared.sh`, never an
+  interactive `sudo`: nothing may wait for input after the final read.
+  `tests/test-safety.sh` pins it behind both typed gates, `sudo -v`, a fresh
+  read of the disk and the fail-closed record.
 - **Stock bash 3.2 everywhere**, because the entrypoint must start on a fresh
   Mac. Write with indexed arrays, `case`, and `eval` into `CFG_*`-style globals;
   verify with `/bin/bash` (bash 5 as an extra run, never instead). Bash, not
@@ -116,7 +117,8 @@ afterwards, and records.
 - Test seams `OMB_FIXTURE`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER` (the machine
   after a recorded command) and `OMB_TEST_RC` (that command's exit status) are
   refused as root and never execute anything. A recorded `sudo -v` changes
-  nothing and succeeds; both belong to the command after it.
+  nothing and succeeds; both belong to the command after it, so
+  `OMB_TEST_RC=1` there is `sudo -n` refusing a lapsed authorization.
 
 ## Verify
 

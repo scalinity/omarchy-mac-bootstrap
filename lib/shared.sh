@@ -4,7 +4,7 @@
 # installed, and mounted persistently on Linux by its GPT partition GUID.
 #
 # This is the one disk change this tool makes itself, and it is narrow:
-#   sudo diskutil addPartition <the Linux root> ExFAT Shared <bytes>
+#   sudo -n diskutil addPartition <the Linux root> ExFAT Shared <bytes>
 # with the planned size in whole MiB, at the start of the free region
 # reserved for it, only after the whole disk has been
 # read again and matched against the plan, and the person has typed
@@ -764,8 +764,8 @@ shared_create_flow() {
   if [ "$SHARED_GAP_START" -lt "$INT_shared_start" ]; then
     ui_warn "Linux ends $(fmt_gb $((INT_shared_start - SHARED_GAP_START))) earlier than planned (the installer was given a smaller size). Shared is created at its planned size; the difference stays free."
   fi
-  ui_section "Command" "sudo asks for your password first; then the disk is read again and this runs at once"
-  ui_cmd "sudo diskutil addPartition $SHARED_PRED_ID $SHARED_FS_MAC $SHARED_LABEL $SH_SIZE"
+  ui_section "Command" "sudo asks for your password first; then the disk is read again and this runs at once, asking nothing more"
+  ui_cmd "sudo -n diskutil addPartition $SHARED_PRED_ID $SHARED_FS_MAC $SHARED_LABEL $SH_SIZE"
   ui_callout warn "This adds one partition in free space, right after the Linux root." \
     "It does not resize, move, erase or reformat anything else. Before it runs, the whole disk is read again and must match what is shown here exactly." \
     "Shared is plain exFAT: FileVault and LUKS do not cover it, and it is not a backup."
@@ -808,7 +808,11 @@ shared_create_flow() {
     return 1
   fi
   printf '\n'
-  run sudo diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"
+  # Non-interactive: nothing may wait for input between the read above and
+  # the change. If sudo's authorization from sudo -v has already lapsed (a
+  # policy such as timestamp_timeout=0 asks every time), sudo -n refuses
+  # without running diskutil, and the person starts again from the gates.
+  run sudo -n diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"
   rc=$?
   if [ "$OMB_DRY_RUN" = 1 ]; then
     printf '\n'
@@ -868,7 +872,7 @@ shared_mac_after() {
   fi
   if [ "$TXN_RESULT" = none ] && [ "$SHARED_STATE" != blocked ]; then
     if [ "$rc" != 0 ]; then
-      ui_fail "diskutil reported an error (exit $rc) and no partition was created. The disk is as it was; it is safe to try again."
+      ui_fail "The partition command exited with status $rc and no partition was created; the disk is as it was. Either diskutil reported an error, or sudo's authorization had run out and sudo -n refused rather than ask again after the disk was checked. Run ./omarchy-bootstrap shared create again: it asks sudo first, reads the disk again and checks everything before creating."
     else
       ui_fail "diskutil reported success, but no new partition is on the disk. Nothing else changed; check diskutil list before trying again."
     fi

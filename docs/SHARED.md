@@ -29,7 +29,7 @@ Linux    Omarchy Mac installs, moves /boot, encrypts in place (its own reboots)
          once all of that has finished: a completion code (ombdone-...)
 reboot
 macOS    ./omarchy-bootstrap: type the completion code; the disk is checked;
-         type yes (backup) and create; one sudo diskutil addPartition; the result is checked
+         type yes (backup) and create; sudo -v; one sudo -n diskutil addPartition; the result is checked
          a Shared code (ombshare-...) is shown
 reboot
 Linux    ./omarchy-bootstrap shared activate: type the Shared code; type mount;
@@ -120,14 +120,19 @@ before it, the partition after it, and the size it creates. A record that
 cannot be written stops it. Then, and only then:
 
 ```bash
-sudo diskutil addPartition <the Linux root, e.g. disk0s6> ExFAT Shared <bytes>
+sudo -n diskutil addPartition <the Linux root, e.g. disk0s6> ExFAT Shared <bytes>
 ```
 
 `<bytes>` is the planned size rounded up to a whole MiB, placed at the
 region's first MiB boundary; the rest of the region stays free, which leaves
 diskutil room for its own alignment. `sudo` needs your password because
 diskutil must own the internal disk to change its partition map; it was
-asked for before the last read, so this runs straight after it.
+asked for before the last read, so this runs straight after it, and `-n`
+(non-interactive) makes sure it never asks again at this point. If sudo's
+authorization has already run out — a sudo policy can ask every time —
+`sudo -n` refuses without running diskutil, nothing is created, and running
+`./omarchy-bootstrap shared create` again starts over: the gates, `sudo -v`,
+a fresh read of the disk and a new creation record.
 
 **What the last read cannot rule out.** This tool's lock keeps two of its own
 runs apart; it is not a lock on the disk. Another program (Disk Utility, an
@@ -265,7 +270,9 @@ eraseVolume free free <Shared's id>`, then grow macOS again.
 ## What still needs checking on the real Mac
 
 These follow Apple's and upstream's documentation and have been exercised
-only against recorded disk layouts: that `sudo diskutil addPartition` with an
+only against recorded disk layouts: that `sudo -n` runs the creation without
+asking again after `sudo -v` under this Mac's sudo policy; that `diskutil
+addPartition` with an
 exact byte count creates exactly that size at the start of the region,
 without an extra alignment gap or booter partition; that macOS mounts the
 new volume writable for your everyday user although root created it; that

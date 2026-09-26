@@ -50,10 +50,10 @@ assert_eq "$hits" "" "no absolute-path call to a shimmed command (PATH shims wou
 
 # Any diskutil verb other than info / list, the literal limits query, and the
 # one guarded Shared creation (checked on its own below).
-ADDPART='run sudo diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"'
+ADDPART='run sudo -n diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"'
 hits=$(grep -n 'diskutil' $CODE | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' |
   grep -E 'diskutil[[:space:]]+(erase|partition|resize|split|merge|add|zero|random|secure|reformat|unmount|mount|apfs[[:space:]]+(delete|add|create|erase|convert|unlock|encrypt|decrypt|change|resizeContainer))' |
-  grep -v 'resizeContainer "\$1" limits -plist' | grep -vF "$ADDPART" | grep -v 'ui_cmd "sudo diskutil addPartition')
+  grep -v 'resizeContainer "\$1" limits -plist' | grep -vF "$ADDPART" | grep -v 'ui_cmd "sudo -n diskutil addPartition')
 assert_eq "$hits" "" "only read-only diskutil verbs, plus the one Shared creation"
 assert_eq "$(grep 'resizeContainer' $CODE | grep -v '^[^:]*:[[:space:]]*#' | grep -c 'limits -plist')" \
   "$(grep 'resizeContainer' $CODE | grep -vc '^[^:]*:[[:space:]]*#')" "every resizeContainer use is the limits query"
@@ -68,10 +68,15 @@ assert_eq "$(grep -hF "$ADDPART" $CODE | grep -c .)" 1 "exactly one addPartition
 assert_eq "$(grep -lF "$ADDPART" $CODE)" "$REPO/lib/shared.sh" "and it lives in lib/shared.sh"
 assert_eq "$(grep -c '^SHARED_FS_MAC="ExFAT"$' "$REPO/lib/shared.sh") $(grep -c '^SHARED_LABEL="Shared"$' "$REPO/lib/shared.sh")" "1 1" "its filesystem and name are constants"
 body=$(awk '/^shared_create_flow\(\) \{/ {f = 1} f {print} f && /^}/ {exit}' "$REPO/lib/shared.sh")
-seq=$(printf '%s\n' "$body" | grep -oE 'ui_confirm_word yes|ui_confirm_word create|run sudo -v|mac_detect_geometry|shared_txn_save|run sudo diskutil addPartition' | tr '\n' '|')
-assert_eq "$seq" "ui_confirm_word yes|ui_confirm_word create|run sudo -v|mac_detect_geometry|shared_txn_save|run sudo diskutil addPartition|" \
+seq=$(printf '%s\n' "$body" | grep -oE 'ui_confirm_word yes|ui_confirm_word create|run sudo -v|mac_detect_geometry|shared_txn_save|run sudo -n diskutil addPartition' | tr '\n' '|')
+assert_eq "$seq" "ui_confirm_word yes|ui_confirm_word create|run sudo -v|mac_detect_geometry|shared_txn_save|run sudo -n diskutil addPartition|" \
   "addPartition runs only after both typed gates, sudo's authentication, a fresh read of the disk, and the creation record"
-assert_eq "$(grep -ho 'run sudo -[a-z]*' $CODE | tr '\n' ';')" "run sudo -v;" "sudo is given an option only to authenticate, once, before the Shared creation's last read"
+assert_eq "$(grep -ho 'run sudo -[a-z]*' $CODE | LC_ALL=C sort | tr '\n' ';')" "run sudo -n;run sudo -v;" \
+  "sudo takes an option only twice: -v to authenticate before the Shared creation's last read, -n for the creation itself"
+# The partition change never prompts after the disk was checked: its only
+# form is sudo -n, and -n fronts nothing else.
+assert_eq "$(grep -h 'run sudo -n' $CODE | sed 's/^[[:space:]]*//')" "$ADDPART" "sudo -n runs exactly the one Shared creation, and nothing else"
+assert_eq "$(grep -c 'run sudo diskutil' $CODE | awk -F: '{s += $NF} END {print s}')" 0 "no diskutil through an interactive sudo"
 # Nothing reaches the device argument from a file: it is the fresh read's id.
 assert_eq "$(printf '%s\n' "$body" | grep -c 'SHARED_PRED_ID=')" 0 "the creation never sets the device itself"
 assert_eq "$(grep -c 'SHARED_PRED_ID=\$GP_ID' "$REPO/lib/shared.sh")" 1 "the device is the partition found on the disk right before the region"
@@ -97,7 +102,7 @@ done
 quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
 assert_eq "$quoted" 'run "$OMS_SELF" --resume' "the only indirect command through run is omarchy-mac-setup --resume"
 sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | LC_ALL=C sort -u | tr '\n' ';')
-assert_eq "$sudos" "run sudo cp -p;run sudo diskutil addPartition;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, the Shared mount, and the one Shared creation"
+assert_eq "$sudos" "run sudo cp -p;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, the Shared mount, and the one Shared creation"
 assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
   'run sudo cp -p /etc/fstab /etc/fstab.omarchy-bootstrap.bak;run sudo install -d -m 0755 -o root -g root "$SHARED_MNT";run sudo install -m 0644 -o root -g root "$tmp" /etc/fstab.omarchy-bootstrap.new;run sudo mv -f /etc/fstab.omarchy-bootstrap.new /etc/fstab;' \
   "privileged file changes are exactly the Shared mount point and the managed fstab"
