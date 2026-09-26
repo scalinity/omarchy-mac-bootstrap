@@ -1,0 +1,28 @@
+---
+source: tests/frames.rs
+expression: "text(&render(&m, &profile(\"color\"), w, h))"
+---
+ ◒ omarchy mac bootstrap                                 macOS · user · fixture
+ journey not derived in this build
+────────────────────────────────────────────────────────────────────────────────
+ ▍Change the fixture (test)
+
+   Does      Runs the fake mutating child under supervision.
+   Touches   the fixture's test state folder only
+   Terminal  not needed: it runs with no terminal
+   Next      nothing asks after this
+
+   Type test to continue    tes▏
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ⏎ continue (only the exact word)   esc cancel

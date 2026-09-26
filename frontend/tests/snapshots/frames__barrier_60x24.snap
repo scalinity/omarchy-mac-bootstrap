@@ -1,0 +1,28 @@
+---
+source: tests/frames.rs
+expression: "text(&render(&m, &profile(\"color\"), w, h))"
+---
+ ◒ omarchy mac bootstrap             macOS · user · fixture
+ journey not derived in this build
+────────────────────────────────────────────────────────────
+ ▍Foundation
+
+   Interface · the foundation: test actions over fixtures
+   Fixture   · mac-m1pro-1tb-roomy
+   Operation ✗ test.mutate unsupervised
+
+   ✗ blocked
+     The outcome of test.mutate is unknown and a process it
+     started may still be running.
+     Restart this Mac (or this Linux system), then run the
+     tool again.
+
+ ▍Actions
+
+ ❯ Read the fixture (test)   read
+
+   Runs the fake read child.
+
+
+────────────────────────────────────────────────────────────
+ ⏎ run   ↑↓ move   r refresh   ? help

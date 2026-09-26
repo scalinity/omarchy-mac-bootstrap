@@ -1,0 +1,28 @@
+---
+source: tests/frames.rs
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ omarchy mac bootstrap
+ journey not derived in this build
+────────────────────────────────────────────────────────────────────────────────
+ ▍No answer
+
+   ✗ The core could not be started (no such file).
+
+   r try again   q continue in the text interface
+   ./omarchy-bootstrap status shows where the machine is.
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ⏎ run   ↑↓ move   r refresh   L logs   ? help   q quit

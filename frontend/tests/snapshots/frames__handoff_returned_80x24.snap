@@ -1,0 +1,28 @@
+---
+source: tests/frames.rs
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ omarchy mac bootstrap                                 macOS · user · fixture
+ journey not derived in this build
+────────────────────────────────────────────────────────────────────────────────
+ ▍Foundation
+
+   Interface   · the foundation: test actions over fixtures
+   Fixture     · mac-m1pro-1tb-roomy
+   Operation   ✓ none
+
+ ▍Actions
+
+ ❯ Read the fixture (test)         read
+   Change the fixture (test)       act · type test
+   Hand over the terminal (test)   act · handoff · type test
+
+   Runs the fake read child: its output is shown, its diagnostics kept within
+   their limits.
+
+
+
+
+ ✓ test.handoff: done                                                   reading
+────────────────────────────────────────────────────────────────────────────────
+ ⏎ run   ↑↓ move   r refresh   L logs   ? help   q quit

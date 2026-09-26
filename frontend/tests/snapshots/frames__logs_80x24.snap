@@ -1,0 +1,28 @@
+---
+source: tests/frames.rs
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ omarchy mac bootstrap                                 macOS · user · fixture
+ journey not derived in this build
+────────────────────────────────────────────────────────────────────────────────
+ ▍Logs and diagnostics
+
+   request 1:
+   childtest.readexit=000kept=00041discarded=0
+   fake read child: a line of diagnostics
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ esc back   ↑↓ scroll   ? help   q quit

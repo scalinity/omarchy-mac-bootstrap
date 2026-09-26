@@ -1,0 +1,28 @@
+---
+source: tests/frames.rs
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ omarchy mac bootstrap                                 macOS · user · fixture
+ journey not derived in this build
+────────────────────────────────────────────────────────────────────────────────
+ ▍Keys
+
+   ⏎         run
+   ↑↓        move
+   k j       move (vim)
+   r         refresh
+   L         logs
+   ?         help
+   q         quit
+   Ctrl-C    quit when idle, cancel a request that can be
+   Ctrl-Z    suspend (not while a request runs)
+
+   The mouse is not captured: select text as usual.
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ⏎ run   ↑↓ move   r refresh   L logs   ? help   q quit

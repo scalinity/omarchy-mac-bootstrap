@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 ratatui = "=0.30.2"
 signal-hook = "0.3"
-rustix = { version = "1", features = ["termios", "process", "fs", "stdio", "pipe"] }
+rustix = { version = "1", features = ["termios", "process"] }
 
 [dev-dependencies]
 insta = "1"
