@@ -87,7 +87,8 @@ result (`proto-diff-chunks`).
 | `proto-diff-id` | `A`, `-x`, 129 bytes, `%` inside | `type` |
 | `proto-diff-text-control` | `%1B[2J` in a `text` value | `type`; the same bytes in a `bytes` value are admitted and render as `\x1b[2J` |
 | `proto-diff-text-utf8` | `%C3` alone, `%C0%AF`, `%ED%A0%80` in `text` | `type` |
-| `proto-diff-after-result` | a record after `result`; a partial line after it | `after-result` |
+| `proto-diff-after-result` | a complete, canonical record after `result` | `after-result` |
+| `proto-diff-after-result-partial` | bytes after the result's LF with no final LF (`result⇥…` LF then `X`) | `eof` — termination is checked before record order |
 | `proto-diff-no-result`, `proto-diff-two-results` | a spool ending without `result`; two `result`s | `result` |
 | `proto-diff-seal` | a stored document with a wrong seal; with bytes after the seal | `seal` |
 | `proto-diff-chunks` | every case above, split at every boundary | as the case |
@@ -127,37 +128,54 @@ result (`proto-diff-chunks`).
 | `sup-slow-frontend` | F's channel held full by a test hook while C runs a managed act | C finishes and exits without waiting; F then reads every record |
 | `sup-overflow` | C produces more than 8 MiB − 64 KiB of `progress` | one `overflow`, then the `result`; the spool stays under 8 MiB |
 | `sup-epipe` | F writes a 1 MiB request | EPIPE in F, a refusal shown; C exits 2 |
-| `sup-frontend-death-core-live` | F is killed during a managed act | C completes and removes its operation record; L waits for `req-*.core` to end, then restores the terminal; the scratch is removed only then |
-| `sup-launcher-death-live-frontend` | L is killed while F lives between requests; a second launcher starts | the second launcher leaves the first session's scratch alone while `frontend.omb` names a live frontend; F keeps working |
-| `sup-pid-reuse` | a session file and an operation record whose PIDs now belong to other processes (same PID, different start time), and one from a previous boot | none of them taken as alive |
-| `sup-session-quiescent` | scratch folders with, in turn, a live launcher, a live frontend, a live core, a live process whose arguments name the folder but no `frontend.omb` yet, an unresolved operation naming the session, and none of these | removed only in the last case |
+| `sup-frontend-death-core-live` | F is killed during a managed act | C completes and removes its operation record; L waits for `req-*.core` to end, then restores the terminal and cleans up as the owner |
+| `sup-completion-controllers-live` | L, F and C alive in one process group; C's mutating child exits and leaves nothing behind | no worker present (every process in the group was in C's snapshot, L, F and C among them, and the `ps` taking the reading is not counted); the postcondition checked; the operation completes and its record is removed |
+| `sup-completion-worker-lingers` | the child exits but a descendant it started stays in the group past the action's time limit | not completed: the operation marked unsupervised, the outcome reported unknown |
+| `sup-identity-unknown` | `ps` fails, or the boot session cannot be read, during completion, owner cleanup or stale reclaim | nothing completed, nothing deleted, no barrier cleared: every unknown identity counts as alive |
+| `sup-owner-cleanup` | L exiting normally after F has exited; no core, no worker, no unresolved operation | L, itself alive, removes its own scratch |
+| `sup-owner-cleanup-refused` | the same, with in turn a live core, a live recorded worker, a process that entered the group after `launcher.omb`, and an unresolved operation naming the session | L leaves the scratch each time |
+| `sup-reclaim-live-controller` | L is killed while F lives between requests; a second launcher starts | the second launcher leaves the old scratch alone while `frontend.omb` — or, before that file exists, a process's arguments — names a live frontend; F keeps working |
+| `sup-reclaim-live-core` | an old scratch whose launcher and frontend are dead but whose `req-<n>.core` names a live core | not reclaimed |
+| `sup-reclaim-live-worker` | an old scratch whose `req-<n>.worker-<k>` names a live process | not reclaimed |
+| `sup-reclaim-operation-barrier` | an old scratch named by an unresolved operation record | not reclaimed |
+| `sup-reclaim-quiescent` | an old scratch whose launcher, frontend, cores and workers are dead and that no operation names | reclaimed; a launcher PID that is merely gone, with the rest alive, never is |
+| `sup-pid-reuse` | session files and an operation record whose PIDs now belong to other processes (same PID, different start time), and ones from a previous boot | none of them taken as alive |
+| `sup-mutating-daemon-classification` | static: a registry entry for a managed mutating child marked as detaching without an owner and check; a program known to daemonise registered as `detaches=no` in the fixture registry | refused by the check |
 | `sup-core-death-mutator-live` | C is killed while its mutating child runs | outcome unknown; the operation becomes unsupervised; every act in the scope refused `unsupervised`, naming it; read commands still work |
-| `sup-mutator-escaped-pgid` | C is killed; its child has started a descendant with `setsid` that keeps writing, and exits | the process group is empty, and the barrier stays |
+| `sup-mutator-escaped-pgid` | C is killed; its child has started a descendant with `setsid` that keeps writing, and exits | only L and F remain in the group and no worker is present in it, and the barrier stays for the rest of the boot |
 | `sup-unsupervised-blocks` | the next act in the scope, from the frontend and from `--no-tui` | refused `unsupervised` in both interfaces |
-| `sup-boot-clears` | the fixture's boot session changes | the barrier is no longer held by the old processes; reconciliation is now allowed |
-| `sup-post-reboot-reconcile` | after the boot change, the next act in the scope | the scope's reconciliation runs, records what the machine shows, removes the record, then the action proceeds |
+| `sup-boot-clears` | the fixture's boot session changes | the old processes can no longer hold the barrier; reconciliation is now allowed |
+| `sup-post-reboot-reconcile` | after the boot change, the next act in the scope, with the machine showing no effect, and then the expected effect completed | the scope's reconciliation records that finding, removes the record, and the action proceeds |
+| `sup-post-reboot-unexpected` | after the boot change, the machine shows something neither the old state nor the expected effect | the scope stays blocked with what the machine holds; the reboot is not counted as success |
 | `sup-read-orphan-no-barrier` | C of a read request is killed while its read child runs on | no operation record, no barrier; the next act proceeds |
 | `sup-no-reclaim-pid` | an operation record whose core's PID is dead | unsupervised, never reclaimed |
-| `sup-completion` | a supervised mutating child that exits normally, leaving no process in its group | the core checks the postcondition and removes the record |
 | `sup-reader-death` | the reader thread panics (test hook) | the outcome is unknown; a fresh snapshot is asked for |
 | `sup-eintr` | a signal during a read or wait | the call is retried (Rust unit test; a Bash `wait` loop test) |
 | `sup-no-setsid` | static: F and C never call `setsid` or `setpgid`; L, F, C never ignore SIGINT, SIGQUIT, SIGTSTP or block them across a spawn | — |
 | `sup-one-spawner` | static: F opens descriptors and spawns only on its main thread; C writes the spool only from its main shell | — |
-| `sup-shared-critical` | the Shared creation over fixtures, with the spool and the recorded commands time-ordered | between the final topology read and `sudo -n diskutil addPartition`: no spool write, no other recorded command; statically, the code between those two points is byte-identical to the accepted baseline's |
+| `sup-shared-critical` | the Shared creation over fixtures, with the spool and the recorded commands time-ordered | between the final topology read and `sudo -n diskutil addPartition`: no spool write, no process-table snapshot, no other recorded command; statically, the code between those two points is byte-identical to the accepted baseline's |
 
 ### `diag-*`: diagnostics by child class
 
 | Id | Case | Expected |
 | --- | --- | --- |
-| `diag-bound-read` | a read child writes 10 MiB to stderr | it runs to its end unblocked; its retained file is at most 65 537 bytes; the diag header marks earlier output discarded |
-| `diag-overflow-discard` | a read child writes exactly 65 536, then 65 537 bytes | kept whole and not marked; then marked "earlier output discarded" |
-| `diag-request-bound` | a read request whose children together pass 256 KiB | later children appear as headers marked "not kept"; `req-<n>.diag` stays under 256 KiB plus one header per child |
-| `diag-session-bound` | many requests in one session pass 4 MiB | later diagnostics are headers only; the session's diag files stay under 4 MiB plus headers |
-| `diag-capture-failure` | the drain killed mid-run; the scratch filesystem full when the drain writes | diagnostics shown as "not available"; the read's outcome judged by its own status; nothing retried because of it |
+| `diag-bound-read` | a read child writes 10 MiB to stderr | it runs to its end unblocked; its block — header included — is at most 65 536 bytes and marks earlier output discarded |
+| `diag-temp-bounded` | a read child writes 10 GiB to stderr | the temporary capture file never exceeds 65 281 bytes at any moment (sampled while the child runs), and is removed after merging |
+| `diag-overflow-discard` | a read child writes exactly 65 280, then 65 281 bytes | kept whole and not marked; then the last 65 280 kept and marked discarded |
+| `diag-header-counted` | read children that print nothing | each block is its header alone, and those headers count towards the request and session limits |
+| `diag-request-bound` | a read request whose children together produce far more than 256 KiB | `req-<n>.diag` and `req-<n>.diag-summary` together are at most 262 144 bytes — every retained byte counted |
+| `diag-budget-near-edge` | `req-<n>.diag` at 262 015 bytes (one byte of room), then a child producing 65 537 bytes | nothing appended beyond the limit (not even a header); the child counted in the summary |
+| `diag-request-saturated-many-children` | a saturated request, then 10 000 more read children | the request's files do not grow by a single byte; the summary's counters change within its 128 bytes |
+| `diag-session-bound` | many requests in one session produce far more than 4 MiB | every diagnostic file of the session together is at most 4 194 304 bytes |
+| `diag-session-saturated-many-requests` | a saturated session, then 1 000 more requests with read children | no new diagnostic file is created; the session's total does not grow; `session.diag-summary` stays 128 bytes |
+| `diag-overflow-one-summary` | overflow repeated in one request and across the session | one fixed-size summary per request file and one for the session, rewritten in place; no sequence of markers |
+| `diag-capture-failure` | the drain killed mid-run; the scratch filesystem full when the drain writes | diagnostics shown as "not available"; the read judged by its own status and functional output; nothing retried because of it |
 | `diag-mutator-no-backpressure` | a mutating child writes 1 GiB to stdout and stderr | nothing reaches disk or a pipe; the child is never blocked or signalled; its outcome is its exit status and the postcondition; the command is shown for running by hand |
+| `diag-mutator-tty-class` | static: a registry entry with `class=mutating` and `tty=needs`; a mutating entry with `diagnostics` streams | refused by the check: a child that needs a terminal is a handoff |
+| `diag-functional-not-budgeted` | a qualification step writing its 4 296 015 889-byte stream, an export writing its objects | untouched by the diagnostic limits: they are functional output with their own bounds |
 | `diag-handoff-not-captured` | a handoff child prints to the terminal | nothing of it in the scratch |
 | `diag-raw-sensitive` | a read child prints a planted token | it appears only on the log screen from `req-<n>.diag`; never in `debug`, `debug context`, a record, the log file or the state directory |
-| `diag-class-static` | static: every child the core runs has a declared class; no mutating child has a pipe on 1 or 2 | — |
+| `diag-class-static` | static: every child the core runs has a registry entry; no mutating child has a pipe on 1 or 2 | — |
 
 ### `pty-*`: the real terminal
 
@@ -348,6 +366,7 @@ baseline action: `equiv-plan-save`, `equiv-backup-gate`,
 | `restore-seeded` | Omarchy's seeded `starship.toml` | a conflict labelled "Omarchy's default" |
 | `restore-untouched` | `/usr/share/omarchy`, `~/.local/state/omarchy`, the skill links, the wrappers, `defaults/agent` | byte-identical after the restore |
 | `restore-backup-cross-device` | a Replace whose destination is on another device than the backups | the item refused (Keep or Skip); nothing copied or overwritten |
+| `restore-place-exact` | with `OMB_TEST_PAUSE_AT` before placing, the destination becomes in turn a directory, a symbolic link to a directory, a file and a FIFO | `ln -T`, `ln -s -T` and `mv -T --update=none-fail` each fail; nothing is created inside the directory or through the link; the item stops as a conflict |
 | `restore-folder-fs` | a folder unit on a filesystem outside btrfs, ext4, xfs, tmpfs | the folder unit refused; files still placed |
 | `restore-open-writer` | a program holds the reviewed file open and writes after it was moved aside | its bytes end in the backup, not the destination; the summary names the backup (the stated residual, shown, not detected) |
 | `restore-consent` | `restore verify` with and without consent | no MCP server or application started without it |
@@ -425,7 +444,7 @@ And:
 | `ssh-case` | `sshd -T` output in mixed case | read correctly |
 | `ssh-close` | close on an exposed server | stopped for this boot, never disabled; the screen says it starts at the next boot |
 | `ssh-harden-offline` | harden on a `Match`-free exposed server | the drop-in checked with `sshd -t -f` and `sshd -T -f` on a private copy before it is installed; installed; reloaded; `sshd -T` key-only; released and recorded as released |
-| `ssh-harden-disagree` | the check after the reload disagrees with the offline one | the drop-in removed and the service reloaded at once; reported |
+| `ssh-harden-disagree` | the check after the reload disagrees with the offline one; and, separately, the reload fails or `sshd -T` cannot be read | `sshd` stopped for this boot and checked stopped; the unverified drop-in removed while it is stopped; never left or restarted running with the old exposed configuration; reported |
 | `ssh-harden-no-include` | `sshd_config` without the `Include` first | harden refused |
 | `rescue-sshd-config-exact` | the rescue configuration | its bytes equal what the tool wrote; `sshd -t -f` passes; `sshd -T -f` shows exactly the listed values |
 | `rescue-sshd-invalid` | `sshd -t -f` fails | nothing started, nothing listens, the system's server unchanged |
@@ -460,7 +479,9 @@ And:
 | `qual-replay-cleaned` | macOS creates and cleans a round before Linux sees it; a copy of its step-one files is put back on Shared | Linux accepts it as a provisional candidate and runs step 2, saying *provisional*; macOS refuses step 3 for it (not its active round); the round never passes |
 | `qual-linux-provisional` | Linux after step 2 | its state and records say provisional until macOS reads the round back; never "current" or "qualified" |
 | `qual-round-records` | a round's life on macOS | `created.omb`, then `finished.omb`, then (after `qualify clean`) `cleaned.omb`, three files each written once; `active.omb` never names the round after `finished` or `cleaned` |
-| `qual-round-invalid` | `finished.omb` without `created.omb`; `cleaned.omb` then an attempt to write `finished.omb`; an attempt to rewrite an existing state file | invalid (treated as cleaned, reported); refused by exclusive creation; refused |
+| `qual-round-invalid` | `finished.omb` without `created.omb` | invalid: treated as cleaned, reported |
+| `qual-finished-after-cleaned` | a cleaned round, then step 3 or anything else asking to write its `finished.omb` (which does not exist yet) | refused by the state machine — no transition leaves `cleaned` — before any file is opened |
+| `qual-round-rewrite` | an attempt to write a state file of a round that already exists (`created.omb` twice) | refused by exclusive creation; the existing file unchanged |
 | `qual-artifact-mismatch` | a stage whose recorded frontend artifact digest is not the one the lock of its commit pins | the terminal evidence of that stage does not count towards M18 |
 | `qual-wrong-partition` | a USB volume named Shared with a valid copy of the manifest | never opened |
 | `qual-other-plan`, `qual-wrong-guid`, `qual-bad-seal` | each | `blocked` before any write |

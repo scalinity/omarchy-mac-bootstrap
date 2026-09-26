@@ -186,56 +186,106 @@ docs/FRONTEND.md refers to it.
 flowchart TD
     T([terminal]) --- L
     L["L — launcher (Bash)<br/>verifies the frontend; owns the session scratch and final terminal restore"] -->|spawns, waits| F
-    F["F — frontend (Rust)<br/>draws, reads keys, supervises requests"] -->|one per request| C
+    F["F — frontend (Rust)<br/>draws, reads keys, supervises requests"] -->|one request at a time| C
     C["C — core request (Bash)<br/>admits, decides, runs"] -->|run| X[X — child: read, mutating or handoff]
     X --> D[D — the child's descendants]
 ```
 
+Two kinds of process, never confused:
+
+- **Controllers** — the launcher L, the frontend F, and the session's cores C.
+  Each is recorded by its identity (below) and expected to stay alive while
+  its work goes on.
+- **Workers** — the child X that C starts for a request, and every process
+  that descends from it. Workers do the work; controllers only start,
+  supervise and judge it.
+
 All of them share the shell job's process group: nobody calls `setpgid` or
 `setsid` (a static check on F and C), so the terminal's signals reach them
-together during a handoff. A descendant may make its own group (for
-example `sudo` with `use_pty`); what that means for exclusion is in
-*Operations and exclusion*.
+together during a handoff. The group therefore never becomes empty while a
+controller is alive, and emptiness is never a test for anything. What a
+worker that makes its own group (`sudo` with `use_pty`, a daemon) means is in
+*Operations and exclusion*. F runs one request at a time.
 
-**A process's identity** is its PID, its start time as `ps -o lstart=`
-reports it (the baseline's `_proc_started`), and the machine's boot session
-(`/proc/sys/kernel/random/boot_id` on Linux, `sysctl -n
-kern.bootsessionuuid` on macOS). A recorded process is alive only if a
-process with that PID exists now, with that start time, in that boot
-session; a reused PID is never taken for the recorded process.
+**A process's identity** is its PID, its start time, and the machine's boot
+session:
+
+| | Start time | Boot session |
+| --- | --- | --- |
+| Bash (L, C, a later launcher) | `ps -p <pid> -o lstart=` (the baseline's `_proc_started`), to the second, on both systems | `/proc/sys/kernel/random/boot_id` (Linux), `sysctl -n kern.bootsessionuuid` (macOS) |
+| Rust (F) | `/proc/<pid>/stat`'s start time (Linux); `proc_pidinfo` with `PROC_PIDTBSDINFO` (macOS) | the same two sources |
+
+Each identity is compared only with one recorded by the same method. A
+recorded process is alive only if a process with that PID exists now, with
+that start time, in that boot session; a reused PID is never taken for the
+recorded process. **When an identity cannot be established** — `ps` fails,
+the boot session cannot be read — the process counts as possibly alive:
+nothing is deleted and no barrier is cleared on the strength of it.
+
+**The group snapshot.** Immediately before starting a child, C records the
+identities of every process then in the job's process group (the process
+table read directly: `ps -axo pid=,pgid=,lstart=`). Its **workers still
+present** are the processes in the group now that are not in that snapshot
+and are not the reader's own direct children at that moment — the `ps` and
+the pipeline stages taking the reading, which are not workers (the child
+itself has already been waited for, and a worker it left behind is
+reparented, never C's child). F keeps the same snapshot, from its own
+reading, before it hands the terminal to a request; L uses the same rule,
+with the moment it wrote `launcher.omb` as its snapshot, for its own
+cleanup.
 
 ### The session scratch
 
 L creates a private directory, `mktemp -d "${TMPDIR:-/tmp}/omb-session.XXXXXX"`
-(0700), and passes its path as `OMB_SESSION_DIR`. In it, each written once
-with exclusive creation (0600):
+(0700), and passes its path as `OMB_SESSION_DIR`. In it, each written with
+exclusive creation (0600):
 
 | File | Written by | Holds |
 | --- | --- | --- |
 | `launcher.omb` | L, first | L's identity |
 | `frontend.omb` | L, right after spawning F | F's identity |
+| `session.diag-summary` | L, with the scratch | the session's diagnostics summary (*Diagnostics*) |
 | `req-<n>.events` | F, before spawning C | the request's event spool |
-| `req-<n>.diag` | C, when a read child's output is kept | retained diagnostics (*Diagnostics*) |
 | `req-<n>.core` | C, at start; removed at exit | C's identity |
+| `req-<n>.worker-<k>` | C, as it starts each child | that child's identity |
+| `req-<n>.diag`, `req-<n>.diag-summary` | C, when a read child's output is first kept | retained diagnostics (*Diagnostics*) |
 
-The scratch is **quiescent** only when the launcher, the frontend and every
-core it names are no longer alive (identities as above), no live process's
-arguments name the directory (L starts F as `omb-tui --session <dir>`, so
-this covers the moment before `frontend.omb` exists; read with `ps -axo
-pid=,args=`), and no unresolved operation record in the state directory
-names this session. L removes its
-own scratch when F has exited and the scratch is quiescent; if it is not
-(a core still runs), L leaves it. A later launcher removes an old
-`omb-session.*` directory only when it is quiescent — never merely because
-its launcher is gone. The scratch is temporary, not persistent state, and is
-never read by a later session except to decide whether to remove it.
+L starts F as `omb-tui --session <dir>`, so a live frontend can be found by
+its arguments even before `frontend.omb` exists.
+
+**Owner cleanup.** When F has exited, L — alive, performing its own normal
+exit, and exempt from its own check — removes the scratch only when all of
+these hold; otherwise it leaves the scratch for a later launcher:
+
+- F is gone (L waited for it);
+- no `req-*.core` names a live core;
+- no `req-*.worker-*` names a live worker, and no process that entered the
+  job's group after L wrote `launcher.omb` remains, other than L itself and
+  the reading's own processes;
+- no unresolved operation record in the state directory names this session.
+
+**Stale reclaim.** A later launcher that finds an old `omb-session.*`
+directory has no exemption. It removes the directory only when:
+
+- the identity in `launcher.omb` is not alive;
+- the identity in `frontend.omb` is not alive, and no live process's
+  arguments name the directory (`ps -axo pid=,args=`), which covers a
+  frontend that started before `frontend.omb` was written;
+- no `req-*.core` and no `req-*.worker-*` names a live process;
+- no unresolved operation record names the session;
+- every one of these identities could be established; any that could not
+  counts as alive.
+
+A launcher PID that is gone is never enough. The scratch is temporary, not
+persistent state, and is never read by a later session except to decide
+whether it may be removed.
 
 ### Descriptors
 
 | Descriptor | L | F | C | X, read | X, mutating | X, handoff | D |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 0 | terminal | terminal | managed: `/dev/null`; handoff: terminal | `/dev/null` | `/dev/null` | terminal | as X |
-| 1, 2 | terminal | terminal | managed: `/dev/null` (in fixture mode, `req-<n>.core-err`, for tests); handoff: terminal | a pipe to C's drain (*Diagnostics*) | `/dev/null` | terminal | as X |
+| 1, 2 | terminal | terminal | managed: `/dev/null` (in fixture mode, `req-<n>.core-err`, for tests); handoff: terminal | as the child registry says (*Children*): functional output to its bounded destination, diagnostics to C's drain | `/dev/null`, or a functional destination the registry names | terminal | as X |
 | 3 | — | the request pipe's write end, close-on-exec; closed as soon as the request is written | the request pipe's read end; read to EOF (bounded) and closed with `exec 3<&-` before anything else runs | never open | never open | never open | never open |
 | the event spool | — | a read-only handle on `req-<n>.events`, close-on-exec, in a reader thread | **no descriptor held**: each record is appended with `printf … >>"$OMB_EVENTS"`, which opens, writes and closes | never open | never open | never open | never open |
 | anything else | none | every descriptor Rust's standard library opens is close-on-exec; fd 3 is placed with `dup2` in the child just before `exec` | Bash's own script descriptor is close-on-exec | — | — | — | — |
@@ -275,32 +325,85 @@ Consequences, each tested (docs/TESTING.md → `sup-*`):
    reader drains the rest and checks that the last line was a `result`.
 5. F shows `req-<n>.diag`, if any, on the session's log screen.
 
+### Children
+
+Every program C runs has an entry in the core's reviewed **child registry**
+(`data/children.omb`), keyed by the action and the command; a request never
+chooses any of it:
+
+| Field | Values |
+| --- | --- |
+| `class` | `read`, `mutating`, `handoff` |
+| `stdout`, `stderr` | `functional` (the output is the work: read by the core with its own bound, or written to the artifact the action creates), `diagnostics` (read class only), `null` |
+| `tty` | `none` (runs correctly with no terminal and no one reading its output) or `needs` (it prompts, asks, shows progress the person must see, or changes behaviour when `isatty` is false) |
+| `detaches` | `no` (it never leaves anything running after it exits), or `owned` (it deliberately leaves a service behind, and the entry names the action-specific owner and completion check: the rescue server's systemd unit, its state and its listener) |
+
+Rules, each a static check (docs/TESTING.md → `diag-class-static`,
+`diag-mutator-tty-class`, `sup-mutating-daemon-classification`):
+
+- `tty=needs` is always `class=handoff`; `class=mutating` requires `tty=none`;
+- a mutating child's streams are `null` or `functional`, never
+  `diagnostics`, so no pipe or growing diagnostic file sits inside a
+  mutation;
+- a child whose effect runs on after it exits is `detaches=owned` with its
+  owner and check, or it is not run managed at all;
+- functional output is never subject to the diagnostic budgets below, and
+  diagnostics are never functional: the qualification data, an export's
+  objects, and anything the core parses are functional, with their own
+  bounds in the documents that own them.
+
 ### Diagnostics, by child class
 
-Every child C runs belongs to one class, fixed by the action table in the
-core, never chosen at run time:
+| Class | Output | Outcome judged by |
+| --- | --- | --- |
+| **read** | stderr, and stdout when the registry says `diagnostics`, through a pipe into the drain below | its exit status, captured first from `PIPESTATUS`, and what the core read |
+| **mutating** | `/dev/null`, or the functional destination the registry names: no pipe, nothing that can fill, block, or end the child | its exit status and the machine read afterwards (the postcondition); the command itself is shown so the person can run it by hand to see its output |
+| **handoff** | the terminal, never captured | the machine read afterwards |
 
-| Class | Which children | Output | Outcome judged by |
-| --- | --- | --- | --- |
-| **read** | every child of a read or plan request; children an act action declares read-only (target checks, digests, `--version` checks, live checks) | stdout and stderr through a pipe into `tail -c 65537`, which reads everything and keeps only the last 65 537 bytes in memory, writing them to a per-child file in the scratch when the child's output ends | its exit status, captured first from `PIPESTATUS`, and what the core read |
-| **mutating** | every other child of an act action (installers, `git config`, the tools' own configuration commands, the qualification generator, `diskutil`) | stdout and stderr to `/dev/null`: no pipe, no file, nothing that can fill, block, or end the child | its exit status and the machine read afterwards (the postcondition); the command itself is shown so the person can run it by hand to see its output |
-| **handoff** | children that need the terminal | the terminal, never captured | the machine read afterwards |
+**Every retained byte counts.** The limits below are over everything kept —
+headers, payload, markers and summaries — with no exception, and no file
+ever exceeds its limit:
 
-- **Bounds.** A read child's retained output is at most 65 537 bytes on disk,
-  plus the pipe's buffer in memory. C appends it to `req-<n>.diag` after a
-  header line naming the command, its exit status and whether earlier output
-  was discarded (the 65 537th byte means it was), while that file is under
-  256 KiB and the session's diagnostics are under 4 MiB (C sums
-  `req-*.diag`); past either, C appends only the header, marked "not kept".
-  Nothing grows without a bound, and nothing depends on F reading it.
-- **Discarding.** `tail` keeps draining after its buffer is full, so a
-  noisy read child never blocks and is never ended by its drain. If `tail`
-  itself fails (killed, or the write at the end fails because the disk is
-  full), the read child may receive SIGPIPE; a read can be repeated
-  safely, and its outcome is judged as any failed read.
+| Scope | Hard limit | Made of |
+| --- | --- | --- |
+| a child | 65 536 bytes | one header line of at most 256 bytes (the command's registry id, its exit status, the bytes kept, whether any were discarded), then at most 65 280 bytes of its output |
+| a request | 262 144 bytes | `req-<n>.diag` (at most 262 016 bytes of child blocks) and `req-<n>.diag-summary` (exactly 128 bytes) |
+| a session | 4 194 304 bytes | every request's two files and `session.diag-summary` (exactly 128 bytes) |
+
+- **The drain is bounded while the child runs.** A read child's diagnostic
+  output goes to `tail -c 65281`, which reads everything, holds at most the
+  last 65 281 bytes in memory, and writes them to one temporary file only
+  when the output ends: the temporary file never exceeds 65 281 bytes, and
+  is removed once merged. F runs one request at a time and C runs its
+  children one at a time, so at most one such file exists.
+- **Reserve before append.** Before starting a read child, C computes the
+  room left: the child's 65 536, the request's 262 016 less `req-<n>.diag`'s
+  size, and the session's 4 194 304 less every diagnostic file's size and
+  less the 128 bytes a new request's summary would need. When the child
+  ends, C appends one block of at most that room: the header, then the
+  **last** bytes of the output that fit. The 65 281st byte, or a cut to fit
+  the room, marks the block as discarded. Nothing is appended and then
+  trimmed.
+- **Saturation.** When the room is less than a header and one byte, C does
+  not start a drain that keeps anything: the child's output goes through
+  `cat >/dev/null`, which consumes it so the child never blocks, and C
+  records the child in the summary instead. A request whose file would need
+  room the session lacks creates no file at all. A saturated request or
+  session stays saturated: no header, marker or file is added for later
+  children.
+- **Summaries are fixed size.** Each summary is exactly 128 bytes: the words
+  "diagnostics truncated", the children not kept and the bytes discarded as
+  fixed-width ten-digit counters that stop at 9 999 999 999, rewritten whole
+  (temporary file, then rename) as they change. They never grow.
+- **Discarding keeps draining.** `tail` and `cat` read to the end, so a noisy
+  read child is never blocked by its drain. If the drain itself fails
+  (killed, or the final write finds the disk full), the read child may
+  receive SIGPIPE; the diagnostics are "not available", and the read is
+  judged by its own status and functional output, failing only if that is
+  lost.
 - **A capture failure changes no outcome.** Diagnostics that cannot be kept
-  are shown as "not available"; they never turn a result into a failure,
-  never authorise a retry, and never stand in for a postcondition.
+  never turn a result into a failure, never authorise a retry, and never
+  stand in for a postcondition; a mutating child has no diagnostics to lose.
 - **Raw and temporary.** Diagnostics are raw output, potentially sensitive:
   they stay in the scratch, are shown only on the log screen, are removed
   with the scratch, and never enter a debug report or an agent's context
@@ -311,7 +414,7 @@ core, never chosen at run time:
 
 - **C never waits on F.** Its output is a file, so however slowly F reads, C's
   writes complete; nothing on a mutation path depends on the frontend
-  keeping up, and no mutating child has a pipe.
+  keeping up, and no mutating child has a diagnostic pipe.
 - C counts what it writes. Past 8 MiB less 64 KiB it writes no more
   `progress` or `message` records, one `overflow` record with the number
   suppressed, and then its `result`.
@@ -324,24 +427,27 @@ core, never chosen at run time:
 ### The terminal result
 
 Every response ends with exactly one `result`, after every other record.
-Anything after it — a record, a partial line — is a protocol error. If C
-exits without a `result`, or the spool fails admission, **the outcome is
-unknown**: F shows "the core stopped without a complete answer", never
-"failed" or "nothing happened", and asks for a fresh snapshot, which
-re-derives the machine's state; for an act request, the scope's operation
-record decides what must be reconciled (*Operations and exclusion*).
+What follows it decides the reason: a complete record after it is
+`after-result`; bytes after its LF with no final LF are `eof`, because
+termination (admission step 4) is checked before the order of records
+(step 6). Either way it is a protocol error. If C exits without a `result`,
+or the spool fails admission, **the outcome is unknown**: F shows "the core
+stopped without a complete answer", never "failed" or "nothing happened",
+and asks for a fresh snapshot, which re-derives the machine's state; for an
+act request, the scope's operation record decides what must be reconciled
+(*Operations and exclusion*).
 
 ### When something dies
 
 | Event | What happens |
 | --- | --- |
-| F dies (panic, kill) during a request | C continues to its end — its writes go to a file, so nothing fails — and exits. L sees F exit, then waits while any `req-*.core` names a live core (a handoff child may still own the terminal), then restores the terminal settings it saved, leaves the alternate screen, shows the cursor, and reports that the interface stopped and what to run to see the machine's state |
-| C dies (crash, kill) | its children continue. F sees C exit without a `result`: outcome unknown. For an act request, its operation becomes **unsupervised** (*Operations and exclusion*). After a handoff request, F does not take the terminal back while any process other than L and F remains in its process group (it reads the process table directly — `/proc` on Linux, `libproc` on macOS — spawning nothing); then it re-enters and re-derives |
-| L dies | F continues and restores its own terminal when it exits; the scratch stays until it is quiescent, and a later launcher removes it only then |
+| F dies (panic, kill) during a request | C continues to its end — its writes go to a file, so nothing fails — and exits. L sees F exit, then waits while any `req-*.core` names a live core (a handoff child may still own the terminal), then restores the terminal settings it saved, leaves the alternate screen, shows the cursor, reports that the interface stopped and what to run to see the machine's state, and cleans up as the owner if it may |
+| C dies (crash, kill) | its workers continue. F sees C exit without a `result`: outcome unknown. For an act request, its operation becomes **unsupervised** (*Operations and exclusion*). After a handoff request, F does not take the terminal back while any worker is still present — a process in the group that is not in F's snapshot from before the request (F reads the process table directly — `/proc` on Linux, `libproc` on macOS — spawning nothing); then it re-enters and re-derives |
+| L dies | F continues and restores its own terminal when it exits; the scratch stays until a later launcher may reclaim it |
 | X dies | C sees the exit status, reads the machine afterwards, and reports what the machine shows (the baseline's rule) |
-| EPIPE | only the request pipe and a read child's drain exist: F writing an over-long request, or to a C that already exited, is a refusal; Rust ignores SIGPIPE by default and sees EPIPE as an error. A mutating child has no pipe |
+| EPIPE | only the request pipe and a read child's drain exist: F writing an over-long request, or to a C that already exited, is a refusal; Rust ignores SIGPIPE by default and sees EPIPE as an error. A mutating child has no diagnostic pipe |
 | F's reader thread dies | the main thread sees its channel close; when C exits, the outcome is unknown and the state is re-derived |
-| a descendant outlives its parent, or leaves its process group | for a read request, nothing is held for it; for an act request, *Operations and exclusion* |
+| a worker outlives its parent, or leaves its process group | for a read request, nothing is held for it; for an act request, *Operations and exclusion* |
 | a signal interrupts a read or wait | the call is retried; signals change behaviour only as the next table says |
 
 ### Signals
@@ -361,48 +467,68 @@ check, and PTY tests of the actual dispositions).
 
 The baseline's run lock stays exactly as it is: one recording run at a time,
 cleared when its owner process is gone. It is not enough on its own when a
-mutating child can outlive the core that started it, so every **act**
+mutating worker can outlive the core that started it, so every **act**
 action that changes the machine also keeps an **operation record**,
 `ops/<scope>.omb` in the state directory:
 
 - **Written before the effect**, with the baseline's checked writer (a
   record that cannot be written stops the action, as `state_must_set`
   does): the action, its full basis digest, the session, C's identity (with
-  the boot session), the child's process group, the start time.
-- **Completed only by its supervisor.** The core that wrote it removes it —
-  after the action's result is recorded where its scope keeps results (the
-  Shared creation record, the restore journal, the install classification,
-  the qualification step) — and only when it has itself waited for the
-  child to exit, found no live process left in the child's process group,
-  and checked the postcondition.
-- **Unsupervised when its supervisor is gone.** A record whose core is no
-  longer alive is **unsupervised**: the outcome is unknown and a mutating
-  descendant may still be running, even one that left the process group
-  (`setsid`, a daemon), which the process table cannot connect to the
-  operation. An unsupervised record is a **barrier**: every act action in
-  its scope is refused (`code=unsupervised`), naming the operation and the
-  one way forward. An empty process group never clears it.
-- **Cleared by a new boot.** Once the current boot session differs from the
-  record's, no process of the old boot can still run. Then, and only then,
-  the scope's own reconciliation runs (the baseline's creation-record check,
-  the journal's judgement, a fresh classification), records what the
-  machine shows, and removes the operation record. Read commands keep
-  working throughout, and show the barrier and "restart this Mac (or this
-  Linux system), then run the tool again".
+  the boot session), the start time.
+- **Normal supervised completion.** Only the core that wrote it removes it,
+  and only when all of these hold, in this order:
+  1. C started the child the registry names for the action, and has been
+     alive and supervising throughout;
+  2. the child exited (C waited for it);
+  3. **worker quiescence**: no worker is still present — every process in
+     the group is one C's snapshot held before the child started, which is
+     where the controllers L, F and C are, and they are expected to remain;
+  4. for a child the registry marks `detaches=owned`, its action-specific
+     completion check holds (for the rescue server, its unit's state and its
+     listener);
+  5. the action's postcondition holds on a fresh read;
+  6. the result is recorded where the scope keeps results (the Shared
+     creation record, the restore journal, the install classification, the
+     qualification step).
+  If workers are still present when the action's time limit passes, or the
+  process table cannot be read, C cannot establish quiescence: it marks the
+  operation unsupervised (below) and reports the outcome unknown.
+- **Why generic inspection is enough, and where it stops.** A worker that
+  leaves the group (`setsid`, a double fork) is invisible to the snapshot.
+  So the registry is the guarantee: a managed mutating child must be
+  `detaches=no` — a program that leaves nothing running — or
+  `detaches=owned` with its own owner and check; a program that may detach
+  in a way no check can follow is run as a handoff, or not at all. Adding or
+  changing an entry is a reviewed change, and a static check refuses a
+  managed mutating entry the registry marks as detaching without an owner
+  (docs/TESTING.md → `sup-mutating-daemon-classification`). Process-group
+  inspection is never claimed to prove that an arbitrary daemon has stopped.
+- **Unsupervised when supervision is lost.** A record whose core is no
+  longer alive, or one C itself marks unsupervised, means the outcome is
+  unknown and a mutating worker may still be running, even one that left the
+  group. An unsupervised record is a **barrier**: every act action in its
+  scope is refused (`code=unsupervised`), naming the operation and the one
+  way forward, for the rest of this boot. Nothing in this boot clears it:
+  not an empty-looking group, not a matching postcondition.
+- **Cleared only by a new boot, then reconciled.** Once the current boot
+  session differs from the record's, no process of the old boot can still
+  run. Then the scope's own reconciliation runs (the baseline's
+  creation-record check, the journal's judgement, a fresh classification)
+  and records one of three findings: **no effect**, **the expected effect,
+  completed**, or **something unexpected**. The first two remove the record;
+  the third keeps the scope blocked, shows what the machine holds, and
+  needs the person. A reboot is never itself counted as success. Read
+  commands keep working throughout, and show the barrier and "restart this
+  Mac (or this Linux system), then run the tool again".
 - **Honoured by both interfaces.** The act entry of every command, in the
   frontend and in the text interface (`--no-tui`), checks the operation
   records of its scopes first; this check in the launcher is a baseline
   change reviewed on its own in M14 gate 3.
-- **Read requests hold nothing.** A read child that outlives its core is a
-  non-mutating orphan: it can write only its diagnostics into the scratch,
-  and it never creates or holds a barrier.
-- **Limit, stated.** While its supervisor is alive, completion needs the
-  child's exit and an empty process group; a descendant that deliberately
-  left the group before the child exited is not seen. The mutating children
-  the core runs are an allowlisted set (`tests/test-safety.sh`) of programs
-  that do not daemonise; adding one is a reviewed change. This is not a
-  disk lock: the scope's own postconditions and records remain the
-  authority for what happened, as the baseline's creation record is for
+- **Read requests hold nothing.** A read worker that outlives its core is a
+  non-mutating orphan: it can write only its bounded diagnostics into the
+  scratch, and it never creates or holds a barrier.
+- This is not a disk lock: the scope's own postconditions and records remain
+  the authority for what happened, as the baseline's creation record is for
   Shared.
 
 ### The Shared critical interval
@@ -410,12 +536,13 @@ action that changes the machine also keeps an **operation record**,
 Between the accepted final topology validation and `sudo -n diskutil
 addPartition`, nothing is added: no event record, no prompt, no progress
 write, no wait on the frontend, no diagnostics capture (`diskutil` is a
-mutating child), no other I/O than the baseline already performs. C emits
-its last record before the final read begins and its next record after
-`addPartition` returns. The operation record, with the boot session, is
-written before the final read, not inside the interval. This is checked
-statically (the code between the two points is the baseline's own,
-unchanged) and in the fixture tests (`sup-shared-critical`).
+mutating child), no process-table snapshot, no other I/O than the baseline
+already performs. C takes its group snapshot and emits its last record
+before the final read begins, and its next record after `addPartition`
+returns. The operation record, with the boot session, is written before the
+final read, not inside the interval. This is checked statically (the code
+between the two points is the baseline's own, unchanged) and in the fixture
+tests (`sup-shared-critical`).
 
 ## 4. Requests, responses and operations
 

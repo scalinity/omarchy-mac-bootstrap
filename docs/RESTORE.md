@@ -104,12 +104,17 @@ For a destination `D` under the home, with the item's approved choice:
    live under the home, on its filesystem; if `D` is on another device, the
    rename is refused and so is the item (Keep or Skip), because a copy
    followed by an overwrite could not keep this promise. **`backed-up`**.
-5. **Place, never over something new**, with a primitive that fails if any
-   name — a file, a folder, a link — has appeared at `D`: a file by `ln`
-   from the stage to `D` (`link(2)`), then the stage name removed; a link by
-   `ln -s` at `D` (`symlink(2)`); a folder by `mv -T --update=none-fail`
+5. **Place, never over something new**, at exactly the path `D`, with a
+   primitive that fails if anything — a file, a folder, a link, any other
+   object — has appeared there: a file by `ln -T -- <stage> D`
+   (`link(2)`), then the stage name removed; a link by `ln -s -T -- <text>
+   D` (`symlink(2)`); a folder by `mv -T --update=none-fail -- <stage> D`
    (GNU coreutils 9.5 and later: `renameat2` with `RENAME_NOREPLACE`,
-   failing if `D` exists). A folder is placed this way only when the home's
+   failing if `D` exists). `-T` (no target directory) is always given:
+   plain `ln` or `mv` would treat a folder that appeared at `D` as a place
+   to put the new name **inside**, which is never wanted; there is no such
+   fallback. That the image's and Omarchy's coreutils honour `-T` this way
+   is checked before M15-A closes. A folder is placed this way only when the home's
    filesystem is one whose kernel support for `RENAME_NOREPLACE` is known
    (btrfs, ext4, xfs, tmpfs; read with `stat -f -c %T`); elsewhere a folder
    unit is refused rather than placed with a weaker rename. If placing

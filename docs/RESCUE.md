@@ -139,12 +139,18 @@ Two actions deal with it, with or without remote rescue:
   `AuthenticationMethods publickey`. It is checked **before** the service
   sees it — `sshd -t -f` and `sshd -T -f` on a private copy of the
   configuration whose `Include` points at the existing drop-ins plus this
-  one — then installed, the service reloaded, and `sshd -T` checked again;
-  if that check disagrees, the drop-in is removed and the service reloaded
-  at once. With no `Match`, one check covers every connection. The drop-in
-  lasts across reboots and is **released to the person** at once: it is
-  theirs, recorded as released, and no cleanup removes it. With a `Match`
-  present, harden is refused and says why.
+  one — then installed, the service reloaded, and `sshd -T` checked again.
+  With no `Match`, one check covers every connection. Only a verified
+  key-only result stands: the drop-in lasts across reboots and is
+  **released to the person** at once — theirs, recorded as released, and no
+  cleanup removes it. **If the live check disagrees, the reload fails, or
+  `sshd -T` cannot be read, the server is stopped for this boot and checked
+  stopped**, and only then is the unverified drop-in removed. Harden began
+  because the server was exposed or unproven, so going back to that state
+  is never the fallback: the two outcomes are verified key-only, or
+  stopped. The screen says that the stopped server starts again at the next
+  boot with the configuration it had. With a `Match` present, harden is
+  refused and says why.
 
 ### The rescue server
 

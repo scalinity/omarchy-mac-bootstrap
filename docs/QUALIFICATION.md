@@ -153,6 +153,12 @@ another:
 | `created`, `cleaned`, with or without `finished` | cleaned (it wins) | none |
 | `finished` or `cleaned` without `created`; any file that fails admission | invalid: the round is treated as cleaned and reported | none |
 
+Two different mechanisms, never confused: the **state machine** refuses a
+transition the table does not allow — writing `finished` for a cleaned
+round is refused because nothing follows `cleaned`, before any file is
+opened — and **exclusive creation** stops the same state file from being
+written a second time.
+
 ### Binding and freshness
 
 Each side checks, in this order, and stops at the first failure before

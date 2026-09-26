@@ -670,8 +670,10 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
   active round, the rounds this Mac created, and the stage records for the
   hardware report.
 - (M14) The per-session scratch folder `omb-session.*` in `$TMPDIR` — the
-  session's owners, the request spools and bounded diagnostics; temporary,
-  removed only when quiescent, never read by a later session except to
+  session's owners and workers, the request spools and bounded
+  diagnostics; temporary, removed by its own launcher once its frontend,
+  cores and workers are gone, or reclaimed by a later launcher only when
+  every recorded identity is dead; never read by a later session except to
   decide that.
 - (M14) The frontend cache is outside the state directory:
   `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/`, root's under
@@ -869,12 +871,15 @@ acceptance; the test ids are in docs/TESTING.md):
     handoff.
 19. (M14) Every protocol document is admitted byte by byte before it is
     parsed, identically in Bash and Rust, and matches the golden examples;
-    no protocol descriptor reaches a child; a mutating child has no pipe;
-    read children's diagnostics stay within their bounds; a missing result
-    is an unknown outcome; an operation whose supervisor is gone stays a
-    barrier until a new boot, whatever its process group shows; a session's
-    scratch is removed only when quiescent; nothing is added inside Shared's
-    critical interval.
+    no protocol descriptor reaches a child; a mutating child has no
+    diagnostic pipe and needs no terminal; every retained diagnostic byte,
+    headers and summaries included, stays within the child, request and
+    session limits; a missing result is an unknown outcome; an operation
+    completes with its controllers alive once its workers are quiescent and
+    its postcondition holds, and one whose supervisor is gone stays a
+    barrier until a new boot; the owner launcher cleans up its own scratch,
+    and a later launcher reclaims one only when every recorded identity is
+    dead; nothing is added inside Shared's critical interval.
 20. (M14) The core refuses every request the execute rules refuse, including
     a stale basis; for every baseline action the protocol exposes, the
     recorded commands and records equal the accepted baseline's (`2edb76a`).

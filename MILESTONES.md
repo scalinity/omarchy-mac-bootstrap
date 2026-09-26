@@ -256,9 +256,11 @@ of docs/TESTING.md.
   documentation checks of docs/TESTING.md → *Documentation checks* pass
   when run by hand; an independent review of the remediated documents
   passes. No code, workflow, test or fixture changes.
-- **Status:** second remediation done (DV1–DV8); awaiting the independent
-  verification of this candidate. Gate 1 is not authorized until that
-  verification passes.
+- **Status:** third remediation done — the two remaining Gate 1 blockers
+  (controllers told apart from workers for completion and session cleanup;
+  diagnostic limits over every retained byte) and four test-oracle
+  corrections; awaiting the independent verification of this candidate.
+  Gate 1 is not authorized until that verification passes.
 
 ## M14 — Frontend, protocol, scanner, profile, resolver and bundle
 
@@ -284,12 +286,17 @@ of docs/TESTING.md.
   launcher on CI and on this Mac's macOS; the Linux aarch64 artifact
   passing `frontend-compat-linux` and starting on the aarch64 runner; every
   `frontend-input-*` case behaving as written; start and every cleanup path
-  verified; every descriptor, diagnostics and process-death test passing,
-  the boot-session barrier included; Bash and Rust admission agreeing on
-  the whole differential corpus and the golden examples;
-  `frontend-lock-not-input` passing; no path that changes the machine.
+  verified; every descriptor, diagnostics and process-death test passing
+  on the real topology — a supervised completion with L, F and C alive
+  (`sup-completion-controllers-live`), the owner launcher cleaning its own
+  scratch (`sup-owner-cleanup`), no reclaim under a live old frontend
+  (`sup-reclaim-live-controller`), the boot-session barrier after lost
+  supervision, and every retained diagnostic byte within its limit
+  (`diag-*`); Bash and Rust admission agreeing on the whole differential
+  corpus and the golden examples; `frontend-lock-not-input` passing; no
+  path that changes the machine.
 - **Status:** not started, and not authorized until the independent
-  verification of Gate 0's second remediation passes.
+  verification of Gate 0's third remediation passes.
 
 ### Gate 2 — Read-only equivalence
 

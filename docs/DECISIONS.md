@@ -130,31 +130,49 @@ anything else; responses are appended to a per-request spool file the core
 opens and closes per record, so no protocol descriptor ever reaches a child
 and the core never waits on the frontend. The end of a response is the
 core's exit plus exactly one final `result`; anything else is an unknown
-outcome, re-derived from the machine. Processes are known by PID, start
-time and boot session; a session's scratch is removed only when its
-launcher, frontend and cores are all gone. Mutating actions keep an
-operation record that survives the death of the process that wrote it
-(D47). Children's output follows their class (D46). Nothing is added
-between the final Shared topology validation and `sudo -n diskutil
-addPartition`.
+outcome, re-derived from the machine. Controllers (launcher, frontend,
+cores) and workers (the children they start and their descendants) are
+told apart; processes are known by PID, start time and boot session, and
+an identity that cannot be established counts as alive. The live launcher
+removes its own scratch once its frontend, cores and workers are gone and
+no unresolved operation names the session; a later launcher reclaims an
+abandoned scratch only when every recorded controller and worker is dead,
+with no exemption for anyone. Mutating actions keep an operation record
+that survives the death of the process that wrote it (D47). Children's
+output follows their class (D46). Nothing is added between the final
+Shared topology validation and `sudo -n diskutil addPartition`.
 
-**D46. Children's output is bounded by class.** A read child's output
-drains through `tail -c`, which keeps draining and retains only its last
-64 KiB, within per-request and per-session caps; a mutating child's output
-goes to `/dev/null`, because any pipe or growing file would put a fallible
-consumer inside a mutation; a handoff child owns the terminal. Losing
-diagnostics changes no outcome. *Set aside:* capturing a mutator's output
-through a drain, which could block or end it.
+**D46. Children's output is bounded by class, and every retained byte
+counts.** A reviewed child registry fixes each child's class, where its
+output goes (functional or diagnostic), whether it needs a terminal, and
+whether it detaches. A read child's diagnostics drain through `tail -c`,
+which keeps draining and never writes more than the last 65 281 bytes; the
+limits — 65 536 bytes a child, 262 144 a request, 4 194 304 a session —
+cover every retained byte, headers and fixed-size summaries included, with
+room reserved before anything is appended, and a saturated scope drains to
+`/dev/null` and adds nothing. A mutating child needs no terminal and its
+output goes to `/dev/null` or its functional destination, because any
+diagnostic pipe or growing file would put a fallible consumer inside a
+mutation; a child that needs a terminal is a handoff. Losing diagnostics
+changes no outcome, and functional output is never held to diagnostic
+limits. *Set aside:* capturing a mutator's output through a drain, which
+could block or end it; limits that exclude headers.
 
 **D47. A mutation that loses its supervisor waits for a new boot.** Only
-the core that waited for its mutating child, found the child's process
-group empty and checked the postcondition completes an operation. If that
-core is gone, the operation is unsupervised: a barrier for its scope, in
-both interfaces, until the machine's boot session changes — the one proof
-that no old process can still write, since a descendant may have left the
-process group — and the scope's reconciliation has run. Read-only orphans
-hold nothing. *Set aside:* clearing the barrier when the process group is
-empty (a daemonised descendant is not in it); a general process tracker.
+the core that waited for its mutating child, found no worker still present
+— no process in the shared group that was not there when the child started,
+the controllers remaining as expected — and checked the postcondition
+completes an operation. Escaped descendants are ruled out by the child
+registry, not by inspection: a managed mutating child leaves nothing
+running, or names an owner and completion check for what it leaves. If the
+core is gone, or cannot establish quiescence, the operation is
+unsupervised: a barrier for its scope, in both interfaces, for the rest of
+the boot — a new boot session is the one proof that no old process can
+still write — after which reconciliation finds no effect, the expected
+effect, or something unexpected, which stays blocked. Read-only orphans
+hold nothing. *Set aside:* treating an empty-looking process group as
+proof (the controllers are always in it, and a daemonised descendant never
+is); a general process tracker.
 
 **D43. The frontend's own persistence follows intent.** Only an act
 session downloads and caches the frontend, moves aside a bad cached binary,

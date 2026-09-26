@@ -178,7 +178,7 @@ flowchart TD
 | `rescue.sh` | rescue tools, the workspace, the system's SSH classification, closing and hardening it, the rescue-owned SSH server, removal (docs/RESCUE.md) | `rsq_` |
 | `debug.sh` | the field-allowlisted report, the agent brief, raw diagnostics | `dbg_` |
 | `qualify.sh` | the cross-system check, the stream, stage records, the executed-source digest, the report (docs/QUALIFICATION.md) | `qual_` |
-| `data/registry.omb`, `data/agent-brief.md` | the registry; the brief's fixed text | — |
+| `data/registry.omb`, `data/children.omb`, `data/agent-brief.md` | the software registry; the child registry (each program the core runs: class, output, terminal, detaching; docs/PROTOCOL.md → *Children*); the brief's fixed text | — |
 | `frontend/` | the Rust crate; every Git-tracked file in it, tests included, is a build input (docs/FRONTEND.md → *Four identities*) | — |
 | `release/frontend.lock` | the release lock, outside the build inputs | — |
 
