@@ -261,6 +261,12 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   expect_blocked "macOS running from another container" "$fx" "not running from the container the plan was made on"
   fx=$(variant mac-shared-reserved 'diskutil_info_disk0:s#APPLE SSD FIXTURE Media#Portable SSD Media#')
   expect_blocked "another disk with the same layout" "$fx" "not the disk the plan was made on"
+  fx=$(variant mac-shared-reserved 'diskutil_info_disk0:s#<key>Internal</key><true/>#<key>Internal</key><false/>#')
+  expect_blocked "the whole disk reported external, its store internal" "$fx" "is not reported as internal"
+  # A physical store that exists but is not one of this disk's partitions.
+  fx=$(variant mac-shared-reserved 'diskutil_info_root:s#<string>disk0s2</string>#<string>disk0s9</string>#')
+  cp "$fx/cmd/diskutil_info_disk0s2" "$fx/cmd/diskutil_info_disk0s9"
+  expect_blocked "macOS on a store not listed on the disk" "$fx" "not running from the container the plan was made on (disk0s9)"
   # Checked again on the read after the typed gates: a disk that stops
   # reading as internal while they were answered gets nothing created.
   d=$(with_receipt)
@@ -348,6 +354,28 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "yes\ncreate\n" shared create
   assert_contains "$(t_flat "$T_OUT")" "Shared storage is in place" "and later runs find it in place"
   assert_empty_file "$T_DIR/record" "creating nothing"
+  # Recorded, but the run stopped before removing the creation record: the
+  # next run, whose check passes again, removes it.
+  d=$(txn_state)
+  printf 'shared_uuid=%s\n' "$U_SHARED" >>"$d/state.env"
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "yes\ncreate\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "Shared storage is in place" "a recorded Shared with its creation record left behind is in place"
+  [ ! -e "$d/shared-create.env" ] && ok || fail "and the leftover creation record is removed"
+  assert_empty_file "$T_DIR/record" "and nothing is created"
+  # Linux's code was lost with state.env, the plan record kept: the code
+  # typed again for this root lets the partition be recorded, never created.
+  d=$(fresh_state)
+  T_ENV="OMB_STATE_DIR=$d" t_cli mac-shared-created "$done_code\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "Recording it now" "a lost completion code, typed again, records the existing Shared partition"
+  assert_empty_file "$T_DIR/record" "and nothing is created"
+  st=$(cat "$d/state.env")
+  assert_contains "$st" "shared_uuid=$U_SHARED" "its GUID is recorded"
+  assert_contains "$st" "shared_linux_done=$done_code" "and the code with it"
+  d=$(fresh_state)
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$swapped" "$done_code\n\n" shared create
+  assert_contains "$(t_flat "$T_OUT")" "made on a different Linux partition" "a code for another root does not record the partition after this one"
+  assert_empty_file "$T_DIR/record" "and nothing is created"
+  assert_not_contains "$(cat "$d/state.env")" "shared_uuid=" "and nothing recorded"
   # The run stopped before diskutil changed anything: nothing to reconcile,
   # and the creation can run again.
   d=$(txn_state)
@@ -626,6 +654,10 @@ assert_contains "$T_OUT" "[WARN] Shared mounted" "doctor: neither mounted nor ar
 t_cli linux-shared-ready "test\n" shared test
 assert_empty_file "$T_DIR/record" "write test: nothing written while nothing is mounted"
 assert_contains "$(t_flat "$T_OUT")" "Nothing is mounted at /mnt/shared, even after asking the automount" "and it says so"
+# A dry run does not ask the automount to mount (mounting changes the volume).
+t_cli linux-shared-ready "test\n" shared test --dry-run
+assert_contains "$(t_flat "$T_OUT")" "Dry run: nothing is mounted at /mnt/shared yet; a real run asks the automount to mount it" "a dry run leaves the automount alone"
+assert_contains "$T_OUT" "would run  cp " "and shows what would run"
 fx=$(mounted "/dev/nvme0n1p7 /mnt/shared exfat $OPTS")
 t_cli "$fx" "\n" shared test
 assert_empty_file "$T_DIR/record" "the write test needs consent"

@@ -213,7 +213,8 @@ Running it again when the entry is in place changes nothing.
 - `./omarchy-bootstrap shared test` — after typing `test`: first the
   filesystem at the mount point must be Shared, matched as doctor matches it
   (on Linux an armed automount is asked to mount by listing the directory,
-  which writes nothing; on macOS the mount point is the one diskutil reports
+  which writes nothing, except in a dry run, which leaves it unmounted; on
+  macOS the mount point is the one diskutil reports
   for Shared's GUID); anything else and nothing is written. Then it writes
   one uniquely named file, flushes it, reads it back, compares the checksum,
   and removes that file only. It reports success only when the removal
@@ -241,7 +242,7 @@ never runs a filesystem repair itself.
 | made on a different Linux partition / belongs to a different plan | type the code the current Linux shows (`./omarchy-bootstrap` on Linux) |
 | not the exFAT volume planned (filesystem …) | the partition in Shared's place is not a finished exFAT volume. If it is yours to erase: `diskutil eraseVolume ExFAT Shared <id>` from macOS, then run `./omarchy-bootstrap shared create` to record it |
 | the Shared creation started … did not leave the disk as planned / stopped | the one creation did something other than what it was allowed to (the message names what). Nothing more will run while it stands. Compare `diskutil list` with the message; when the disk is as it should be after all, `shared create` records it. When you have settled it another way, remove `shared-create.env` from the state directory: the disk is then read afresh, and still refused if it does not match the plan |
-| an exFAT partition follows the Linux root, but Linux's completion code for this root is not recorded | the Linux root is not the one Linux vouched for; nothing is taken for Shared after it |
+| an exFAT partition follows the Linux root, but Linux's completion code for this root is not recorded | the code was lost (with `state.env`), or the Linux root is not the one Linux vouched for. `./omarchy-bootstrap shared create` asks for the code Linux shows now; when it names this Linux root, the partition is recorded (nothing is created). A code for another root is refused, and nothing after this root is taken for Shared |
 | /etc/fstab already has an entry … | remove or change that entry yourself, then run `shared activate` again |
 | /mnt/shared already holds files | move them elsewhere first; mounting would hide them |
 

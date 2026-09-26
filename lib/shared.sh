@@ -373,6 +373,7 @@ shared_mac_state() {
   local u off size rec
   SHARED_STATE=off SHARED_WHY="" SHARED_GAP_START=0 SHARED_GAP_END=0 SHARED_PRED_ID="" SHARED_PRED_UUID=""
   SHARED_SUCC_ID="" SHARED_UUID="" SHARED_ID="" SHARED_SIZE=0 SHARED_MOUNT="" SHARED_DIGEST="" TXN_RESULT=""
+  SHARED_NEED_RECEIPT=0
   [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ] || return 0
   if ! shared_intent_load; then
     _blocked "$INT_ERR"
@@ -566,7 +567,8 @@ shared_mac_existing() {
   # Taken on only after the root Linux vouched for: a partition after some
   # other root is not one this tool made.
   if ! shared_receipt_ok "${SHARED_TYPED_RECEIPT:-$(state_get shared_linux_done)}"; then
-    _blocked "an exFAT partition ($GN_ID) follows the Linux root, but Linux's completion code for this root is not recorded here, so it is not taken for Shared"
+    SHARED_NEED_RECEIPT=1
+    _blocked "an exFAT partition ($GN_ID) follows the Linux root, but Linux's completion code for this root is not recorded here, so it is not taken for Shared until ./omarchy-bootstrap shared create is given that code"
     return 1
   fi
   SHARED_UUID=$GN_UUID SHARED_ID=$GN_ID SHARED_SIZE=$GN_SIZE SHARED_MOUNT=$mp
@@ -722,6 +724,17 @@ shared_create_flow() {
       return 0
       ;;
     blocked)
+      # One stop has a way on from here: a Shared partition already follows
+      # the Linux root and only Linux's code for that root is missing (its
+      # record was lost). The code is taken and the partition recorded;
+      # nothing is created.
+      if [ "$SHARED_NEED_RECEIPT" = 1 ] && shared_take_receipt "$code"; then
+        shared_mac_state
+        if [ "$SHARED_STATE" = created ]; then
+          shared_mac_reconcile
+          return
+        fi
+      fi
       ui_blockers "Shared storage cannot be created." "$(printf "%s\n" "$SHARED_WHY" "Nothing was changed. Nothing will be repaired automatically; docs/SHARED.md explains each case.")"
       return 1
       ;;
@@ -894,6 +907,11 @@ shared_mac_reconcile() {
     ui_info "The Shared partition is on the disk but was not recorded (the run that created it may have been interrupted). Recording it now; nothing is created again."
     shared_mac_record
     return
+  fi
+  # Recorded, but the run that recorded it stopped before removing the
+  # creation record, whose check has now passed again: its job is done.
+  if [ "$TXN_RESULT" = "done" ]; then
+    state_remove_file "$SHARED_TXN_FILE"
   fi
   ui_ok "Shared storage is in place: $SHARED_ID, $(fmt_gb "$SHARED_SIZE")${SHARED_MOUNT:+, at $SHARED_MOUNT}."
   shared_linux_next
@@ -1432,11 +1450,15 @@ shared_test() {
   # mounted by listing the directory, which writes nothing.
   if [ "$OMB_PLATFORM" = linux ]; then
     shared_lx_mount
-    if [ "$SH_MOUNT" = armed ]; then
+    # Mounting is itself a change (exFAT marks a mounted volume in use), so
+    # a dry run leaves the automount as it is and says what would follow.
+    if [ "$SH_MOUNT" = armed ] && [ "$OMB_DRY_RUN" = 1 ]; then
+      ui_info "Dry run: nothing is mounted at $SHARED_MNT yet; a real run asks the automount to mount it, and checks it is Shared, before writing."
+    elif [ "$SH_MOUNT" = armed ]; then
       ls -A "$(sys_path "$SHARED_MNT")" >/dev/null 2>&1
       shared_lx_mount
     fi
-    if [ "$SH_MOUNT" != verified ]; then
+    if [ "$SH_MOUNT" != verified ] && { [ "$SH_MOUNT" != armed ] || [ "$OMB_DRY_RUN" != 1 ]; }; then
       case "$SH_MOUNT" in
         armed | none) ui_fail "Nothing is mounted at $SHARED_MNT, even after asking the automount; nothing was written." ;;
         *) ui_fail "$SH_MOUNT_WHY. Nothing was written." ;;
