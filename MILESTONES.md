@@ -12,6 +12,15 @@ Mac handoffs, install classification, the one Shared creation and its
 activation, state, routing and the launcher, as tested by CI run 36220127446
 (M13). No real hardware has run it; that is M14.
 
+`main` carries it at `e33714195c767f94de41cbea2a51d7c04d8e3fe0`, a
+fast-forward (no merge commit) to the reviewed commit plus one
+documentation-only commit that accepts M13 and records this baseline. CI
+run 36224896159 passed on that commit, logs read: Linux 1,809 passed, 0
+failed, 27 skips, every one a plutil-gated section, ShellCheck 0.9.0 clean;
+macOS 2,971 passed, 0 failed, no skips, the launcher step clean on stderr,
+fixtures fresh. That commit had no independent review of its own; it adds
+no code to the reviewed one.
+
 Later work does not inherit this acceptance. Each change is reviewed as a
 delta against this commit, and a change that touches disk authority, `sudo`,
 the storage planner, the Shared creation or activation, or the allowlists in
