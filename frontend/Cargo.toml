@@ -1,0 +1,30 @@
+[package]
+name = "omb-tui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+description = "The omarchy-mac-bootstrap frontend: presentation and input only; the Bash core decides."
+license = "MIT"
+
+[[bin]]
+name = "omb-tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "=0.30.2"
+signal-hook = "0.3"
+rustix = { version = "1", features = ["termios", "process", "fs", "stdio", "pipe"] }
+
+[dev-dependencies]
+insta = "1"
+portable-pty = "0.9"
+vt100 = "0.16"
+
+[features]
+# Test-only hooks (a stalled channel, a reader-thread panic). A release build
+# never enables it (docs/TESTING.md → New seams).
+test-hooks = []
+
+[profile.release]
+strip = true
