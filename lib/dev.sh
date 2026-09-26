@@ -51,13 +51,28 @@ dev_tool_present() {
 
 # --- Outcomes ------------------------------------------------------------------
 # A module calls exactly one of these last. DEV_FAILS collects the failures
-# of a module with several parts, so one failing part never reads as success.
-dev_begin() { DEV_OUTCOME="" DEV_DETAIL="" DEV_FAILS="" DEV_DONE_PARTS=""; }
+# of a module with several parts, so one failing part never reads as success;
+# DEV_CANCELLED records that the person stopped the rest. They are separate
+# facts, and dev_outcome_final makes the module's outcome from both.
+dev_begin() { DEV_OUTCOME="" DEV_DETAIL="" DEV_FAILS="" DEV_DONE_PARTS="" DEV_CANCELLED=0; }
 dev_ok() { DEV_OUTCOME=success DEV_DETAIL=${1:-}; }
 dev_fail() { DEV_OUTCOME=failed DEV_DETAIL=$1; }
 dev_skip() { DEV_OUTCOME=skipped DEV_DETAIL=${1:-}; }
-dev_cancel() { DEV_OUTCOME=cancelled DEV_DETAIL=""; } # the person stopped it: no detail
+dev_cancel() { DEV_CANCELLED=1 DEV_OUTCOME=cancelled DEV_DETAIL=""; } # the person stopped it: no detail
 dev_satisfied() { DEV_OUTCOME=already-satisfied DEV_DETAIL=${1:-}; }
+# dev_outcome_final — after a module: a part that failed keeps the module
+# failed, however it ended. Stopping the rest never turns a failure into a
+# cancellation, and never lets the run be stamped done.
+dev_outcome_final() {
+  [ -n "$DEV_OUTCOME" ] || dev_fail "the module did not report an outcome"
+  if [ -n "$DEV_FAILS" ] && [ "$DEV_OUTCOME" != failed ]; then
+    dev_fail "$DEV_FAILS"
+  fi
+  if [ "$DEV_CANCELLED" = 1 ] && [ "$DEV_OUTCOME" = failed ]; then
+    DEV_DETAIL="$DEV_DETAIL; the rest was stopped at your request"
+  fi
+  return 0
+}
 dev_part_fail() { DEV_FAILS="$DEV_FAILS${DEV_FAILS:+; }$1"; }
 dev_part_ok() { DEV_DONE_PARTS="$DEV_DONE_PARTS${DEV_DONE_PARTS:+, }$1"; }
 # dev_parts_finish — the outcome of a module made of parts.
@@ -204,7 +219,7 @@ dev_main() {
     ui_section "$(dev_label "$m")"
     dev_begin
     "dev_run_$m"
-    [ -n "$DEV_OUTCOME" ] || dev_fail "the module did not report an outcome"
+    dev_outcome_final
     [ "$OMB_DRY_RUN" = 1 ] && [ "$DEV_OUTCOME" = success ] && DEV_OUTCOME=previewed
     case "$DEV_OUTCOME" in
       success) state_stamp "dev_${m}_at" ;;

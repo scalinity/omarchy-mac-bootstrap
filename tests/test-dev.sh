@@ -55,6 +55,46 @@ chmod 600 "$pre/state.env"
 T_ENV="OMB_STATE_DIR=$pre OMB_TEST_RC=1" t_cli linux-omarchy-installed '9\ny\n' dev
 expect_failed "timezone" "Time & locale" "timedatectl failed"
 
+# --- A failure stands when the rest of the module is stopped -----------------------------------
+# ssh-keygen fails, then q at "Set up SSH access?": the module stopped, and it
+# failed; the run exits non-zero and is not stamped done.
+T_ENV="OMB_TEST_RC=1" t_cli linux-omarchy-installed '7\n\nq\n' dev
+expect_failed "ssh-keygen, then stopped" "SSH" "ssh-keygen failed"
+assert_contains "$(row SSH)" "the rest was stopped at your request" "the stop is reported beside the failure"
+assert_not_contains "$(row SSH)" "cancelled" "the failure is not reported as a cancellation"
+# gh ssh-key add fails, then q at the same prompt.
+home=$(t_tmp)
+mkdir -p "$home/.ssh"
+: >"$home/.ssh/id_ed25519"
+printf 'ssh-ed25519 AAAAC3Nza fixture\n' >"$home/.ssh/id_ed25519.pub"
+fx=$(t_variant linux-omarchy-installed)
+printf 'github.com: logged in as alex\n' >"$fx/cmd/gh_status"
+rm -f "$fx/cmd/gh_status.rc"
+T_ENV="HOME=$home OMB_TEST_RC=1" t_cli "$fx" '7\ny\nq\n' dev
+expect_failed "gh ssh-key add, then stopped" "SSH" "gh ssh-key add failed"
+assert_contains "$(row SSH)" "the rest was stopped at your request" "and the stop is reported"
+# The rule behind it, for every module with parts: in the languages and AI
+# modules the only place to stop comes before any part runs, so the same
+# rule is checked on the outcome directly.
+t_load
+for part in "rust: the installer failed" "Claude Code install failed"; do
+  dev_begin
+  dev_part_fail "$part"
+  dev_cancel
+  dev_outcome_final
+  assert_eq "$DEV_OUTCOME" failed "a failed part ($part), then stopped: failed"
+  assert_contains "$DEV_DETAIL" "$part; the rest was stopped at your request" "and both are reported"
+done
+dev_begin
+dev_cancel
+dev_outcome_final
+assert_eq "$DEV_OUTCOME|$DEV_DETAIL" "cancelled|" "stopped with nothing failed: cancelled"
+dev_begin
+dev_part_fail "one part"
+dev_ok "all done"
+dev_outcome_final
+assert_eq "$DEV_OUTCOME" failed "a failed part never ends as success, whatever the module reported"
+
 # --- A helper that exits 0 without doing the job is not success -------------------------------
 T_ENV="OMB_TEST_AFTER=$FIX/linux-omarchy-installed" t_cli linux-omarchy-installed '1\n' dev
 expect_failed "packages skipped silently" "Core tools" "still missing: github-cli wget tree rsync"

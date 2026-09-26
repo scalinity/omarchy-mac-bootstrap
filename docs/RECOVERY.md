@@ -97,7 +97,8 @@ next boot through `omarchy-mac-setup.service` on tty1.
   `@fresh` (before Omarchy) and `@factory` (the installed system).
 - **Developer setup** — every module is rerunnable: `./omarchy-bootstrap dev`.
   The summary names each module that failed and why; rerun just those once
-  the cause is fixed. A failed module is never recorded as done.
+  the cause is fixed. A failed module is never recorded as done, and stays
+  failed when you stop the rest of it with `q` after a step failed.
 
 ## Shared storage stopped
 

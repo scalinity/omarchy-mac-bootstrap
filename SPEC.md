@@ -453,7 +453,7 @@ unknown fields are ignored with a warning; decoded values are shown before use.
 | No network on Linux | Launch `nmtui`; recheck |
 | Omarchy Mac interrupted | Upstream resumes on boot; `status` shows it; `resume` runs `--resume` when idle |
 | Shared: anything unexpected | `blocked` with the reason; nothing repaired, formatted or deleted |
-| A developer module fails | Reported per module; not timestamped; exit non-zero |
+| A developer module fails | Reported per module; not timestamped; exit non-zero — also when the rest of the module was then stopped with `q`: a failure is never turned into a cancellation |
 | A record cannot be written before an irreversible step | That step does not run |
 | Ctrl-C at a prompt | Exit; nothing destructive ran |
 | Ctrl-C while a launched command runs | Report that it may have made changes; `status` re-derives where the machine is |
