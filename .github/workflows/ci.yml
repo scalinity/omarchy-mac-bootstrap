@@ -153,7 +153,10 @@ jobs:
       OMB_STRICT_SKIPS: "1"
       OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
     steps:
+      # Full history: test-static compares lib/shared.sh with 2edb76a.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: The checkout is exactly the commit
         run: tests/frontend-inputs.sh clean
       - name: The toolchain frontend/rust-toolchain.toml names
@@ -207,6 +210,8 @@ jobs:
       OMB_STRICT_SKIPS: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: The checkout is exactly the commit
         run: tests/frontend-inputs.sh clean
       - name: The toolchain frontend/rust-toolchain.toml names
