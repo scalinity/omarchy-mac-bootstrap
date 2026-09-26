@@ -1,3 +1,21 @@
 LUKS header information
 Version:       	2
-Requirements:	online-reencrypt
+Epoch:         	5
+Metadata area: 	16384 [bytes]
+Keyslots area: 	16744448 [bytes]
+UUID:          	5f3e2d1c-0000-4000-8000-00000000c0de
+Label:         	(no label)
+Subsystem:     	(no subsystem)
+Flags:       	(no flags)
+Requirements:	online-reencrypt-v2
+
+Data segments:
+  0: crypt
+	offset: 16777216 [bytes]
+	length: (whole device)
+	cipher: aes-xts-plain64
+	sector: 4096 [bytes]
+
+Keyslots:
+  0: luks2
+	Key:        512 bits

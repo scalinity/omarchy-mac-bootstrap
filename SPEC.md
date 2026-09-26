@@ -282,7 +282,7 @@ Detailed in `docs/SHARED.md`. Summary:
   resume token.
 - **Codes** `ombdone-<plan>-<root>-<check>` (Linux → macOS, shown only once
   Omarchy Mac has finished: marker, no conf or unit, nothing running, no
-  migration staged, encryption finished) and `ombshare-<plan>-<shared>-<check>`
+  migration staged, encryption positively finished — § Linux phase) and `ombshare-<plan>-<shared>-<check>`
   (macOS → Linux). A GUID prefix, the plan, check digits. Input, never
   permission.
 - **Creation (macOS)** from `awaiting-macos-creation` only: the plan's disk,
@@ -319,10 +319,16 @@ HTTPS reachability of GitHub, `EUID`, and Omarchy Mac's own signals:
 | `omarchy-mac-setup.service` `activating` | running on tty1 now |
 | `/etc/omarchy-btrfs-migrate.conf` | encryption staged |
 | `/var/lib/omarchy/btrfs-migrate-done` | encryption finished |
-| `cryptsetup luksDump` with `online-reencrypt` (root only) | re-encryption pending |
+| `cryptsetup luksDump` of root's one partition (root only) | a LUKS2 header without `online-reencrypt`: finished; with it: pending |
 
-Encryption state: `none`, `migrating`, `complete`, `unverified` (a LUKS root a
-user cannot confirm). Routing: not aarch64/Apple → stop. `plan` → choices only.
+Encryption state: `none`, `migrating`, `complete`, `unverified` (a LUKS root
+read as a user, without the finish marker), `probe-failed` (read as root,
+the header could not be read as a LUKS2 header: no single partition under
+root, `cryptsetup` missing or failing, no output, or output that is not the
+header). `complete` needs positive evidence: as root, the header read and
+without the requirement; as a user, who cannot read it, the finish marker.
+A read that failed never counts as finished, and as root the marker does not
+stand in for the header. Routing: not aarch64/Apple → stop. `plan` → choices only.
 Installed → Shared's next step, developer menu. In progress → upstream status
 (as root); `--resume` offered only when the unit is not active. Otherwise →
 Phase 2.

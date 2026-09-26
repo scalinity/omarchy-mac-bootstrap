@@ -60,8 +60,13 @@ on every run; `./omarchy-bootstrap shared` shows it on either system:
 - Omarchy Mac's migration rewrites `/boot` and encrypts the root in place
   across reboots. Nothing else changes the partition table while that runs:
   Linux shows the completion code only when Omarchy Mac's marker is written,
-  its setup files and unit are gone, no migration is staged, and (as root)
-  the LUKS header no longer carries `online-reencrypt`.
+  its setup files and unit are gone, no migration is staged, and the
+  encryption is positively finished: as root, the LUKS header of root's
+  partition is read and is a LUKS2 header without `online-reencrypt`; as
+  your everyday user, who cannot read the header, the migration's finish
+  marker exists. A header that cannot be read (cryptsetup missing or
+  failing, no output, something that is not a LUKS2 header) never counts as
+  finished, and as root the marker does not stand in for it.
 - macOS cannot read the encrypted Linux root, so Linux's word crosses the
   reboot as a typed code, bound to the plan and to the Linux root's GPT GUID.
 

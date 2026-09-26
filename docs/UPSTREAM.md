@@ -173,8 +173,16 @@ it never uses or grows unpartitioned space, and creates nothing under `/mnt`.
 | `/usr/share/omarchy/version` + `display-manager.service` as a symlink | installed, for installs before the marker (upstream also wants the `@factory` subvolume) |
 | `omarchy-mac-setup.service` `activating` | running now (a oneshot unit is never `active`) |
 | `/etc/omarchy-btrfs-migrate.conf` | in-place encryption staged; removed by its finish service |
-| `/var/lib/omarchy/btrfs-migrate-done` | the encryption's finish service has run |
+| `/var/lib/omarchy/btrfs-migrate-done` | the encryption's finish service has run: written on a boot that got past the initramfs hook, which re-encrypts synchronously and drops to a shell on failure, after the service confirmed root is on dm-crypt |
 | `cryptsetup luksDump <root partition>` with `online-reencrypt` | re-encryption still pending (root only) |
+
+Upstream's own `root_is_encrypted` treats a `luksDump` that fails or prints
+nothing as "encrypted" (its `grep` simply finds no flag), and its
+`installed` marker is written after that check, so neither is proof that
+the re-encryption finished. This tool reads the header itself as root and
+accepts only a LUKS2 header (`LUKS header information`, `Version: 2`, a UUID,
+`Data segments:`); as a user it relies on the finish marker, the one signal
+readable without root (read at `quattro` `ba546a6`).
 | `/usr/local/bin/omarchy-mac-setup` | upstream's own copy; stays after the install |
 
 Upstream keeps no log file: `/var/log/omarchy-mac-setup.log` is declared but

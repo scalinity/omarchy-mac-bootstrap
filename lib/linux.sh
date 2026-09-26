@@ -71,36 +71,78 @@ lx_detect() {
 }
 
 # lx_detect_encryption — LX_ENC_STATE, from Omarchy Mac's own signals
-# (bin/omarchy-mac-setup root_is_encrypted, bin/omarchy-system-btrfs-migrate):
-#   none        root is not a LUKS device and no migration is staged
-#   migrating   a migration is staged (/etc/omarchy-btrfs-migrate.conf), or
-#               root's LUKS header still carries the online-reencrypt flag
-#   complete    root is LUKS, and the header (read as root) has no
-#               reencrypt flag, or the migration's finish marker exists
-#   unverified  root is LUKS, but neither can be read from this account
+# (bin/omarchy-mac-setup root_is_encrypted, bin/omarchy-system-btrfs-migrate),
+# and LX_ENC_WHY when a LUKS root's header could not be read:
+#   none          root is not a LUKS device and no migration is staged
+#   migrating     a migration is staged (/etc/omarchy-btrfs-migrate.conf), or
+#                 root's LUKS header records the online-reencrypt requirement
+#   complete      root is LUKS, and either its header, read as root, is a
+#                 LUKS2 header without that requirement, or (as a user, who
+#                 cannot read the header) the migration's finish marker exists
+#   unverified    root is LUKS, read as a user, and there is no finish marker
+#   probe-failed  root is LUKS, read as root, and the header could not be
+#                 read as one: no single partition under root, cryptsetup
+#                 missing or failing, no output, or output that is not a
+#                 LUKS2 header
+# A header that could not be read is never taken for one without the flag,
+# and as root the finish marker does not stand in for it: the marker is
+# upstream's word, the header is the thing itself. (Upstream's own
+# root_is_encrypted reads a failed luksDump as finished; this does not.)
 lx_detect_encryption() {
-  local staged=0 done_marker=0
+  local staged=0 done_marker=0 parts dump rc
   [ -f "$(sys_path "$OMS_MIGRATE_CONF")" ] && staged=1
   [ -f "$(sys_path "$OMS_MIGRATE_DONE")" ] && done_marker=1
-  LX_ROOT_BACKING=$(sys_cmd lsblk_root_backing lsblk -nsplo NAME,TYPE "$LX_ROOT_SRC" | awk '$2 == "part" {print $1; exit}')
-  case "$LX_ROOT_BACKING" in /dev/[a-z]*) ;; *) LX_ROOT_BACKING="" ;; esac
-  LX_REENCRYPT=""
-  if [ "$LX_ROOT_CRYPT" = 1 ] && [ "$OMB_UID" = 0 ] && [ -n "$LX_ROOT_BACKING" ]; then
-    if sys_cmd luks_dump cryptsetup luksDump "$LX_ROOT_BACKING" | grep -q 'online-reencrypt'; then
-      LX_REENCRYPT=1
+  # The partition under root: exactly one, or none is named.
+  parts=$(sys_cmd lsblk_root_backing lsblk -nsplo NAME,TYPE "$LX_ROOT_SRC" | awk '$2 == "part" {print $1}')
+  LX_ROOT_BACKING=""
+  case "$parts" in
+    *"
+"*) ;;
+    /dev/[a-z]*) LX_ROOT_BACKING=$parts ;;
+  esac
+  LX_REENCRYPT="" LX_ENC_WHY=""
+  if [ "$LX_ROOT_CRYPT" = 1 ] && [ "$OMB_UID" = 0 ]; then
+    if [ -z "$LX_ROOT_BACKING" ]; then
+      LX_ENC_WHY="the partition under the encrypted root could not be identified"
     else
-      LX_REENCRYPT=0
+      dump=$(sys_cmd luks_dump cryptsetup luksDump "$LX_ROOT_BACKING")
+      rc=$?
+      if [ "$rc" = 127 ]; then
+        LX_ENC_WHY="cryptsetup is not available to read the LUKS header of $LX_ROOT_BACKING"
+      elif [ "$rc" != 0 ]; then
+        LX_ENC_WHY="cryptsetup luksDump $LX_ROOT_BACKING failed (exit $rc)"
+      elif [ -z "$dump" ]; then
+        LX_ENC_WHY="cryptsetup luksDump $LX_ROOT_BACKING printed nothing"
+      elif ! luks2_header_ok "$dump"; then
+        LX_ENC_WHY="cryptsetup luksDump $LX_ROOT_BACKING did not print a LUKS2 header"
+      elif printf '%s\n' "$dump" | grep -q 'online-reencrypt'; then
+        LX_REENCRYPT=1
+      else
+        LX_REENCRYPT=0
+      fi
     fi
   fi
   if [ "$staged" = 1 ] || [ "$LX_REENCRYPT" = 1 ]; then
     LX_ENC_STATE=migrating
-  elif [ "$LX_ROOT_CRYPT" = 1 ] && { [ "$LX_REENCRYPT" = 0 ] || [ "$done_marker" = 1 ]; }; then
-    LX_ENC_STATE=complete
-  elif [ "$LX_ROOT_CRYPT" = 1 ]; then
-    LX_ENC_STATE=unverified
-  else
+  elif [ "$LX_ROOT_CRYPT" != 1 ]; then
     LX_ENC_STATE=none
+  elif [ -n "$LX_ENC_WHY" ]; then
+    LX_ENC_STATE=probe-failed
+  elif [ "$LX_REENCRYPT" = 0 ] || [ "$done_marker" = 1 ]; then
+    LX_ENC_STATE=complete
+  else
+    LX_ENC_STATE=unverified
   fi
+}
+
+# luks2_header_ok DUMP — does it read as `cryptsetup luksDump` of a LUKS2
+# header: the title, version 2, a UUID and the data segments? Omarchy Mac
+# encrypts with --type luks2.
+luks2_header_ok() {
+  case "$(printf '%s\n' "$1" | head -1)" in "LUKS header information"*) ;; *) return 1 ;; esac
+  printf '%s\n' "$1" | grep -Eq '^Version:[[:space:]]+2[[:space:]]*$' &&
+    printf '%s\n' "$1" | grep -Eq '^UUID:[[:space:]]+[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}[[:space:]]*$' &&
+    printf '%s\n' "$1" | grep -q '^Data segments:'
 }
 
 # lx_setup_complete — is Omarchy Mac's work entirely finished, so nothing of
@@ -122,6 +164,7 @@ lx_setup_complete() {
     case "$LX_ENC_STATE" in
       migrating) LX_INCOMPLETE_WHY="the in-place encryption has not finished" ;;
       unverified) LX_INCOMPLETE_WHY="root is encrypted, but whether re-encryption finished can only be read as root" ;;
+      probe-failed) LX_INCOMPLETE_WHY="root is encrypted, and whether re-encryption finished is not known: $LX_ENC_WHY" ;;
       none) [ "${CFG_enc:-0}" = 1 ] && LX_INCOMPLETE_WHY="encryption was chosen, but root is not encrypted" ;;
     esac
   fi

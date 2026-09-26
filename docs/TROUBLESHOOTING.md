@@ -31,6 +31,7 @@ Start with `./omarchy-bootstrap doctor` and `./omarchy-bootstrap logs`.
 | "no longer declares: --keymap" | The setup script's flags changed | Same: re-verify upstream, then update `OMARCHY_MAC_SETUP_FLAGS` |
 | Setup "in progress" but nothing happens | The unit ran and stopped | `./omarchy-bootstrap resume` as root; upstream prints to tty1 only (Ctrl+Alt+F1) and keeps no log file |
 | Encryption "not finished yet" in doctor | a migration is staged, or re-encryption is pending | Reboot: the initramfs continues it. Shared waits until it has finished |
+| Encryption "header could not be confirmed" in doctor (as root) | `cryptsetup luksDump` of root's partition failed, printed nothing, or printed something that is not a LUKS2 header | Run `sudo cryptsetup luksDump <partition>` yourself and read it; Shared waits until the header reads as finished |
 | "Setup finishing" in doctor | upstream's last boot has not run yet | Reboot once more |
 | SSH port not listening, or no authorized keys | sshd running is only one part of SSH access | `./omarchy-bootstrap dev` → SSH runs `omarchy-setup-security-sshd`, which also opens the firewall and authorizes keys |
 | A developer module "failed" | its installer failed, or finished without installing (e.g. no aarch64 build) | The summary says which and why; fix, then rerun `./omarchy-bootstrap dev` |

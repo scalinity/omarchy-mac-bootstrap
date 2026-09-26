@@ -242,6 +242,7 @@ lx_doctor() {
     complete) doc pass "Encryption" "root is LUKS; re-encryption finished" ;;
     migrating) doc warn "Encryption" "in-place encryption not finished yet; the next boot continues it" ;;
     unverified) doc info "Encryption" "root is LUKS; whether re-encryption finished needs root to read" ;;
+    probe-failed) doc fail "Encryption" "root is LUKS, but its header could not be confirmed: $LX_ENC_WHY" ;;
     *)
       if [ "${CFG_enc:-1}" = 1 ] && [ "$LX_OMARCHY_STATE" != absent ]; then
         doc warn "Encryption" "requested, root is not encrypted"

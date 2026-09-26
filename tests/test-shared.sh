@@ -252,6 +252,28 @@ printf 'cfg_user=alex\ncfg_enc=1\ncfg_shared=150\ncfg_plan=1a2b3c4d\n' >"$fx/roo
 printf 'WANT_ENCRYPT=1\n' >"$fx/root/etc/omarchy-btrfs-migrate.conf"
 t_cli "$fx" "n\n"
 assert_not_contains "$T_OUT" "ombdone-" "no completion code while the encryption is still migrating"
+# The completion code needs encryption positively finished. Read as root, the
+# header decides; one that could not be read never counts as finished, even
+# with the finish marker there. rc_case UID SETUP prints the code shown, if any.
+rc_case() {
+  local fx sd
+  fx=$(t_variant linux-shared-absent)
+  printf '%s\n' "$1" >"$fx/cmd/id_u"
+  (cd "$fx" && eval "$2")
+  sd=$(t_tmp)
+  cp "$fx/root/var/lib/omarchy-mac-bootstrap/state.env" "$sd/"
+  chmod 600 "$sd/state.env"
+  T_ENV="OMB_STATE_DIR=$sd" t_cli "$fx" "n\n"
+  printf '%s\n' "$T_OUT" | grep -oE 'ombdone-[0-9a-f]{8}-[0-9a-f]{12}-[0-9a-f]{4}' | head -1
+}
+assert_eq "$(rc_case 0 :)" "$(code_make ombdone 1a2b3c4d "$U_ROOT")" "as root, a clean LUKS2 header gives the completion code"
+for c in "cryptsetup failing|echo 1 >cmd/luks_dump.rc" "cryptsetup missing|rm -f cmd/luks_dump" "no output|: >cmd/luks_dump" \
+  "output that is not a header|printf 'Device is not a valid LUKS device.\\n' >cmd/luks_dump" \
+  "no partition under root|printf '/dev/mapper/root crypt\\n' >cmd/lsblk_root_backing" \
+  "still re-encrypting, marker present|printf 'Requirements:\\tonline-reencrypt-v2\\n' >>cmd/luks_dump"; do
+  assert_eq "$(rc_case 0 "${c#*|}")" "" "as root, no completion code: ${c%%|*}"
+done
+assert_eq "$(rc_case 1000 'rm -f root/var/lib/omarchy/btrfs-migrate-done')" "" "as a user, no completion code without the finish marker"
 
 share=$(code_make ombshare 1a2b3c4d "$U_SHARED")
 T_ENV="OMB_TEST_AFTER=$FIX/linux-shared-ready" t_cli linux-shared-present "$share\nmount\n" shared activate

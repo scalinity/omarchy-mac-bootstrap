@@ -150,6 +150,47 @@ assert_eq "$LX_ENC_STATE" unverified "a user cannot confirm re-encryption withou
 lx_setup_complete
 assert_rc $? 1 "unverified encryption is not complete"
 assert_contains "$LX_INCOMPLETE_WHY" "only be read as root" "and it says why"
+
+# Complete encryption needs positive evidence: as root, a LUKS2 header read
+# without the online-reencrypt requirement. A header that could not be read
+# is never taken for one without the flag, and as root the finish marker
+# does not stand in for it. The installed fixture has the marker.
+# enc_case UID SETUP — a copy of the installed machine changed by SETUP
+# (run in the copy's directory), read as UID; prints "state setup|why".
+enc_case() {
+  local fx
+  fx=$(t_variant linux-omarchy-installed)
+  (cd "$fx" && eval "$2")
+  (
+    OMB_FIXTURE=$fx OMB_UID=$1 CFG_enc=1
+    lx_detect
+    if lx_setup_complete; then set -- complete; else set -- incomplete; fi
+    printf '%s %s|%s' "$LX_ENC_STATE" "$1" "$LX_ENC_WHY"
+  )
+}
+NO_MARKER='rm -f root/var/lib/omarchy/btrfs-migrate-done'
+for row in \
+  "valid header, no marker|0|$NO_MARKER|complete complete|" \
+  "valid header and the marker|0|:|complete complete|" \
+  "the marker, as a user who cannot read the header|1000|:|complete complete|" \
+  "no marker, as a user|1000|$NO_MARKER|unverified incomplete|" \
+  "the marker and a header still re-encrypting|0|printf 'Requirements:\\tonline-reencrypt-v2\\n' >>cmd/luks_dump|migrating incomplete|" \
+  "a staged migration and a clean header|0|printf 'MODE=encrypt\\n' >root/etc/omarchy-btrfs-migrate.conf|migrating incomplete|" \
+  "cryptsetup missing|0|rm -f cmd/luks_dump|probe-failed incomplete|cryptsetup is not available" \
+  "cryptsetup failing|0|printf 'Device /dev/nvme0n1p6 is not a valid LUKS device.\\n' >cmd/luks_dump; echo 1 >cmd/luks_dump.rc|probe-failed incomplete|failed (exit 1)" \
+  "no output|0|: >cmd/luks_dump|probe-failed incomplete|printed nothing" \
+  "output that is not a header|0|printf 'garbage\\n' >cmd/luks_dump|probe-failed incomplete|did not print a LUKS2 header" \
+  "a header cut short|0|head -2 cmd/luks_dump >cmd/x && mv cmd/x cmd/luks_dump|probe-failed incomplete|did not print a LUKS2 header" \
+  "a LUKS1 header|0|sed -i.bak 's/^LUKS header information\$/& for \\/dev\\/nvme0n1p6/; s/^Version:.*/Version:        1/' cmd/luks_dump|probe-failed incomplete|did not print a LUKS2 header" \
+  "no partition under root|0|printf '/dev/mapper/root crypt\\n' >cmd/lsblk_root_backing|probe-failed incomplete|could not be identified" \
+  "two partitions under root|0|printf '/dev/mapper/root crypt\\n/dev/nvme0n1p6 part\\n/dev/nvme0n1p7 part\\n' >cmd/lsblk_root_backing|probe-failed incomplete|could not be identified"; do
+  IFS='|' read -r label uid setup want why <<EOF
+$row
+EOF
+  got=$(enc_case "$uid" "$setup")
+  assert_eq "${got%%|*}" "$want" "encryption: $label"
+  [ -z "$why" ] || assert_contains "${got#*|}" "$why" "encryption: $label: the reason is named"
+done
 # The display-manager unit must be a symlink, as upstream requires.
 fx=$(t_variant linux-omarchy-installed)
 rm -f "$fx/root/var/lib/omarchy-mac-setup/installed" "$fx/root/etc/systemd/system/display-manager.service"
@@ -162,6 +203,12 @@ unset OMB_FIXTURE
 t_cli linux-encrypt-staged "" doctor
 assert_contains "$T_OUT" "[WARN] Encryption" "doctor: a staged encryption is a warning"
 assert_contains "$T_OUT" "not finished yet" "doctor: and says the next boot continues it"
+fx=$(t_variant linux-omarchy-installed)
+printf '0\n' >"$fx/cmd/id_u"
+printf '1\n' >"$fx/cmd/luks_dump.rc"
+t_cli "$fx" "" doctor
+assert_contains "$T_OUT" "[FAIL] Encryption" "doctor: a LUKS header root cannot read is a failure, not a pass"
+assert_contains "$T_OUT" "luksDump /dev/nvme0n1p6 failed (exit 1)" "doctor: and it names the probe that failed"
 t_cli linux-omarchy-finishing "" doctor
 assert_contains "$T_OUT" "[INFO] Setup finishing" "doctor: upstream's last boot is information, not a leftover"
 assert_not_contains "$T_OUT" "Setup leftovers" "doctor: no false leftover warning"

@@ -85,7 +85,8 @@ next boot through `omarchy-mac-setup.service` on tty1.
 - **Interrupted encryption** — upstream documents the in-place encryption as
   safe to interrupt; the next boot resumes it. `./omarchy-bootstrap doctor`
   reports it as not finished while `/etc/omarchy-btrfs-migrate.conf` exists or
-  (as root) the LUKS header still carries `online-reencrypt`.
+  (as root) the LUKS header still carries `online-reencrypt`, and as a
+  failure when root cannot read the header at all; either way Shared waits.
 - **Boots to `grub rescue>`** — `/boot` was on the root when it was encrypted.
   Follow Omarchy Mac's `docs/btrfs.md`.
 - **Stop the guided run** without undoing anything — `omarchy-mac-setup --abort`.

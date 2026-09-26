@@ -302,6 +302,16 @@ exit 0
 EOF
 }
 
+# luks_dump [REQUIREMENT] — `cryptsetup luksDump` of the LUKS2 header
+# Omarchy Mac writes (--type luks2) on the Linux root, first sections only;
+# an unfinished re-encryption adds its requirement after the flags.
+luks_dump() {
+  printf 'LUKS header information\nVersion:       \t2\nEpoch:         \t5\nMetadata area: \t16384 [bytes]\nKeyslots area: \t16744448 [bytes]\n'
+  printf 'UUID:          \t5f3e2d1c-0000-4000-8000-00000000c0de\nLabel:         \t(no label)\nSubsystem:     \t(no subsystem)\nFlags:       \t(no flags)\n'
+  [ -z "${1:-}" ] || printf 'Requirements:\t%s\n' "$1"
+  printf '\nData segments:\n  0: crypt\n\toffset: 16777216 [bytes]\n\tlength: (whole device)\n\tcipher: aes-xts-plain64\n\tsector: 4096 [bytes]\n\nKeyslots:\n  0: luks2\n\tKey:        512 bits\n'
+}
+
 # linux NAME UID USER ROOTFS ROOTSRC BOOTSRC BOOTFS CRYPT ROUTE OMARCHY(absent|progress|installed)
 linux() {
   local d=$1 uid=$2 user=$3 rootfs=$4 rootsrc=$5 bootsrc=$6 bootfs=$7 crypt=$8 route=$9 omarchy=${10}
@@ -332,9 +342,7 @@ linux() {
     put "$d/cmd/lsblk_root_backing" "$rootsrc crypt
 /dev/nvme0n1p6 part
 /dev/nvme0n1 disk"
-    put "$d/cmd/luks_dump" "LUKS header information
-Version:       	2
-Requirements:	(no flags)"
+    put "$d/cmd/luks_dump" "$(luks_dump)"
   else
     put "$d/cmd/lsblk_root_backing" "$rootsrc part
 /dev/nvme0n1 disk"
@@ -441,9 +449,7 @@ put linux-encrypt-staged/root/etc/omarchy-btrfs-migrate.conf "MODE=encrypt
 PARTUUID=4a7b1c2d-0006-4e5f-8a9b-000000000006"
 # Booted with the re-encryption still pending (after a failed worker run).
 linux linux-encrypt-reencrypting 0 root btrfs /dev/mapper/root /dev/nvme0n1p5 vfat 1 1 progress
-put linux-encrypt-reencrypting/cmd/luks_dump "LUKS header information
-Version:       	2
-Requirements:	online-reencrypt"
+put linux-encrypt-reencrypting/cmd/luks_dump "$(luks_dump online-reencrypt-v2)"
 
 # Shared storage on Linux, on the disk above (same offsets, in 512-byte
 # sectors as lsblk reports them), root on LUKS as Omarchy leaves it.
