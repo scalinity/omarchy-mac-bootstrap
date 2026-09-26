@@ -1,224 +1,306 @@
 # Restore
 
-**Status: designed for M15; not implemented.**
+**Status: the implementation contract for M15-A (journal, placement,
+undo) and M15-B (packages and AI tools); not implemented.**
 
-`restore [DIR]` (act, Linux) brings a bundle (docs/MIGRATION.md) onto
-Omarchy: it installs what the resolution chose (docs/RESOLVER.md), places
-the selected files, re-creates the structured configuration through its
-owners' interfaces, and verifies all of it on the machine. The AI tools'
-part is in docs/AI-TOOLS.md.
+`restore [DIR]` (act, Linux) brings an approved bundle (docs/MIGRATION.md)
+onto Omarchy: it installs what the checked graph chose (docs/RESOLVER.md),
+places the selected files, re-creates structured configuration through its
+owners' interfaces, and verifies it on the machine. The AI tools' part is in
+docs/AI-TOOLS.md.
+
+A restore is **journaled, resumable and conditionally reversible**. It is not
+a transaction: packages, sign-ins and files are separate kinds of effect, and
+no single rollback spans them.
 
 ## Who, where and when
 
-- **As the everyday user, never as root.** `restore` refuses `EUID` 0. It
-  writes only inside that user's home, with that user's ownership. It never
-  writes under `/etc`, `/usr` or `/opt`; system changes happen only through
-  Omarchy's own helpers and `pacman` (via `omarchy-pkg-add`), which ask for
-  `sudo` themselves in the terminal.
-- **After Omarchy has finished**, the baseline's Linux signals (marker, no
-  setup conf or unit, encryption finished). Before that, `restore` says what
-  it is waiting for.
-- **From a verified place**: Shared, identified by the baseline's checks, or
-  a directory the person gives.
+- **As the everyday user, never as root** (`EUID` 0 is refused). Its own
+  writes are only inside that user's home, with that user's ownership. System
+  changes happen only through Omarchy's helpers and `omarchy-pkg-add`, which
+  ask for `sudo` themselves during a handoff.
+- **After Omarchy has finished** (the baseline's signals); before that it
+  says what it is waiting for.
+- **From an approved bundle**: on Shared identified by the baseline's
+  checks, or in a folder the person gives, admitted, and approved with its
+  code (docs/MIGRATION.md → *Import on Linux*).
 
 ## The flow
 
 ```mermaid
 flowchart TD
-    F[find bundles] --> C[check seals, profile, token binding<br/>docs/MIGRATION.md → Import]
-    C --> R[check every resolution on this machine<br/>docs/RESOLVER.md]
+    F[find and admit bundles] --> A[approval code typed and matched]
+    A --> R[check the graph on this machine]
     R --> V[review: what installs, what lands where,<br/>conflicts, what needs a sign-in]
-    V -->|typed restore| L1[layer 1: packages<br/>terminal handed to omarchy-pkg-add]
-    L1 --> L2[layers 2–6: runtimes, tools, AI tools,<br/>files, structured configuration]
-    L2 --> L7[layer 7: verify]
-    L7 --> S[summary and the journal]
+    V -->|typed restore| G[graph order: packages in a handoff,<br/>then runtimes, tools, AI tools, files, settings]
+    G --> Y[verify]
+    Y --> S[summary]
 ```
 
-The review is the decision point: nothing is written before `restore` is
-typed, and the typed word covers exactly what the review showed (its basis,
-docs/PROTOCOL.md). Conflicts are decided in the review, one by one or with a
-choice for the rest; the default for every conflict is **Keep**.
+Nothing is written before `restore` is typed. The typed word covers exactly
+what the review showed, and each item is checked again just before it is
+applied (*Each item's basis*). Conflicts are decided in the review, one by
+one or with a choice for the rest; the default for every conflict is
+**Keep**.
 
-## The restore journal
-
-`restore/journal.omb` in the state directory: an append-only record file,
-one line per step, written **before** the step starts and again when it
-ends. It is history and input; the machine is judged afresh every run.
+## The journal
 
 ```text
-omb-restore 1
-run	id=6e1f0a2c	bundle=3f09c2a1b7d45e60-20261009T182000Z	started=2026-10-10T09:14:02Z	tool=0.3.0
-step	run=6e1f0a2c	item=brew:formula:ripgrep	action=install	state=begin	method=pacman	target=ripgrep
-step	run=6e1f0a2c	item=brew:formula:ripgrep	action=install	state=done	check=pacman-q	found=15.2.0-1
-step	run=6e1f0a2c	item=path:config:starship	action=place	state=begin	dest=.config/starship.toml	sha256=…	backup=restore/backups/6e1f0a2c/.config/starship.toml	old=…
-step	run=6e1f0a2c	item=path:config:starship	action=place	state=done
+~/.local/state/omarchy-mac-bootstrap/restore/
+  runs/<run>/run.omb                 the run: bundle, manifest digest, approval
+  runs/<run>/steps/000001-intent.omb
+  runs/<run>/steps/000001-staged.omb
+  runs/<run>/steps/000001-placed.omb
+  runs/<run>/steps/000001-verified.omb
+  …
+  backups/<run>/<dest>               what a replacement moved aside
 ```
 
-Each step records what it intends (the digest it will write, the old
-digest, the backup path, the old value of a setting) so that an interrupted
-step can be judged and an undo can be exact.
+- **One immutable record per step and phase.** Each is a sealed `omb-step 1`
+  document, written to `<name>.tmp-<random>` with exclusive creation, flushed
+  with `sync FILE` (GNU coreutils, present on the image and on Omarchy),
+  renamed to its final name only if that name does not exist yet, and
+  followed by `sync` of the directory. A committed record is never
+  rewritten; a damaged record fails admission and is treated as absent.
+- **Exclusive creation** means: nothing exists at the name (`[ ! -e ]` and
+  `[ ! -L ]`), then the file is opened with Bash's `noclobber` (`set -C`),
+  which creates a new regular file with `O_EXCL` and refuses one that
+  appeared meanwhile, a link included. It does not refuse a FIFO or device
+  that another program creates at that name in between; only a program
+  running as the person could, and such a program could change the home
+  directly.
+- **Written before the step it announces.** The `intent` record exists before
+  anything it describes happens; the outcome record after.
+
+| Record | Schema |
+| --- | --- |
+| `run` (in `run.omb`) | `id:hex16 bundle:bytes manifest:hex64 profile:hex16 approved:utc code:id started:utc tool:id source:hex64 user_uid:uint home:bytes` |
+| `step` | `run:hex16 n:uint phase:enum(intent\|staged\|backed-up\|placed\|applied\|verified\|failed\|accepted\|undo-intent\|undone\|undo-refused) node:id item:bytes kind:enum(file\|dir\|link\|package\|runtime\|tool\|agent\|setting\|mcp\|shell-line) at:utc` |
+| `dest` (file kinds) | `path:bytes old:enum(absent\|file\|link\|dir) old_sha:hex64? old_mode:enum(0600\|0644\|0700\|0755)? old_link:bytes? old_tree:hex64? new_sha:hex64? new_mode:enum(0600\|0644\|0700\|0755)? new_link:bytes? stage:bytes? backup:bytes? backup_how:enum(rename\|copy)?` |
+| `setting` (structured kinds) | `owner:enum(git\|claude\|codex\|opencode\|bash) key:bytes old:bytes? old_absent:bool new:bytes` |
+| `package` (install kinds) | `method:id target:bytes version:bytes? found:bytes?` |
+| `reason` | `code:id text:text` — with `failed`, `undo-refused` |
 
 ## Placing a file
 
-For a destination `D` under the home:
+For a destination `D` under the home, with the item's approved choice:
 
-1. **The way there is plain.** Every folder from the home down to `D`'s
-   parent is a real directory owned by the user; a link on the way stops the
-   file ("a folder on the way is a link") rather than following it out of
-   the home. Missing folders are created 0700 (0755 for the known public
-   configuration folders such as `.config/<tool>`).
-2. **What is there now.** Nothing: place it. The same bytes: nothing to do.
-   Different bytes, or a file where a folder should be: a conflict, decided
-   in review.
-3. **Write beside, then rename.** The object is checked against its digest,
-   written to `D.omb-new-<random>` in the same folder with a private umask,
-   checked again, given its mode, and renamed over `D` after `D` has been
-   moved to the backup. A folder unit is built whole beside its target and
-   swapped in the same way.
-4. **Modes are a ceiling, not a copy.** No setuid, setgid or sticky bit,
-   nothing group- or world-writable; `PRIVATE_CONFIG`, `SENSITIVE` and the
-   one carried key are 0600 (folders 0700). Ownership is the running user;
-   `chown` is never used.
-5. **Links** are re-created from the manifest's relative link text, only
-   when they resolve inside the item's own destination root.
+1. **Re-check** (the item's basis): the way to `D` is plain — every folder
+   from the home down to `D`'s parent is a real directory owned by the user;
+   a link on the way stops the item. The state of `D` is read again: absent,
+   a file (SHA-256, mode), a link (its text), a folder (its tree digest). If
+   it is not what the review showed, the item stops as a conflict and nothing
+   is written.
+2. **`intent`**: old state, new object digest and mode, the stage path
+   (`D.omb-new-<run>-<n>`) and, for a replacement, the backup path.
+3. **Stage**: the object is checked against its digest, written to the stage
+   path with exclusive creation and a private umask, given its mode, read
+   back, and flushed. **`staged`**.
+4. **Back up** a replacement by renaming `D` into `backups/<run>/` (the
+   backups live under the home, on the same filesystem), then comparing what
+   was moved with the reviewed old state. If it differs — `D` changed in the
+   instant since the re-check — it is renamed back and the item stops as a
+   conflict. If the rename is refused across devices, the old file is copied
+   and flushed instead (`backup_how=copy`), the copy compared with the
+   reviewed old state, and `D` compared once more just before placing.
+   **`backed-up`**.
+5. **Place, never over something new**: a file by `ln` from the stage to
+   `D`, which refuses if any name has appeared at `D`, then the stage name
+   removed; a link by `ln -s` at `D`, which refuses the same way; a folder
+   by renaming it onto `D`, which can replace only an empty folder that
+   appeared, never a file or a folder with contents. (After a backup by
+   copy, `D` still exists, and the stage is renamed onto it.) **`placed`**.
+6. **Verify**: `D` is read back (digest, mode, or link text). **`verified`**.
+
+A folder unit is built whole beside its target and placed by the same steps.
+Modes are a ceiling: no setuid, setgid or sticky bit, nothing group- or
+world-writable, private classes 0600/0700; ownership is the running user;
+`chown` is never used.
+
+A structured setting (a Git setting, an MCP definition, the Bash line) is
+read immediately before its write and read back after it. Its owner's
+command has no compare-and-set, so a change made in that instant is found
+by the read-back and reported as a conflict, with both values.
+
+### After a crash
+
+The next run first judges every step that began and did not end, from its
+records and the filesystem, before anything new happens:
+
+| Last committed record | What the filesystem shows | Conclusion | The next run |
+| --- | --- | --- | --- |
+| none | a file with this run's stage name | a stage file with no `intent` cannot exist (intent comes first); it is foreign | reported, never deleted |
+| `intent` | `D` unchanged; the stage file absent or not matching its digest | died while staging | removes that stage file (named by the intent), starts the item again |
+| `intent` | `D` unchanged; the stage file complete | died before `staged` | writes `staged`, continues |
+| `staged` | `D` unchanged; no backup | died before backing up | continues from the backup |
+| `staged` | `D` absent; the backup equals the old state | died after the backup rename | writes `backed-up`, continues |
+| `staged` | `D` absent; the backup is not the old state | `D` changed just before the backup | renames the backup back to `D`; stops the item as a conflict |
+| `staged`, backing up by copy | `D` unchanged; a backup copy equal to the old state (or a partial one) | died after (or during) the copy | writes `backed-up` (or removes the partial copy, named by the intent, and copies again), continues |
+| `backed-up`, or `staged` with nothing to back up | `D` absent; the stage file present | died before placing | continues from the placing rename |
+| `backed-up` or `staged` | `D` equals the new object; the stage name absent, or a second name of the same file | died after placing | removes the stage name, writes `placed`, verifies |
+| `placed` | `D` equals the new object | died before verifying | verifies |
+| `undo-intent` | `D` is still what the restore wrote | died before undoing | undoes, after the same comparison |
+| `undo-intent` | `D` is the state before the restore (the backup back, or nothing) | died after undoing | writes `undone` |
+| `undo-intent` | anything else | changed since | writes `undo-refused` with what is there |
+| any | `D` is neither the old state nor the new object | something else changed it | stops this item as a conflict; nothing overwritten |
+
+For the other kinds the machine decides the same way: a package is present
+or not (`pacman -Q`); a runtime is installed or not (its version folder
+under `~/.local/share/mise/installs/`); a Git
+setting, an MCP definition or the Bash line reads back as the old value, the
+new value, or something else (a conflict).
+
+### What survives what
+
+- **A process crash** (the core, the frontend, a kill): every case above is
+  recoverable, because each record is committed before the step it
+  announces.
+- **Power loss**: records and staged files are flushed before they are
+  renamed, and directories after, so a committed record and the file it
+  describes survive together on btrfs. The last step before the power went
+  may not have been committed; the next run then judges it from the
+  filesystem as above. What is **not** promised: that a step shown as done in
+  the final moments before power loss is recorded, and anything about
+  pacman's, mise's or any other program's own files, which keep their own
+  guarantees.
+- **A full disk**: a failed stage or record write stops that item as
+  `failed`; its partial stage file is removed (it is named by the intent). If
+  even the `failed` record cannot be written, nothing more is written, and
+  the next run finds an `intent` with no outcome and judges it from the
+  filesystem.
+- **Stale temporary files**: a stage temporary is removed only when a
+  committed `intent` in this home's journal names it; a record temporary
+  (`*.tmp-*`) only inside a run's own `steps/` folder, where nothing else
+  writes. Anything else with a similar name is reported and left. A removal
+  that fails is reported, and the next run tries again.
+
+## Each item's basis
+
+Before each item, not only before the run, the core re-reads that item's
+destination and requires it to match what the review showed
+(docs/PROTOCOL.md → `restore.item`): an explicit `absent`, a file's digest
+and mode, a link's text, a folder's tree digest. A destination that changed
+between the review and its turn stops that item as a conflict; the rest go
+on.
 
 ## Conflicts
-
-Every conflict is shown with both sides and offers, from the frontend's
-conflict screen (docs/UX.md):
 
 | Choice | Does |
 | --- | --- |
 | **Keep** (default) | leaves what is there; the item is recorded as kept |
 | **Replace** | moves what is there to the backup, places the migrated version |
-| **Merge** | only where the adapter defines a merge for that format (below) |
-| **View diff** | shows the difference, then asks again |
+| **Merge** | only where the adapter defines a merge (below) |
+| **View diff** | shows both sides, then asks again |
 | **Skip** | leaves what is there and records the item as skipped |
 
-- **The unit is the adapter's.** Neovim's folder, Ghostty's configuration,
-  a skill folder: a unit is kept or replaced whole. Files inside a unit are
-  not mixed.
-- **Merge exists only where it is exact:** a line set (a global Git ignore
-  file: existing lines first, new ones after, no duplicates), Git settings
-  (key by key, through `git config`), MCP servers (servers not present are
-  added; one with the same name is its own decision), and JSON settings
-  whose adapter names the keys it adds (with `jq`, which Omarchy installs,
-  using constant filters and values passed as arguments).
-- **Omarchy's seeded files.** Omarchy copies its defaults into `~/.config`
-  (Starship, tmux, Ghostty, OpenCode, Git and others) and treats them as the
-  user's from then on; its own defaults live under `/usr/share/omarchy`,
-  which the restore never touches. A conflict with a file Omarchy seeded is
-  labelled "Omarchy's default", and the review says what the person's file
-  would change (for a terminal configuration that sets a theme, for example,
-  that Omarchy's theme switching will no longer recolour it).
-- **Never touched:** `/usr/share/omarchy`, `~/.local/state/omarchy`,
-  Omarchy's skill links in the AI tools' skill folders, and the lazy agent
-  stubs Omarchy writes into `~/.local/bin`.
+- **The unit is the adapter's**: Neovim's folder, Ghostty's configuration, a
+  skill folder is kept or replaced whole.
+- **Merge exists only where it is exact**: a line set (a global Git ignore
+  file: existing lines first, new ones after, no duplicates); Git settings,
+  key by key, through `git config`; MCP servers (new ones added, a
+  same-named one its own decision); JSON settings whose adapter names the
+  keys it adds, with `jq` (installed by Omarchy), constant filters and values
+  passed as arguments.
+- **Omarchy's seeded files** (`starship.toml`, tmux, Ghostty, OpenCode, Git
+  and others in `~/.config`) are the user's after install; a conflict with
+  one is labelled "Omarchy's default", and the review says what the person's
+  version would change.
+- **Never touched**: `/usr/share/omarchy`, `~/.local/state/omarchy`,
+  Omarchy's skill links in the AI tools' skill folders, Omarchy's lazy
+  agent wrappers in `~/.local/bin`, and Omarchy's default-agent choice
+  (`~/.config/omarchy/defaults/agent`; docs/AI-TOOLS.md → *Omarchy's coding
+  agent*).
 
 ## Packages
 
-Layer 1 (docs/RESOLVER.md → *The dependency graph*) is one `omarchy-pkg-add`
-call with every pacman target the review approved, run as a **handoff**: the
-frontend gives the terminal to it, so `sudo` asks for the password and
-pacman shows its own output (docs/FRONTEND.md). Afterwards each package is
-checked with `pacman -Q`; one the helper skipped ("not available in the
-repos on this system") is `failed` with that reason, whatever the exit
-status was. Everything that needed it is then `blocked`.
-
-Layers 2–4 run managed: mise, uv, cargo-binstall, go, npm and Flathub as
-their own non-root commands, each checked afterwards (`mise ls --json`,
-the command on `PATH`, its version). A layer that needs `sudo` is a handoff;
-nothing managed ever prompts.
-
-## Interrupted, and run again
-
-- **Interrupted** — a power cut, Ctrl-C in the terminal during the package
-  step, a crash: the journal holds steps that began and did not end. The
-  next run reconciles each one against the machine before anything else:
-  a file whose digest is the one the step intended is done; a file that is
-  still the old digest was not changed; anything else is a conflict to
-  decide. A package is present or not (`pacman -Q`). Nothing is assumed from
-  the journal alone.
-- **Rerun** — every step checks first: the same bytes already in place, the
-  package already installed, the server already defined identically, the
-  Bash line already present — nothing to do. A rerun after success changes
-  nothing and says so; a rerun after a partial restore continues where it
-  stopped.
-- **Another bundle** — a newer export of the same profile is restored as its
-  own run; files that did not change are already in place.
+Layer 1 is one `omarchy-pkg-add` call with every pacman target the review
+approved, as a **handoff**: `sudo` asks when its policy requires, and pacman
+shows its own output. Each package has an `intent` before and an `applied`
+or `failed` after, judged by `pacman -Q`, never by the exit status; one the
+helper skipped ("not available in the repos on this system") is `failed`
+with that reason, and what requires it is `blocked`. Layers 2–4 run managed
+(mise, uv, cargo-binstall, go, npm, Flathub), each judged by its own check
+afterwards; nothing managed ever prompts.
 
 ## Undo
 
-`restore undo` (typed `undo`) reverses the last run, or one item:
+`restore undo` (typed `undo`) reverses the last run, or one item. **Undo is
+never unconditional**: for each write the journal records what this tool
+wrote and what was there before, and undo re-reads the destination first.
 
-- a placed file goes back to its backup, or is removed if there was none —
-  only when it still holds exactly what the restore wrote; a file changed
-  since is left alone and named;
-- Git settings return to their recorded old values;
-- the Bash line and the tool's own shell file are removed;
-- MCP servers the restore added are removed through the tool's own command,
-  when their definition is still the one added;
-- **packages are not removed.** Removing packages can take dependencies
-  others need; the summary lists what the restore installed and the command
-  to remove it by hand.
+| Kind | Undo does, when the destination is exactly what the restore wrote | Otherwise |
+| --- | --- | --- |
+| a placed file, folder or link | puts the backup back, or removes the new one if nothing was there before | refused: "changed since the restore", with what is there now |
+| a generated configuration file | the same | refused |
+| a Git setting | sets the old value back, or unsets it if it was absent | refused if its current value is not the one written |
+| an MCP definition | removes it through the tool's own command, or restores the previous definition | refused if the definition changed |
+| the Bash line and `shell.bash` | removes the marked line if it is exactly the line written, and the file if its digest is the one written | refused |
+| a folder the restore created | removed only if empty, or if everything in it is the restore's own and unchanged | refused |
 
-Backups stay in `restore/backups/<run>/` (0700) until the person removes
-them; `restore status` shows their size.
+Each undo writes `undo-intent`, then `undone` or `undo-refused` with its
+reason. **Not reversible, and never claimed to be**: package installations
+(removing packages can take dependencies others need; the summary lists what
+was installed and the command to remove it by hand), sign-ins, anything a
+remote service did, and whatever an external installer changed.
+
+Backups stay in `backups/<run>/` (0700) until the person removes them;
+`restore status` shows their size.
 
 ## Verification and health
 
-Nothing is "migrated" because a copy finished. After the layers, every
-item is checked on the machine:
+Nothing is "migrated" because a copy finished. After the graph runs, each
+node's `verify` checks the machine:
 
 | Kind | Checked by |
 | --- | --- |
-| package | `pacman -Q`, then the command's version where the registry names one |
-| runtime | `mise ls --json` (`installed: true`), then `mise exec -- <tool> --version` |
-| ecosystem tool, Flathub app | the command on `PATH` and its version; `flatpak info` and, with consent, a launch |
-| file, folder, link | the digest, mode and link text against the manifest |
-| structured setting | read back through its owner (`git config --get`, the tool's own listing) |
-| AI tool | docs/AI-TOOLS.md → *Health* |
+| package | `pacman -Q`; then, in this act run only, the command's version where the registry names one |
+| runtime | its version folder under `~/.local/share/mise/installs/`; then, in this act run, the installed executable run by its full path with `--version` |
+| ecosystem tool, Flathub app | installed per its manager; the version in this act run; for an app, a launch only with consent |
+| file, folder, link | digest, mode or link text against the manifest |
+| structured setting | read back through its owner (`git config --get`, the tool's configuration file) |
+| AI tool | docs/AI-TOOLS.md → *What is observed* |
 | 16 KiB pages | `readelf -lW` alignment of installed binaries, when binutils is present |
 
-**Static** checks run in `restore status` and `doctor` and **never execute
-anything**: `pacman -Q`, `mise ls --json`, `flatpak info`, digests, modes,
-settings read back, and whether a command on `PATH` is one of Omarchy's lazy
-stubs (which would install the tool if run). Running a program's version,
-starting an MCP server or launching an application happens only inside the
-restore's own act run (layer 7, for what it just installed) and in `restore
-verify`, after the person agrees, one at a time, with a time limit.
+**Static** checks (`restore status`, `doctor`) **start no program they
+check**: they read pacman's local database (`pacman -Q`, a read-only query),
+mise's install folders and configuration files, and files and settings
+directly, and they recognise Omarchy's lazy wrappers without invoking them,
+because invoking one installs or reselects its tool (docs/AI-TOOLS.md →
+*What is observed*). They never run an agent, its wrapper, a mise shim or
+mise. Running a program's version happens only in the act run that
+installed it and in `restore verify`, by the installed executable's full
+path; starting an MCP server or an application only in `restore verify`,
+after the person agrees, one at a time, with a time limit.
 
 ## States
 
 | Restore state | Means |
 | --- | --- |
-| `not-started` | no journal for the bundle in use |
+| `not-started` | no run for the bundle in use |
 | `partial` | some items verified; others pending, failed or blocked |
-| `blocked` | something stops every remaining step: no valid bundle, a foreign bundle not confirmed, running as root, Omarchy not finished, the package step failed for everything that follows |
-| `complete` | every selected item is `verified`, `kept`, `skipped` or `unsupported`, or has been **accepted** by the person as it is |
+| `blocked` | nothing more can proceed: no approved bundle, a foreign bundle not confirmed, running as root, Omarchy not finished, or the package step failed for everything that follows |
+| `complete` | every selected item is `verified`, `kept`, `skipped` or `unsupported`, or has been **accepted** as it is |
 
 Per item: `planned`, `ready`, `applied`, `verified`, `kept`, `skipped`,
 `unsupported`, `failed` (with the reason), `blocked` (with the chain),
-`needs-sign-in`, `needs-secret` (with the variable names), `accepted`.
+`degraded`, `needs-sign-in`, `needs-secret` (with the variable names),
+`accepted`.
 
-- **`needs-sign-in` resolves itself**: when the tool's sign-in file appears
-  (its presence is checked, its contents never read), the item is verified.
-  The restore offers each sign-in as a handoff.
-- **Accepting** is the person's word that an item may stay as it is — a
-  failed package they will install by hand, a sign-in for later, a secret
-  they will provide: `restore accept NAME` (yes/no), or `a` on the health
-  screen. It is recorded in the journal with the item's state at that time,
-  and shown as accepted, never as verified.
+- **`needs-sign-in` resolves by itself** when the tool's sign-in file
+  appears (presence only, never read; docs/AI-TOOLS.md → *What is observed*).
+- **Accepting** is the person's word that an item may stay as it is:
+  `restore accept NAME` (yes/no) or `a` on the health screen, recorded as an
+  `accepted` step with the item's state at that moment, and shown as
+  accepted, never as verified.
 - The journey's `restore` stage is done exactly when the restore is
   `complete`.
 
 ## Decisions in a file
 
 Without the frontend, `restore --plan FILE` reads an `omb-restore-plan 1`
-record file: `conflict dest=… choice=keep|replace|merge|skip`, `optin
-id=…`, `accept id=…` and `default choice=keep|skip` records, each checked
-against this restore's review exactly as the frontend's requests are; an
-unknown destination refuses the whole file. `restore --plan-out`
-(read-only) prints the review's conflicts in the same format, to be saved
-and edited.
-The typed word `restore` is then asked for as in any text flow.
+document — `conflict dest:bytes choice:enum(keep|replace|merge|skip)`,
+`optin id:bytes`, `accept id:bytes`, `default choice:enum(keep|skip)` —
+admitted like any document and checked against this restore's review; an
+unknown destination refuses the file. `restore --plan-out` (read-only)
+prints the review's conflicts in that format. The approval code and the
+word `restore` are then asked for as in any text flow.
