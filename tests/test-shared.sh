@@ -145,6 +145,12 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   T_ENV="OMB_STATE_DIR=$d" t_cli "$fx" "yes\ncreate\n" shared create
   assert_contains "$T_OUT" "on battery at 21%" "low battery stops the change"
   assert_empty_file "$T_DIR/record" "nothing runs on low battery"
+  # No power report at all: said to be unverified, never passed off as checked.
+  fx=$(t_variant mac-shared-reserved)
+  : >"$fx/cmd/pmset_batt"
+  T_ENV="OMB_STATE_DIR=$d" t_cli "$fx" "yes\ncreate\n" shared create --dry-run
+  assert_contains "$T_OUT" "Power state unverified: pmset reported nothing" "an empty power report is unverified"
+  assert_contains "$T_OUT" "would run  sudo diskutil addPartition" "and is left to the person, not blocked"
   # The record that must precede the change cannot be written: fail closed.
   d=$(with_receipt)
   chmod 500 "$d"

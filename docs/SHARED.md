@@ -104,7 +104,9 @@ Before anything runs, the whole disk is read and must show:
   expected, at least as large as planned;
 - no partition and no free region that neither the plan nor Asahi left;
 - Linux's completion code for this plan and this Linux root;
-- the Mac on power, or a battery at 50 % or more.
+- the Mac on power, or a battery at 50 % or more. When macOS reports no
+  power state at all (`pmset -g batt` prints nothing), the tool says the
+  power state is unverified and goes on: keep the Mac plugged in.
 
 It shows the physical disk, the interval in bytes, the size, the partitions
 before and after, and the filesystem, and asks for `yes` (a current backup)

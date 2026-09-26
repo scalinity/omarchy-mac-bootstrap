@@ -651,14 +651,16 @@ shared_linux_code() { code_make ombshare "$SHARED_DIGEST" "$SHARED_UUID"; }
 # macOS: creating it
 # ---------------------------------------------------------------------------
 
-# shared_power_ok — on AC power, or a battery that will not run out.
+# shared_power_ok — on AC power, or a battery that will not run out. When
+# pmset reports nothing, the power state is unverified: said so, and left to
+# the person rather than blocked on a report some Macs do not give.
 shared_power_ok() {
   local batt pctv
   batt=$(sys_cmd pmset_batt pmset -g batt)
   case "$batt" in
     *"AC Power"*) return 0 ;;
     '')
-      ui_info "Power state not reported; make sure the Mac will not run out of power."
+      ui_warn "Power state unverified: pmset reported nothing. Keep the Mac plugged in until this finishes."
       return 0
       ;;
   esac

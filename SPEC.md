@@ -292,7 +292,9 @@ Detailed in `docs/SHARED.md`. Summary:
   the same GUIDs and extents is refused, on every read including the one
   after the typed gates), Apple's and every earlier partition unchanged, the container at the planned
   size, Asahi's three partitions in order, one free region after the root at
-  least the planned size, nothing else new, Linux's code accepted, power.
+  least the planned size, nothing else new, Linux's code accepted, power (AC,
+  or a battery at 50 % or more; an empty `pmset` report is shown as
+  unverified, never as a checked power state).
   Typed `yes` and `create`; `sudo -v` (sudo authenticates before the last
   read, so no password prompt separates that read from the change; a
   failure stops); the disk read again and matched; the creation
