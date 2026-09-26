@@ -149,15 +149,41 @@ assert_eq "$(printf '%s\n' "$C_OUT" | awk -F'\t' '$1 == "action" { sub(/^id=/, "
   "test.read test.mutate test.handoff " "it lists the three test actions, and nothing of the baseline"
 assert_contains "$C_OUT" "action	id=test.mutate	scope=journey	label=Change%20the%20fixture%20%28test%29	intent=act	gate=test	terminal=managed	cancel=0	basis=" "test.mutate: act, gated by the word test, managed"
 assert_contains "$C_OUT" "action	id=test.handoff	scope=journey	label=Hand%20over%20the%20terminal%20%28test%29	intent=act	gate=test	terminal=handoff" "test.handoff: a handoff"
+# With a real lock (no development override): the lock is admitted too, and
+# the request's own values must survive it.
+LT=$T/locked-tool
+mkdir -p "$LT/release" "$LT/tests"
+cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$LT/"
+cp -R "$REPO/tests/children" "$LT/tests/"
+(
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  f=$LT/release/frontend.lock
+  {
+    printf 'omb-frontend-lock 1\n'
+    rec_line frontend version 0.1.0 proto 1 source_commit "$(printf '%040d' 0)" inputs_digest "$(printf '%064d' 0)" rust 1.88.0
+    rec_line artifact target aarch64-apple-darwin url https://example.invalid/omb-tui size 1 sha256 "$(printf '%064d' 0)" minos 13.5 glibc_max "" interp "" align_min ""
+  } >"$f"
+  rec_seal_write "$f"
+  omb_cleanup
+)
+C_HOME=$LT C_ENV="OMB_FRONTEND_DEV=" c_run snapshot "scope	name=journey"
+assert_eq "$(c_result)" "done ok" "with a real lock admitted, the snapshot still reads its own request"
+assert_eq "$(printf '%s\n' "$C_OUT" | grep -c '^action	')" 3 "and lists the test actions"
+C_HOME=$LT C_ENV="OMB_FRONTEND_DEV=" C_FE=0.2.0 c_run hello
+assert_eq "$(c_result) $C_RC" "refused frontend 3" "proto-version: a frontend version other than the real lock's"
 C_ENV=OMB_SESSION_INTENT=plan c_run snapshot "scope	name=journey"
 assert_eq "$(printf '%s\n' "$C_OUT" | awk -F'\t' '$1 == "action" { sub(/^id=/, "", $2); printf "%s ", $2 }')" "test.read " \
   "a plan session is shown only what it may run"
 c_run snapshot "scope	name=shared"
 assert_eq "$(c_result)" "refused scope" "a scope outside the session is refused"
+assert_eq "$(c_admits snapshot)" ok "a refused snapshot is an admissible response (its one generation names the empty data set)"
 C_ENV=OMB_SESSION_SCOPES=journey,shared c_run snapshot "scope	name=shared"
 assert_eq "$(c_result)" "refused unavailable" "no baseline scope is served in this gate"
 c_run detail "page	scope=journey	kind=inventory	generation=$(printf '%064d' 0)	offset=0	limit=2"
 assert_eq "$(c_result)" "refused unavailable" "detail pages nothing in this gate"
+assert_eq "$(c_admits detail)" ok "a refused detail is an admissible response (its one generation names the empty data set)"
 c_run validate "select	action=test.read"
 assert_eq "$(c_result)" "refused unavailable" "validate has nothing to validate in this gate"
 

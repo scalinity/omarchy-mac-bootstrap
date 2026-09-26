@@ -9,7 +9,7 @@
 # The frontend here is a small fake — a shell script whose behaviour a file
 # decides — pinned by a test lock in a copy of the tool, so the distribution
 # logic is proved without a release. frontend/tests/pty.rs runs the real one.
-# shellcheck disable=SC2010,SC2015,SC2016 # ls|grep over known names; ok/fail always return 0; literal $ in scripts
+# shellcheck disable=SC2010,SC2012,SC2015,SC2016,SC2030,SC2031,SC2086,SC2143 # ls over names the test made; ok/fail always return 0; literal $ in scripts; subshell-local exports; FE_ENV is a list of assignments
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo "test-frontend"

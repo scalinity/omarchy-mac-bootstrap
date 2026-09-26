@@ -339,10 +339,19 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
     let records = match outcome {
         Outcome::Answer(r) => r,
         Outcome::Unknown(why) => {
-            // Never "failed", never "nothing happened": the machine is read again.
-            if req == Req::Hello {
+            // Never "failed", never "nothing happened". After an action, the
+            // machine is read again; a read that itself ended without an
+            // answer is not repeated by itself — the person asks with r.
+            if req == Req::Hello || (req == Req::Snapshot && m.snap.is_none()) {
                 m.screen = Screen::Fatal;
                 m.fatal = format!("The core stopped without a complete answer ({why}).");
+                return after(m, Vec::new());
+            }
+            if req == Req::Snapshot {
+                m.status = Some((
+                    Level::Warn,
+                    format!("The core stopped without a complete answer ({why}); r reads again."),
+                ));
                 return after(m, Vec::new());
             }
             m.status = Some((
@@ -884,6 +893,37 @@ mod tests {
         assert_eq!(lvl, Level::Warn);
         assert!(s.contains("without a complete answer"));
         assert!(!s.contains("failed"));
+    }
+
+    #[test]
+    fn a_read_without_an_answer_is_not_repeated_by_itself() {
+        let mut m = ready();
+        let c = update(
+            &mut m,
+            Msg::Done(Req::Snapshot, Outcome::Unknown("schema at line 0".into())),
+        );
+        assert_eq!(c, vec![], "no loop of reads");
+        assert!(m.status.as_ref().unwrap().1.contains("r reads again"));
+        let mut m = Model::default();
+        m.start();
+        let hello = rec("hello", &[("core", "0.2.0")]);
+        update(
+            &mut m,
+            Msg::Done(
+                Req::Hello,
+                Outcome::Answer(vec![hello, result("done", "ok")]),
+            ),
+        );
+        let c = update(
+            &mut m,
+            Msg::Done(Req::Snapshot, Outcome::Unknown("eof at line 0".into())),
+        );
+        assert_eq!(c, vec![]);
+        assert_eq!(
+            m.screen,
+            Screen::Fatal,
+            "nothing to show: the no-answer screen, with r and q"
+        );
     }
 
     #[test]

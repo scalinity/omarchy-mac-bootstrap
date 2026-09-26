@@ -50,12 +50,13 @@ c_run() {
 
 # c_run_raw OP FILE — the core under $C_BASH (default: the bash under test)
 # with the request FILE on fd 3 and only the environment below. C_ENV adds
-# assignments; C_UNSET drops names; C_PATH replaces PATH.
+# assignments; C_UNSET drops names; C_PATH replaces PATH; C_HOME runs
+# another copy of the tool (one with a lock of its own).
 c_run_raw() {
   local op=$1 req=$2 v name
   local -a envs=(
     "PATH=${C_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" "HOME=$T/home" "TMPDIR=$T" "LANG=en_US.UTF-8" "TERM=dumb"
-    "OMB_HOME=$REPO" "OMB_SESSION_INTENT=act" "OMB_SESSION_SCOPES=journey" "OMB_DRY_RUN=0"
+    "OMB_HOME=${C_HOME:-$REPO}" "OMB_SESSION_INTENT=act" "OMB_SESSION_SCOPES=journey" "OMB_DRY_RUN=0"
     "OMB_SESSION_DIR=$SESS" "OMB_EVENTS=${C_EVENTS:-$C_EV}" "OMB_FIXTURE=$C_FIX" "OMB_STATE_DIR=$T/state"
     "OMB_FRONTEND_DEV=1"
   )
@@ -66,7 +67,7 @@ c_run_raw() {
     case " ${C_UNSET:-} " in *" $name "*) continue ;; esac
     final+=("$v")
   done
-  env -i "${final[@]}" "${C_BASH:-$T_BASH}" "$REPO/omarchy-bootstrap" core "$op" 3<"$req" >/dev/null 2>"$T/stderr" </dev/null
+  env -i "${final[@]}" "${C_BASH:-$T_BASH}" "${C_HOME:-$REPO}/omarchy-bootstrap" core "$op" 3<"$req" >/dev/null 2>"$T/stderr" </dev/null
   C_RC=$?
   C_ERR=$(cat "$T/stderr")
   C_OUT=$(cat "${C_EVENTS:-$C_EV}" 2>/dev/null)

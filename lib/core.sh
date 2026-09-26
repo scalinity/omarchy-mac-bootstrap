@@ -133,6 +133,14 @@ core_emit() {
 # overflow record when anything was suppressed).
 core_result() {
   [ "$CORE_RESULT" = 0 ] || return 0
+  # Every snapshot and detail answer holds exactly one generation (the
+  # response schema's cardinality, whatever the result). One that describes
+  # no data — a refusal, an error — names the empty data set.
+  case "${CORE_OP:-}" in
+    snapshot | detail)
+      [ "$CORE_RECS" = 1 ] && core_emit generation id "$(sha256_str "")" total 0
+      ;;
+  esac
   if [ "$CORE_SUPPRESSED" -gt 0 ]; then
     core_emit overflow suppressed "$CORE_SUPPRESSED"
   fi
@@ -876,6 +884,9 @@ core_lock_version() {
 core_main() {
   local op=$1 copy=$2 hst=$3 rop fe proto
   OMB_INTENT=read OMB_PERSIST=0
+  # The operation the core was started for: its answer must meet that
+  # operation's response schema, even when the request is refused.
+  CORE_OP=$op
   umask 077
   platform_init
   if ! core_env_check && [ -z "$CORE_EVENTS" ]; then
@@ -913,6 +924,20 @@ core_main() {
     core_result error "$REC_REASON" "The request was refused at line $REC_AT ($REC_REASON)."
     return 2
   fi
+  # Every value the request carries, taken now: reading any other document
+  # (the lock, the registry, an operation record) admits it into the same
+  # REC_* arrays.
+  local i=0
+  CORE_REQ_SCOPE="" CORE_REQ_ACTION="" CORE_REQ_BASIS="" CORE_REQ_CONFIRM="" CORE_REQ_ARGS=0
+  if rec_find scope; then CORE_REQ_SCOPE=$(rec_get "$REC_AT_I" name); fi
+  if rec_find exec; then
+    CORE_REQ_ACTION=$(rec_get "$REC_AT_I" action) CORE_REQ_BASIS=$(rec_get "$REC_AT_I" basis)
+    CORE_REQ_CONFIRM=$(rec_get "$REC_AT_I" confirm)
+  fi
+  while [ "$i" -lt "$REC_N" ]; do
+    [ "${REC_T[i]}" = arg ] && CORE_REQ_ARGS=$((CORE_REQ_ARGS + 1))
+    i=$((i + 1))
+  done
   rop=$(rec_get 0 op)
   if [ "$rop" != "$op" ]; then
     core_result error schema "The request's operation is not the one the core was started for."
@@ -946,7 +971,7 @@ core_main() {
 # barrier if any, and the actions available now.
 core_op_snapshot() {
   local scope body a gen
-  rec_find scope && scope=$(rec_get "$REC_AT_I" name)
+  scope=$CORE_REQ_SCOPE
   if ! core_in_scopes "$scope"; then
     core_result refused scope "This session does not include the $scope scope."
     return
@@ -1000,19 +1025,13 @@ _core_snapshot_body() {
 # core_op_execute — docs/PROTOCOL.md → §5, *Executing*, in its order,
 # stopping at the first refusal.
 core_op_execute() {
-  local action basis confirm i
-  rec_find exec || { core_result error schema; return; }
-  action=$(rec_get "$REC_AT_I" action) basis=$(rec_get "$REC_AT_I" basis) confirm=$(rec_get "$REC_AT_I" confirm)
+  local action=$CORE_REQ_ACTION basis=$CORE_REQ_BASIS confirm=$CORE_REQ_CONFIRM
   # 1. Every argument must be one the action declares; the test actions
   # declare none.
-  i=0
-  while [ "$i" -lt "$REC_N" ]; do
-    if [ "${REC_T[i]}" = arg ]; then
-      core_result refused invalid "$action takes no parameters."
-      return
-    fi
-    i=$((i + 1))
-  done
+  if [ "$CORE_REQ_ARGS" -gt 0 ]; then
+    core_result refused invalid "$action takes no parameters."
+    return
+  fi
   if ! core_action_info "$action"; then
     core_result refused unavailable "$action is not an action of this core."
     return
