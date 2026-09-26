@@ -162,11 +162,22 @@ hold before it counts as done. Status lives at the end of each entry.
   `/bin/bash`), fixture freshness, strict skips.
 - **Verification:** the suite passes locally under `/bin/bash` 3.2 and bash 5
   with `OMB_STRICT_SKIPS=1`.
-- **Acceptance:** both jobs green on GitHub.
-- **Status:** first run on GitHub (run 36198289764, commit 5ce30ae): the
-  macOS job passed with no skips; the Linux job failed on macOS sections not
-  gated on plutil, a locale-dependent conflict order, and ShellCheck 0.9.0
-  findings. Not yet green on both jobs.
+- **Acceptance:** both jobs green on GitHub, the Linux job skipping only
+  the plutil-gated sections, the macOS job skipping nothing, and the macOS
+  launcher step clean on stderr — judged from the job logs, not the
+  workflow's conclusion alone.
+- **Status:** not yet accepted.
+  - Run 36198289764 (commit 5ce30ae): the macOS job passed with no skips;
+    the Linux job failed on macOS sections not gated on plutil, a
+    locale-dependent conflict order, and ShellCheck 0.9.0 findings.
+  - Run 36200868856 (commit 92b07c0): both jobs green (Linux 1,675 passed
+    with 24 plutil-gated section skips; macOS 2,705 passed, no skips), but a
+    review of the logs found the macOS smoke step printing
+    `lib/shared.sh: line 1004: syntax error near unexpected token '('` under
+    `sh` and passing anyway, because it checked only the exit status. The
+    launcher and that step were fixed after it: the step now fails on any
+    stderr, checks the exact version, and runs a command that needs every
+    library loaded.
 
 ## M14 — Real-hardware qualification
 
@@ -175,13 +186,16 @@ hold before it counts as done. Status lives at the end of each entry.
 - **Work, in order:** full current backup; `./omarchy-bootstrap doctor` and the
   survey compared with `diskutil list`; Asahi and Omarchy installed with the
   planned answers, and the resulting layout compared with the plan record;
-  macOS, Recovery and Linux each boot; encryption confirmed finished; back on
-  macOS, `shared` shows `awaiting-macos-creation`; Shared created; the
-  partition checked with `diskutil info` against the size and start the
-  command showed, and written to from macOS; back on Linux, `shared activate`;
-  a file over 4 GB copied and hashed macOS → Linux and back; clean reboots
-  between the systems; the mount persists; `./omarchy-bootstrap` rerun on both
-  systems changes nothing.
+  macOS, Recovery and Linux each boot; encryption confirmed finished (as
+  root, the LUKS header reads as finished before the completion code shows);
+  back on macOS, `shared` shows `awaiting-macos-creation`; no other disk tool
+  running while Shared is created (the run lock is not a disk lock); Shared
+  created; the partition checked with `diskutil info` against the size and
+  start the command showed, and written to from macOS; back on Linux, `shared
+  activate`, and doctor shows the partition mounted at `/mnt/shared` with its
+  PARTUUID matched; a file over 4 GB copied and hashed macOS → Linux and
+  back; clean reboots between the systems; the mount persists;
+  `./omarchy-bootstrap` rerun on both systems changes nothing.
 - **Acceptance:** every step above holds on the real machine, and the planned
   and actual extents match.
 - **Status:** not started.

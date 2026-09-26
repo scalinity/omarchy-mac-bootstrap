@@ -121,15 +121,15 @@ digits, `b`, `q` on a terminal and fall back to line input when piped.
 
 | File | Covers |
 | --- | --- |
-| `test-storage.sh` | geometry walk, planner, every plan replayed through an independent installer model, size input |
+| `test-storage.sh` | geometry walk, planner, every plan replayed through an independent installer model, size input, the storage contract's template matrix |
 | `test-detection.sh` | detectors over fixtures, including every unreadable-layout refusal |
-| `test-lifecycle.sh` | Asahi interruption states, the re-read after the installer, Omarchy setup and encryption states |
-| `test-shared.sh` | the codes, the token, the plan record, every creation gate and failure, activation |
-| `test-dev.sh` | developer outcomes under forced failures |
+| `test-lifecycle.sh` | Asahi interruption states, the re-read after the installer, Omarchy setup and encryption states, every LUKS header probe outcome |
+| `test-shared.sh` | the codes, the token, the plan record, every creation gate and failure, the physical target, the creation record across runs, activation, the mounted source and the write test |
+| `test-dev.sh` | developer outcomes under forced failures, failures followed by a stop |
 | `test-routing.sh` | read-only commands, previews and plan over every lifecycle fixture, with filesystem snapshots |
 | `test-state.sh` | state directory checks, checked writes, the lock, the token, log hygiene |
 | `test-safety.sh` | static scans of every probe, `run` and `sudo` line, the single `addPartition`, sealed dry runs, recorded argv, typed gates |
-| `test-cli.sh` | the command surface, output degradation, whole flows |
+| `test-cli.sh` | the command surface, the launcher under sh and bash in POSIX mode, output degradation, whole flows |
 
 `tests/fixtures/generate.sh` regenerates every fixture with synthetic values
 shaped on a real 1 TB M1 Pro disk. CI (`.github/workflows/ci.yml`) runs the
