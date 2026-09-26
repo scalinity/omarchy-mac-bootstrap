@@ -41,6 +41,10 @@ Asahi launch; after it, a new plan is refused by the baseline (the disk no
 longer matches), while a new profile can still be sealed and exported (it is
 then a different profile; see *Import* in docs/MIGRATION.md).
 
+Each stage's state is `done`, `current`, `todo`, `skipped` or `blocked`, and
+says where it came from: `machine`, derived on this system this run, or
+`recorded`, from the other system's journey note (below).
+
 ### What each system can see
 
 Each system reads only its own machine. macOS cannot read the encrypted
