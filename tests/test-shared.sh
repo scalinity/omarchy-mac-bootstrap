@@ -160,6 +160,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   # The creation record itself cannot be written: nothing is created.
   d=$(with_receipt)
   rec=$(t_tmp)/record
+  : >"$rec"
   out=$(
     OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$d OMB_TEST_RECORD=$rec
     state_init
@@ -170,7 +171,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
     printf 'yes\ncreate\n' | shared_create_flow
   )
   assert_contains "$(t_flat "$out")" "Could not record the creation" "an unwritable creation record stops the creation"
-  assert_eq "$(cat "$rec" 2>/dev/null | grep -c addPartition)" 0 "and nothing is created"
+  assert_eq "$(grep -c addPartition "$rec")" 0 "and nothing is created"
   # sudo authenticates after the gates and before the last read of the disk;
   # when it does not, nothing is read, recorded or created.
   d=$(with_receipt)
@@ -273,6 +274,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
   ext=$(t_variant mac-shared-reserved)
   internal_off "$ext"
   rec=$(t_tmp)/record
+  : >"$rec"
   out=$(
     OMB_FIXTURE=$FIX/mac-shared-reserved OMB_STATE_DIR=$d OMB_TEST_RECORD=$rec
     state_init
@@ -283,7 +285,7 @@ sudo diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) / 1
     shared_create_flow </dev/null
   )
   assert_contains "$(t_flat "$out")" "The disk changed since it was shown (the disk macOS runs from (disk0) is not reported as internal" "the target is checked again after the gates"
-  assert_eq "$(cat "$rec" 2>/dev/null | grep -c addPartition)" 0 "a target that changed during the gates: nothing created"
+  assert_eq "$(grep -c addPartition "$rec")" 0 "a target that changed during the gates: nothing created"
 
   # After addPartition: anything but one new exFAT partition in the region stops.
   fx=$(variant mac-shared-created "diskutil_info_disk0s7:s#<string>exfat</string>#<string>msdos</string>#")
