@@ -120,7 +120,9 @@ on Shared:  omarchy-mac-bootstrap/qualify/<plan8>/<round>/
               result.omb       step 3, macOS
             omarchy-mac-bootstrap/qualify/<plan8>/stages/   stage records mirrored for the report
 locally:    qualify/active.omb     (macOS and Linux state directories) the round this system is part of
-            qualify/rounds/*.omb   (macOS) one record per round it created, written before the round's folder
+            qualify/rounds/<round>/created.omb    (macOS) written before the round's folder on Shared
+            qualify/rounds/<round>/finished.omb   (macOS) written with result.omb
+            qualify/rounds/<round>/cleaned.omb    (macOS) written by qualify clean
             qualify/stages/*.omb   this system's stage records
 ```
 
@@ -135,10 +137,21 @@ takes no file argument, so there it is a whole-system `sync`.
 | `linux` (`linux.omb`) | Linux, step 2 | `schema:uint round:hex16 previous:hex64 partuuid:bytes majmin:id os:enum(linux) tool:id commit:hex40? source:hex64 frontend:hex64? read_sha256:hex64 bytes:uint generator:id sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:bool` |
 | `result` (`result.omb`) | macOS, step 3 | `schema:uint round:hex16 previous:hex64 os:enum(macos) data_ok:bool return_ok:bool names_ok:bool verdict:enum(passed\|failed) reason:id?` |
 | `active` (`active.omb`, local) | each side | `schema:uint round:hex16 plan:hex64 shared_guid:bytes step:uint started:utc` |
-| `created` (`rounds/<round>.omb`, local) | macOS | `schema:uint round:hex16 plan:hex64 shared_guid:bytes created:utc state:enum(active\|finished\|cleaned)` — a new record per state change, never an edit |
+| `created`, `finished`, `cleaned` (`rounds/<round>/<state>.omb`, local) | macOS | `schema:uint round:hex16 plan:hex64 shared_guid:bytes at:utc` — one immutable file per state, never rewritten |
 
 `previous` is the SHA-256 of the step file before it, so each step names the
 exact file it continued from.
+
+**A round's local state** is read from which of its three files exist, each
+written once with exclusive creation, so no state is ever rewritten into
+another:
+
+| Files present | State | Allowed next |
+| --- | --- | --- |
+| `created` | active or waiting | `finished` (step 3), `cleaned` (`qualify clean`) |
+| `created`, `finished` | finished | `cleaned` |
+| `created`, `cleaned`, with or without `finished` | cleaned (it wins) | none |
+| `finished` or `cleaned` without `created`; any file that fails admission | invalid: the round is treated as cleaned and reported | none |
 
 ### Binding and freshness
 
@@ -155,26 +168,27 @@ reading or writing anything else on the partition:
 3. **They belong to this install**: `plan` equals the local plan record's
    digest (macOS) or begins with the token's plan id (Linux); `shared_guid`
    equals the partition just verified; `schema` is this tool's.
-4. **They belong to the active round**: a round is current only if this
-   system's `active.omb` names it. macOS writes `rounds/<round>.omb` and
-   `active.omb` **before** it creates the round's folder; Linux writes its
-   own `active.omb` when it accepts step 1, after checks 1–3. A valid round
-   that no local `active.omb` names — an old round, one copied from
-   elsewhere, one from a previous attempt — is never treated as current,
-   however valid its hashes.
-   - **One round awaits Linux at a time.** macOS refuses to start a round
-     while any round it created has a `round.omb` and no `result.omb`,
-     until the person removes that round with `qualify clean`. Linux accepts
-     step 1 only when exactly one round folder under the plan's folder has
-     a `round.omb` and no `linux.omb`; with more than one it is `blocked`
-     and names them. So Linux never has to choose between rounds, and a
-     stale round that Linux did accept can still never pass, because
-     step 3 runs only for the round macOS's own `active.omb` names.
-   - **A cleaned round stays dead.** `qualify clean` keeps the round's
-     local record, marked cleaned, and clears `active.omb` if it named that
-     round; `active.omb` never names a cleaned round again, and round ids
-     are 64 random bits, so a copy of an old round put back on Shared can
-     never become current.
+4. **The round's freshness, as each side can know it.**
+   - **macOS is the authority.** A round is current on macOS only if its
+     `active.omb` names it and its local state is active (`created`, no
+     `finished`, no `cleaned`). macOS writes `rounds/<round>/created.omb`
+     and `active.omb` **before** it creates the round's folder, refuses to
+     start a round while any round it created is neither finished nor
+     cleaned, and never names a finished or cleaned round in `active.omb`
+     again; round ids are 64 random bits, so a new round never equals an old
+     one.
+   - **Linux can only accept a candidate.** Linux has no record of what
+     macOS created or cleaned. It accepts step 1 as a **provisional
+     candidate** after checks 1–3 and when exactly one round folder under
+     the plan's folder has a `round.omb` and no `linux.omb` (with more than
+     one it is `blocked` and names them), writes its own `active.omb`, and
+     runs step 2. Its screen and records say *provisional until macOS reads
+     it back*, never "current" or "qualified".
+   - **Only macOS can pass a round.** Step 3 runs only for the round macOS's
+     own `active.omb` names. So a stale or cleaned round restored to Shared
+     can make Linux do its step on it — provisional work — but can **never**
+     produce a passing qualification: macOS reports the folder as not its
+     active round, and it stays unpassed.
 5. **The steps follow each other**: step 2 requires a `round.omb` and no
    `linux.omb` yet; step 3 requires a `linux.omb` whose `previous` is the
    digest of this round's `round.omb`, and no `result.omb` yet.
@@ -193,7 +207,7 @@ Both data files are generated by one normative construction:
 | cipher | AES-256 in counter mode over zero plaintext: the file *is* the key stream |
 | counter | the 128-bit counter block, big-endian, equals the byte offset divided by 16; 0 at offset 0 |
 | production | `head -c <len> /dev/zero \| openssl enc -aes-256-ctr -nosalt -K <key hex> -iv <counter hex>` written straight to the file; chunks, if used, start at multiples of 16 bytes with the counter for their offset, and do not change a byte |
-| checks | both commands' exit statuses (`PIPESTATUS`) are 0 and the file's size is exactly the size asked; otherwise the step fails. Nothing reads the stream through `head` after `openssl`, so no expected SIGPIPE can hide a real failure |
+| checks | both commands' exit statuses are 0 — captured from `PIPESTATUS` in the first assignment after the pipeline, before any other command can replace it — and the file's size is exactly the size asked; otherwise the step fails. Nothing reads the stream through `head` after `openssl`, so no expected SIGPIPE can hide a real failure |
 | digest | SHA-256 of the written file, read back from the filesystem |
 | memory | streamed; nothing holds more than a pipe buffer |
 
@@ -260,8 +274,10 @@ sequenceDiagram
   for inspection, and the expected digest is never rewritten.
 - **Removal is by record.** After a pass, macOS removes the data files and
   name folders that the round's own records list. `qualify clean` (typed
-  `clean`, macOS) removes only round folders that a local `rounds/*.omb`
-  record names, and in them only the names this schema fixes (the three step
+  `clean`, macOS) removes only round folders whose round has a local
+  `rounds/<round>/created.omb`, writes that round's `cleaned.omb` (and
+  clears `active.omb` if it named the round), and in those folders removes
+  only the names this schema fixes (the three step
   files, the two data files, the fixed test names and their folders), after
   showing them; anything else found there is reported and left, as is
   anything it could not remove. Linux removes
@@ -279,7 +295,7 @@ records:
 | --- | --- |
 | `not-started` | no active round on this system |
 | `waiting-for-linux` | the active round has `round.omb`, no `linux.omb` |
-| `waiting-for-macos` | the active round has `linux.omb`, no `result.omb` |
+| `waiting-for-macos` | the active round has `linux.omb`, no `result.omb`; on Linux, the round is a provisional candidate until macOS reads it back |
 | `in-progress` | this side's step began and did not finish; it starts again from its first check |
 | `passed` | `result.omb` records a pass for the active round |
 | `failed` | `result.omb` records a mismatch, or a step stopped part-way; the files stay |

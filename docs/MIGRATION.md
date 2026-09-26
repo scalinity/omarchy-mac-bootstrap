@@ -241,15 +241,16 @@ key:
 
 ### The guarantee, exactly
 
-- **Parsed configuration** (Git settings, MCP definitions, the AI tools'
-  settings, Codex's configuration, Ghostty and Starship settings): only
-  the adapter's allowlisted fields travel, and its credential fields never
-  do.
-- **Files carried whole** by a supported adapter, and **opaque paths**:
-  only the path refusals and the whole-length credential-shape scan apply;
-  nothing more is promised, and the review says which files these are.
-- Every carried object has passed the scan. The product never claims that
-  a file carried whole contains no secret.
+Three kinds of content, three different promises:
+
+| Kind | Promise | Not promised |
+| --- | --- | --- |
+| **parsed configuration** of a supported adapter (Git settings, MCP definitions, the AI tools' settings, Codex's configuration, Ghostty and Starship settings) | only its allowlisted fields leave macOS; its known credential fields never do; the credential-shape scan rejects on top | that an allowlisted field never holds a credential in a form nobody recognises |
+| **files a supported adapter carries whole** (instructions, skills, a Neovim tree, a tmux configuration) | the hard refusals and the whole-length scan apply; a credential of a shape the scan knows excludes the file; the review marks each as "carried whole" | that the file is secret-free: a scan that finds nothing proves nothing |
+| **opaque custom paths** | excluded by default; carried only after typed `opaque` for that path, with the warning that Shared is not encrypted; known credential files inside are still refused; the scan still runs | anything about their contents: they are outside the secret guarantee |
+
+The one exception, an encrypted SSH key, is above. The product never claims
+that a file carried whole, or an opaque one, contains no secret.
 
 ## Selection
 

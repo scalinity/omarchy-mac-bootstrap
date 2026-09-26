@@ -35,7 +35,7 @@ v1 providers: **Claude Code, Codex, OpenCode**. Gemini CLI, Copilot CLI,
 Crush and Pi are recognised by the scan and shown as "recognised, not
 migrated yet".
 
-**`dev` and `restore` share the providers** (docs/DECISIONS.md → D30). The
+**`dev` and `restore` share the providers** (D30 in docs/DECISIONS.md). The
 developer setup's AI module keeps its place for a machine without a
 profile, and calls the same `install`, `observe` and `verify` as `restore`:
 there is one installer per tool. The baseline's `dev` module currently
@@ -43,7 +43,7 @@ counts any `claude` on `PATH` or in `~/.local/bin` as installed — Omarchy's
 wrapper included — and otherwise installs Claude Code with the vendor's
 installer into `~/.local/bin/claude`, the path of Omarchy's wrapper. Both
 become calls to the provider, as a reviewed change to a baseline file
-(MILESTONES.md → M15-B).
+(MILESTONES.md → *M15-B — Packages and AI providers*).
 
 ## What is observed
 
@@ -98,7 +98,7 @@ a sign-in file never implies a working sign-in.
 | code that runs (hook files, workflows, OpenCode plugins and tools) | `PRIVATE_CONFIG`, marked "runs code" | only item by item, after the person has seen it |
 | caches, logs, state databases, downloads | `MACHINE_SPECIFIC` | never |
 | sign-ins, tokens, API keys | `SECRET` | never; signed in again |
-| sessions, transcripts, prompt history, agent memory | — | **not in v1**: listed as found, never carried (docs/DECISIONS.md → D41) |
+| sessions, transcripts, prompt history, agent memory | — | **not in v1**: listed as found, never carried (D41 in docs/DECISIONS.md) |
 
 **Carried** therefore means: reviewed settings, instructions, skills,
 subagents, commands, rules, output styles, keybindings, themes, MCP
@@ -169,9 +169,19 @@ documentation shows (docs/UPSTREAM.md → *Codex's configuration file*):
 **Refused, and the file with it:** date and time values; hexadecimal, octal
 and binary integers; underscores in numbers; `inf` and `nan`; inline tables
 over several lines or with a trailing comma (TOML 1.1 allows both); CR
-bytes; invalid UTF-8; a control character outside the escapes; and anything
-TOML itself forbids — a key defined twice, a table defined twice, a key
-that is both a value and a table, `[[x]]` after `x` was a static array.
+bytes; invalid UTF-8; a control character outside the escapes; a file over
+1 MiB, a line over 16 KiB, or arrays and inline tables nested more than 16
+deep; and anything TOML itself forbids — a key defined twice, a table
+defined twice (including a `[a.b]` header after dotted keys such as `a.b.c
+= 1` already defined `a.b`; a sub-table header such as `[a.b.x]` is
+allowed), a key that is both a value and a table, `[[x]]` after `x` was a
+static array.
+
+Before M14 gate 4 closes, the reader is run over the whole `toml-test`
+conformance corpus (docs/TESTING.md → `toml-conformance`): it must refuse
+every invalid case, and for every valid case either refuse it as outside the
+subset or decode exactly the corpus's values. The subset is still a real
+parser to maintain; this is what keeps it honest.
 
 What is carried from an accepted file, as neutral records:
 
