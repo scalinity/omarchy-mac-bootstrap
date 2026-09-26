@@ -178,6 +178,15 @@ hold before it counts as done. Status lives at the end of each entry.
     launcher and that step were fixed after it: the step now fails on any
     stderr, checks the exact version, and runs a command that needs every
     library loaded.
+  - Run 36212062095 (commit 0697d1a): the macOS job passed with no skips
+    and a clean launcher step; the Linux job failed on ShellCheck 0.9.0
+    SC2002 in `tests/test-shared.sh`, which 0.11 no longer reports by
+    default.
+  - Run 36212657832 (commit adcd325): both jobs green, logs read (Linux
+    1,793 passed, 27 skips, all plutil-gated sections, ShellCheck 0.9.0
+    clean; macOS 2,946 passed, no skips, launcher step clean under `sh` and
+    `/bin/bash`). A later review then found the mounted-identity and
+    creation-timing gaps fixed after it.
 
 ## M14 — Real-hardware qualification
 
@@ -190,10 +199,12 @@ hold before it counts as done. Status lives at the end of each entry.
   root, the LUKS header reads as finished before the completion code shows);
   back on macOS, `shared` shows `awaiting-macos-creation`; no other disk tool
   running while Shared is created (the run lock is not a disk lock); Shared
-  created; the partition checked with `diskutil info` against the size and
-  start the command showed, and written to from macOS; back on Linux, `shared
-  activate`, and doctor shows the partition mounted at `/mnt/shared` with its
-  PARTUUID matched; a file over 4 GB copied and hashed macOS → Linux and
+  created, `sudo -n` running it without asking again after `sudo -v` under
+  this Mac's sudo policy; the partition checked with `diskutil info` against
+  the size and start the command showed, and written to from macOS; back on
+  Linux, `shared activate`, and doctor shows the partition mounted at
+  `/mnt/shared` with its PARTUUID matched through the kernel's device number
+  (`lsblk` on this system reports `MAJ:MIN`); a file over 4 GB copied and hashed macOS → Linux and
   back; clean reboots between the systems; the mount persists;
   `./omarchy-bootstrap` rerun on both systems changes nothing.
 - **Acceptance:** every step above holds on the real machine, and the planned
