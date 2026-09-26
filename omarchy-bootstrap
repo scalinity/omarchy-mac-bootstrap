@@ -244,6 +244,9 @@ main() {
     . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
     # shellcheck source=lib/frontend.sh
     . "$OMB_HOME/lib/frontend.sh" || _omb_unloaded frontend
+    # The per-run scratch goes when the session ends; the text interface,
+    # if the frontend falls back, sets its own exit handling below.
+    trap omb_cleanup EXIT
     if [ "$OMB_DRY_RUN" = 1 ]; then fe_run dry-run "$FE_ALL_SCOPES"; else fe_run act "$FE_ALL_SCOPES"; fi
     case $? in
       0) return 0 ;;
