@@ -205,7 +205,7 @@ core_proc_write() {
 core_proc_read() {
   CP_PID="" CP_START="" CP_BOOT=""
   rec_admit_file proc - "$1" || return 1
-  CP_PID=$(rec_get 0 pid) && CP_START=$(rec_get 0 start) && CP_BOOT=$(rec_get 0 boot)
+  rec_get_into CP_PID 0 pid && rec_get_into CP_START 0 start && rec_get_into CP_BOOT 0 boot
 }
 
 # core_file_alive FILE — 0 alive, 1 not alive, 2 unknown (an unreadable
@@ -320,9 +320,15 @@ core_registry_check() {
     return 1
   fi
   while [ "$i" -lt "$REC_N" ]; do
-    action=$(rec_get "$i" action) cmd=$(rec_get "$i" cmd) class=$(rec_get "$i" class)
-    out=$(rec_get "$i" stdout) err=$(rec_get "$i" stderr) tty=$(rec_get "$i" tty)
-    det=$(rec_get "$i" detaches) owner=$(rec_get "$i" owner) check=$(rec_get "$i" check)
+    rec_get_into action "$i" action
+    rec_get_into cmd "$i" cmd
+    rec_get_into class "$i" class
+    rec_get_into out "$i" stdout
+    rec_get_into err "$i" stderr
+    rec_get_into tty "$i" tty
+    rec_get_into det "$i" detaches
+    rec_get_into owner "$i" owner
+    rec_get_into check "$i" check
     base=${cmd##*/}
     case "$cmd" in
       '' | /* | ../* | */../* | */.. | *//*) CORE_REG_WHY="$action: its command is not a path inside the tool" ;;
@@ -369,7 +375,7 @@ core_registry_entry() {
     line=${CORE_REG_L[i]}
     _rec_field_raw "$line" action
     if [ "$REC_RAW" = "$1" ]; then
-      _rec_field_raw "$line" cmd && CC_CMD=$(rec_dec "$REC_RAW")
+      _rec_field_raw "$line" cmd && _rec_dec_into CC_CMD "$REC_RAW"
       _rec_field_raw "$line" class && CC_CLASS=$REC_RAW
       _rec_field_raw "$line" stdout && CC_OUT=$REC_RAW
       _rec_field_raw "$line" stderr && CC_ERR=$REC_RAW
@@ -930,7 +936,7 @@ core_lock_version() {
   [ -f "$OMB_HOME/release/frontend.lock" ] || return 1
   rec_admit_file lock - "$OMB_HOME/release/frontend.lock" || return 1
   rec_find frontend || return 1
-  CORE_LOCK_VERSION=$(rec_get "$REC_AT_I" version)
+  rec_get_into CORE_LOCK_VERSION "$REC_AT_I" version
 }
 
 # core_main OP REQUEST_COPY HEAD_STATUS — one request, one answer.
@@ -983,26 +989,27 @@ core_main() {
   # REC_* arrays.
   local i=0
   CORE_REQ_SCOPE="" CORE_REQ_ACTION="" CORE_REQ_BASIS="" CORE_REQ_CONFIRM="" CORE_REQ_ARGS=0
-  if rec_find scope; then CORE_REQ_SCOPE=$(rec_get "$REC_AT_I" name); fi
+  if rec_find scope; then rec_get_into CORE_REQ_SCOPE "$REC_AT_I" name; fi
   if rec_find exec; then
-    CORE_REQ_ACTION=$(rec_get "$REC_AT_I" action) CORE_REQ_BASIS=$(rec_get "$REC_AT_I" basis)
-    CORE_REQ_CONFIRM=$(rec_get "$REC_AT_I" confirm)
+    rec_get_into CORE_REQ_ACTION "$REC_AT_I" action
+    rec_get_into CORE_REQ_BASIS "$REC_AT_I" basis
+    rec_get_into CORE_REQ_CONFIRM "$REC_AT_I" confirm
   fi
   while [ "$i" -lt "$REC_N" ]; do
     [ "${REC_T[i]}" = arg ] && CORE_REQ_ARGS=$((CORE_REQ_ARGS + 1))
     i=$((i + 1))
   done
-  rop=$(rec_get 0 op)
+  rec_get_into rop 0 op
   if [ "$rop" != "$op" ]; then
     core_result error schema "The request's operation is not the one the core was started for."
     return 2
   fi
-  proto=$(rec_get 0 proto)
+  rec_get_into proto 0 proto
   if [ "$proto" != "$REC_PROTO" ]; then
     core_result refused protocol "This core speaks protocol $REC_PROTO, not $proto."
     return 3
   fi
-  fe=$(rec_get 0 frontend)
+  rec_get_into fe 0 frontend
   core_lock_version
   if [ "$fe" != "$CORE_LOCK_VERSION" ] && ! { [ -n "${OMB_FIXTURE:-}" ] && [ -n "${OMB_FRONTEND_DEV:-}" ]; }; then
     if [ -n "$CORE_LOCK_VERSION" ]; then

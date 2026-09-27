@@ -178,18 +178,41 @@ rec_enc() {
 # %00 is refused before any value is decoded; a backslash is never a safe
 # byte, so %b meets only the \xHH escapes built here.
 rec_dec() {
-  local LC_ALL=C s=$1 out="" pre
+  _rec_dec_fmt "$1"
+  LC_ALL=C printf '%b' "$REC_FMT"
+}
+
+# _rec_dec_fmt VALUE — REC_FMT: VALUE's decoded bytes as a printf %b format
+# (each escape \xHH; no backslash is ever a safe byte, so none other exists).
+_rec_dec_fmt() {
+  local LC_ALL=C s=$1 pre
+  REC_FMT=""
   while :; do
     case "$s" in
       *%*)
         pre=${s%%\%*}
-        out="$out$pre\\x${s:${#pre}+1:2}"
+        REC_FMT="$REC_FMT$pre\\x${s:${#pre}+1:2}"
         s=${s:${#pre}+3}
         ;;
-      *) out="$out$s" && break ;;
+      *) REC_FMT="$REC_FMT$s" && break ;;
     esac
   done
-  printf '%b' "$out"
+}
+
+# _rec_dec_into NAME VALUE — NAME: VALUE's decoded bytes, trailing newlines
+# included (a command substitution would drop them). NAME is checked as a
+# name; nothing of the value is evaluated. No locals, so no caller's
+# variable of the same name is shadowed.
+_rec_dec_into() {
+  case "$1" in '' | [0-9]* | *[!A-Za-z0-9_]*) return 2 ;; esac
+  _rec_dec_fmt "$2"
+  # Bash 3.2's `printf -v NAME %b ''` assigns the previous printf -v's
+  # output; %s of an empty string assigns the empty string.
+  if [ -z "$REC_FMT" ]; then
+    printf -v "$1" '%s' ''
+  else
+    LC_ALL=C printf -v "$1" '%b' "$REC_FMT"
+  fi
 }
 
 # _rec_bytes VALUE — REC_BYTES: every decoded byte's value, read from the
@@ -375,7 +398,7 @@ rec_admit_file() {
 # `head -c LIMIT+1` (step 1), whose own status the caller has checked. OP is
 # the operation a response answers, or - (a request names its own).
 rec_admit_copied() {
-  local family=$1 op=$2 f=$3 st out
+  local family=$1 op=$2 f=$3 st out last
   REC_REASON="" REC_AT=0 REC_N=0
   _rec_family "$family" || { _rec_refuse schema; return 1; }
   _rec_tmp || { _rec_refuse io; return 1; }
@@ -409,7 +432,12 @@ rec_admit_copied() {
   od -An -tx1 <"$out.bytes" >"$out"
   st=$?
   [ "$st" = 0 ] || { _rec_refuse io; return 1; }
-  [ "$(tr -d ' \n' <"$out")" = 0a ] || { _rec_refuse eof; return 1; }
+  # Captured, then its status, then compared: a comparison of `$(tr ...)`
+  # alone would pass on the right bytes from a tr that failed.
+  last=$(tr -d ' \n' <"$out")
+  st=$?
+  [ "$st" = 0 ] || { _rec_refuse io; return 1; }
+  [ "$last" = 0a ] || { _rec_refuse eof; return 1; }
 
   # 5. Framing and canonical form: one C-locale awk pass, lines from the
   # first; within a line, each check over the whole line in this order.
@@ -662,6 +690,17 @@ $ukey
 rec_get() {
   _rec_field_raw "${REC_L[$1]}" "$2" || return 1
   rec_dec "$REC_RAW"
+}
+
+# rec_get_into NAME I KEY — NAME: the decoded value of KEY in admitted record
+# I, byte for byte (rec_get through `$(...)` loses trailing newlines); empty
+# and 1 when the record has no such field; 2 when NAME is not a name.
+rec_get_into() {
+  if ! _rec_field_raw "${REC_L[$2]}" "$3"; then
+    _rec_dec_into "$1" "" || return 2
+    return 1
+  fi
+  _rec_dec_into "$1" "$REC_RAW"
 }
 
 # rec_find TYPE — REC_AT_I: the index of the first admitted record of TYPE.

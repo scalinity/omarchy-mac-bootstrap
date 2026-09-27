@@ -33,7 +33,7 @@ fe_target() {
 # fe_lock_read — the reviewed lock's pins for this host: FE_VERSION,
 # FE_PROTO, FE_URL, FE_SIZE, FE_SHA. 1 with FE_WHY when there is none.
 fe_lock_read() {
-  local lock=$OMB_HOME/release/frontend.lock i
+  local lock=$OMB_HOME/release/frontend.lock i target
   FE_VERSION="" FE_PROTO="" FE_URL="" FE_SIZE="" FE_SHA=""
   if ! fe_target; then
     FE_WHY="no frontend is built for this system ($(uname -s 2>/dev/null) $(uname -m 2>/dev/null))"
@@ -48,11 +48,15 @@ fe_lock_read() {
     return 1
   fi
   rec_find frontend
-  FE_VERSION=$(rec_get "$REC_AT_I" version) FE_PROTO=$(rec_get "$REC_AT_I" proto)
+  rec_get_into FE_VERSION "$REC_AT_I" version
+  rec_get_into FE_PROTO "$REC_AT_I" proto
   i=0
   while [ "$i" -lt "$REC_N" ]; do
-    if [ "${REC_T[i]}" = artifact ] && [ "$(rec_get "$i" target)" = "$FE_TARGET" ]; then
-      FE_URL=$(rec_get "$i" url) FE_SIZE=$(rec_get "$i" size) FE_SHA=$(rec_get "$i" sha256)
+    rec_get_into target "$i" target
+    if [ "${REC_T[i]}" = artifact ] && [ "$target" = "$FE_TARGET" ]; then
+      rec_get_into FE_URL "$i" url
+      rec_get_into FE_SIZE "$i" size
+      rec_get_into FE_SHA "$i" sha256
     fi
     i=$((i + 1))
   done
@@ -271,12 +275,13 @@ fe_select() {
 # fe_ops_name DIR — does an unresolved operation record name the session DIR?
 # 0 yes, 1 no, 2 unknown (a record that cannot be read counts as naming it).
 fe_ops_name() {
-  local f
+  local f session
   [ -d "$OMB_STATE_DIR/ops" ] || return 1
   for f in "$OMB_STATE_DIR"/ops/*.omb; do
     [ -e "$f" ] || continue
     rec_admit_file op - "$f" || return 2
-    [ "$(rec_get 0 session)" = "$1" ] && return 0
+    rec_get_into session 0 session
+    [ "$session" = "$1" ] && return 0
   done
   return 1
 }
