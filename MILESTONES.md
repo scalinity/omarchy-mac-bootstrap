@@ -296,9 +296,10 @@ of docs/TESTING.md.
 - **Status:** implemented — code remediation still required; not accepted.
   The independent review of `3a1561e` required remediation (H01–H07,
   M01–M03, L01–L02); its re-review at `38ed2f1` closed nine and left H06,
-  H07 and M03 partial. Their final remediation, on branch
-  `m14-gate1-frontend-foundation` from `21904d6`, awaits independent
-  re-review. CI runs every job on each push
+  H07 and M03 partial, and the review at `aa08ee0` closed H06 and M03 and
+  left H07 partial: the storm's exemption did not hold the spool to its
+  bytes. Its remediation, on branch `m14-gate1-frontend-foundation` from
+  `21904d6`, awaits independent re-review. CI runs every job on each push
   (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS `/bin/bash`
   3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and `macos-15`
   arm64, and the Linux target shell — GNU Bash 5.3.15 built from pinned
