@@ -391,19 +391,31 @@ fn emphasis_by_token() {
             })
             .unwrap();
         let x = (0..80).find(|&x| b[(x, y)].symbol() == "R").unwrap();
+        // Each property the focus token sets, compared on its own: the
+        // reverse, the accent colour where there is colour, no background of
+        // its own, never bold, and one focus marker on the screen.
+        let cell = &b[(x, y)];
         assert!(
-            b[(x, y)].modifier.contains(Modifier::REVERSED),
+            cell.modifier.contains(Modifier::REVERSED),
             "{p}: the focused row is reversed"
         );
+        let fg = match p {
+            "color" => Color::Indexed(209),
+            _ => Color::Reset,
+        };
+        assert_eq!(cell.fg, fg, "{p}: the focus colour");
         assert_eq!(
-            b[(x, y)].style(),
-            t.style(Token::Focus).patch(b[(x, y)].style()),
-            "{p}"
+            t.style(Token::Focus).fg.unwrap_or(Color::Reset),
+            fg,
+            "{p}: the token's"
         );
-        assert!(
-            !b[(x, y)].modifier.contains(Modifier::BOLD),
-            "{p}: never bold"
-        );
+        assert_eq!(cell.bg, Color::Reset, "{p}: no background of its own");
+        assert!(!cell.modifier.contains(Modifier::BOLD), "{p}: never bold");
+        let markers = (0..24)
+            .flat_map(|y| (0..80).map(move |x| (x, y)))
+            .filter(|&(x, y)| b[(x, y)].symbol() == "❯")
+            .count();
+        assert_eq!(markers, 1, "{p}: one focus marker");
     }
     let m = dashboard(true);
     let t = profile("color");
