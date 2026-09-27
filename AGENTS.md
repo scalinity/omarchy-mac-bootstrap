@@ -147,7 +147,7 @@ OMB_FIXTURE=$PWD/tests/fixtures/<name> ./omarchy-bootstrap --dry-run
 # The frontend, from frontend/, with CARGO_TARGET_DIR outside the repository:
 cargo fmt --check && cargo clippy --locked --all-targets --features test-hooks -- -D warnings
 OMB_TEST_BASH=/bin/bash cargo test --locked --features test-hooks   # layers A–H, the PTY tests included
-tests/frontend-inputs.sh clean | digest | closure DIR | compat-macos FILE   # the build-input and artifact rules CI and the release apply
+tests/frontend-inputs.sh clean | digest | closure DIR BUILD | compat-macos FILE   # the build-input and artifact rules CI and the release apply (BUILD: the build's --message-format=json output)
 ```
 
 Report an unrun check as unrun. `.github/workflows/ci.yml` runs Linux (bash

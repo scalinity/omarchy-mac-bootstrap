@@ -121,8 +121,8 @@ build (docs/TESTING.md → `frontend-input-*`):
 | Rule | How CI checks it |
 | --- | --- |
 | built from the commit, with nothing generated beside it | the checkout has no untracked or ignored file under `frontend/` before the build (`git status --porcelain --ignored -- frontend`), and `CARGO_TARGET_DIR` is outside the repository |
-| no file outside the closure reaches the compiler (`include_bytes!`, `include_str!`, `#[path]`, a module) | after the release build, every path in the dependency files (`*.d`, which rustc writes for every file it read) of every crate of the frontend's own packages — each package `cargo metadata` shows under `frontend/`, each library and binary it builds — must be a tracked file under `frontend/`, a file under `$CARGO_HOME/registry/src`, or under the toolchain's sysroot; any other path fails, and so does a crate of the frontend's own with no dependency file |
-| no build environment reaches the compiler | the same dependency files' `env-dep` notes (every `env!()` and `option_env!()` a crate read) name only `CARGO_PKG_*`, which Cargo sets from the tracked `Cargo.toml`; any other variable, set or unset, fails |
+| no file outside the closure reaches the compiler (`include_bytes!`, `include_str!`, `#[path]`, a module) | the release build's own messages (`--message-format=json`, from the same `cargo build --release --locked --offline`) name every target it compiled; each target of the frontend's own packages — each package `cargo metadata` shows under `frontend/` — is bound to its own dependency file (`*.d`, which rustc writes for every file it read): the one for the output the build reported for that target, starting at the target's root file. A library and a binary whose crate names are spelled alike each need their own; a target with none fails, and a file no target is bound to is not read. Every path in each must be a tracked file under `frontend/`, a file under `$CARGO_HOME/registry/src`, or under the toolchain's sysroot; any other path fails |
+| no build environment reaches the compiler | the same dependency files' `env-dep` notes (every `env!()` and `option_env!()` a crate read) name only the fourteen values Cargo 1.88.0 sets from the tracked `Cargo.toml` — `CARGO_PKG_VERSION`, `_VERSION_MAJOR`, `_VERSION_MINOR`, `_VERSION_PATCH`, `_VERSION_PRE`, `_NAME`, `_AUTHORS`, `_DESCRIPTION`, `_HOMEPAGE`, `_REPOSITORY`, `_LICENSE`, `_LICENSE_FILE`, `_RUST_VERSION`, `_README` (Cargo's `fill_env` and `metadata_envs!`); any other variable, set or unset, fails, another spelled `CARGO_PKG_*` included |
 | no build script of its own | `cargo metadata` shows no `build` target in the frontend's own packages; a dependency's build script comes with its `Cargo.lock`-pinned source |
 | no local or Git dependency outside the closure | `cargo metadata --locked` shows every package either under `frontend/` or from crates.io; no `git` source, no `path` outside `frontend/`, no `[patch]` or `[replace]` |
 | no Cargo configuration from elsewhere | no `.cargo/` directory elsewhere in the repository; the release job starts with an empty `CARGO_HOME`; the release workflow sets none of `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`, `CARGO_BUILD_*` or `CARGO_PROFILE_*` (a static check of the workflow file) |
@@ -164,8 +164,9 @@ On a tag `frontend-v<version>`, the release workflow checks out the tagged
 commit, confirms the clean-tree rule, computes `inputs_digest`, fetches the
 crates with `cargo fetch --locked`, and builds natively on GitHub's arm64
 macOS runner and on `ubuntu-24.04-arm` with `cargo build --release --locked
---offline` and the toolchain `frontend/rust-toolchain.toml` names (at least
-1.88, Ratatui's minimum). It then applies the closure checks above and
+--offline`, keeping its messages, and the toolchain
+`frontend/rust-toolchain.toml` names (at least 1.88, Ratatui's minimum). It
+then applies the closure checks above and
 *Compatibility* below to every artifact, publishes the binaries,
 `SHA256SUMS` and the attestations, and prints the lock lines. A reviewed
 commit then updates `release/frontend.lock`.

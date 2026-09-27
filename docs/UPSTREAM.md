@@ -417,9 +417,18 @@ Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
   (the run lock's owner line), both byte for byte the accepted baseline's, and
   nowhere else (docs/TESTING.md → `sup-eintr`, `sup-eintr-one-substitution`).
   The core used to discard the run lock's stderr, hiding the second; it now
-  keeps Bash's own errors there. A core that dies taking the lock leaves it
-  without an owner, which the baseline's lock counts as a run starting for a
-  minute. Both GNU builds came from ftp.gnu.org, every
+  keeps Bash's own errors there. Every death exits 1 with the spool holding
+  only its header and `hello`, and stderr only those two lines; the core's
+  EXIT trap still runs. In 60 more storms on 5.2.21, the 18 deaths left one
+  of four states and no other: at the lock's line (5), the lock an empty
+  folder — taken, its owner not yet written, which the baseline's lock
+  counts as a run starting for a minute — and nothing else; at
+  `log_event`'s, the lock released and either the running record just
+  written, its core ended, with no worker or effect (4), or the child ended,
+  its worker ended and the expected effect there, with that record still in
+  place (6) or already removed (3). The storm test skips only a death that
+  leaves one of those, and removes only what it left (docs/TESTING.md →
+  `sup-eintr-exemption`). Both GNU builds came from ftp.gnu.org, every
   tarball and patch verified against its signature by Chet Ramey's key
   (`7C0135FB088AAF6C66C650B9BB5869F064EA74AB`, as the GNU keyring holds it);
   `tests/bash-5.3.15.sha256` pins the 5.3.15 files CI builds from.

@@ -293,10 +293,12 @@ of docs/TESTING.md.
   (`diag-*`); Bash and Rust admission agreeing on the whole differential
   corpus and the golden examples; `frontend-lock-not-input` passing; no
   path that changes the machine.
-- **Status:** implemented — remediation required; not accepted. The
-  independent review of `3a1561e` required remediation (H01–H07, M01–M03,
-  L01–L02); the remediation, on branch `m14-gate1-frontend-foundation` from
-  `21904d6`, awaits independent re-review. CI runs every job on each push
+- **Status:** implemented — code remediation still required; not accepted.
+  The independent review of `3a1561e` required remediation (H01–H07,
+  M01–M03, L01–L02); its re-review at `38ed2f1` closed nine and left H06,
+  H07 and M03 partial. Their final remediation, on branch
+  `m14-gate1-frontend-foundation` from `21904d6`, awaits independent
+  re-review. CI runs every job on each push
   (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS `/bin/bash`
   3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and `macos-15`
   arm64, and the Linux target shell — GNU Bash 5.3.15 built from pinned
@@ -313,8 +315,9 @@ of docs/TESTING.md.
     fixed for 5.3; docs/UPSTREAM.md → *Experiments*). The core's own code
     holds no such command; the baseline's `log_event` and run lock do, and
     stay byte for byte. The signal-storm test names that one failure as a
-    skip on 5.2, counted apart from the plutil skips; the target's 5.3.15
-    runs the same storm in CI with no skip.
+    skip on 5.2, counted apart from the plutil skips, only when the state
+    it left is one such a death leaves (`sup-eintr-exemption`); the
+    target's 5.3.15 runs the same storm in CI with no skip.
 
 ### Gate 2 — Read-only equivalence
 
