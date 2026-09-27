@@ -14,6 +14,7 @@
 . "$(dirname "$0")/lib.sh"
 echo "test-frontend"
 T=$(t_tmp)
+t_decoy "bash -c (a program of the developer's) fe_run act journey"
 
 # A copy of the tool: its lock is the test's (the checkout's is not touched).
 TOOL=$T/tool
@@ -88,11 +89,11 @@ CACHE=$T/home/.cache/omarchy-mac-bootstrap/frontend
 
 # fe_call INPUT FN ARGS... — load the libraries from the copy and call a
 # launcher function with the fake's world, answering prompts with INPUT;
-# prints "FE_STATE|FE_BIN|FE_WHY".
+# prints "FE_STATE|FE_BIN|FE_WHY". FE_TMP gives it a TMPDIR of its own.
 fe_call() {
   local input=$1
   shift
-  printf '%b' "$input" | env -i PATH="${FE_PATH:-$BASE_PATH}" HOME="$T/home" TMPDIR="$T/tmp" LANG=en_US.UTF-8 TERM=dumb \
+  printf '%b' "$input" | env -i PATH="${FE_PATH:-$BASE_PATH}" HOME="$T/home" TMPDIR="${FE_TMP:-$T/tmp}" LANG=en_US.UTF-8 TERM=dumb \
     OMB_FIXTURE="${FE_FIX-$FIXB}" OMB_STATE_DIR="$T/state" ${FE_ENV:-} "$T_BASH" -c '
       . "$1/lib/common.sh"; . "$1/lib/ui.sh"; . "$1/lib/state.sh"; . "$1/lib/records.sh"; . "$1/lib/core.sh"; . "$1/lib/frontend.sh"
       OMB_HOME=$1; shift
@@ -404,23 +405,41 @@ fe_call '' fe_reclaim >/dev/null
 kill "$live" 2>/dev/null
 wait "$live" 2>/dev/null
 [ -d "$d" ] && ok || fail "the live frontend's scratch is still there"
-kill "$(sed -n 's/.*	pid=\([0-9]*\)	.*/\1/p' "$d/frontend.omb")" 2>/dev/null
 
 # --- sup-eintr: a signal during the launcher's wait -----------------------------------------
+# A launcher under test is found by the identity it recorded, launcher.omb in
+# the scratch of a TMPDIR of its own, and signalled as that process.
+# launcher_id DIR FILE — "PID START" of the launcher whose scratch is in DIR,
+# once FILE exists in that scratch (up to 10 s).
+launcher_id() {
+  local i=0 s
+  while [ "$i" -lt 200 ]; do
+    for s in "$1"/omb-session.*; do
+      [ -f "$s/$2" ] && [ -f "$s/launcher.omb" ] || continue
+      sed -n 's/.*	pid=\([0-9]*\)	start=\([^	]*\)	.*/\1 \2/p' "$s/launcher.omb" | sed 's/%20/ /g'
+      return 0
+    done
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
 # SIGINT is caught and kept by the launcher (the child acts on its own).
 printf '0 sleep' >"$T/fake-behaviour"
-(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
+mkdir -p "$T/tmp-int"
+(FE_TMP=$T/tmp-int FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
 bg=$!
-sleep 0.8
-pkill -INT -f "bash -c .*fe_run act journey" 2>/dev/null
+l=$(launcher_id "$T/tmp-int" frontend.omb)
+t_signal INT "${l%% *}" "${l#* }" && ok || fail "sup-eintr: the launcher, by the identity it recorded ($l)"
 wait "$bg"
 assert_contains "$(cat "$T/eintr")" "0|verified|" "sup-eintr: the launcher's wait is retried after a signal, and the frontend's status kept"
 # SIGTERM (and SIGHUP) the launcher passes to the frontend: this fake has no
 # handler, so it ends by the signal, and its status says so.
-(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
+mkdir -p "$T/tmp-term"
+(FE_TMP=$T/tmp-term FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
 bg=$!
-sleep 0.8
-pkill -TERM -f "bash -c .*fe_run act journey" 2>/dev/null
+l=$(launcher_id "$T/tmp-term" frontend.omb)
+t_signal TERM "${l%% *}" "${l#* }" && ok || fail "the launcher, by the identity it recorded ($l)"
 wait "$bg"
 assert_contains "$(cat "$T/eintr")" "status 143" "SIGTERM to the launcher reaches the frontend"
 
@@ -429,13 +448,22 @@ assert_contains "$(cat "$T/eintr")" "status 143" "SIGTERM to the launcher reache
 # to that core (docs/PROTOCOL.md → worker quiescence). The fake records a
 # live core and exits; the launcher's children are sampled through the wait.
 printf '0 core' >"$T/fake-behaviour"
-(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/waitcore") &
+mkdir -p "$T/tmp-core"
+(FE_TMP=$T/tmp-core FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/waitcore") &
 bg=$!
-sleep 0.6
-l=$(pgrep -f "bash -c .*fe_run act journey" | head -1)
+l=$(launcher_id "$T/tmp-core" req-1.core)
+l=${l%% *}
+# The samples start once the frontend, the launcher's own child, has ended:
+# from then on the launcher is only waiting (signal 0 only asks).
+f=$(sed -n 's/.*	pid=\([0-9]*\)	.*/\1/p' "$T"/tmp-core/omb-session.*/frontend.omb)
+i=0
+while [ -n "$f" ] && kill -0 "$f" 2>/dev/null && [ "$i" -lt 100 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
 busy=0
 for k in 1 2 3 4 5 6 7 8 9 10; do
-  [ -n "$(pgrep -P "$l")" ] && busy=$((busy + 1))
+  [ "$(ps -axo ppid= | awk -v p="$l" '$1 == p' | wc -l)" -gt 0 ] && busy=$((busy + 1))
   sleep 0.15
 done
 wait "$bg"
@@ -443,4 +471,5 @@ wait "$bg"
 assert_eq "$busy" 0 "the launcher starts no process while it waits for the session's core (samples with a child, of 10)"
 assert_contains "$(cat "$T/waitcore")" "0|verified|" "and finishes once the core has ended"
 
+t_decoys_survive test-frontend
 t_done test-frontend

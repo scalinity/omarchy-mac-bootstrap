@@ -6,6 +6,12 @@
 conf=${OMB_FIXTURE:-/nonexistent}/test-children/read
 here=$(dirname "$0")
 get() { [ -f "$conf" ] && sed -n "s/^$1=//p" "$conf" | tail -n 1; }
+# own PID — record a process this child started, with its start time, in the
+# file the fixture names (pids=): a test signals only what it can name so.
+own() {
+  p=$(get pids) && [ -n "$p" ] || return 0
+  printf '%s %s\n' "$1" "$(LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1 = $1; print}')" >>"$p"
+}
 if [ ! -f "$conf" ]; then
   echo "fake read child: a line of diagnostics" >&2
   echo "fixture read: ok"
@@ -16,6 +22,7 @@ v=$(get fds) && [ -n "$v" ] && "$here/probe-fds" >"$v"
 v=$(get grandchild) && [ -n "$v" ] && {
   f=$(get grandchild_fds)
   sh -c 'if [ -n "$1" ]; then "$2/probe-fds" >"$1"; fi; exec sleep "$0"' "$v" "$f" "$here" &
+  own $!
 }
 v=$(get stderr_text) && [ -n "$v" ] && printf '%s\n' "$v" >&2
 # BSD head refuses -c 0: nothing to write is written as nothing.

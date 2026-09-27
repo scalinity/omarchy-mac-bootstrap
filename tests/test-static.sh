@@ -187,4 +187,13 @@ else
   fail "the accepted baseline $BASELINE is not in this clone (CI checks out with fetch-depth: 0)"
 fi
 
+# --- test-owned-signal-only: tests signal only processes they own ---------------------
+# A name or a command line matches the developer's own programs too; tests
+# signal a PID they recorded (held to its start time) or a group they made
+# (tests/lib.sh → t_signal). The words are split so this check does not match itself.
+kills="p""kill|p""grep|kill""all"
+matched=$(grep -rnE "(^|[^a-zA-Z_])($kills)([^a-zA-Z_]|\$)" "$REPO/tests" "$REPO/frontend/tests" "$REPO/.github" \
+  --include='*.sh' --include='*.rs' --include='*.yml' --include='fake-*' --include='probe-*' 2>/dev/null)
+assert_eq "$matched" "" "test-owned-signal-only: no test finds a process to signal by its name or command line"
+
 t_done test-static

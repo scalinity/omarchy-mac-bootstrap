@@ -12,6 +12,8 @@
 echo "test-core"
 
 T=$(t_tmp)
+t_decoy "sleep 30 (a program of the developer's)"
+t_decoy "sleep 20 (a program of the developer's)"
 # shellcheck source=tests/core-harness.sh
 . "$TESTS_DIR/core-harness.sh"
 
@@ -280,7 +282,7 @@ c_conf mutate "fds=$T/fds-mutate"
 c_exec test.mutate test
 assert_eq "$(cat "$T/fds-mutate")" "$base" "sup-fd-child: the mutating child holds only what its caller held ($base)"
 rm -f "$EFFECT"
-c_conf read "fds=$T/fds-read" "grandchild=30" "grandchild_fds=$T/fds-grand"
+c_conf read "fds=$T/fds-read" "grandchild=30" "grandchild_fds=$T/fds-grand" "pids=$T/owned"
 t0=$SECONDS
 c_exec test.read ""
 assert_eq "$(c_result)" "done ok" "sup-fd-grandchild: the read completes"
@@ -289,19 +291,19 @@ c_wait_file "$T/fds-grand"
 assert_eq "$(cat "$T/fds-read")" "$base" "sup-fd-child: the read child holds only what its caller held"
 assert_eq "$(cat "$T/fds-grand")" "$base" "sup-fd-grandchild: the grandchild holds only what its caller held"
 assert_contains "$C_OUT" "diagnostics%20not%20available" "the grandchild holding stderr leaves the diagnostics not available, not the core waiting"
-pkill -f "sleep 30" 2>/dev/null
+t_signal_owned TERM "$T/owned" && rm -f "$T/owned"
 # The grace the drain gets is wall time: where every fork is slow (each
 # `sleep` here costs 50 ms more), the core still gives up on the held stderr
 # after about 5 seconds, not after hundreds of slow tries.
 mkdir -p "$T/slowbin"
 printf '#!/bin/sh\n/bin/sleep 0.05\nexec /bin/sleep "$@"\n' >"$T/slowbin/sleep"
 chmod +x "$T/slowbin/sleep"
-c_conf read "grandchild=30"
+c_conf read "grandchild=30" "pids=$T/owned"
 t0=$SECONDS
 C_PATH="$T/slowbin:/usr/bin:/bin:/usr/sbin:/sbin" c_exec test.read ""
 assert_eq "$(c_result)" "done ok" "sup-fd-grandchild on a slow host: the read completes"
 [ $((SECONDS - t0)) -lt 12 ] && ok || fail "sup-fd-grandchild on a slow host: the drain's grace is wall time ($((SECONDS - t0)) s)"
-pkill -f "sleep 30" 2>/dev/null
+t_signal_owned TERM "$T/owned" && rm -f "$T/owned"
 case " $base " in *" 3 "*) fail "the harness itself held fd 3" ;; *) ok ;; esac
 rm -f "$T/test-children-none"
 rm -f "$C_FIX/test-children/read"
@@ -312,17 +314,41 @@ rm -f "$C_FIX/test-children/read"
 c_conf mutate linger=1
 c_prepare execute "exec	action=test.mutate	basis=$(c_basis test.mutate)	confirm=test"
 n=$C_N
-(c_run_raw execute "$T/request-$n") &
-bg=$!
-core=""
-while [ -z "$core" ] && kill -0 "$bg" 2>/dev/null; do core=$(pgrep -P "$bg" | head -1); done
-# Its identity file is written once its handlers are in place. The signals
-# come from one process in a group of its own: this harness shares the
-# core's group, where anything it started would count as a worker.
-c_wait_file "$SESS/req-$n.core" && ok || fail "sup-eintr: the core (pid $core) never recorded itself"
-perl -e 'setpgrp(0, 0); my ($p, $n) = @ARGV; while (kill 0, $p) { kill "HUP", $p and $n++; select(undef, undef, undef, 0.03) } print "$n\n"' "$core" 0 >"$T/sent"
-wait "$bg"
-st=$?
+# The signals come from the core's own parent, which made a process group of
+# its own first: the core's group then holds the two of them, the sender there
+# before any child. A PID is not reused before its parent collects it, so
+# every signal reaches this core and nothing else. They start once the core
+# has recorded itself, which it does once its handlers are in place.
+cat >"$T/storm" <<'PERL'
+#!/usr/bin/env perl
+# storm READY SENT CMD... — run CMD as this process's child, in a new process
+# group; from the moment READY exists until CMD ends, send it SIGHUP every
+# 30 ms. The count sent goes to SENT; the exit status is CMD's.
+use POSIX ":sys_wait_h";
+my ($ready, $sent) = (shift, shift);
+setpgrp(0, 0);
+my $pid = fork() // exit 125;
+if ($pid == 0) { exec @ARGV or exit 127 }
+my ($n, $go, $done, $st) = (0, 0, 0, 0);
+for (my $t = 0; $t < 1000; $t++) {
+  if (-e $ready) { $go = 1; last }
+  if (waitpid($pid, WNOHANG) == $pid) { ($done, $st) = (1, $?); last }
+  select(undef, undef, undef, 0.01);
+}
+while ($go && !$done) {
+  if (waitpid($pid, WNOHANG) == $pid) { ($done, $st) = (1, $?); last }
+  kill("HUP", $pid) and $n++;
+  select(undef, undef, undef, 0.03);
+}
+($done, $st) = (1, $?) if !$done && waitpid($pid, 0) == $pid;
+open(my $f, ">", $sent) or exit 125;
+print $f "$n\n";
+close($f);
+exit($st & 127 ? 128 + ($st & 127) : $st >> 8);
+PERL
+chmod +x "$T/storm"
+C_WRAP="$T/storm $SESS/req-$n.core $T/sent" c_run_raw execute "$T/request-$n"
+st=$C_RC
 r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
 # Bash 5.2 (not the targets: macOS runs 3.2.57, the Linux root 5.3.15)
 # parses a trap's command wrongly when it fires while a command substitution
@@ -389,7 +415,7 @@ rm -f "$OPS"
 
 # --- Lost supervision: the barrier ----------------------------------------------------------
 # sup-completion-worker-lingers: a descendant stays in the group past the limit.
-c_conf mutate linger=20
+c_conf mutate linger=20 "pids=$T/owned"
 c_exec test.mutate test
 assert_eq "$(c_result)" "stopped unsupervised" "sup-completion-worker-lingers: not completed; the outcome unknown"
 assert_contains "$(cat "$OPS")" "state=unsupervised" "the operation is marked unsupervised"
@@ -403,7 +429,7 @@ c_run snapshot "scope	name=journey"
 assert_contains "$C_OUT" "blocker	id=unsupervised" "the snapshot shows the barrier"
 assert_eq "$(printf '%s\n' "$C_OUT" | awk -F'\t' '$1 == "action" { sub(/^id=/, "", $2); printf "%s ", $2 }')" "test.read " \
   "and lists no act action in its scope"
-pkill -f "sleep 20" 2>/dev/null
+t_signal_owned TERM "$T/owned" && rm -f "$T/owned"
 sleep 0.5
 c_exec test.mutate test
 assert_eq "$(c_result)" "refused unsupervised" "an empty-looking group does not clear it within the boot"
@@ -423,9 +449,9 @@ assert_contains "$(cat "$T/state/state.env")" "op_journey_finding=test.mutate co
 rm -f "$EFFECT"
 
 # And with no effect: a new barrier, a new boot, nothing on the machine.
-c_conf mutate linger=20
+c_conf mutate linger=20 "pids=$T/owned"
 c_exec test.mutate test
-pkill -f "sleep 20" 2>/dev/null
+t_signal_owned TERM "$T/owned" && rm -f "$T/owned"
 rm -f "$EFFECT"
 printf '5E1D0B00-7A3C-4F21-9D6E-0000000000B3\n' >"$C_FIX/cmd/bootsession"
 c_conf mutate
@@ -435,9 +461,9 @@ assert_contains "$C_OUT" "reconciled:%20no-effect" "the finding is no effect"
 rm -f "$EFFECT"
 
 # sup-post-reboot-unexpected: the machine shows neither.
-c_conf mutate linger=20
+c_conf mutate linger=20 "pids=$T/owned"
 c_exec test.mutate test
-pkill -f "sleep 20" 2>/dev/null
+t_signal_owned TERM "$T/owned" && rm -f "$T/owned"
 printf 'something else' >"$EFFECT"
 printf '5E1D0B00-7A3C-4F21-9D6E-0000000000B4\n' >"$C_FIX/cmd/bootsession"
 c_conf mutate
@@ -454,7 +480,7 @@ n=$C_N
 (c_run_raw execute "$T/request-$n") &
 bg=$!
 c_wait_file "$SESS/req-$n.worker-1"
-kill -9 "$(c_core_pid "$n")" 2>/dev/null
+c_core_signal KILL "$n"
 wait "$bg" 2>/dev/null
 assert_eq "$(awk -F'\t' '$1 == "result"' "$SESS/req-$n.events")" "" "the killed core wrote no result: the outcome is unknown"
 c_conf mutate
@@ -476,7 +502,7 @@ if command -v perl >/dev/null 2>&1; then
   (c_run_raw execute "$T/request-$n") &
   bg=$!
   c_wait_file "$SESS/req-$n.worker-1"
-  kill -9 "$(c_core_pid "$n")" 2>/dev/null
+  c_core_signal KILL "$n"
   wait "$bg" 2>/dev/null
   c_wait_file "$T/escaped"
   pg=$(ps -o pgid= -p $$ | tr -d ' ')
@@ -549,7 +575,7 @@ n=$C_N
 (c_run_raw execute "$T/request-$n") &
 bg=$!
 c_wait_file "$SESS/req-$n.worker-1"
-kill -9 "$(c_core_pid "$n")" 2>/dev/null
+c_core_signal KILL "$n"
 wait "$bg" 2>/dev/null
 [ ! -e "$OPS" ] && ok || fail "sup-read-orphan-no-barrier: no operation record"
 rm -f "$C_FIX/test-children/read"
@@ -558,4 +584,5 @@ assert_eq "$(c_result)" "done ok" "sup-read-orphan-no-barrier: the next act proc
 rm -f "$EFFECT"
 sleep 3
 
+t_decoys_survive test-core
 t_done test-core

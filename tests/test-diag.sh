@@ -5,11 +5,12 @@
 # request, 4 194 304 a session, reserved before anything is appended; a
 # saturated request or session adds nothing; the drain never blocks the child.
 # diag-* and sup-overflow, over the fake read child in fixture mode.
-# shellcheck disable=SC2010,SC2015,SC2016 # ls|grep over the core's own file names; ok/fail always return 0; literal $ in patterns
+# shellcheck disable=SC2010,SC2015,SC2016,SC2031 # ls|grep over the core's own file names; ok/fail always return 0; literal $ in patterns; $! read after a job started in this shell
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo "test-diag"
 T=$(t_tmp)
+t_decoy "tail -c 65281 (a program of the developer's)"
 # shellcheck source=tests/core-harness.sh
 . "$TESTS_DIR/core-harness.sh"
 
@@ -186,7 +187,10 @@ n=$C_N
 bg=$!
 c_wait_file "$SESS/req-$n.capture"
 sleep 0.3
-pkill -f "tail -c 65281" 2>/dev/null
+# The drain is the core's own child: found among that core's children, and
+# signalled as the process it was when found.
+drain=$(t_child "$(c_core_pid "$n")" "tail -c 65281")
+t_signal TERM "${drain%% *}" "${drain#* }" && ok || fail "diag-capture-failure: the core's drain, among its own children ($drain)"
 wait "$bg"
 out=$(cat "$SESS/req-$n.events")
 assert_contains "$out" "diagnostics%20not%20available" "diag-capture-failure: the diagnostics are shown as not available"
@@ -228,4 +232,5 @@ assert_eq "$(tail -2 "$C_EV" | cut -f1 | tr '\n' ' ')" "overflow result " "sup-o
 assert_eq "$(grep -c '^overflow	' "$C_EV")" 1 "sup-overflow: exactly one overflow record"
 assert_eq "$(c_admits execute)" ok "sup-overflow: the whole spool is admissible"
 
+t_decoys_survive test-diag
 t_done test-diag

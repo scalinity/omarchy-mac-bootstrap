@@ -51,7 +51,8 @@ c_run() {
 # c_run_raw OP FILE — the core under $C_BASH (default: the bash under test)
 # with the request FILE on fd 3 and only the environment below. C_ENV adds
 # assignments; C_UNSET drops names; C_PATH replaces PATH; C_HOME runs
-# another copy of the tool (one with a lock of its own).
+# another copy of the tool (one with a lock of its own); C_WRAP is a command
+# the core is started by (its parent).
 c_run_raw() {
   local op=$1 req=$2 v name
   local -a envs=(
@@ -67,7 +68,8 @@ c_run_raw() {
     case " ${C_UNSET:-} " in *" $name "*) continue ;; esac
     final+=("$v")
   done
-  env -i "${final[@]}" "${C_BASH:-$T_BASH}" "${C_HOME:-$REPO}/omarchy-bootstrap" core "$op" 3<"$req" >/dev/null 2>"$T/stderr" </dev/null
+  # shellcheck disable=SC2086 # C_WRAP is a command and its arguments
+  ${C_WRAP:-} env -i "${final[@]}" "${C_BASH:-$T_BASH}" "${C_HOME:-$REPO}/omarchy-bootstrap" core "$op" 3<"$req" >/dev/null 2>"$T/stderr" </dev/null
   C_RC=$?
   C_ERR=$(cat "$T/stderr")
   C_OUT=$(cat "${C_EVENTS:-$C_EV}" 2>/dev/null)
@@ -120,4 +122,12 @@ c_size() {
   local f t=0
   for f in "$@"; do [ -f "$f" ] && t=$((t + $(wc -c <"$f"))); done
   printf '%s' "$t"
+}
+
+# c_core_signal SIG N — signal request N's core by the identity it recorded:
+# its PID, held to its start time.
+c_core_signal() {
+  local id
+  id=$(sed -n 's/.*	pid=\([0-9]*\)	start=\([^	]*\)	.*/\1 \2/p' "$SESS/req-$2.core" 2>/dev/null | sed 's/%20/ /g')
+  t_signal "$1" "${id%% *}" "${id#* }"
 }
