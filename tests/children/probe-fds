@@ -1,20 +1,26 @@
 #!/bin/sh
 # probe-fds — print the descriptors this process was given that stay open
-# across exec, space-separated: the fcntl-level probe of docs/TESTING.md →
-# sup-fd-child, the same on Linux and macOS.
+# across exec, space-separated: the probe of docs/TESTING.md → sup-fd-child,
+# the same on Linux and macOS. Every descriptor the kernel lists, however
+# high its number: /dev/fd is the process's own table on both (on Linux a
+# link to /proc/self/fd). A table that cannot be listed prints an error and
+# nothing else, which no expected set matches.
 #
 # Not a shell loop: a shell holds its script open, and Bash 3.2 saves stdin
 # to the lowest free descriptor from 10 before applying a redirection, so
-# a probe written as `(exec <&N)` finds its own saved copy at 10. Perl's
-# POSIX::dup asks the kernel directly; `perl -e` has no script file of its
-# own, and each duplicate it makes is closed before the next probe.
+# a probe written as `(exec <&N)` finds its own saved copy at 10. `perl -e`
+# has no script file of its own; the listing's own handle is closed before
+# each listed number is checked with POSIX::dup, which asks the kernel.
 exec perl -MPOSIX -e '
+  opendir(my $d, "/dev/fd") or die "probe-fds: /dev/fd cannot be listed: $!\n";
+  my @listed = grep { /^[0-9]+$/ } readdir($d);
+  closedir($d);
   my @open;
-  for my $fd (0 .. 255) {
-    my $d = POSIX::dup($fd);
-    next unless defined $d;
+  for my $fd (sort { $a <=> $b } @listed) {
+    my $x = POSIX::dup($fd);
+    next unless defined $x;
     push @open, $fd;
-    POSIX::close($d);
+    POSIX::close($x);
   }
   print join(" ", @open), "\n";
 '

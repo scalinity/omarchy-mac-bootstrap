@@ -625,18 +625,112 @@ impl Running {
 
 /// Every descriptor this process inherited beyond 0, 1 and 2 is made
 /// close-on-exec, so nothing a caller left open reaches the core or its
-/// children (docs/PROTOCOL.md → *Descriptors*: F holds nothing else).
-pub fn seal_inherited_descriptors() {
-    for fd in 3..1024 {
+/// children (docs/PROTOCOL.md → *Descriptors*: F holds nothing else). The
+/// descriptors are the ones the kernel lists as open — no numeric ceiling,
+/// however high a caller placed one. A descriptor that cannot be sealed, or
+/// a list that cannot be read, is an error: the caller does not go on.
+pub fn seal_inherited_descriptors() -> io::Result<()> {
+    #[cfg(feature = "test-hooks")]
+    if std::env::var("OMB_TEST_HOOK").as_deref() == Ok("seal-fails") {
+        return Err(io::Error::other("test hook: sealing fails"));
+    }
+    for fd in open_descriptors()? {
+        if fd < 3 {
+            continue;
+        }
         // SAFETY: fcntl on an integer that may not be an open descriptor only
         // returns EBADF; no Rust object owns or is invalidated by the flag.
-        unsafe {
-            let flags = os::fcntl(fd, os::F_GETFD, 0);
-            if flags >= 0 && flags & os::FD_CLOEXEC == 0 {
-                os::fcntl(fd, os::F_SETFD, flags | os::FD_CLOEXEC);
+        let flags = unsafe { os::fcntl(fd, os::F_GETFD, 0) };
+        if flags == -1 {
+            let e = io::Error::last_os_error();
+            // Closed since the listing (the listing's own handle is one).
+            if e.raw_os_error() == Some(os::EBADF) {
+                continue;
+            }
+            return Err(e);
+        }
+        if flags & os::FD_CLOEXEC == 0 {
+            // SAFETY: as above.
+            if unsafe { os::fcntl(fd, os::F_SETFD, flags | os::FD_CLOEXEC) } == -1 {
+                return Err(io::Error::last_os_error());
             }
         }
     }
+    Ok(())
+}
+
+/// The descriptors open in this process, as the kernel lists them.
+#[cfg(target_os = "linux")]
+pub fn open_descriptors() -> io::Result<Vec<i32>> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir("/proc/self/fd")? {
+        let name = e?.file_name();
+        match name.to_str().and_then(|s| s.parse::<i32>().ok()) {
+            Some(fd) => out.push(fd),
+            None => {
+                return Err(io::Error::other(format!(
+                    "/proc/self/fd lists {name:?}, not a descriptor"
+                )));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The descriptors open in this process, as the kernel lists them.
+#[cfg(target_os = "macos")]
+pub fn open_descriptors() -> io::Result<Vec<i32>> {
+    use std::mem::size_of;
+    use std::os::raw::{c_int, c_void};
+    let me = std::process::id() as c_int;
+    let each = size_of::<proctable::ffi::ProcFdInfo>();
+    // SAFETY: with no buffer, the call only reports the size it needs.
+    let need = unsafe {
+        proctable::ffi::proc_pidinfo(
+            me,
+            proctable::ffi::PROC_PIDLISTFDS,
+            0,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if need <= 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // Room for descriptors opened since; a list that fills it may be cut
+    // short, so it is read again with more room.
+    let mut room = need as usize / each + 64;
+    for _ in 0..8 {
+        let mut buf = vec![
+            proctable::ffi::ProcFdInfo {
+                proc_fd: 0,
+                proc_fdtype: 0
+            };
+            room
+        ];
+        let size = (room * each) as c_int;
+        // SAFETY: the buffer is ROOM entries, SIZE bytes, which is what is
+        // passed; the call writes at most that many bytes and returns how
+        // many.
+        let got = unsafe {
+            proctable::ffi::proc_pidinfo(
+                me,
+                proctable::ffi::PROC_PIDLISTFDS,
+                0,
+                buf.as_mut_ptr() as *mut c_void,
+                size,
+            )
+        };
+        if got <= 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if got < size {
+            buf.truncate(got as usize / each);
+            return Ok(buf.iter().map(|f| f.proc_fd).collect());
+        }
+        room *= 2;
+    }
+    Err(io::Error::other("the descriptor list kept growing"))
 }
 
 /// Stop the whole job's group (Ctrl-Z): the launcher, the frontend, and
@@ -651,6 +745,7 @@ mod os {
     pub const F_GETFD: c_int = 1;
     pub const F_SETFD: c_int = 2;
     pub const FD_CLOEXEC: c_int = 1;
+    pub const EBADF: c_int = 9;
     unsafe extern "C" {
         pub fn dup2(old: c_int, new: c_int) -> c_int;
         pub fn fcntl(fd: c_int, cmd: c_int, ...) -> c_int;
@@ -659,123 +754,272 @@ mod os {
 
 /// The process table read directly — `/proc` on Linux, `libproc` on macOS —
 /// spawning nothing (docs/PROTOCOL.md → *When something dies*). Identities
-/// are compared only with ones read here.
+/// are compared only with ones read here. A process that cannot be read is
+/// never taken for one that is not there: it is possibly present, and a
+/// group holding one is not quiescent.
 pub mod proctable {
     use std::io;
 
-    /// A process: its PID and its start time, in this module's own units.
-    pub type Ident = (i32, u64);
+    /// A process's start time, in this module's own units, or unknown when
+    /// it cannot be read. An unknown start equals nothing — not a known one,
+    /// and not another unknown one.
+    #[derive(Clone, Copy, Debug)]
+    pub enum Start {
+        Known(u64),
+        Unknown,
+    }
+
+    /// A process: its PID and its start.
+    #[derive(Clone, Copy, Debug)]
+    pub struct Ident {
+        pub pid: i32,
+        pub start: Start,
+    }
+
+    impl Ident {
+        /// The same process: the same PID with the same, known, start.
+        pub fn same(&self, o: &Ident) -> bool {
+            self.pid == o.pid
+                && matches!((self.start, o.start), (Start::Known(a), Start::Known(b)) if a == b)
+        }
+    }
+
+    /// One process as the table gave it.
+    #[derive(Debug, PartialEq, Eq)]
+    pub enum Entry {
+        /// Ended since the listing: not present.
+        Gone,
+        /// Its group and its start.
+        Known { pgid: i32, start: u64 },
+        /// Its group, but not its start.
+        GroupOnly { pgid: i32 },
+        /// Nothing could be read: it may be in any group.
+        Unreadable,
+    }
+
+    /// A reading of one process group.
+    #[derive(Debug, Default)]
+    pub struct Group {
+        /// Every process read as a member.
+        pub members: Vec<Ident>,
+        /// Processes whose group could not be read: any may be a member.
+        pub unreadable: Vec<i32>,
+    }
+
+    impl Group {
+        pub fn add(&mut self, pgid: i32, pid: i32, e: Entry) {
+            match e {
+                Entry::Known { pgid: g, start } if g == pgid => self.members.push(Ident {
+                    pid,
+                    start: Start::Known(start),
+                }),
+                Entry::GroupOnly { pgid: g } if g == pgid => self.members.push(Ident {
+                    pid,
+                    start: Start::Unknown,
+                }),
+                Entry::Unreadable => self.unreadable.push(pid),
+                Entry::Gone | Entry::Known { .. } | Entry::GroupOnly { .. } => {}
+            }
+        }
+
+        /// Every member is known: fit to be a snapshot.
+        pub fn whole(&self) -> bool {
+            self.unreadable.is_empty()
+                && self
+                    .members
+                    .iter()
+                    .all(|m| matches!(m.start, Start::Known(_)))
+        }
+
+        /// The members that are not in SNAPSHOT: the workers present. An
+        /// error when that cannot be established, because a process whose
+        /// group could not be read may be one.
+        pub fn workers(&self, snapshot: &[Ident]) -> io::Result<Vec<i32>> {
+            if !self.unreadable.is_empty() {
+                return Err(io::Error::other(format!(
+                    "{} process(es) could not be read: {:?}",
+                    self.unreadable.len(),
+                    self.unreadable
+                )));
+            }
+            Ok(self
+                .members
+                .iter()
+                .filter(|p| !snapshot.iter().any(|s| s.same(p)))
+                .map(|p| p.pid)
+                .collect())
+        }
+    }
 
     /// This process's group.
     pub fn my_group() -> i32 {
         rustix::process::getpgrp().as_raw_nonzero().get()
     }
 
+    /// The processes in GROUP now that were not in SNAPSHOT: the workers
+    /// still present. An error when the table, or any process in it, cannot
+    /// be read.
+    pub fn present(pgid: i32, snapshot: &[Ident]) -> io::Result<Vec<i32>> {
+        group(pgid)?.workers(snapshot)
+    }
+
+    /// The process group (field 5) and start time (field 22) from the bytes
+    /// of /proc/PID/stat. The command (field 2) is in parentheses and may
+    /// hold any byte but NUL — spaces, parentheses, bytes that are not UTF-8
+    /// — so the fields that follow start after the last ')'.
+    pub fn parse_stat(stat: &[u8]) -> Option<(i32, u64)> {
+        let open = stat.iter().position(|&b| b == b'(')?;
+        let close = stat.iter().rposition(|&b| b == b')')?;
+        if close < open {
+            return None;
+        }
+        let f: Vec<&[u8]> = stat[close + 1..]
+            .split(|b| b.is_ascii_whitespace())
+            .filter(|s| !s.is_empty())
+            .collect();
+        // After the command: state (3), parent (4), group (5), ... start (22).
+        let pgid = std::str::from_utf8(f.get(2)?).ok()?.parse().ok()?;
+        let start = std::str::from_utf8(f.get(19)?).ok()?.parse().ok()?;
+        Some((pgid, start))
+    }
+
+    /// A Linux process's entry from reading its stat. GONE says whether
+    /// /proc no longer holds the process, asked only when the stat could
+    /// not be used (it may have ended while being read).
+    pub fn linux_entry(read: io::Result<Vec<u8>>, gone: impl FnOnce() -> bool) -> Entry {
+        const ESRCH: i32 = 3;
+        let e = match read {
+            Ok(b) => match parse_stat(&b) {
+                Some((pgid, start)) => return Entry::Known { pgid, start },
+                None => Entry::Unreadable,
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound || e.raw_os_error() == Some(ESRCH) => {
+                return Entry::Gone;
+            }
+            Err(_) => Entry::Unreadable,
+        };
+        if gone() { Entry::Gone } else { e }
+    }
+
     /// Every process now in process group PGID.
     #[cfg(target_os = "linux")]
-    pub fn group(pgid: i32) -> io::Result<Vec<Ident>> {
-        let mut out = Vec::new();
+    pub fn group(pgid: i32) -> io::Result<Group> {
+        let mut g = Group::default();
         for e in std::fs::read_dir("/proc")? {
-            let Ok(e) = e else { continue };
+            // A listing that cannot be read is no reading.
+            let e = e?;
+            // Entries whose names are not numbers are not processes.
             let Some(pid) = e.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) else {
                 continue;
             };
-            // A process can end between the listing and the reading.
-            let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-                continue;
-            };
-            // The command (field 2) is in parentheses and may hold spaces:
-            // the fields that follow start after the last ')'.
-            let Some(rest) = stat.rfind(')').map(|i| &stat[i + 1..]) else {
-                continue;
-            };
-            let f: Vec<&str> = rest.split_whitespace().collect();
-            // Field 5 is the process group, field 22 the start time.
-            let (Some(pg), Some(start)) = (
-                f.get(2).and_then(|s| s.parse::<i32>().ok()),
-                f.get(19).and_then(|s| s.parse::<u64>().ok()),
-            ) else {
-                continue;
-            };
-            if pg == pgid {
-                out.push((pid, start));
-            }
+            let entry = linux_entry(std::fs::read(format!("/proc/{pid}/stat")), || {
+                matches!(std::fs::metadata(format!("/proc/{pid}")),
+                    Err(ref e) if e.kind() == io::ErrorKind::NotFound)
+            });
+            g.add(pgid, pid, entry);
         }
-        Ok(out)
+        Ok(g)
+    }
+
+    /// A macOS process's entry from its full record (group, start) or the
+    /// errno that refused it, and, when that fails, from its short record
+    /// (group only, readable for any user's process).
+    pub fn mac_entry(
+        full: Result<(i32, u64), i32>,
+        short: impl FnOnce() -> Result<i32, i32>,
+    ) -> Entry {
+        const ESRCH: i32 = 3;
+        match full {
+            Ok((pgid, start)) => Entry::Known { pgid, start },
+            Err(ESRCH) => Entry::Gone,
+            // Another user's (a setuid program is one), or cut short.
+            Err(_) => match short() {
+                Ok(pgid) => Entry::GroupOnly { pgid },
+                Err(ESRCH) => Entry::Gone,
+                Err(_) => Entry::Unreadable,
+            },
+        }
     }
 
     /// Every process now in process group PGID.
     #[cfg(target_os = "macos")]
-    pub fn group(pgid: i32) -> io::Result<Vec<Ident>> {
-        use std::mem::{MaybeUninit, size_of};
+    pub fn group(pgid: i32) -> io::Result<Group> {
+        let mut g = Group::default();
+        for pid in all_pids()? {
+            g.add(pgid, pid, mac_entry(full_record(pid), || short_group(pid)));
+        }
+        Ok(g)
+    }
+
+    /// Every PID now, from a list the call did not have to cut short.
+    #[cfg(target_os = "macos")]
+    fn all_pids() -> io::Result<Vec<i32>> {
+        use std::mem::size_of;
         use std::os::raw::{c_int, c_void};
+        // SAFETY: with no buffer, the call only counts.
         let count = unsafe { ffi::proc_listallpids(std::ptr::null_mut(), 0) };
         if count <= 0 {
             return Err(io::Error::last_os_error());
         }
-        // Room for processes started since the count.
-        let mut pids = vec![0 as c_int; count as usize + 256];
-        // SAFETY: the buffer is valid for its length in bytes, which is what
-        // is passed; the call writes at most that many bytes of PIDs.
-        let got = unsafe {
-            ffi::proc_listallpids(
-                pids.as_mut_ptr() as *mut c_void,
-                (pids.len() * size_of::<c_int>()) as c_int,
-            )
-        };
-        if got <= 0 {
-            return Err(io::Error::last_os_error());
-        }
-        let mut out = Vec::new();
-        for &pid in &pids[..(got as usize).min(pids.len())] {
-            let mut info = MaybeUninit::<ffi::ProcBsdInfo>::zeroed();
-            let size = size_of::<ffi::ProcBsdInfo>() as c_int;
-            // SAFETY: the buffer is one ProcBsdInfo, zeroed, whose size is
-            // passed; the call fills at most that many bytes and returns how
-            // many. Only a full struct is read.
-            let n = unsafe {
-                ffi::proc_pidinfo(
-                    pid,
-                    ffi::PROC_PIDTBSDINFO,
-                    0,
-                    info.as_mut_ptr() as *mut c_void,
-                    size,
+        let mut room = count as usize + 256;
+        for _ in 0..8 {
+            let mut pids = vec![0 as c_int; room];
+            // SAFETY: the buffer is valid for its length in bytes, which is
+            // what is passed; the call writes at most that many bytes of PIDs
+            // and returns how many PIDs it wrote.
+            let got = unsafe {
+                ffi::proc_listallpids(
+                    pids.as_mut_ptr() as *mut c_void,
+                    (room * size_of::<c_int>()) as c_int,
                 )
             };
-            if n != size {
-                // Ended since the listing, or another user's (the full record
-                // needs the same user; a setuid program is one). The short
-                // record needs no permission and names the group: a process
-                // of this group whose start cannot be read has no identity,
-                // and counts as present (docs/PROTOCOL.md → an identity that
-                // cannot be established is possibly alive).
-                if short_group(pid) == Some(pgid) {
-                    out.push((pid, UNKNOWN_START));
-                }
-                continue;
+            if got <= 0 {
+                return Err(io::Error::last_os_error());
             }
-            // SAFETY: fully written by the call above (n == size).
-            let info = unsafe { info.assume_init() };
-            if info.pbi_pgid as i32 == pgid {
-                out.push((
-                    pid,
-                    info.pbi_start_tvsec
-                        .wrapping_mul(1_000_000)
-                        .wrapping_add(info.pbi_start_tvusec),
-                ));
+            if (got as usize) < room {
+                pids.truncate(got as usize);
+                return Ok(pids);
             }
+            room *= 2;
         }
-        Ok(out)
+        Err(io::Error::other("the process list kept growing"))
     }
 
-    /// The start of a process whose start cannot be read: never equal to a
-    /// real one, so such a process is never taken for one in a snapshot.
+    /// A process's group and start from its full record, or the errno.
     #[cfg(target_os = "macos")]
-    pub const UNKNOWN_START: u64 = u64::MAX;
+    fn full_record(pid: i32) -> Result<(i32, u64), i32> {
+        use std::mem::{MaybeUninit, size_of};
+        use std::os::raw::{c_int, c_void};
+        let mut info = MaybeUninit::<ffi::ProcBsdInfo>::zeroed();
+        let size = size_of::<ffi::ProcBsdInfo>() as c_int;
+        // SAFETY: the buffer is one ProcBsdInfo, zeroed, whose size is
+        // passed; the call fills at most that many bytes and returns how
+        // many. Only a full struct is read.
+        let n = unsafe {
+            ffi::proc_pidinfo(
+                pid,
+                ffi::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr() as *mut c_void,
+                size,
+            )
+        };
+        if n != size {
+            return Err(errno_or(n));
+        }
+        // SAFETY: fully written by the call above (n == size).
+        let info = unsafe { info.assume_init() };
+        Ok((
+            info.pbi_pgid as i32,
+            info.pbi_start_tvsec
+                .wrapping_mul(1_000_000)
+                .wrapping_add(info.pbi_start_tvusec),
+        ))
+    }
 
     /// A process's group from its short record, which any user may read.
     #[cfg(target_os = "macos")]
-    fn short_group(pid: std::os::raw::c_int) -> Option<i32> {
+    fn short_group(pid: i32) -> Result<i32, i32> {
         use std::mem::{MaybeUninit, size_of};
         use std::os::raw::{c_int, c_void};
         let mut short = MaybeUninit::<ffi::ProcBsdShortInfo>::zeroed();
@@ -793,17 +1037,35 @@ pub mod proctable {
             )
         };
         if n != size {
-            return None;
+            return Err(errno_or(n));
         }
         // SAFETY: fully written by the call above (n == size).
-        Some(unsafe { short.assume_init() }.pbsi_pgid as i32)
+        Ok(unsafe { short.assume_init() }.pbsi_pgid as i32)
+    }
+
+    /// The errno of a failed call; a call that returned a short record set
+    /// none, and that is not ESRCH.
+    #[cfg(target_os = "macos")]
+    fn errno_or(n: std::os::raw::c_int) -> i32 {
+        if n > 0 {
+            return -1;
+        }
+        io::Error::last_os_error().raw_os_error().unwrap_or(-1)
     }
 
     #[cfg(target_os = "macos")]
-    mod ffi {
+    pub(crate) mod ffi {
         use std::os::raw::{c_char, c_int, c_void};
+        pub const PROC_PIDLISTFDS: c_int = 1;
         pub const PROC_PIDTBSDINFO: c_int = 3;
         pub const PROC_PIDT_SHORTBSDINFO: c_int = 13;
+        /// `struct proc_fdinfo` from <sys/proc_info.h>: 8 bytes.
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        pub struct ProcFdInfo {
+            pub proc_fd: i32,
+            pub proc_fdtype: u32,
+        }
         /// `struct proc_bsdshortinfo` from <sys/proc_info.h>: 64 bytes,
         /// checked by a test. Readable for any process (no same-user check).
         #[repr(C)]
@@ -861,53 +1123,44 @@ pub mod proctable {
         }
     }
 
-    /// The processes in GROUP now that were not in SNAPSHOT: the workers
-    /// still present, after a handoff.
-    pub fn present(pgid: i32, snapshot: &[Ident]) -> io::Result<Vec<i32>> {
-        Ok(group(pgid)?
-            .into_iter()
-            .filter(|p| !snapshot.contains(p))
-            .map(|p| p.0)
-            .collect())
-    }
-
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        fn member(g: &Group, pid: i32) -> Option<Ident> {
+            g.members.iter().find(|m| m.pid == pid).copied()
+        }
 
         #[test]
         fn finds_this_process_in_its_group() {
             let me = std::process::id() as i32;
             let g = group(my_group()).unwrap();
-            assert!(g.iter().any(|(p, _)| *p == me), "{me} not in {g:?}");
-            // Read twice, a live process has the same identity.
-            let a = g.iter().find(|(p, _)| *p == me).unwrap();
-            let b = *group(my_group())
-                .unwrap()
-                .iter()
-                .find(|(p, _)| *p == me)
-                .unwrap();
-            assert_eq!(*a, b);
+            let a = member(&g, me).expect("this process in its group");
+            assert!(matches!(a.start, Start::Known(_)), "{a:?}");
+            // Read twice, a live process is the same process.
+            let b = member(&group(my_group()).unwrap(), me).unwrap();
+            assert!(a.same(&b));
         }
 
         #[cfg(target_os = "macos")]
         #[test]
-        fn proc_bsdinfo_has_the_kernels_size() {
+        fn the_kernel_records_have_their_sizes() {
             assert_eq!(std::mem::size_of::<ffi::ProcBsdInfo>(), 136);
             assert_eq!(std::mem::size_of::<ffi::ProcBsdShortInfo>(), 64);
+            assert_eq!(std::mem::size_of::<ffi::ProcFdInfo>(), 8);
         }
 
         #[cfg(target_os = "macos")]
         #[test]
         fn the_short_record_names_the_group() {
-            let me = std::process::id() as std::os::raw::c_int;
-            assert_eq!(short_group(me), Some(my_group()));
+            let me = std::process::id() as i32;
+            assert_eq!(short_group(me), Ok(my_group()));
         }
 
         #[test]
         fn a_new_process_is_present_until_it_ends() {
             let pg = my_group();
-            let snap = group(pg).unwrap();
+            let snap = group(pg).unwrap().members;
             let mut child = std::process::Command::new("sleep")
                 .arg("2")
                 .spawn()
@@ -917,6 +1170,162 @@ pub mod proctable {
             child.kill().unwrap();
             child.wait().unwrap();
             assert!(!present(pg, &snap).unwrap().contains(&id));
+        }
+
+        /// A live child whose command is NAME (a link to sleep so named) is
+        /// read as a member of this group, with its start.
+        fn a_child_named(name: &std::ffi::OsStr) {
+            let d = std::env::temp_dir().join(format!("omb-proctable-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            let link = d.join(name);
+            std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+            let mut child = std::process::Command::new(&link).arg("5").spawn().unwrap();
+            let id = child.id() as i32;
+            let g = group(my_group()).unwrap();
+            let seen = member(&g, id);
+            child.kill().unwrap();
+            child.wait().unwrap();
+            let _ = std::fs::remove_dir_all(&d);
+            let seen = seen.unwrap_or_else(|| panic!("{name:?} ({id}) not read as a member"));
+            assert!(matches!(seen.start, Start::Known(_)), "{seen:?}");
+        }
+
+        #[test]
+        fn a_command_with_parentheses_and_spaces_is_read() {
+            a_child_named(std::ffi::OsStr::new("omb) (x y"));
+        }
+
+        /// The review's counterexample: a live process of the group whose
+        /// command is not UTF-8 (its stat is not a string) is read, not
+        /// skipped.
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn a_command_that_is_not_utf8_is_read() {
+            use std::os::unix::ffi::OsStrExt;
+            let name = std::ffi::OsStr::from_bytes(b"omb-\xff-probe");
+            a_child_named(name);
+            // And its stat really is not UTF-8.
+            let d = std::env::temp_dir().join(format!("omb-proctable-u-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            let link = d.join(name);
+            std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
+            let mut child = std::process::Command::new(&link).arg("5").spawn().unwrap();
+            let stat = std::fs::read(format!("/proc/{}/stat", child.id())).unwrap();
+            child.kill().unwrap();
+            child.wait().unwrap();
+            let _ = std::fs::remove_dir_all(&d);
+            assert!(
+                std::str::from_utf8(&stat).is_err(),
+                "the stat holds a byte that is not UTF-8"
+            );
+            assert!(parse_stat(&stat).is_some());
+        }
+
+        #[test]
+        fn the_stat_is_parsed_as_bytes_after_the_last_parenthesis() {
+            let tail = b" S 1 4242 4242 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 1 0 987654 1 2";
+            let stat = |comm: &[u8]| [b"77 (".as_slice(), comm, b")", tail].concat();
+            for comm in [
+                b"sleep".as_slice(),
+                b"omb-\xff-probe",
+                b"a) (b c",
+                b") 9 9 9 (",
+                b"",
+            ] {
+                assert_eq!(parse_stat(&stat(comm)), Some((4242, 987654)), "{comm:?}");
+            }
+            // Malformed: no parentheses, too few fields, a field not a number.
+            assert_eq!(parse_stat(b"77 sleep S 1 4242"), None);
+            assert_eq!(parse_stat(b"77 (sleep) S 1 4242"), None);
+            assert_eq!(
+                parse_stat(&stat(b"x").replace_first(b"4242", b"42x2")),
+                None
+            );
+            assert_eq!(parse_stat(b")77 (sleep"), None);
+            assert_eq!(parse_stat(b""), None);
+        }
+
+        trait ReplaceFirst {
+            fn replace_first(&self, a: &[u8], b: &[u8]) -> Vec<u8>;
+        }
+        impl ReplaceFirst for Vec<u8> {
+            fn replace_first(&self, a: &[u8], b: &[u8]) -> Vec<u8> {
+                let i = self.windows(a.len()).position(|w| w == a).unwrap();
+                [&self[..i], b, &self[i + a.len()..]].concat()
+            }
+        }
+
+        #[test]
+        fn an_entry_is_gone_only_when_the_process_is() {
+            let ok = b"1 (x) S 1 7 7 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 55 1 2".to_vec();
+            assert_eq!(
+                linux_entry(Ok(ok), || true),
+                Entry::Known { pgid: 7, start: 55 }
+            );
+            let nf = || Err(io::Error::from(io::ErrorKind::NotFound));
+            assert_eq!(linux_entry(nf(), || false), Entry::Gone);
+            let esrch = Err(io::Error::from_raw_os_error(3));
+            assert_eq!(linux_entry(esrch, || false), Entry::Gone);
+            // Unreadable while the process is there: possibly present.
+            let denied = || Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            assert_eq!(linux_entry(denied(), || false), Entry::Unreadable);
+            assert_eq!(
+                linux_entry(Ok(b"1 (x".to_vec()), || false),
+                Entry::Unreadable
+            );
+            // Ended while being read: an empty stat, and /proc no longer has it.
+            assert_eq!(linux_entry(Ok(Vec::new()), || true), Entry::Gone);
+            assert_eq!(linux_entry(denied(), || true), Entry::Gone);
+        }
+
+        #[test]
+        fn a_mac_record_that_cannot_be_read_is_never_absent() {
+            const EPERM: i32 = 1;
+            const ESRCH: i32 = 3;
+            assert_eq!(
+                mac_entry(Ok((7, 55)), || panic!("not asked")),
+                Entry::Known { pgid: 7, start: 55 }
+            );
+            assert_eq!(mac_entry(Err(ESRCH), || panic!("not asked")), Entry::Gone);
+            // Another user's process: its group from the short record.
+            assert_eq!(
+                mac_entry(Err(EPERM), || Ok(7)),
+                Entry::GroupOnly { pgid: 7 }
+            );
+            assert_eq!(mac_entry(Err(EPERM), || Err(ESRCH)), Entry::Gone);
+            // The short record refused too: possibly in any group.
+            assert_eq!(mac_entry(Err(EPERM), || Err(EPERM)), Entry::Unreadable);
+            assert_eq!(mac_entry(Err(-1), || Err(-1)), Entry::Unreadable);
+        }
+
+        #[test]
+        fn unknown_identities_never_match_and_block_quiescence() {
+            let k = |pid, s| Ident {
+                pid,
+                start: Start::Known(s),
+            };
+            let u = |pid| Ident {
+                pid,
+                start: Start::Unknown,
+            };
+            let mut g = Group::default();
+            g.add(7, 10, Entry::Known { pgid: 7, start: 1 });
+            g.add(7, 11, Entry::GroupOnly { pgid: 7 });
+            g.add(7, 12, Entry::Known { pgid: 8, start: 1 });
+            g.add(7, 13, Entry::Gone);
+            g.add(7, 14, Entry::Known { pgid: 7, start: 2 });
+            // 10 in the snapshot; 11 unknown in both; 14 a reused PID.
+            let snap = [k(10, 1), u(11), k(14, 9)];
+            assert_eq!(g.workers(&snap).unwrap(), vec![11, 14]);
+            assert!(!g.whole(), "an unknown start is no snapshot");
+            assert!(!u(11).same(&u(11)));
+            assert!(!k(11, u64::MAX).same(&u(11)));
+            // A process whose group could not be read: no answer at all.
+            g.add(7, 15, Entry::Unreadable);
+            assert!(g.workers(&snap).is_err());
+            assert!(!g.whole());
         }
     }
 }

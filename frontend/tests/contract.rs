@@ -25,6 +25,50 @@ fn repo() -> PathBuf {
         .to_path_buf()
 }
 
+unsafe extern "C" {
+    fn dup2(old: i32, new: i32) -> i32;
+    fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+}
+const F_GETFD: i32 = 1;
+const FD_CLOEXEC: i32 = 1;
+
+/// sup-fd-child's seeds (H04): inheritable descriptors this process holds
+/// where a ceiling would miss them — 255, 1023, 1024, 1500, and one just
+/// under the highest the descriptor limit allows here, raised first.
+fn seed_high_descriptors() -> Vec<i32> {
+    use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+    let lim = getrlimit(Resource::Nofile);
+    let top = [65_536u64, 10_240, 4_096]
+        .into_iter()
+        .filter(|&n| lim.maximum.is_none_or(|m| n <= m))
+        .find(|&n| {
+            setrlimit(
+                Resource::Nofile,
+                Rlimit {
+                    current: Some(n),
+                    maximum: lim.maximum,
+                },
+            )
+            .is_ok()
+        })
+        .expect("the descriptor limit can be raised to 4096");
+    let null = std::fs::File::open("/dev/null").unwrap();
+    let fds = vec![255, 1023, 1024, 1500, top as i32 - 1];
+    for &fd in &fds {
+        use std::os::unix::io::AsRawFd;
+        // SAFETY: dup2 onto a number no Rust object owns; the copy, without
+        // close-on-exec, is what a careless caller leaves open. It lives
+        // until the process ends.
+        assert_eq!(unsafe { dup2(null.as_raw_fd(), fd) }, fd);
+        assert_eq!(
+            unsafe { fcntl(fd, F_GETFD) } & FD_CLOEXEC,
+            0,
+            "{fd} inheritable"
+        );
+    }
+    fds
+}
+
 fn scratch() -> PathBuf {
     let d = std::env::temp_dir().join(format!("omb-contract-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
@@ -93,8 +137,18 @@ fn exec(s: &mut Session, action: &str, word: &str, handoff: bool) -> Outcome {
 
 #[test]
 fn the_rust_client_against_the_real_core() {
-    // Nothing this test process inherited reaches the core.
-    seal_inherited_descriptors();
+    // Nothing this test process inherited reaches the core, however high the
+    // descriptor: every one the kernel lists is sealed.
+    let seeds = seed_high_descriptors();
+    let listed = omb_tui::core::open_descriptors().unwrap();
+    for fd in &seeds {
+        assert!(listed.contains(fd), "the kernel lists {fd}: {listed:?}");
+    }
+    seal_inherited_descriptors().unwrap();
+    for &fd in &seeds {
+        // SAFETY: fcntl on a descriptor this process holds.
+        assert_ne!(unsafe { fcntl(fd, F_GETFD) } & FD_CLOEXEC, 0, "{fd} sealed");
+    }
     let t = scratch();
     let fix = t.join("fixture");
     assert!(
@@ -187,36 +241,47 @@ fn the_rust_client_against_the_real_core() {
         .collect();
     assert_eq!(ids, ["test.read", "test.mutate", "test.handoff"]);
 
-    // --- sup-fd-child, from the frontend's own spawn: exactly 0, 1, 2 --------
-    let fds = t.join("fds-mutate");
-    std::fs::write(
-        fix.join("test-children/mutate"),
-        format!("fds={}\n", fds.display()),
-    )
-    .unwrap();
-    let o = exec(&mut s, "test.mutate", "test", false);
-    assert_eq!(result(&o), ("done".into(), "ok".into()), "{o:?}");
-    assert_eq!(
-        std::fs::read_to_string(&fds).unwrap().trim(),
-        "0 1 2",
-        "the mutating child holds only 0, 1 and 2"
-    );
+    // --- sup-fd-child and sup-fd-grandchild, from the frontend's own spawn --
+    // Exactly 0, 1 and 2 in the child and in a process it starts, with the
+    // seeds above still open (inheritable no more) in this process. The probe
+    // lists every descriptor the kernel shows, not a range.
+    let mut probe = |child: &str, action: &str, word: &str| {
+        let (fds, grand) = (
+            t.join(format!("fds-{child}")),
+            t.join(format!("fds-{child}-grand")),
+        );
+        std::fs::write(
+            fix.join(format!("test-children/{child}")),
+            format!(
+                "fds={}\ngrandchild=0\ngrandchild_fds={}\n",
+                fds.display(),
+                grand.display()
+            ),
+        )
+        .unwrap();
+        let o = exec(&mut s, action, word, false);
+        assert_eq!(result(&o), ("done".into(), "ok".into()), "{o:?}");
+        let t0 = Instant::now();
+        while !grand.exists() {
+            assert!(
+                t0.elapsed() < Duration::from_secs(10),
+                "no grandchild probe"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        for (p, who) in [(&fds, "child"), (&grand, "grandchild")] {
+            assert_eq!(
+                std::fs::read_to_string(p).unwrap().trim(),
+                "0 1 2",
+                "the {child} {who} holds only 0, 1 and 2 (seeds {seeds:?})"
+            );
+        }
+        std::fs::remove_file(fix.join(format!("test-children/{child}"))).unwrap();
+    };
+    probe("mutate", "test.mutate", "test");
     std::fs::remove_file(t.join("state/test/effect-mutate")).unwrap();
-    std::fs::remove_file(fix.join("test-children/mutate")).unwrap();
-    let fds = t.join("fds-read");
-    std::fs::write(
-        fix.join("test-children/read"),
-        format!("fds={}\n", fds.display()),
-    )
-    .unwrap();
-    let o = exec(&mut s, "test.read", "", false);
-    assert_eq!(result(&o), ("done".into(), "ok".into()));
-    assert_eq!(
-        std::fs::read_to_string(&fds).unwrap().trim(),
-        "0 1 2",
-        "the read child holds only 0, 1 and 2"
-    );
-    std::fs::remove_file(fix.join("test-children/read")).unwrap();
+    probe("read", "test.read", "");
 
     // --- refusals the core decides, seen through the client -----------------
     let (snap, _) = run(&mut s, &Req::Snapshot);
@@ -313,6 +378,36 @@ fn the_rust_client_against_the_real_core() {
             matches!(o, Outcome::Unknown(ref w) if w.contains("reader")),
             "the outcome is unknown: {o:?}"
         );
+    }
+
+    // --- a descriptor that cannot be sealed: no core starts (H04) -----------
+    #[cfg(feature = "test-hooks")]
+    {
+        let spools = |d: &Path| {
+            std::fs::read_dir(d)
+                .unwrap()
+                .filter(|e| {
+                    e.as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .ends_with(".events")
+                })
+                .count()
+        };
+        let before = spools(&sess);
+        let out = Command::new(env!("CARGO_BIN_EXE_omb-tui"))
+            .arg("--session")
+            .arg(&sess)
+            .env("OMB_SESSION_DIR", &sess)
+            .env("OMB_HOME", repo())
+            .env("OMB_TEST_HOOK", "seal-fails")
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(10), "the text interface: {err}");
+        assert!(err.contains("could not be closed to its children"), "{err}");
+        assert_eq!(spools(&sess), before, "no request was started");
     }
 
     let _ = std::fs::remove_dir_all(&t);

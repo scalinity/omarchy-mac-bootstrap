@@ -78,8 +78,13 @@ pub fn run(args: &[String]) -> i32 {
     let Some(home) = std::env::var_os("OMB_HOME").map(PathBuf::from) else {
         return fallback("OMB_HOME is not set");
     };
-    // Nothing a caller left open reaches the core or a child.
-    core::seal_inherited_descriptors();
+    // Nothing a caller left open reaches the core or a child; if that cannot
+    // be made so, the interface starts no core at all.
+    if let Err(e) = core::seal_inherited_descriptors() {
+        return fallback(&format!(
+            "the descriptors it was given could not be closed to its children ({e})"
+        ));
+    }
     let env = |k: &str| std::env::var(k).ok();
     let tty = io::stdout().is_terminal();
     let caps = theme::detect(&env, tty);
@@ -278,9 +283,20 @@ fn handoff(
 ) -> Outcome {
     use core::proctable;
     let pg = proctable::my_group();
-    // The frontend's own snapshot, from its own reading, before the handoff.
+    // The frontend's own snapshot, from its own reading, before the handoff:
+    // every process in it known, or no later reading could be compared.
     let snap = match proctable::group(pg) {
-        Ok(s) => s,
+        Ok(g) if g.whole() => g.members,
+        Ok(g) => {
+            return Outcome::NotSent(format!(
+                "processes of this job could not be read ({} unreadable, {} of unknown start); the terminal was not handed over",
+                g.unreadable.len(),
+                g.members
+                    .iter()
+                    .filter(|m| matches!(m.start, proctable::Start::Unknown))
+                    .count()
+            ));
+        }
         Err(e) => {
             return Outcome::NotSent(format!(
                 "the process table could not be read ({e}); the terminal was not handed over"
@@ -332,7 +348,11 @@ fn handoff(
                     said = true;
                 }
             }
-            Err(_) => {}
+            Err(e) => {
+                return Outcome::Lost(format!(
+                    "whether the program left anything running could not be read ({e})"
+                ));
+            }
         }
         std::thread::sleep(Duration::from_millis(50));
     }
