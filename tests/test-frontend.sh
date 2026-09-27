@@ -52,9 +52,19 @@ esac
 case "$b" in
   *sleep*) sleep 2 ;;
 esac
-# A core left running in the session: a live process recorded as one.
+# A core left running in the session: a live process recorded as one, with
+# the identity a core writes.
 case "$b" in
-  *core*) sleep 3 & printf 'omb-proc 1\nproc\trole=core\tpid=%s\n' "$!" >"$dir/req-1.core" ;;
+  *core*)
+    sleep 3 &
+    p=$!
+    (
+      for l in common ui state records core; do . "$OMB_HOME/lib/$l.sh"; done
+      platform_init
+      core_boot_read
+      core_proc_write "$dir/req-1.core" core "$p"
+    )
+    ;;
 esac
 code=${b%% *}
 exit "${code:-0}"
@@ -252,9 +262,13 @@ T_ENV="OMB_TEST_HANDOFF_CHILD=$FAKE" t_cli "" "" status
 assert_rc "$T_RC" 2 "OMB_TEST_HANDOFF_CHILD is refused outside fixture mode"
 
 # --- sup-owner-cleanup-refused: the owner leaves its scratch ---------------------------------
-# A process that joined the group after launcher.omb and outlives the frontend.
+# A process that joined the group after launcher.omb and outlives the
+# frontend. The launcher waits for it before taking the terminal back; one
+# that outlasts the wait leaves the terminal and the scratch as they are.
 printf '0 linger' >"$T/fake-behaviour"
-r=$(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+r=$(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' eval 'FE_WAIT_LIMIT=1; fe_run act journey')
+assert_contains "$r" "1|unsettled|" "the launcher's wait ends at its limit without calling the session over"
+assert_contains "$(cat "$T/tmp/fe-out")" "not known to be over" "and says so"
 n=$(ls "$T/tmp" | grep -c '^omb-session\.')
 assert_eq "$n" 1 "sup-owner-cleanup-refused: a late process in the group keeps the scratch"
 sleep 3
@@ -262,6 +276,12 @@ old=$(ls -d "$T/tmp"/omb-session.* | head -1)
 # The same scratch, once everything is dead, is reclaimed by a later launcher.
 r=$(fe_call '' fe_reclaim)
 [ ! -e "$old" ] && ok || fail "sup-reclaim-quiescent: reclaimed once every recorded identity is dead"
+# Within its limit, the launcher waits the late process out, then cleans up.
+t0=$SECONDS
+r=$(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+assert_contains "$r" "0|verified|" "a late process waited for, the session is over"
+[ $((SECONDS - t0)) -ge 2 ] && ok || fail "the launcher waited for the late process ($((SECONDS - t0)) s)"
+assert_eq "$(ls "$T/tmp" | grep -c '^omb-session\.')" 0 "and the owner removed its scratch"
 
 # The other conditions, one by one, on a scratch built as a launcher leaves it.
 # mk_scratch — a session folder whose launcher and frontend are dead.
@@ -470,6 +490,91 @@ wait "$bg"
 [ -n "$l" ] && ok || fail "the launcher was found"
 assert_eq "$busy" 0 "the launcher starts no process while it waits for the session's core (samples with a child, of 10)"
 assert_contains "$(cat "$T/waitcore")" "0|verified|" "and finishes once the core has ended"
+
+# --- The launcher takes the terminal back only once the session is over (H06) -------
+# wait_case CODE [LIMIT] — fe_wait_cores's answer, "wait=N WHY", for a new
+# session of this launcher once CODE has run in its shell (FE_SESSION made,
+# the pause made as fe_run makes it).
+mkdir -p "$T/tmp-wait"
+wait_case() {
+  FE_TMP=$T/tmp-wait fe_call '' eval "
+    omb_tmp_init && fe_session_create || exit 9
+    FE_PAUSE=\$OMB_TMP/pause
+    mkfifo -m 600 \"\$FE_PAUSE\" || exit 9
+    $1
+    fe_wait_cores \"\$FE_SESSION\" ${2:-10}
+    printf 'wait=%s %s\n' \"\$?\" \"\$FE_WHY\"
+    rm -rf \"\$FE_SESSION\"" >/dev/null
+  cat "$T/tmp-wait/fe-out"
+}
+assert_eq "$(wait_case ':')" "wait=0 " "launcher-quiescent: nothing recorded, nothing late: over"
+t0=$SECONDS
+r=$(wait_case 'printf "omb-proc 1\ntorn" >"$FE_SESSION/req-1.core"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-corrupt: a core identity that cannot be read is unknown, not over"
+[ $((SECONDS - t0)) -lt 12 ] && ok || fail "and the launcher stops waiting on it ($((SECONDS - t0)) s)"
+r=$(wait_case 'printf "proc\trole=worker\tpid=x" >"$FE_SESSION/req-1.worker-1"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-corrupt: a worker identity that cannot be read is unknown"
+r=$(wait_case 'mkdir "$FE_SESSION/req-1.core"')
+assert_contains "$r" "wait=2 " "an identity that is not a file is unknown"
+# A recorded core still alive at the limit: the wait ends, never as over.
+sleep 30 &
+live=$!
+r=$(wait_case "core_proc_write \"\$FE_SESSION/req-1.core\" core $live" 2)
+assert_eq "$r" "wait=1 a process of the session was still running after 2 s" "launcher-timeout-live: a live core at the limit is not over"
+# The same PID with another start (a reused PID) is waited for all the same:
+# only the full identity, read once no PID answers, can say it has ended.
+r=$(wait_case "rec_line_v proc role core pid $live start 'Mon Jan  1 00:00:00 2001' boot \$CORE_BOOT; { printf 'omb-proc 1\n'; printf '%s\n' \"\$REC_LINE\"; } >\"\$FE_SESSION/req-1.core\"; rec_seal_write \"\$FE_SESSION/req-1.core\"" 2)
+assert_contains "$r" "wait=1 " "a live PID is never taken for an ended core"
+kill "$live" 2>/dev/null
+wait "$live" 2>/dev/null
+# A recorded core that ends within the limit: over once it has.
+r=$(wait_case "sleep 2 & core_proc_write \"\$FE_SESSION/req-1.core\" core \$!" 10)
+assert_eq "$r" "wait=0 " "a recorded core that ends: over"
+# launcher-identity-missing: a process that joined the group and was never
+# recorded (a core that died before writing its identity left it) is waited
+# for as a worker.
+r=$(wait_case 'sleep 2 &' 10)
+assert_eq "$r" "wait=0 " "launcher-identity-missing: an unrecorded late process is waited out"
+r=$(wait_case 'sleep 4 &' 1)
+assert_contains "$r" "wait=1 " "launcher-identity-missing: and one that outlasts the limit is not over"
+# Identities that cannot be established once no PID answers (ps fails).
+psflag=$T/ps-broken
+psbroken=$(t_tmp)
+printf '#!/bin/sh\n[ -e "%s" ] && exit 1\nexec /bin/ps "$@"\n' "$psflag" >"$psbroken/ps"
+chmod +x "$psbroken/ps"
+r=$(FE_PATH="$psbroken:$BASE_PATH" wait_case "sleep 0.1 & p=\$!; core_proc_write \"\$FE_SESSION/req-1.core\" core \$p; wait \$p; : >'$psflag'")
+rm -f "$psflag"
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-unknown: ps failing, a recorded core is unknown, not over"
+r=$(FE_PATH="$psbroken:$BASE_PATH" wait_case ": >'$psflag'")
+rm -f "$psflag"
+assert_eq "$r" "wait=2 the process table cannot be read" "launcher-table-unknown: the group that cannot be read is not over"
+# No pause, no wait: fe_wait_cores refuses rather than start processes.
+r=$(FE_TMP=$T/tmp-wait fe_call '' eval 'omb_tmp_init; fe_session_create; FE_PAUSE=""; fe_wait_cores "$FE_SESSION"; echo "wait=$?"; rm -rf "$FE_SESSION"')
+assert_contains "$(cat "$T/tmp-wait/fe-out")" "wait=2" "launcher-no-pause: without its pause the launcher never calls the session over"
+
+# launcher-pause-failure: the pause cannot be made, so no frontend starts.
+mkshim=$(t_tmp)
+printf '#!/bin/sh\nexit 1\n' >"$mkshim/mkfifo"
+chmod +x "$mkshim/mkfifo"
+rm -f "$T/fake-env"
+printf '0' >"$T/fake-behaviour"
+r=$(FE_PATH="$mkshim:$BASE_PATH" FE_TMP=$T/tmp-wait FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+assert_contains "$r" "10|fallback|" "launcher-pause-failure: the text interface instead"
+assert_contains "$r" "could not make its pause" "and why"
+[ ! -e "$T/fake-env" ] && ok || fail "launcher-pause-failure: the frontend was never started"
+assert_eq "$(ls "$T/tmp-wait" | grep -c '^omb-session\.')" 0 "and its scratch removed"
+
+# launcher-forward-identity: a forwarded signal reaches only the frontend
+# this launcher started — its PID with its start time.
+sleep 30 &
+live=$!
+fe_call '' eval "FE_FPID=$live FE_FSTART='Mon Jan  1 00:00:00 2001'; fe_forward TERM" >/dev/null
+kill -0 "$live" 2>/dev/null && ok || fail "launcher-forward-identity: a PID now another process's is not signalled"
+fe_call '' eval "FE_FPID=$live FE_FSTART=''; fe_forward TERM" >/dev/null
+kill -0 "$live" 2>/dev/null && ok || fail "launcher-forward-identity: a frontend whose start was never read is not signalled"
+fe_call '' eval "FE_FPID=$live FE_FSTART='$(t_started "$live")'; fe_forward TERM" >/dev/null
+wait "$live" 2>/dev/null
+kill -0 "$live" 2>/dev/null && fail "launcher-forward-identity: the frontend itself is signalled" || ok
 
 t_decoys_survive test-frontend
 t_done test-frontend

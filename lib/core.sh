@@ -227,15 +227,17 @@ core_file_alive() {
 # that ended just after an interrupted wait, and changes nothing otherwise.
 _core_wait() {
   local st n=0
-  wait "$1"
+  # Bash reports a process a signal ended ("Killed: 9 ...") on the waiting
+  # wait's stderr: silenced, since the terminal may be a child's by then.
+  wait "$1" 2>/dev/null
   st=$?
   while [ "$st" -gt 128 ] && [ "$n" -lt 10000 ] && kill -0 "$1" 2>/dev/null; do
-    wait "$1"
+    wait "$1" 2>/dev/null
     st=$?
     n=$((n + 1))
   done
   if [ "$st" -gt 128 ]; then
-    wait "$1"
+    wait "$1" 2>/dev/null
     st=$?
   fi
   return "$st"

@@ -11,7 +11,10 @@
 #
 # Needs lib/common.sh, lib/state.sh, lib/ui.sh, lib/records.sh, lib/core.sh.
 
-FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA="" FE_FPID="" FE_PAUSE=""
+FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA="" FE_FPID="" FE_FSTART="" FE_PAUSE=""
+# How long (seconds) the launcher waits for a session's cores and workers
+# before it stops waiting — never concluding they have ended.
+FE_WAIT_LIMIT=3600
 
 # The scopes a default-command session carries (SPEC.md → Commands).
 FE_ALL_SCOPES="journey,disk,plan,profile,resolve,asahi,network,omarchy,shared,export,restore,rescue,qualify,debug"
@@ -374,52 +377,96 @@ fe_reclaim() {
 
 fe_on_signal() { :; }
 
-# fe_wait_cores DIR — wait while a core or worker recorded in the session DIR
-# still runs, for up to an hour, starting no process: the launcher shares the
-# group, and a process joining it while a core supervises a child is counted
-# by that core as a worker (docs/PROTOCOL.md → worker quiescence). So the
-# PIDs are read with builtins and asked with kill -0, and each pause is
-# `read -t` on FE_PAUSE. A reused PID only makes the wait longer; the
-# identities are judged in full afterwards (fe_owner_cleanup).
+# fe_wait_cores DIR [LIMIT] — whether the session DIR is over: every core and
+# worker it recorded has ended and nothing that joined the group since
+# launcher.omb remains. 0 quiescent, the only answer that lets the launcher
+# take the terminal back; 1 still active when LIMIT seconds (FE_WAIT_LIMIT)
+# have passed; 2 unknown — an identity or the process table that cannot be
+# read. Neither 1 nor 2 is ever taken for 0.
+#
+# First, while a recorded PID still answers kill -0, it waits starting no
+# process: the launcher shares the group, and a process joining it while a
+# core supervises a child is that core's worker (docs/PROTOCOL.md → worker
+# quiescence). PIDs are read with builtins; each pause is `read -t` on
+# FE_PAUSE, which fe_run made before any core could exist. An identity file
+# with no readable PID may be one being written: it is read again, and one
+# still unreadable after 5 s is unknown. A reused PID only makes the wait
+# longer. Once no recorded PID answers, no core of the session is left to
+# count a process, and the identities are judged in full (PID, start, boot)
+# with the group read against the launcher's snapshot.
 fe_wait_cores() {
-  local f line pid live n=0
-  if [ -n "$FE_PAUSE" ] && [ -p "$FE_PAUSE" ]; then
-    exec 9<>"$FE_PAUSE"
-  else
-    FE_PAUSE=""
+  local limit=${2:-$FE_WAIT_LIMIT} f line pid live torn n=0 odd=0 rc ret
+  if [ -z "$FE_PAUSE" ] || [ ! -p "$FE_PAUSE" ]; then
+    FE_WHY="the launcher has no way to wait without starting a process"
+    return 2
   fi
-  while [ "$n" -lt 3600 ]; do
-    live=0
+  exec 9<>"$FE_PAUSE"
+  while :; do
+    live=0 torn=0
     for f in "$1"/req-*.core "$1"/req-*.worker-*; do
-      [ -f "$f" ] || continue
+      [ -e "$f" ] || continue
       pid=""
-      while IFS= read -r line; do
-        case "$line" in
-          "proc	"*)
-            pid=${line#*	pid=}
-            pid=${pid%%	*}
-            ;;
-        esac
-      done <"$f"
-      case "$pid" in '' | *[!0-9]*) ;; *) kill -0 "$pid" 2>/dev/null && live=1 ;; esac
+      if [ -f "$f" ] && [ ! -L "$f" ]; then
+        while IFS= read -r line; do
+          case "$line" in
+            "proc	"*"	pid="*)
+              pid=${line#*	pid=}
+              pid=${pid%%	*}
+              ;;
+          esac
+        done <"$f"
+      fi
+      case "$pid" in
+        '' | *[!0-9]* | 0*) torn=1 ;;
+        *) kill -0 "$pid" 2>/dev/null && live=1 ;;
+      esac
     done
-    [ "$live" = 0 ] && break
-    if [ -n "$FE_PAUSE" ]; then
-      read -r -t 1 -u 9 _
-    else
-      sleep 1
+    rc=1
+    if [ "$live" = 0 ] && [ "$torn" = 0 ]; then
+      # No recorded process answers: the identities in full, then the group.
+      fe_scratch_idle "$1"
+      rc=$?
+      if [ "$rc" = 0 ]; then
+        CORE_SNAP=$FE_SNAP CORE_PGID=$FE_PGID
+        if ! core_workers_present; then
+          rc=3
+        elif [ -n "$CORE_PRESENT" ]; then
+          rc=1
+        else
+          break
+        fi
+      fi
     fi
+    odd=$((torn == 1 && live == 0 ? odd + 1 : 0))
+    ret=""
+    if [ "$odd" -ge 5 ] || [ "$rc" = 2 ]; then
+      FE_WHY="an identity the session recorded cannot be read" ret=2
+    elif [ "$rc" = 3 ]; then
+      FE_WHY="the process table cannot be read" ret=2
+    elif [ "$n" -ge "$limit" ]; then
+      FE_WHY="a process of the session was still running after $limit s" ret=1
+    fi
+    if [ -n "$ret" ]; then
+      exec 9<&-
+      return "$ret"
+    fi
+    read -r -t 1 -u 9 _
     n=$((n + 1))
   done
-  if [ -n "$FE_PAUSE" ]; then exec 9<&-; fi
+  exec 9<&-
   return 0
 }
 
 # fe_forward SIGNAL — SIGTERM and SIGHUP reach the frontend, which cancels
 # or waits, restores and exits (docs/PROTOCOL.md → Signals). A launcher that
-# leads its session, as over SSH, is the only process a hangup signals.
+# leads its session, as over SSH, is the only process a hangup signals. Only
+# while the process is still the frontend this launcher started — its PID
+# with its start time: once the frontend has ended, its PID may be another
+# process's. A frontend whose start was never read is not signalled.
 fe_forward() {
-  [ -n "${FE_FPID:-}" ] && kill -"$1" "$FE_FPID" 2>/dev/null
+  [ -n "${FE_FPID:-}" ] && [ -n "${FE_FSTART:-}" ] || return 0
+  [ "$(LC_ALL=C _proc_started "$FE_FPID")" = "$FE_FSTART" ] || return 0
+  kill -"$1" "$FE_FPID" 2>/dev/null
   return 0
 }
 
@@ -456,9 +503,16 @@ fe_run() {
   fi
   # The pause fe_wait_cores uses: a FIFO held open for reading and writing
   # never has data, so `read -t` on it waits without starting a process. It
-  # is made now, before any core can be supervising a child.
+  # is made now, before any core can be supervising a child; without it the
+  # launcher could not wait for one safely, so no frontend starts.
   FE_PAUSE=$OMB_TMP/pause
-  mkfifo -m 600 "$FE_PAUSE" 2>/dev/null || FE_PAUSE=""
+  if ! mkfifo -m 600 "$FE_PAUSE" 2>/dev/null; then
+    FE_PAUSE=""
+    rm -rf "$FE_SESSION"
+    FE_STATE=fallback FE_WHY="the launcher could not make its pause"
+    fe_report
+    return 10
+  fi
   # Ctrl-C and Ctrl-\ are caught (never ignored), so a child after exec has
   # the default disposition; SIGTERM and SIGHUP are passed to the frontend,
   # and the launcher waits for it.
@@ -467,17 +521,30 @@ fe_run() {
   trap 'fe_forward HUP' HUP
   "$FE_BIN" --session "$FE_SESSION" <&0 &
   fpid=$!
+  # The launcher's own handle on its child is the PID it started, which
+  # stays its child until waited for; its start time, read now, is what a
+  # forwarded signal is held to. A frontend that ended before it could be
+  # read is waited for all the same, and never signalled.
+  FE_FSTART=$(LC_ALL=C _proc_started "$fpid")
   FE_FPID=$fpid
   core_proc_write "$FE_SESSION/frontend.omb" frontend "$fpid" || true
   # The frontend's own status, however many caught signals end the wait early.
   _core_wait "$fpid"
   st=$?
-  FE_FPID=""
+  FE_FPID="" FE_FSTART=""
   # A core of this session may still be supervising a child, and a handoff
-  # child may own the terminal: wait while any recorded one runs.
+  # child may own the terminal: the terminal is taken back only once the
+  # session is known to be over. Still running after the limit, or not
+  # knowable: the terminal and the scratch are left as they are.
   fe_wait_cores "$FE_SESSION"
-  [ -n "$saved" ] && stty "$saved" </dev/tty 2>/dev/null
+  rc=$?
   trap - INT QUIT TERM HUP
+  if [ "$rc" != 0 ]; then
+    FE_STATE=unsettled
+    fe_report
+    return 1
+  fi
+  [ -n "$saved" ] && stty "$saved" </dev/tty 2>/dev/null
   case "$st" in
     0) FE_STATE=verified ;;
     10) FE_STATE=fallback ;;
@@ -512,6 +579,10 @@ fe_report() {
     unrunnable) ui_warn "Interface: unrunnable — ${FE_WHY}. Continuing in text." ;;
     fallback) ui_info "Interface: fallback — ${FE_WHY:-it refused the session}. Continuing in text." ;;
     crashed) ui_fail "Interface: ${FE_WHY}." ;;
+    unsettled)
+      ui_fail "Interface: the session is not known to be over — ${FE_WHY}."
+      ui_note "The terminal and the session's files were left as they are, in case a program still uses them. ./omarchy-bootstrap status shows where the machine is."
+      ;;
   esac
   log_event frontend "state=$FE_STATE ${FE_WHY:-}"
 }

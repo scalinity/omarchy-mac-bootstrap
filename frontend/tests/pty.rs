@@ -349,18 +349,23 @@ impl Pty {
 
     /// Close the terminal as a closing window does: every descriptor of the
     /// pseudo-terminal's controller shut. The reader thread holds a copy, so
-    /// it is told to stop and woken by a resize, which the frontend answers
-    /// with a redraw. Returns the launcher.
-    fn hang_up(self) -> Box<dyn Child + Send + Sync> {
+    /// it is told to stop and woken: by a resize, which the frontend answers
+    /// with a redraw, or — during a handoff, when nothing redraws — by a key
+    /// the terminal echoes. Returns the launcher.
+    fn hang_up(mut self, echo: bool) -> Box<dyn Child + Send + Sync> {
         self.stop_reading.store(true, Ordering::SeqCst);
-        self.master
-            .resize(PtySize {
-                rows: 30,
-                cols: 100,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .unwrap();
+        if echo {
+            self.send(b"x");
+        } else {
+            self.master
+                .resize(PtySize {
+                    rows: 30,
+                    cols: 100,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .unwrap();
+        }
         self.read_done
             .recv_timeout(Duration::from_secs(30))
             .expect("the reader thread closed its descriptor");
@@ -908,7 +913,7 @@ fn pty_hangup_ends_the_session() {
     p.idle();
     let f = p.frontend_pid();
     let tmp = p.dir.join("tmp");
-    let mut launcher = p.hang_up();
+    let mut launcher = p.hang_up(false);
     let t0 = Instant::now();
     while launcher.try_wait().unwrap().is_none() {
         assert!(
@@ -1059,6 +1064,158 @@ fn sup_frontend_death_core_live() {
     assert!(
         raw.contains("status"),
         "it says what to run to see the machine's state"
+    );
+}
+
+// --- The launcher takes the terminal back only once the session is over (H06) --------------
+
+/// The probe child owns the terminal in raw mode; the frontend is killed.
+/// Returns the session and the probe's folder.
+fn frontend_killed_under_the_probe(name: &str, leave_raw: bool) -> (Pty, PathBuf) {
+    let dir = scratch(&format!("{name}-probe"));
+    let probe = probe_child(&dir);
+    if leave_raw {
+        std::fs::write(dir.join("probe.leave-raw"), "").unwrap();
+    }
+    let mut p = Pty::start(
+        name,
+        Opts {
+            env: vec![("OMB_TEST_HANDOFF_CHILD", probe.display().to_string())],
+            ..Opts::default()
+        },
+    );
+    start_handoff(&mut p);
+    p.wait_until("the probe", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("probe: ready")
+    });
+    (p, dir)
+}
+
+#[test]
+fn launcher_waits_for_a_handoff_child_the_frontend_left() {
+    let (mut p, _dir) = frontend_killed_under_the_probe("fdeath-handoff", false);
+    let childs = p.termios();
+    let before = p.raw.lock().unwrap().len();
+    kill(p.frontend_pid(), "KILL");
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(
+        p.child.try_wait().unwrap().is_none(),
+        "the launcher still waits"
+    );
+    assert_eq!(p.termios(), childs, "the child's settings, untouched");
+    assert_eq!(since(&p, before), "", "nothing written over the child");
+    p.send(&[b'x'; 100]);
+    p.send(b"\x1b[12;34R");
+    assert_ne!(p.wait_exit(), 0, "the interface stopped: a failure");
+    assert_eq!(p.termios(), p.initial, "restored once the child was done");
+    let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()).to_string();
+    let done = raw.find("probe: done").expect("the child finished");
+    let report = raw.find("the interface stopped").expect("reported");
+    assert!(done < report, "the launcher spoke only after the child");
+    assert!(p.dir.join("state/test/effect-handoff").exists());
+    assert!(p.sessions().is_empty(), "the scratch removed");
+}
+
+#[test]
+fn launcher_leaves_the_terminal_when_an_identity_cannot_be_read() {
+    let (mut p, _dir) = frontend_killed_under_the_probe("fdeath-torn", true);
+    let worker = p
+        .sessions()
+        .iter()
+        .map(|s| s.join("req-3.worker-1"))
+        .find(|w| w.exists())
+        .expect("the child's identity");
+    std::fs::write(&worker, "omb-proc 1\ntorn").unwrap();
+    kill(p.frontend_pid(), "KILL");
+    p.send(&[b'x'; 100]);
+    p.send(b"\x1b[12;34R");
+    p.wait_until("the child to finish", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("probe: done")
+    });
+    let left = p.termios();
+    assert_ne!(left, p.initial, "the child left the terminal raw");
+    assert_eq!(p.wait_exit(), 1, "not known to be over: a failure");
+    assert_eq!(
+        p.termios(),
+        left,
+        "the launcher did not take the terminal back"
+    );
+    let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()).to_string();
+    assert!(raw.contains("not known to be over"), "it says so");
+    assert!(!p.sessions().is_empty(), "the scratch kept");
+}
+
+#[test]
+fn the_terminal_closes_during_a_live_request() {
+    let mut p = Pty::start("hangup-live", Opts::default());
+    p.conf("mutate", "sleep=3\n");
+    p.dashboard();
+    p.idle();
+    p.select(1);
+    p.send(b"\r");
+    p.wait_for("Type test to continue");
+    p.keys("test");
+    p.send(b"\r");
+    let t0 = Instant::now();
+    while !p
+        .sessions()
+        .iter()
+        .any(|s| s.join("req-3.worker-1").exists())
+    {
+        assert!(
+            t0.elapsed() < Duration::from_secs(30),
+            "the child did not start"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let (f, state, tmp) = (p.frontend_pid(), p.dir.join("state"), p.dir.join("tmp"));
+    let mut launcher = p.hang_up(false);
+    let t0 = Instant::now();
+    while launcher.try_wait().unwrap().is_none() {
+        assert!(
+            t0.elapsed() < Duration::from_secs(30),
+            "the launcher outlived its terminal"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!alive(f), "no frontend left");
+    assert!(
+        state.join("test/effect-mutate").exists(),
+        "the core finished its work"
+    );
+    assert!(
+        !state.join("ops/journey.omb").exists(),
+        "a supervised completion"
+    );
+    assert_eq!(
+        std::fs::read_dir(&tmp).unwrap().count(),
+        0,
+        "the scratch removed"
+    );
+}
+
+#[test]
+fn the_terminal_closes_during_a_handoff() {
+    let mut p = Pty::start("hangup-handoff", Opts::default());
+    start_handoff(&mut p);
+    p.wait_until("the child", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("type a line and press Enter")
+    });
+    let (f, tmp) = (p.frontend_pid(), p.dir.join("tmp"));
+    let mut launcher = p.hang_up(true);
+    let t0 = Instant::now();
+    while launcher.try_wait().unwrap().is_none() {
+        assert!(
+            t0.elapsed() < Duration::from_secs(30),
+            "the launcher outlived its terminal"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!alive(f), "no frontend left");
+    assert_eq!(
+        std::fs::read_dir(&tmp).unwrap().count(),
+        0,
+        "the scratch removed"
     );
 }
 
