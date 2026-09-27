@@ -431,14 +431,20 @@ chmod +x "$T/storm"
 C_WRAP="$T/storm $SESS/req-$n.core $T/sent" c_run_raw execute "$T/request-$n"
 st=$C_RC
 r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
-# Bash 5.2 (not the targets: macOS runs 3.2.57, the Linux root 5.3.15)
-# parses a trap's command wrongly when it fires while a command substitution
-# is being parsed ("unexpected EOF while looking for matching `)'"), and the
-# shell can die of it. Upstream; 3.2 and 5.3 hold under the same storm. That
-# one signature is reported as what it is; anything else is judged.
+# Bash 5.2 (not a target: macOS runs 3.2.57, the Linux root 5.3.15) loses a
+# trap that runs while a command holding two command substitutions is
+# expanded ("trap: line N: unexpected EOF while looking for matching `)'"),
+# and the shell can die of it: bug-bash 2023-09 "Parse error in bash 5.2+
+# with CHLD trap and 2 or more $() in a command", fixed for 5.3;
+# tests/bash-trap-comsub.sh reproduces it without this tool. The core's own
+# code holds no such command; lib/common.sh's log_event and lib/state.sh's
+# run lock do, and stay byte for byte the accepted baseline's (test-static).
+# Only that — Bash 5.2, the signature, in one of those two files — is
+# reported as what it is; anything else is judged. CI runs this storm under
+# the target's Bash 5.3.15 as well, where nothing is skipped.
 if [ "$r" != "status=done code=ok" ] && [ "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" = 5.2 ] &&
-  grep -q 'unexpected EOF while looking for matching' "$T/stderr"; then
-  skip "sup-eintr under a signal storm: Bash $BASH_VERSION's parser loses a trap fired inside a command substitution (Bash 5.2 upstream)"
+  grep -Eq '/lib/(common|state)\.sh: trap: line [0-9]+: unexpected EOF while looking for matching' "$T/stderr"; then
+  skip "sup-eintr under a signal storm: Bash $BASH_VERSION loses a trap inside the baseline's two-substitution commands (Bash 5.2 upstream)"
   rm -f "$OPS"
 else
   [ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"

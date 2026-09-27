@@ -187,6 +187,27 @@ else
   fail "the accepted baseline $BASELINE is not in this clone (CI checks out with fetch-depth: 0)"
 fi
 
+# --- sup-eintr-one-substitution: the core's own code, and Bash 5.2's lost trap ---------
+# Bash 5.2 loses a trap that runs while a command holding two command
+# substitutions side by side is expanded (tests/bash-trap-comsub.sh). The
+# core's own files hold none; the baseline's two-substitution commands, which
+# stay byte for byte (above), are the ones the storm test may name on 5.2.
+twosub() {
+  awk '/^[[:space:]]*#/ { next }
+    { s = $0; d = 0; top = 0; n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == "$" && substr(s, i + 1, 1) == "(" && substr(s, i + 2, 1) != "(") { if (d == 0) top++; d++; i++ }
+        else if (c == "(") d++
+        else if (c == ")") { if (d > 0) d-- }
+      }
+      if (top >= 2) printf "%s:%d\n", FILENAME, FNR }' "$@"
+}
+assert_eq "$(cd "$REPO" && twosub lib/core.sh lib/records.sh)" "" \
+  "sup-eintr-one-substitution: no command of the core's own holds two command substitutions"
+assert_eq "$(cd "$REPO" && twosub lib/common.sh lib/state.sh | tr '\n' ' ')" "lib/common.sh:138 lib/common.sh:155 lib/state.sh:269 " \
+  "and the baseline's that the core calls are the three the storm test may name"
+
 # --- test-owned-signal-only: tests signal only processes they own ---------------------
 # A name or a command line matches the developer's own programs too; tests
 # signal a PID they recorded (held to its start time) or a group they made

@@ -259,3 +259,76 @@ jobs:
           s=0
           for t in core frontend static; do tests/run.sh "$t" || s=1; done
           exit "$s"
+
+  linux-target-shell:
+    # The Linux root's shell is GNU Bash 5.3.15 (docs/UPSTREAM.md); the
+    # runners' is 5.2.21. It is built here from GNU's sources, each file held
+    # to the digest tests/bash-5.3.15.sha256 pins, and the core — its
+    # protocol, supervision, diagnostics and the signal storm — runs under
+    # it, with the Rust client and the real terminal against it. Nothing is
+    # skipped but what needs plutil.
+    name: Linux target shell · GNU Bash 5.3.15 from pinned sources · aarch64 · core, storm, H, PTY
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      OMB_STRICT_SKIPS: "1"
+      OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: GNU Bash 5.3.15, built from the sources tests/bash-5.3.15.sha256 pins
+        run: |
+          d=$RUNNER_TEMP/bash-src
+          mkdir -p "$d"
+          cd "$d"
+          curl -fsSL --retry 3 -O https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
+          for i in $(seq -w 1 15); do
+            curl -fsSL --retry 3 -O "https://ftp.gnu.org/gnu/bash/bash-5.3-patches/bash53-0$i"
+          done
+          grep -v '^#' "$GITHUB_WORKSPACE/tests/bash-5.3.15.sha256" | sha256sum --check --strict -
+          tar -xzf bash-5.3.tar.gz
+          cd bash-5.3
+          for i in $(seq -w 1 15); do patch -p0 -s <"../bash53-0$i"; done
+          ./configure --prefix="$RUNNER_TEMP/bash-5.3.15" >/dev/null
+          make -j"$(nproc)" >/dev/null
+          make install >/dev/null
+          b=$RUNNER_TEMP/bash-5.3.15/bin/bash
+          [ "$("$b" -c 'echo "$BASH_VERSION"')" = "5.3.15(1)-release" ]
+          echo "OMB_TEST_BASH=$b" >>"$GITHUB_ENV"
+      - name: The toolchain frontend/rust-toolchain.toml names
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal
+      - name: Tools
+        working-directory: frontend
+        run: |
+          uname -sm
+          "$OMB_TEST_BASH" --version | head -1
+          /usr/bin/bash --version | head -1
+          rustc --version
+          cargo --version
+          grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
+      - name: The upstream defect without this tool — none in 5.3.15; the runner's 5.2 shown beside it
+        run: |
+          tests/bash-trap-comsub.sh "$OMB_TEST_BASH" 20000
+          tests/bash-trap-comsub.sh /usr/bin/bash 20000 || echo "the runner's Bash 5.2 lost traps (the upstream defect)"
+      - name: The core under 5.3.15 — records, supervision with the signal storm, diagnostics, the launcher, static
+        run: |
+          s=0
+          for t in records core diag frontend static; do tests/run.sh "$t" || s=1; done
+          exit "$s"
+      - name: Layer H and the real terminal (L→F→C→X) with the 5.3.15 launcher and core
+        working-directory: frontend
+        run: |
+          cargo fetch --locked
+          cargo test --locked --offline --features test-hooks --test contract --test proto_diff
+          cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
