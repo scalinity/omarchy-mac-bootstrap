@@ -1220,7 +1220,9 @@ core_execute_act() {
   # 3. Exclusion: the run lock, then the scope's operation record, then this
   # action's own record — before anything is read for the decision.
   if [ "$OMB_PERSIST" = 1 ]; then
-    if ! state_lock >/dev/null 2>&1; then
+    # Its text (stdout) is not the core's to write; an error of Bash's own
+    # stays on stderr, where it can be seen.
+    if ! state_lock >/dev/null; then
       core_result refused busy "Another run holds the lock."
       return
     fi

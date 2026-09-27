@@ -445,7 +445,9 @@ r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
 if [ "$r" != "status=done code=ok" ] && [ "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" = 5.2 ] &&
   grep -Eq '/lib/(common|state)\.sh: trap: line [0-9]+: unexpected EOF while looking for matching' "$T/stderr"; then
   skip "sup-eintr under a signal storm: Bash $BASH_VERSION loses a trap inside the baseline's two-substitution commands (Bash 5.2 upstream)"
-  rm -f "$OPS"
+  # A core that died taking the run lock left it without an owner, which
+  # the baseline's lock counts as a run starting for a minute.
+  rm -rf "$OPS" "$T/state/lock"
 else
   [ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"
   assert_eq "$r" "status=done code=ok" "sup-eintr: signals during the reading leave a supervised completion"

@@ -412,10 +412,14 @@ Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
   fixed in the development branch that month, which became 5.3; the same
   report for 5.2.26 was answered as fixed by it (bug-bash, 2024-02-03,
   <https://lists.gnu.org/archive/html/bug-bash/2024-02/msg00029.html>). Under
-  the core's signal storm on 5.2.21 the core died in 2 of 12 runs, both times
-  at `lib/common.sh` line 155 (`log_event`), which stays byte for byte the
-  accepted baseline's; under 5.3.15, never (docs/TESTING.md → `sup-eintr`,
-  `sup-eintr-one-substitution`). Both GNU builds came from ftp.gnu.org, every
+  the core's signal storm on 5.2.21 the core died in 16 of 80 runs: 11 times
+  at `lib/common.sh` line 155 (`log_event`) and 5 at `lib/state.sh` line 269
+  (the run lock's owner line), both byte for byte the accepted baseline's, and
+  nowhere else (docs/TESTING.md → `sup-eintr`, `sup-eintr-one-substitution`).
+  The core used to discard the run lock's stderr, hiding the second; it now
+  keeps Bash's own errors there. A core that dies taking the lock leaves it
+  without an owner, which the baseline's lock counts as a run starting for a
+  minute. Both GNU builds came from ftp.gnu.org, every
   tarball and patch verified against its signature by Chet Ramey's key
   (`7C0135FB088AAF6C66C650B9BB5869F064EA74AB`, as the GNU keyring holds it);
   `tests/bash-5.3.15.sha256` pins the 5.3.15 files CI builds from.
