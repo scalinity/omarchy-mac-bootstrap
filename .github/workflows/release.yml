@@ -71,9 +71,9 @@ jobs:
           tests/frontend-inputs.sh config
       - name: Build
         working-directory: frontend
-        run: cargo build --release --locked --offline
-      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
-        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+        run: cargo build --release --locked --offline --message-format=json-render-diagnostics >"$RUNNER_TEMP/build.json"
+      - name: Each target the release build compiled read only tracked inputs, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
       - name: Compatibility, from the artifact
         run: |
           case "$TARGET" in

@@ -138,12 +138,13 @@ jobs:
         run: |
           cargo test --locked --offline --lib --bins --test frames --test contract --test proto_diff --test panics
           cargo test --locked --offline --features test-hooks --test contract
-      # The release build's own dependency files: clippy's and the tests'
+      # The release build's own dependency files, bound to its targets by its own
+      # messages: clippy's and the tests'
       # record their own environment (CLIPPY_ARGS, CARGO_MANIFEST_DIR).
-      - name: Every file each crate of the frontend's own read is a tracked input, a registry crate or the toolchain; no build environment but Cargo.toml's
+      - name: Each target of the frontend's own the release build compiled read only tracked inputs, a registry crate or the toolchain; no build environment but Cargo.toml's package values
         run: |
-          (cd frontend && cargo build --release --locked --offline)
-          tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+          (cd frontend && cargo build --release --locked --offline --message-format=json-render-diagnostics) >"$RUNNER_TEMP/build.json"
+          tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
       - name: No pending snapshot, nothing written into frontend/
         run: tests/frontend-inputs.sh clean
       - name: frontend-input-* and frontend-lock-not-input
@@ -189,9 +190,9 @@ jobs:
         working-directory: frontend
         run: |
           cargo fetch --locked
-          cargo build --release --locked --offline
-      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
-        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+          cargo build --release --locked --offline --message-format=json-render-diagnostics >"$RUNNER_TEMP/build.json"
+      - name: Each target the release build compiled read only tracked inputs, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
       - name: frontend-compat-linux
         run: tests/frontend-inputs.sh compat-linux "$CARGO_TARGET_DIR/release/omb-tui"
       - name: The lock line this build would have (evidence only; nothing is published)
@@ -249,9 +250,9 @@ jobs:
         working-directory: frontend
         run: |
           cargo fetch --locked
-          cargo build --release --locked --offline
-      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
-        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
+          cargo build --release --locked --offline --message-format=json-render-diagnostics >"$RUNNER_TEMP/build.json"
+      - name: Each target the release build compiled read only tracked inputs, a registry crate or the toolchain
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
       - name: frontend-compat-macos
         run: tests/frontend-inputs.sh compat-macos "$CARGO_TARGET_DIR/release/omb-tui"
       - name: The lock line this build would have (evidence only; nothing is published)

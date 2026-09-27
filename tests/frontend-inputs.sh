@@ -6,7 +6,9 @@
 #   frontend-inputs.sh digest [COMMIT]     inputs_digest, from Git's objects (never the working tree)
 #   frontend-inputs.sh listing [COMMIT]    the canonical listing it is the SHA-256 of
 #   frontend-inputs.sh clean               no untracked or ignored file under frontend/
-#   frontend-inputs.sh closure DEPDIR      every path rustc read is a tracked input, the registry or the sysroot
+#   frontend-inputs.sh closure DEPDIR BUILD  every target of the frontend's own the build compiled (BUILD: its
+#                                          --message-format=json output) read only tracked inputs, the registry,
+#                                          the sysroot and Cargo.toml's package values
 #   frontend-inputs.sh metadata            no build script of its own; every package here or from crates.io
 #   frontend-inputs.sh config [WORKFLOW]   no Cargo configuration elsewhere; no *FLAGS in the release workflow
 #   frontend-inputs.sh lock [COMMIT]       the commit's inputs_digest against release/frontend.lock's
@@ -35,6 +37,69 @@ die() {
 
 sha256() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -c1-64; else sha256sum | cut -c1-64; fi
+}
+
+# The names Cargo 1.88.0 sets from a package's Cargo.toml when it runs
+# rustc: fill_env in src/cargo/core/compiler/compilation.rs (the version,
+# its parts, the name) and metadata_envs! in src/cargo/core/manifest.rs
+# (the rest); the same fourteen the Cargo book's environment-variables
+# reference lists at rust-1.88.0. No other name, CARGO_PKG_ or not, is a
+# value the tracked inputs decide.
+PKG_ENV="CARGO_PKG_VERSION CARGO_PKG_VERSION_MAJOR CARGO_PKG_VERSION_MINOR CARGO_PKG_VERSION_PATCH
+CARGO_PKG_VERSION_PRE CARGO_PKG_NAME CARGO_PKG_AUTHORS CARGO_PKG_DESCRIPTION CARGO_PKG_HOMEPAGE
+CARGO_PKG_REPOSITORY CARGO_PKG_LICENSE CARGO_PKG_LICENSE_FILE CARGO_PKG_RUST_VERSION CARGO_PKG_README"
+
+# dep_hash CRATE NAME — the hash in NAME when NAME is one of CRATE's outputs
+# in deps/: CRATE-HASH[.exe] (a binary) or libCRATE-HASH.EXT; nothing else.
+dep_hash() {
+  case "$2" in *.d) return 0 ;; esac
+  printf '%s\n' "$2" | sed -n -E "s/^(lib)?$1-([0-9a-f]{16})(\\.[A-Za-z0-9]+)?\$/\\2/p"
+}
+
+# real PATH — PATH with its folder's links resolved; nothing when it is gone.
+real() { (cd "$(dirname "$1")" 2>/dev/null && printf '%s/%s\n' "$(pwd -P)" "$(basename "$1")"); }
+
+# depfile_ok FILE WHAT — FILE, rustc's dependency file for WHAT, names only
+# tracked inputs, the registry and the sysroot, and reads no build
+# environment but Cargo.toml's package values.
+depfile_ok() {
+  local d=$1 what=$2
+  # rustc's notes: `# env-dep:NAME[=VALUE]` for every env!() and
+  # option_env!() the crate read at compile time, set or not. Such a value
+  # is an input the listing does not hold unless Cargo set it from the
+  # tracked Cargo.toml (PKG_ENV).
+  grep '^# env-dep:' "$d" | while IFS= read -r e; do
+    name=${e#\# env-dep:}
+    name=${name%%=*}
+    case " $(printf '%s' "$PKG_ENV" | tr '\n' ' ') " in
+      *" $name "*) ;;
+      *) die "$what reads the build environment's $name at compile time, an input the listing does not hold" ;;
+    esac
+  done || exit 1
+  # A dependency file: "target: dep dep ...", one rule per line; spaces
+  # in paths are escaped with a backslash; lines from '#' on are rustc's
+  # notes (above), not files. Each rule's target (an output) is dropped;
+  # everything after it is a file rustc read.
+  grep -v '^#' "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/^[^ ]*:( |$)//' | tr ' ' '\n' | sed -e 's/@SP@/ /g' | grep -v '^$' | while IFS= read -r p; do
+    # Cargo runs rustc in the workspace folder, frontend/, and names a
+    # local crate's files relative to it: resolve them, `..` included,
+    # before judging.
+    case "$p" in
+      /*) ;;
+      *)
+        dir=$(cd "frontend/$(dirname "$p")" 2>/dev/null && pwd -P) || die "rustc read a file that is gone: $p"
+        p="$dir/$(basename "$p")"
+        ;;
+    esac
+    case "$p" in
+      "$registry"/* | "$sysroot"/*) continue ;;
+      "$root"/frontend/*)
+        rel=${p#"$root"/}
+        printf '%s\n' "$tracked" | grep -qxF -- "$rel" || die "rustc read $rel, which Git does not track"
+        ;;
+      *) die "rustc read a file outside the closure: $p ($what)" ;;
+    esac
+  done || exit 1
 }
 
 # listing COMMIT — `omb-frontend-inputs 1`, then one line per tracked path
@@ -82,67 +147,91 @@ case "$cmd" in
     echo "frontend/ is exactly the commit"
     ;;
   closure)
-    depdir=${1:?closure DEPDIR, the target folder deps/ holding the *.d files}
+    depdir=${1:?closure DEPDIR BUILD — deps/ holding the *.d files, and the messages of the build that wrote it}
+    build=${2:?closure DEPDIR BUILD — the cargo --message-format=json output of that build}
     command -v jq >/dev/null 2>&1 || die "jq is needed to read cargo metadata"
     sysroot=$(cd frontend && rustc --print sysroot) || die "no rustc"
     registry="${CARGO_HOME:-$HOME/.cargo}/registry/src"
     root=$(pwd -P)
     tracked=$(git ls-files -- frontend) || die "git ls-files failed"
-    # Every crate of the frontend's own packages (cargo metadata: each
-    # package under frontend/, each library and binary it builds). A crate's
-    # dependency files are named after it, `-` read as `_`; one it built none
-    # of means this is not the folder its build wrote.
-    # Without --no-deps: a path dependency is not a workspace member, and
-    # --no-deps lists members only.
+    dd=$(cd "$depdir" 2>/dev/null && pwd -P) || die "no folder $depdir"
+    out=$(dirname "$dd")
+    jq -e -s 'any(.[]; .reason == "build-finished" and .success == true)' "$build" >/dev/null ||
+      die "$build is not the messages of a whole, successful build"
+    # The frontend's own packages: each package cargo metadata shows under
+    # frontend/ (without --no-deps: a path dependency is not a workspace
+    # member, and --no-deps lists members only).
     m=$(cd frontend && cargo metadata --format-version 1 --locked --offline) || die "cargo metadata --locked failed"
-    crates=$(printf '%s' "$m" | jq -r '.packages[] | select(.source == null) | .targets[]
-      | select(any(.kind[]; test("^(lib|rlib|dylib|cdylib|staticlib|proc-macro|bin)$"))) | .name' | tr - _ | sort -u)
-    [ -n "$crates" ] || die "cargo metadata names no crate of the frontend's own"
-    for c in $crates; do
-      found=0
-      for d in "$depdir/$c"-*.d; do
-        [ -f "$d" ] || continue
-        found=1
-        # rustc's notes: `# env-dep:NAME[=VALUE]` for every env!() and
-        # option_env!() the crate read at compile time. Such a value is an
-        # input the listing does not hold, so only CARGO_PKG_* — which Cargo
-        # sets from the tracked Cargo.toml — is accepted.
-        grep '^# env-dep:' "$d" | while IFS= read -r e; do
-          name=${e#\# env-dep:}
-          name=${name%%=*}
-          case "$name" in
-            CARGO_PKG_[A-Z]*) ;;
-            *) die "$c reads the build environment's $name at compile time, an input the listing does not hold" ;;
-          esac
-        done || exit 1
-        # A dependency file: "target: dep dep ...", one rule per line; spaces
-        # in paths are escaped with a backslash; lines from '#' on are rustc's
-        # notes (above), not files. Each rule's target (an output) is dropped;
-        # everything after it is a file rustc read.
-        grep -v '^#' "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/^[^ ]*:( |$)//' | tr ' ' '\n' | sed -e 's/@SP@/ /g' | grep -v '^$' | while IFS= read -r p; do
-          # Cargo runs rustc in the workspace folder, frontend/, and names a
-          # local crate's files relative to it: resolve them, `..` included,
-          # before judging.
-          case "$p" in
-            /*) ;;
-            *)
-              dir=$(cd "frontend/$(dirname "$p")" 2>/dev/null && pwd -P) || die "rustc read a file that is gone: $p"
-              p="$dir/$(basename "$p")"
-              ;;
-          esac
-          case "$p" in
-            "$registry"/* | "$sysroot"/*) continue ;;
-            "$root"/frontend/*)
-              rel=${p#"$root"/}
-              printf '%s\n' "$tracked" | grep -qxF -- "$rel" || die "rustc read $rel, which Git does not track"
-              ;;
-            *) die "rustc read a file outside the closure: $p (crate $c)" ;;
-          esac
-        done || exit 1
-      done
-      [ "$found" = 1 ] || die "no dependency files for the frontend's crate $c in $depdir"
-    done
-    echo "every file each of the frontend's crates read is a tracked input, a registry crate or the toolchain; no build environment but Cargo.toml's"
+    pk=$(printf '%s' "$m" | jq -c '[.packages[] | select(.source == null) | {key: .id, value: "\(.name)@\(.version)"}] | from_entries') ||
+      die "cargo metadata cannot be read"
+    # Every target of theirs the build compiled — its kind and name, its
+    # package, its root file, then (F) each file the build reported for it.
+    # Nothing is merged: two targets whose crate names are spelled alike (a
+    # library omb_tui, a binary omb-tui) each need evidence of their own.
+    arts=$(jq -r -s --argjson pk "$pk" '[.[] | select(.reason == "compiler-artifact") | select($pk[.package_id] != null)]
+      | to_entries[] | .key as $i | .value
+      | "T\t\($i)\t\(.target.kind | join(","))\t\(.target.name)\t\($pk[.package_id])\t\(.target.src_path)", (.filenames[] | "F\t\($i)\t\(.)")' "$build") ||
+      die "$build cannot be read"
+    printf '%s\n' "$arts" | grep -q '^T	' || die "the build compiled no target of the frontend's own packages"
+    n=0 used=""
+    while IFS='	' read -r tag i kind name pkg src; do
+      [ "$tag" = T ] || continue
+      what="$kind $name of $pkg"
+      case ",$kind," in
+        *,lib,* | *,rlib,* | *,dylib,* | *,cdylib,* | *,staticlib,* | *,proc-macro,* | *,bin,*) ;;
+        *) die "the build compiled $what, a kind of target the closure does not hold" ;;
+      esac
+      crate=$(printf '%s' "$name" | tr - _)
+      # Its evidence: rustc's dependency file for the output the build
+      # reported. An output in deps/ carries the hash its dependency file is
+      # named with; one Cargo copied out of deps/ (the binary) is the deps/
+      # output with the same bytes.
+      hashes=""
+      files=$(printf '%s\n' "$arts" | awk -F'\t' -v i="$i" '$1 == "F" && $2 == i { print $3 }')
+      while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        fd=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || die "the build's output $f is gone"
+        if [ "$fd" = "$dd" ]; then
+          h=$(dep_hash "$crate" "$(basename "$f")")
+          [ -n "$h" ] || die "$f is not an output of $what"
+          hashes="$hashes $h"
+        elif [ "$fd" = "$out" ]; then
+          for c in "$dd/$crate"-* "$dd/lib$crate"-*; do
+            [ -f "$c" ] || continue
+            h=$(dep_hash "$crate" "$(basename "$c")")
+            if [ -n "$h" ] && cmp -s "$f" "$c"; then hashes="$hashes $h"; fi
+          done
+        else
+          die "$f is not beside $dd: these messages are not of the build that wrote it"
+        fi
+      done <<EOF
+$files
+EOF
+      # shellcheck disable=SC2086 # the hashes, one word each
+      hashes=$(printf '%s\n' $hashes | awk 'NF && !seen[$0]++')
+      [ -n "$hashes" ] || die "no output of $what in $dd: nothing to read its evidence from"
+      [ "$(printf '%s\n' "$hashes" | wc -l | tr -d ' ')" = 1 ] ||
+        die "the outputs of $what in $dd are more than one compilation's: build into a target folder of its own"
+      d=$dd/$crate-$hashes.d
+      [ -f "$d" ] || die "no dependency file for $what: $d"
+      # The file is that compilation's: a rule for that output, and first
+      # the target's own root file.
+      grep -v '^#' "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/:( .*)?$//' | sed -e 's/@SP@/ /g' | awk -F/ '{ print $NF }' |
+        grep -vxF "$crate-$hashes.d" | grep -qxE "(lib)?$crate-$hashes(\\.[A-Za-z0-9]+)?" || die "$d names no output of $what"
+      first=$(sed -n 1p "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/^[^ ]*:( |$)//' | awk '{ print $1 }' | sed -e 's/@SP@/ /g')
+      case "$first" in /*) ;; *) first=frontend/$first ;; esac
+      if [ -z "$first" ] || [ "$(real "$first")" != "$(real "$src")" ]; then
+        die "$d is not the compilation of $what: it starts at ${first:-nothing}, the target at $src"
+      fi
+      case " $used " in *" $d "*) die "$d is the evidence of two targets" ;; esac
+      used="$used $d"
+      depfile_ok "$d" "$what"
+      n=$((n + 1))
+      printf '%s: %s\n' "$what" "${d#"$out"/}"
+    done <<EOF
+$arts
+EOF
+    echo "each of the $n targets of the frontend's own the build compiled has its own dependency file, and read only tracked inputs, a registry crate or the toolchain; no build environment but Cargo.toml's package values"
     ;;
   metadata)
     command -v jq >/dev/null 2>&1 || die "jq is needed to read cargo metadata"

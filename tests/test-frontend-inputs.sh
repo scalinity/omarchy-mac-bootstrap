@@ -19,7 +19,7 @@ git_() { git -C "$R" -c user.name=test -c user.email=test@example.invalid -c com
 commit() { git_ add -A >/dev/null && git_ commit -q -m "$1" --allow-empty; }
 digest() { (cd "$R" && "$TOOL" digest "${1:-HEAD}"); }
 check() { (cd "$R" && "$TOOL" "$@") >"$T/out" 2>&1; }
-build() { (cd "$R/frontend" && cargo build --offline --quiet) >"$T/build" 2>&1; }
+build() { (cd "$R/frontend" && cargo build --offline --quiet --message-format=json-render-diagnostics) >"$T/build.json" 2>"$T/build"; }
 
 mkdir -p "$R/frontend/src" "$R/frontend/tests" "$R/release" "$R/.github/workflows"
 git -C "$R" init -q
@@ -93,7 +93,7 @@ printf 'schema 2\n' >"$R/frontend/tests/schema.txt"
 commit "only the test asset"
 [ "$(digest)" != "$d4" ] && ok || fail "frontend-input-test-asset: a file under tests/ that production code includes changes inputs_digest"
 build && ok || fail "the crate builds: $(cat "$T/build")"
-check closure "$CARGO_TARGET_DIR/debug/deps"
+check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
 assert_rc "$?" 0 "frontend-input-test-asset: the closure check passes (a tracked input)"
 
 # --- frontend-input-include-outside ----------------------------------------------------------
@@ -101,7 +101,7 @@ printf 'outside\n' >"$R/outside.txt"
 printf 'fn main() {\n    println!("{}", include_str!("../../outside.txt"));\n}\n' >"$R/frontend/src/main.rs"
 commit "include outside frontend/"
 build || fail "the outside include builds: $(cat "$T/build")"
-check closure "$CARGO_TARGET_DIR/debug/deps"
+check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
 assert_rc "$?" 1 "frontend-input-include-outside: a file outside frontend/ fails the closure"
 assert_contains "$(cat "$T/out")" "outside the closure: $(cd "$R" && pwd -P)/outside.txt" "and names it"
 rm -rf "$CARGO_TARGET_DIR/debug/deps"/omb_tui-*
@@ -109,7 +109,7 @@ printf 'untracked\n' >"$R/frontend/src/untracked.txt"
 printf 'fn main() {\n    println!("{}", include_str!("untracked.txt"));\n}\n' >"$R/frontend/src/main.rs"
 git_ add frontend/src/main.rs && git_ commit -q -m "include an untracked file"
 build || fail "the untracked include builds: $(cat "$T/build")"
-check closure "$CARGO_TARGET_DIR/debug/deps"
+check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
 assert_rc "$?" 1 "frontend-input-include-outside: an untracked file inside frontend/ fails the closure"
 assert_contains "$(cat "$T/out")" "which Git does not track" "and says so"
 # The build's own output folder is not an input either: only each rule's
@@ -119,7 +119,7 @@ printf 'planted\n' >"$CARGO_TARGET_DIR/debug/deps/planted.txt"
 printf 'fn main() {\n    println!("{}", include_str!("%s"));\n}\n' "$CARGO_TARGET_DIR/debug/deps/planted.txt" >"$R/frontend/src/main.rs"
 git_ add frontend/src/main.rs && git_ commit -q -m "include a file beside the build's outputs"
 build || fail "the planted include builds: $(cat "$T/build")"
-check closure "$CARGO_TARGET_DIR/debug/deps"
+check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
 assert_rc "$?" 1 "frontend-input-include-outside: a file in the build's own output folder fails the closure"
 assert_contains "$(cat "$T/out")" "planted.txt" "and names it"
 
@@ -188,19 +188,19 @@ if command -v jq >/dev/null 2>&1; then
   assert_rc "$?" 0 "a path package under frontend/ is allowed"
   rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
   build || fail "the local crate builds: $(cat "$T/build")"
-  check closure "$CARGO_TARGET_DIR/debug/deps"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
   assert_rc "$?" 1 "frontend-input-local-crate: a local crate's include from outside frontend/ fails the closure"
-  assert_contains "$(cat "$T/out")" "outside the closure: $(cd "$R" && pwd -P)/outside.txt (crate local_helper)" "and names the file and the crate"
+  assert_contains "$(cat "$T/out")" "outside the closure: $(cd "$R" && pwd -P)/outside.txt (lib local_helper of local-helper@0.1.0)" "and names the file and the target"
   printf 'pub const OUTSIDE: &[u8] = b"inside";\n' >"$R/frontend/local-helper/src/lib.rs"
   commit "the local crate reads nothing outside"
   rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
   build || fail "the local crate builds: $(cat "$T/build")"
-  check closure "$CARGO_TARGET_DIR/debug/deps"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
   assert_rc "$?" 0 "a local crate reading only tracked inputs passes"
   rm -f "$CARGO_TARGET_DIR/debug/deps"/local_helper-*.d
-  check closure "$CARGO_TARGET_DIR/debug/deps"
-  assert_rc "$?" 1 "a crate of the frontend's own with no dependency file fails (the wrong folder)"
-  assert_contains "$(cat "$T/out")" "no dependency files for the frontend's crate local_helper" "and names it"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
+  assert_rc "$?" 1 "frontend-input-target-evidence: a local path dependency's library the build compiled, with no dependency file, fails"
+  assert_contains "$(cat "$T/out")" "no dependency file for lib local_helper of local-helper@0.1.0" "and names it"
   git_ rm -q -r frontend/local-helper
   cp "$T/Cargo.toml.plain" "$R/frontend/Cargo.toml"
   (cd "$R/frontend" && cargo generate-lockfile --offline --quiet)
@@ -211,8 +211,8 @@ if command -v jq >/dev/null 2>&1; then
     shift
     commit "an environment read"
     rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
-    (cd "$R/frontend" && env "$@" cargo build --offline --quiet) >"$T/build" 2>&1 || fail "the build: $(cat "$T/build")"
-    check closure "$CARGO_TARGET_DIR/debug/deps"
+    (cd "$R/frontend" && env "$@" cargo build --offline --quiet --message-format=json-render-diagnostics) >"$T/build.json" 2>"$T/build" || fail "the build: $(cat "$T/build")"
+    check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
   }
   env_case 'println!("{}", env!("OMB_BUILD_ONLY"));' OMB_BUILD_ONLY=x
   assert_rc "$?" 1 "frontend-input-env-dep: env!() of an unapproved variable fails the closure"
@@ -221,7 +221,99 @@ if command -v jq >/dev/null 2>&1; then
   assert_rc "$?" 1 "frontend-input-env-dep: option_env!() of an unset variable fails too (its absence is an input)"
   assert_contains "$(cat "$T/out")" "OMB_MAYBE" "and names it"
   env_case 'println!("{}", env!("CARGO_PKG_VERSION"));' OMB_UNRELATED=1
-  assert_rc "$?" 0 "frontend-input-env-dep: CARGO_PKG_* (from the tracked Cargo.toml) is the approved set"
+  assert_rc "$?" 0 "frontend-input-env-dep: CARGO_PKG_VERSION (from the tracked Cargo.toml) passes"
+  env_case 'println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_AUTHORS"));' OMB_UNRELATED=1
+  assert_rc "$?" 0 "frontend-input-env-dep: CARGO_PKG_NAME and CARGO_PKG_AUTHORS, Cargo.toml's too, pass"
+  # The fourteen names Cargo sets, not a family: another spelled like them
+  # is the build environment's.
+  env_case 'println!("{}", env!("CARGO_PKG_REVIEW_INPUT"));' CARGO_PKG_REVIEW_INPUT=x
+  assert_rc "$?" 1 "frontend-input-env-dep: CARGO_PKG_REVIEW_INPUT, set, is not Cargo.toml's: it fails the closure"
+  assert_contains "$(cat "$T/out")" "reads the build environment's CARGO_PKG_REVIEW_INPUT" "and names it"
+  env_case 'println!("{:?}", option_env!("CARGO_PKG_REVIEW_INPUT"));' OMB_UNRELATED=1
+  assert_rc "$?" 1 "frontend-input-env-dep: option_env!() of CARGO_PKG_REVIEW_INPUT, unset, fails too"
+  assert_contains "$(cat "$T/out")" "reads the build environment's CARGO_PKG_REVIEW_INPUT" "and names it"
+  env_case 'println!("{}", env!("CARGO_PKG_FAKE"));' CARGO_PKG_FAKE=x
+  assert_rc "$?" 1 "frontend-input-env-dep: an invented CARGO_PKG_FAKE fails"
+  env_case 'println!("{}", env!("CARGO_MANIFEST_DIR"));' OMB_UNRELATED=1
+  assert_rc "$?" 1 "frontend-input-env-dep: CARGO_MANIFEST_DIR, where the build ran, fails"
+
+  # --- frontend-input-target-evidence: each target the build compiled has its own ------------
+  # A library omb_tui and a binary omb-tui: rustc names both crates omb_tui
+  # and both dependency files omb_tui-HASH.d. Each needs its own; the
+  # other's, or one another build left, never stands in.
+  # dep_files — LIB_D and BIN_D: the build's two omb_tui dependency files,
+  # told apart by what rustc wrote each for (a library's names its .rlib),
+  # never by the check under test.
+  dep_files() {
+    LIB_D=$(grep -l '/libomb_tui-[0-9a-f]*\.rlib:' "$CARGO_TARGET_DIR/debug/deps"/omb_tui-*.d)
+    BIN_D=$(grep -L '/libomb_tui-[0-9a-f]*\.rlib:' "$CARGO_TARGET_DIR/debug/deps"/omb_tui-*.d)
+    if [ -f "$LIB_D" ] && [ -f "$BIN_D" ]; then ok; else fail "the build wrote one dependency file for each ([$LIB_D] [$BIN_D])"; fi
+  }
+  # one_gone FILE WHAT — the closure without FILE alone: it fails, naming WHAT.
+  one_gone() {
+    if [ ! -f "$1" ]; then
+      fail "no dependency file to take away for $2"
+      return
+    fi
+    mv "$1" "$T/held.d"
+    check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
+    assert_rc "$?" 1 "frontend-input-target-evidence: the dependency file of $2 gone, the other's there, fails"
+    assert_contains "$(cat "$T/out")" "no dependency file for $2" "and names it"
+    mv "$T/held.d" "$1"
+  }
+  printf 'fn main() {\n    println!("{}", omb_tui::X);\n}\n' >"$R/frontend/src/main.rs"
+  printf 'pub const X: u8 = 1;\n' >"$R/frontend/src/lib.rs"
+  commit "a library and a binary spelled alike"
+  rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
+  build || fail "the library and the binary build: $(cat "$T/build")"
+  dep_files
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
+  assert_rc "$?" 0 "frontend-input-target-evidence: a library and a binary spelled alike, each with its own dependency file, pass"
+  assert_contains "$(cat "$T/out")" "lib omb_tui of omb-tui@0.1.0: deps/${LIB_D##*/}" "frontend-input-target-evidence: the library is bound to its own file"
+  assert_contains "$(cat "$T/out")" "bin omb-tui of omb-tui@0.1.0: deps/${BIN_D##*/}" "and the binary to its own"
+  one_gone "$BIN_D" "bin omb-tui of omb-tui@0.1.0"
+  one_gone "$LIB_D" "lib omb_tui of omb-tui@0.1.0"
+  cp "$BIN_D" "$T/held.d"
+  cp "$LIB_D" "$BIN_D"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
+  assert_rc "$?" 1 "frontend-input-target-evidence: the library's file in the binary's place fails"
+  assert_contains "$(cat "$T/out")" "names no output of bin omb-tui" "and says whose it is not"
+  mv "$T/held.d" "$BIN_D"
+  # A dependency file of the same crate name that no target of this build is
+  # bound to — another build's — is neither evidence nor read.
+  { cat "$BIN_D" && printf '# env-dep:OMB_BUILD_ONLY=x\n'; } >"$CARGO_TARGET_DIR/debug/deps/omb_tui-0000000000000000.d"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
+  assert_rc "$?" 0 "frontend-input-target-evidence: another build's dependency file beside them is not this build's evidence"
+  rm -f "$CARGO_TARGET_DIR/debug/deps/omb_tui-0000000000000000.d"
+  # The messages must be of the build that wrote the folder, and whole.
+  sed "s#$CARGO_TARGET_DIR/debug/#$T/elsewhere/debug/#g" "$T/build.json" >"$T/other.json"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/other.json"
+  assert_rc "$?" 1 "frontend-input-target-evidence: another build's messages fail"
+  grep -v '"build-finished"' "$T/build.json" >"$T/other.json"
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/other.json"
+  assert_rc "$?" 1 "frontend-input-target-evidence: messages of a build that did not finish fail"
+  # Two packages: this one's binary omb-tui, and a local package under
+  # frontend/ whose library is named omb_tui.
+  git_ rm -q frontend/src/lib.rs
+  mkdir -p "$R/frontend/helper/src"
+  printf '[package]\nname = "helper"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[lib]\nname = "omb_tui"\n' >"$R/frontend/helper/Cargo.toml"
+  printf 'pub const X: u8 = 2;\n' >"$R/frontend/helper/src/lib.rs"
+  cp "$R/frontend/Cargo.toml" "$T/Cargo.toml.plain"
+  printf '\n[dependencies]\nhelper = { path = "helper" }\n' >>"$R/frontend/Cargo.toml"
+  (cd "$R/frontend" && cargo generate-lockfile --offline --quiet)
+  commit "a local package whose library is spelled like the binary"
+  rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
+  build || fail "the two packages build: $(cat "$T/build")"
+  dep_files
+  check closure "$CARGO_TARGET_DIR/debug/deps" "$T/build.json"
+  assert_rc "$?" 0 "frontend-input-target-evidence: two packages' targets spelled alike, each with its own dependency file, pass"
+  assert_contains "$(cat "$T/out")" "lib omb_tui of helper@0.1.0: deps/${LIB_D##*/}" "frontend-input-target-evidence: the other package's library is bound to its own file"
+  assert_contains "$(cat "$T/out")" "bin omb-tui of omb-tui@0.1.0: deps/${BIN_D##*/}" "and the binary to its own"
+  one_gone "$BIN_D" "bin omb-tui of omb-tui@0.1.0"
+  one_gone "$LIB_D" "lib omb_tui of helper@0.1.0"
+  git_ rm -q -r frontend/helper
+  cp "$T/Cargo.toml.plain" "$R/frontend/Cargo.toml"
+  (cd "$R/frontend" && cargo generate-lockfile --offline --quiet)
   printf 'fn main() {}\n' >"$R/frontend/src/main.rs"
   commit "plain again"
 else
