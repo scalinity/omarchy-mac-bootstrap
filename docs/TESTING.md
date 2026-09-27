@@ -15,6 +15,13 @@ push.
 - **Both shells, both systems.** Every Bash test runs under stock `/bin/bash`
   3.2 on macOS and Bash 5 on Linux, with strict skips; a macOS-fixture
   section on Linux is gated on `plutil` as today.
+- **Tests signal only what they own.** A test signals a PID it recorded when
+  the process started, held to that process's start time, or a process group
+  it made — never a process found by its name or command line, which matches
+  the developer's own programs too (`test-owned-signal-only`, static). Each
+  suite that once matched by name keeps an unrelated process with such a
+  command line alive throughout, and fails if it was touched
+  (`test-unrelated-matching-process-survives`).
 - **The cheapest layer first.** Pure functions and state transitions carry
   most of the weight; rendered frames next; a few PTY runs last.
 - **Adversarial cases are first-class.** Every protection in docs/SECURITY.md
@@ -39,9 +46,10 @@ push.
 | `OMB_TEST_PAUSE_AT` | the core waits at the named boundary until a flag file beside it exists, so a test can change the machine in between | fixture mode only; refused as root; runs nothing |
 | `OMB_FRONTEND_DEV` | an unreleased frontend build | fixture mode only; refused as root |
 
-Test-only hooks in the frontend (a stalled channel, a reader-thread panic)
-exist only in builds with the `test-hooks` feature, which a release build
-never enables (a CI check on the release workflow).
+Test-only hooks in the frontend (a stalled channel, a reader-thread panic on
+every request or on request N, a descriptor that cannot be sealed) exist
+only in builds with the `test-hooks` feature, which a release build never
+enables (a CI check on the release workflow).
 
 ## Protocol and admission
 
@@ -113,7 +121,7 @@ result (`proto-diff-chunks`).
 | `proto-code-typed` | an approval code typed with upper-case hex and spaces: normalised as `code_parse` does, then accepted |
 | `proto-invalid-schemas` | each row of the invalid-examples table there: validate without `select`, `exec` without `basis`, a code of the wrong kind, an extra field, a duplicate field, a `#` line, a record after `result`, a byte after the result's LF: the reason code shown there, in Bash and in Rust |
 | `proto-op-records` | every request record placed in an operation that forbids it (a `page` in `validate`, an `arg` in `snapshot`, a `select` in `execute`): refused `schema` |
-| `proto-admit-io` | `head`, `tr`, `tail` or `awk` failing during admission (a fixture that makes one exit non-zero): refused `io`, never an empty or valid document |
+| `proto-admit-io` | `head`, `wc`, `tr`, `tail`, `od` or `awk` failing during admission — printing nothing, printing what the real tool would, or part of it, then exiting non-zero — and the last-byte check's `tr` printing exactly `0a`, then failing: refused `io`, never an empty or valid document (a tool's status is judged apart from its output) |
 
 ## Processes, descriptors and the terminal
 
@@ -121,8 +129,9 @@ result (`proto-diff-chunks`).
 
 | Id | Case | Expected |
 | --- | --- | --- |
-| `sup-fd-child` | a managed and a handoff test child list their open descriptors (`/proc/self/fd` on Linux, `fcntl` probing on macOS) | exactly 0, 1, 2 |
-| `sup-fd-grandchild` | the child starts a grandchild that sleeps 30 s and lists its descriptors; the child and C exit | the grandchild holds only 0, 1, 2; F completes the request as soon as C exits and the `result` is read, without waiting for the grandchild |
+| `sup-fd-child` | a managed and a handoff test child list their open descriptors — every one the kernel lists (`/dev/fd`: `/proc/self/fd` on Linux, the process's own table on macOS), with no range — while F holds inheritable descriptors seeded at 255, 1023, 1024, 1500 and one under its raised descriptor limit | exactly 0, 1, 2 |
+| `sup-fd-grandchild` | the child starts a grandchild that sleeps 30 s and lists its descriptors the same way; the child and C exit | the grandchild holds only 0, 1, 2; F completes the request as soon as C exits and the `result` is read, without waiting for the grandchild |
+| `sup-seal-failure` | a descriptor F cannot seal (test hook) | F starts no core: the text interface, with the reason |
 | `sup-fd3-closed` | C lists its descriptors right after admission | fd 3 is closed before any other code runs |
 | `sup-spool-handoff` | during a handoff child that runs 5 s, C appends 10 000 `progress` records | F's reader keeps them in order; nothing blocks; the child reads its input untouched |
 | `sup-slow-frontend` | F's channel held full by a test hook while C runs a managed act | C finishes and exits without waiting; F then reads every record |
@@ -131,6 +140,12 @@ result (`proto-diff-chunks`).
 | `sup-frontend-death-core-live` | F is killed during a managed act | C completes and removes its operation record; L waits for `req-*.core` to end, then restores the terminal and cleans up as the owner |
 | `sup-completion-controllers-live` | L, F and C alive in one process group; C's mutating child exits and leaves nothing behind | no worker present (every process in the group was in C's snapshot, L, F and C among them, and the `ps` taking the reading is not counted); the postcondition checked; the operation completes and its record is removed |
 | `sup-completion-worker-lingers` | the child exits but a descendant it started stays in the group past the action's time limit | not completed: the operation marked unsupervised, the outcome reported unknown |
+| `sup-completion-failed`, `sup-completion-unexpected` | supervised, quiescent, and the machine shows no effect; shows something else | `failed`; the record kept as `state=failed` with `finding=absent`, `finding=unexpected`; the result recorded |
+| `sup-failed-blocks` | the next act in that scope; a read; a snapshot | refused `unresolved`: the operation ended but the machine does not show its expected effect — never "may still be running"; reads work; the snapshot shows the barrier and no act action in its scope |
+| `sup-failed-same-boot` | in the same boot, the machine then showing the expected effect | still refused: nothing in the boot clears it |
+| `sup-failed-reconcile` | a new boot, the machine showing no effect; showing something else | reconciled as no effect and the action proceeds; blocked, needing the person |
+| `sup-failed-result-unrecorded` | the result cannot be recorded | `failed`, saying so; the failed record stays |
+| `sup-failed-record-unwritten` | the failed record cannot be written | `failed`, saying so; the running record stays and, its core gone, refuses as unsupervised — never no record |
 | `sup-identity-unknown` | `ps` fails, or the boot session cannot be read, during completion, owner cleanup or stale reclaim | nothing completed, nothing deleted, no barrier cleared: every unknown identity counts as alive |
 | `sup-owner-cleanup` | L exiting normally after F has exited; no core, no worker, no unresolved operation | L, itself alive, removes its own scratch |
 | `sup-owner-cleanup-refused` | the same, with in turn a live core, a live recorded worker, a process that entered the group after `launcher.omb`, and an unresolved operation naming the session | L leaves the scratch each time |
@@ -149,11 +164,34 @@ result (`proto-diff-chunks`).
 | `sup-post-reboot-unexpected` | after the boot change, the machine shows something neither the old state nor the expected effect | the scope stays blocked with what the machine holds; the reboot is not counted as success |
 | `sup-read-orphan-no-barrier` | C of a read request is killed while its read child runs on | no operation record, no barrier; the next act proceeds |
 | `sup-no-reclaim-pid` | an operation record whose core's PID is dead | unsupervised, never reclaimed |
-| `sup-reader-death` | the reader thread panics (test hook) | the outcome is unknown; a fresh snapshot is asked for |
-| `sup-eintr` | a signal during a read or wait | the call is retried (Rust unit test; a Bash `wait` loop test) |
+| `sup-reader-death` | the reader thread panics (test hook) | the panic hook restores nothing from the reader's thread; the outcome is unknown once C has exited, never before; a fresh snapshot is asked for |
+| `sup-reader-io` | the spool's read fails (EIO) before the header, in it, in a record, after `hello`, after a whole valid `result`, before trailing bytes; the reader ends, with or without a word, while C runs on (injected readers and a live stand-in core) | never an answer from a failed read; no outcome, and so no next request, until C has exited |
+| `sup-core-state-unknown` | `waitpid` on C fails (C collected by another) | the request is lost at once, not polled for ever: no further request in the session, and leaving is a failure, not the text interface |
+| `sup-proctable` | a live process of the group whose command is not UTF-8, or holds `)` and spaces; a stat that cannot be read or parsed; a process gone while it is read; a macOS record refused, with and without its short record; members whose start cannot be read | read by bytes after the last `)`; a process that cannot be read is possibly present — no quiescence, no handoff snapshot — and one that has gone is absent; an unknown start never equals any start, another unknown one included |
+| `sup-eintr` | a signal during a read or wait; SIGHUP every 30 ms at C through a managed act, from C's own parent | the call is retried (Rust unit test; a Bash `wait` loop test); the act completes supervised, with no barrier |
+| `sup-eintr-one-substitution` | static: a command of C's own holding two command substitutions side by side | none (Bash 5.2 loses a trap that runs while one is expanded: `tests/bash-trap-comsub.sh`); the baseline's own such commands, which stay byte for byte, are the only ones the storm may name on Bash 5.2 |
 | `sup-no-setsid` | static: F and C never call `setsid` or `setpgid`; L, F, C never ignore SIGINT, SIGQUIT, SIGTSTP or block them across a spawn | — |
 | `sup-one-spawner` | static: F opens descriptors and spawns only on its main thread; C writes the spool only from its main shell | — |
 | `sup-shared-critical` | the Shared creation over fixtures, with the spool and the recorded commands time-ordered | between the final topology read and `sudo -n diskutil addPartition`: no spool write, no process-table snapshot, no other recorded command; statically, the code between those two points is byte-identical to the accepted baseline's |
+
+### `launcher-*`: the terminal comes back only once the session is over
+
+L takes the terminal back — restores its settings, reports, or continues in
+text — only when its wait says the session is quiescent; still running at
+the wait's limit, or not knowable, it leaves the terminal and the scratch as
+they are and says so.
+
+| Id | Case | Expected |
+| --- | --- | --- |
+| `launcher-quiescent` | nothing recorded and nothing late in the group; a recorded core that ends within the limit | quiescent |
+| `launcher-identity-corrupt` | a core's or a worker's identity file that cannot be read (torn, a folder) | unknown after 5 s, never quiescent |
+| `launcher-identity-unknown`, `launcher-table-unknown` | `ps` failing once no recorded PID answers: a recorded identity cannot be established; the group cannot be read | unknown |
+| `launcher-identity-missing` | a process that joined the group and was never recorded | waited for as a worker: quiescent once it has gone, still active at the limit if not |
+| `launcher-timeout-live` | a recorded core alive at the limit; a live PID recorded with another start | still active: the wait ends, never as quiescent |
+| `launcher-no-pause`, `launcher-pause-failure` | no pause to wait on; the pause cannot be made | the wait never calls the session over; no frontend is started, the text interface instead |
+| `launcher-forward-identity` | SIGTERM or SIGHUP forwarded to a PID now another process's, or to a frontend whose start was never read | not signalled; the frontend itself is |
+| `launcher-frontend-death-handoff` | F killed while a handoff child owns the terminal in raw mode | L writes nothing and changes no setting until the child and C have ended; then it restores and reports |
+| `launcher-identity-corrupt-handoff` | the same, with the child's identity made unreadable | L leaves the terminal as the child left it, keeps the scratch, exits 1 and says so |
 
 ### `diag-*`: diagnostics by child class
 
@@ -192,7 +230,9 @@ runners.
 | `pty-dispositions` | the handoff child reports its SIGINT, SIGQUIT, SIGTSTP dispositions and its signal mask | default dispositions, empty mask |
 | `pty-termios` | the child leaves the terminal without echo and in raw mode | F restores its saved settings on re-entry; on exit the settings equal the ones before start |
 | `pty-no-steal` | the child reads 100 keys and a cursor-position reply | the child receives all of them; F consumed none |
-| `pty-exit`, `pty-panic` | normal exit; an injected panic | alternate screen left, cursor shown, settings equal to the original |
+| `pty-exit`, `pty-panic` | normal exit; an injected panic on the main thread | alternate screen left, cursor shown, settings equal to the original |
+| `pty-reader-panic` | the reader thread panics (test hook) on an idle refresh, during a managed act whose core runs on, and while a handoff child owns the terminal | the owner keeps the terminal: no restore sequence, raw mode and the alternate screen as they were (during the handoff, the child's foreground group and settings, nothing written); the outcome only after C exits; the panic reported after the final restore; nothing left running |
+| `pty-hangup` | the terminal closes idle, during a managed act and during a handoff | F, L, C and the child end; a supervised act still completes; the scratch is removed |
 | `pty-resize` | resize to 60×20 and below | the layout follows; below the minimum, the too-small state |
 
 ## Actions and bases
@@ -506,6 +546,8 @@ And:
 | `frontend-input-include-outside` | `include_bytes!` or `include_str!` of a file outside `frontend/`, and of an untracked file inside it | the closure check fails: the path is in rustc's dependency file and not a tracked input |
 | `frontend-input-build-rs` | a `build.rs` in the frontend's own package, with and without reading an asset | refused by the `cargo metadata` check |
 | `frontend-input-local-path-dependency` | a `path` dependency outside `frontend/`; a `git` dependency; a `[patch]` section | refused |
+| `frontend-input-local-crate` | a path package under `frontend/` whose crate includes a file outside it; a crate of the frontend's own with no dependency file in the folder checked | the closure check — over every crate of the frontend's own `cargo metadata` names — fails, naming the crate |
+| `frontend-input-env-dep` | production code reading `env!()` of an unapproved variable; `option_env!()` of an unset one; `env!("CARGO_PKG_VERSION")` | the first two fail the closure check (the environment is an input the listing does not hold); `CARGO_PKG_*`, which Cargo sets from the tracked `Cargo.toml`, is the approved set |
 | `frontend-input-generated-target-excluded` | a `target/` folder and an untracked file under `frontend/` present when the digest is computed | the digest unchanged (computed from the commit); the release build refuses to start on an unclean tree |
 | `frontend-input-cargo-config` | a `.cargo/config.toml` at the repository root; `RUSTFLAGS` set in the release workflow | refused (the repository check; the static check of the workflow) |
 | `frontend-input-link` | a tracked symbolic link under `frontend/` | the listing refuses |
@@ -525,7 +567,7 @@ And:
 | A. state | every screen's `update` over synthetic messages: selection, filtering, focus, gates (an inexact word never submits), basis carried, handoff requested only for `terminal=handoff` actions | plain unit tests, no terminal |
 | B. frames | each screen at 120×40, 100×30, 80×24, 60×24, and 59×20 (the too-small state) | `TestBackend`, `assert_buffer_lines` |
 | C. snapshots | loading, empty, partial, error, blocked, changed, handoff notice, gate | `insta` text snapshots; CI fails on a pending snapshot |
-| D. colour and emphasis | focus is reversed, danger is danger, monochrome keeps reverse | `Buffer` comparisons with styles |
+| D. colour and emphasis | focus is reversed, danger is danger, monochrome keeps reverse | `Buffer` comparisons: each property a token sets — colour, background, reverse, never bold, one focus marker — compared on its own |
 | E. degraded modes | 16 colours, no colour, ASCII: every state keeps its word and glyph; every glyph is one cell | frames under each profile |
 | F. lifecycle | start, exit, error and panic write the expected sequence | a recording writer in place of stdout |
 | G. PTY | `pty-*` | real runners |
@@ -594,9 +636,10 @@ A validator, `tests/test-docs.sh` (M14 gate 1), runs in CI over `SPEC.md`,
 | Linux (existing) | Bash 5, ShellCheck 0.9.0, every Bash test, fixture freshness, `docs-*`, `persist-full-real` |
 | macOS (existing) | `/bin/bash` 3.2, every Bash test, the launcher step, fixture freshness |
 | equivalence | both systems: the baseline worktree and `equiv-*` |
-| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, `proto-diff-*`, no pending snapshots, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's |
-| frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, `sup-*`, `frontend-compat-linux` |
-| frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, `sup-*`, `frontend-compat-macos` |
+| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's |
+| frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, the unit tests (the process table included), H, the panic gate, `sup-*`, `frontend-compat-linux` |
+| frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, the unit tests, the panic gate, `sup-*`, `frontend-compat-macos` |
+| Linux target shell | `ubuntu-24.04-arm`: GNU Bash 5.3.15, the Linux root's, built from GNU's sources held to `tests/bash-5.3.15.sha256`; `tests/bash-trap-comsub.sh` under it; the records, core (the signal storm with no skip), diagnostics, launcher and static suites, layer H and layer G under it |
 | release | on a `frontend-v*` tag: native builds, the checks above, `SHA256SUMS`, artifact attestations, no `test-hooks` feature |
 | benchmark | by hand (`workflow_dispatch`) on both arm64 runners: `bench-*`; its numbers are recorded in MILESTONES.md → *Gate 2 — Read-only equivalence* |
 

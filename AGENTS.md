@@ -119,6 +119,17 @@ afterwards, and records.
 - Linux progress is re-derived from the machine (Omarchy Mac's marker, runtime
   version, display manager, setup conf, migration conf and marker); recorded
   state is history only.
+- One command substitution per command in the code the core runs
+  (`lib/core.sh`, `lib/records.sh`): Bash 5.2 loses a trap that fires while a
+  command holding two side by side is expanded (`tests/bash-trap-comsub.sh`);
+  `test-static` holds both files to it.
+- A decoded record value goes into a variable with `rec_get_into`:
+  `$(rec_get …)` drops trailing newlines. On Bash 3.2, `printf -v NAME '%b'
+  ''` assigns the previous `printf -v`'s output; an empty value is assigned
+  with `'%s'`.
+- Tests signal only processes they own — a PID recorded at its start and held
+  to its start time (`t_signal`), or a group they made; never `pkill`,
+  `pgrep` or `killall`, which reach the developer's own programs too.
 - Test seams `OMB_FIXTURE`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER` (the machine
   after a recorded command) and `OMB_TEST_RC` (that command's exit status) are
   refused as root and never execute anything. A recorded `sudo -v` changes

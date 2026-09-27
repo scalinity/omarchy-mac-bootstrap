@@ -400,6 +400,28 @@ Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
 - **`noclobber`** on `/bin/bash` 3.2.57 and Bash 5.3.20: `>` onto a new file
   succeeds; onto an existing file, a dangling link, or a link to a file it
   fails; `>|` and `>>` succeed.
+- **Bash 5.2 loses a trap inside a command with two command substitutions.**
+  `tests/bash-trap-comsub.sh`, 20 000 commands `x="$(printf a)$(printf b)"`
+  under SIGHUP every 2 ms with a HUP trap set: GNU Bash 5.2.21 (5.2 with
+  patches 001–021) printed "trap: line 2: unexpected EOF while looking for
+  matching `)'" 41, 20 and 71 times in three runs; `/bin/bash` 3.2.57, Bash
+  5.3.15 (5.3 with patches 001–015) and Homebrew's 5.3.20, never. Upstream:
+  bug-bash, 2023-09-06, "Parse error in bash 5.2+ with CHLD trap and 2 or
+  more $() in a command"
+  (<https://lists.gnu.org/archive/html/bug-bash/2023-09/msg00058.html>),
+  fixed in the development branch that month, which became 5.3; the same
+  report for 5.2.26 was answered as fixed by it (bug-bash, 2024-02-03,
+  <https://lists.gnu.org/archive/html/bug-bash/2024-02/msg00029.html>). Under
+  the core's signal storm on 5.2.21 the core died in 2 of 12 runs, both times
+  at `lib/common.sh` line 155 (`log_event`), which stays byte for byte the
+  accepted baseline's; under 5.3.15, never (docs/TESTING.md → `sup-eintr`,
+  `sup-eintr-one-substitution`). Both GNU builds came from ftp.gnu.org, every
+  tarball and patch verified against its signature by Chet Ramey's key
+  (`7C0135FB088AAF6C66C650B9BB5869F064EA74AB`, as the GNU keyring holds it);
+  `tests/bash-5.3.15.sha256` pins the 5.3.15 files CI builds from.
+- **`printf -v NAME '%b' ''` on `/bin/bash` 3.2.57 assigns the previous
+  `printf -v`'s output**, not the empty string; `'%s' ''` assigns the empty
+  string. Bash 5.3 assigns the empty string either way (`rec_get_into`).
 
 ## Not verified yet
 

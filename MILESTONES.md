@@ -293,22 +293,28 @@ of docs/TESTING.md.
   (`diag-*`); Bash and Rust admission agreeing on the whole differential
   corpus and the golden examples; `frontend-lock-not-input` passing; no
   path that changes the machine.
-- **Status:** implemented — awaiting independent review; not accepted. On
-  branch `m14-gate1-frontend-foundation` from `21904d6`; CI runs every job
-  on each push (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS
-  `/bin/bash` 3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and
-  `macos-15` arm64), and the implementation report names the runs and their
-  logs. Open for the review:
-  `release/frontend.lock` does not exist until a first `frontend-v0.1.0`
-  release, whose publication is a separate decision (until then the lock
-  check reports the frontend unreleased, and the verified start is proved
-  with test locks pinning each native build); the order of the frontend's
-  panic hook and Ratatui's (docs/FRONTEND.md → *The terminal*) restores the
-  terminal when the spool reader thread panics, where docs/PROTOCOL.md →
-  *When something dies* has the state re-derived; the documents do not say
-  how an operation record that cannot be read is cleared; and on Ubuntu's
-  Bash 5.2 (not a target) the core can die of that shell's own parser bug
-  under a stream of signals, which the signal-storm test names as a skip.
+- **Status:** implemented — remediation required; not accepted. The
+  independent review of `3a1561e` required remediation (H01–H07, M01–M03,
+  L01–L02); the remediation, on branch `m14-gate1-frontend-foundation` from
+  `21904d6`, awaits independent re-review. CI runs every job on each push
+  (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS `/bin/bash`
+  3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and `macos-15`
+  arm64, and the Linux target shell — GNU Bash 5.3.15 built from pinned
+  sources on `ubuntu-24.04-arm`), and the remediation report names the runs.
+  Open:
+  - **Staging, after the code is accepted, on its own authorization:** the
+    `frontend-v0.1.0` release of the accepted commit, the production
+    `release/frontend.lock` generated from it, and the verified start on
+    this Mac. Until then the lock check reports the frontend unreleased, and
+    the verified start is proved on CI with test locks pinning each native
+    build — machinery, not production evidence.
+  - **Bash 5.2 (not a target):** Ubuntu's runners have 5.2.21, which loses
+    a trap inside a command holding two command substitutions (upstream,
+    fixed for 5.3; docs/UPSTREAM.md → *Experiments*). The core's own code
+    holds no such command; the baseline's `log_event` and run lock do, and
+    stay byte for byte. The signal-storm test names that one failure as a
+    skip on 5.2, counted apart from the plutil skips; the target's 5.3.15
+    runs the same storm in CI with no skip.
 
 ### Gate 2 — Read-only equivalence
 
@@ -341,6 +347,14 @@ of docs/TESTING.md.
 - **Exit:** every refusal and fault test passes; three-way equivalence with
   `2edb76a` holds for every exposed action; nothing enters the Shared
   critical interval; no real hardware is touched.
+- **Prerequisite, before any real mutating action is exposed:** a recovery
+  and diagnostic contract for an operation record that cannot be read.
+  Today such a record blocks every act in its scope for good — fail closed:
+  a reboot does not make it readable — while read commands keep working
+  (Gate 1). The contract says how a person inspects the record, what tells
+  "the record cannot be decoded" apart from "no worker and no unexpected
+  effect remains", and how the record is cleared: never automatically,
+  never by a reboot alone, never by treating corruption as no operation.
 - **Status:** not started.
 
 ### Gate 4 — Scanner and profile
