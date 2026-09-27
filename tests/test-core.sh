@@ -389,6 +389,166 @@ case " $base " in *" 3 "*) fail "the harness itself held fd 3" ;; *) ok ;; esac
 rm -f "$T/test-children-none"
 rm -f "$C_FIX/test-children/read"
 
+# sup-eintr-exemption: the storm below is skipped only for Bash 5.2's
+# upstream trap loss, and only once the state it left is one such a death
+# leaves (c_storm_exempt). The real storm strikes only now and then, and only
+# under 5.2, so each state is made here and judged the same on every shell.
+X_BASIS=$(printf '%064d' 7)
+sleep 30 &
+xlive=$!
+xlive_start=$(t_started "$xlive")
+sleep 0.01 &
+xdead=$!
+wait "$xdead"
+xold="Mon Jan  1 00:00:00 2001"
+# x_rec FILE HEADER FAMILY KEY VALUE... — a sealed record.
+x_rec() {
+  (
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    f=$1 h=$2
+    shift 2
+    { printf '%s\n' "$h" && rec_line "$@"; } >"$f"
+    rec_seal_write "$f"
+    omb_cleanup
+  )
+}
+# x_run NAME SITE — X=$T/x-NAME: request 1 of a run that ended with status 1,
+# its spool its header and hello, its stderr the trap loss at SITE
+# (common:155, state:269) or else the text SITE, and a marker from before it.
+x_run() {
+  local f l
+  X=$T/x-$1
+  mkdir -p "$X/sess" "$X/state/ops" "$X/state/test"
+  : >"$X/marker"
+  touch -t 200001010000 "$X/marker"
+  printf 'omb-res 1\nhello\tcore=0.1.0\n' >"$X/sess/req-1.events"
+  printf 'omb-req 1\nexec\taction=test.mutate\tbasis=%s\tconfirm=test\n' "$X_BASIS" >"$X/request-1"
+  case $2 in
+    common:155 | state:269)
+      f=${2%:*} l=${2#*:}
+      printf '%s\n' "$REPO/lib/$f.sh: trap: line 2: unexpected EOF while looking for matching \`)'" \
+        "$REPO/lib/$f.sh: $REPO/omarchy-bootstrap: line $l: unexpected EOF while looking for matching \`)'" >"$X/stderr"
+      ;;
+    *) printf '%s' "$2" >"$X/stderr" ;;
+  esac
+}
+# x_op STATE PID START [FINDING] [SESSION] — the scope's operation record.
+x_op() {
+  x_rec "$X/state/ops/journey.omb" 'omb-op 1' op action test.mutate scope journey basis "$X_BASIS" \
+    session "${5:-$X/sess}" state "$1" finding "${4:-}" pid "$2" start "$3" boot x at 2026-09-27T00:00:00Z
+}
+# x_worker PID START — request 1's worker identity.
+x_worker() { x_rec "$X/sess/req-1.worker-1" 'omb-proc 1' proc role worker pid "$1" start "$2" boot x; }
+# x_judge [VERSION] [STATUS] — "exempt", or "judged: why".
+x_judge() {
+  if c_storm_exempt "${1:-5.2}" "${2:-1}" "$X" "$X/sess" 1 "$X/marker"; then echo exempt; else echo "judged: $C_WHY"; fi
+}
+# The four states the two deaths leave: exempt, and only what the death left
+# is removed — never anything outside the run's own folder.
+mkdir -p "$T/x-other/state/lock" "$T/x-other/state/ops"
+printf 'x\n' >"$T/x-other/state/ops/journey.omb"
+x_run lock state:269
+mkdir "$X/state/lock"
+assert_eq "$(x_judge)" exempt "sup-eintr-exemption: a death at the lock's owner line, its lock an empty folder made during the run"
+[ ! -e "$X/state/lock" ] && ok || fail "sup-eintr-exemption: that ownerless lock is removed"
+[ -f "$X/marker" ] && [ -f "$X/stderr" ] && [ -d "$X/state/ops" ] && ok || fail "sup-eintr-exemption: and nothing else of the run"
+[ -d "$T/x-other/state/lock" ] && [ -f "$T/x-other/state/ops/journey.omb" ] && ok || fail "sup-eintr-exemption: a lock and a record outside the run's folder are untouched"
+x_run running common:155
+x_op running "$xdead" "$xold"
+assert_eq "$(x_judge)" exempt "sup-eintr-exemption: a death in log_event just after the running record, its core ended"
+[ ! -e "$X/state/ops/journey.omb" ] && ok || fail "sup-eintr-exemption: that record is removed"
+x_run done-kept common:155
+x_op running "$xdead" "$xold"
+x_worker "$xdead" "$xold"
+printf '%s' "${X_BASIS:0:16}" >"$X/state/test/effect-mutate"
+assert_eq "$(x_judge)" exempt "sup-eintr-exemption: a death once the child ended, the record not yet removed"
+[ ! -e "$X/state/ops/journey.omb" ] && [ -f "$X/state/test/effect-mutate" ] && [ -f "$X/sess/req-1.worker-1" ] && ok ||
+  fail "sup-eintr-exemption: the record is removed, and only it"
+x_run ended common:155
+x_worker "$xdead" "$xold"
+printf '%s' "${X_BASIS:0:16}" >"$X/state/test/effect-mutate"
+assert_eq "$(x_judge)" exempt "sup-eintr-exemption: a death once the record was removed"
+# A lock with an owner — alive, dead or unreadable — or from before the run:
+# judged, and kept.
+for owner in "$xlive 2026-09-27T00:00:00Z $xlive_start" "$xdead 2026-09-27T00:00:00Z $xold" "x y" "-"; do
+  x_run owner state:269
+  mkdir -p "$X/state/lock"
+  [ "$owner" = - ] || printf '%s\n' "$owner" >"$X/state/lock/owner"
+  [ "$owner" = - ] && touch -t 199901010000 "$X/state/lock"
+  assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: a lock whose owner is [$owner] is not left by such a death"
+  { [ "$owner" = - ] || [ "$(cat "$X/state/lock/owner")" = "$owner" ]; } && [ -d "$X/state/lock" ] && ok ||
+    fail "sup-eintr-exemption: and it is kept, its owner as it was ([$owner])"
+  rm -rf "$X"
+done
+# An operation record other than this request's own running one, its core
+# ended: judged, and kept.
+for rec in "unsupervised $xdead" "failed $xdead" "running $xlive" "running $xdead other-session" "torn"; do
+  x_run record common:155
+  read -r rstate rpid rsess <<<"$rec"
+  case $rstate in
+    torn) printf 'omb-op 1\ntorn' >"$X/state/ops/journey.omb" ;;
+    failed) x_op failed "$rpid" "$xold" absent ;;
+    *)
+      s=$xold
+      [ "$rpid" = "$xlive" ] && s=$xlive_start
+      x_op "$rstate" "$rpid" "$s" "" "${rsess:+$X/$rsess}"
+      ;;
+  esac
+  cp "$X/state/ops/journey.omb" "$X/record-before"
+  assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: an operation record [$rec] is not left by such a death"
+  cmp -s "$X/state/ops/journey.omb" "$X/record-before" && ok || fail "sup-eintr-exemption: and it is kept ([$rec])"
+  rm -rf "$X"
+done
+# A running record at the lock's line, which comes before any record.
+x_run lock-record state:269
+mkdir "$X/state/lock"
+x_op running "$xdead" "$xold"
+assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: a record where the death came before any"
+[ -d "$X/state/lock" ] && [ -f "$X/state/ops/journey.omb" ] && ok || fail "sup-eintr-exemption: and nothing is removed"
+# A worker still alive, or its identity unreadable, or a core identity left.
+x_run worker common:155
+x_op running "$xdead" "$xold"
+x_worker "$xlive" "$xlive_start"
+printf '%s' "${X_BASIS:0:16}" >"$X/state/test/effect-mutate"
+assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: a live worker (a mutation that may still be running)"
+[ -f "$X/state/ops/journey.omb" ] && ok || fail "sup-eintr-exemption: and its record is kept"
+printf 'omb-proc 1\ntorn' >"$X/sess/req-1.worker-1"
+assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: a worker identity that cannot be read"
+x_worker "$xdead" "$xold"
+ln -s "$X/gone" "$X/sess/req-1.core"
+assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: a core identity left"
+# The effect other than the expected one; a result recorded; another shell,
+# status or message.
+x_run effect common:155
+x_worker "$xdead" "$xold"
+printf 'something else' >"$X/state/test/effect-mutate"
+assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: an effect other than the expected one"
+x_run result state:269
+mkdir "$X/state/lock"
+printf 'result\tstatus=done\tcode=ok\tmessage=\tnext=\n' >>"$X/sess/req-1.events"
+assert_contains "$(x_judge)" "judged: " "sup-eintr-exemption: a result recorded (a success contradicting the death)"
+[ -d "$X/state/lock" ] && ok || fail "sup-eintr-exemption: and the lock is kept"
+x_run version state:269
+mkdir "$X/state/lock"
+assert_eq "$(x_judge 5.3)" "judged: the core ran under Bash 5.3, not 5.2" "sup-eintr-exemption: Bash 5.3 is never exempt"
+assert_eq "$(x_judge 3.2)" "judged: the core ran under Bash 3.2, not 5.2" "sup-eintr-exemption: nor 3.2"
+assert_eq "$(x_judge 5.2 2)" "judged: the core exited 2, not 1" "sup-eintr-exemption: nor another exit status"
+[ -d "$X/state/lock" ] && ok || fail "sup-eintr-exemption: and the lock is kept"
+for msg in "" "$REPO/lib/core.sh: trap: line 2: unexpected EOF while looking for matching \`)'" \
+  "$(sed -n 1p "$T/x-lock/stderr")" "$(sed 's#/lib/common\.sh:#/lib/xcommon.sh:#' "$T/x-ended/stderr")" \
+  "$(sed 's/line 155:/line 138:/' "$T/x-ended/stderr")" "$(sed "s#$REPO#/elsewhere#g" "$T/x-ended/stderr")" \
+  "$(cat "$T/x-ended/stderr"; printf '\nsomething more')"; do
+  x_run message "$msg"
+  mkdir "$X/state/lock"
+  assert_eq "$(x_judge)" "judged: stderr is not the trap loss at lib/common.sh:155 or lib/state.sh:269" "sup-eintr-exemption: stderr [$(printf '%s' "$msg" | tr '\n' '|' | cut -c1-60)] is not the trap loss"
+  [ -d "$X/state/lock" ] && ok || fail "sup-eintr-exemption: and the lock is kept"
+  rm -rf "$X"
+done
+t_signal TERM "$xlive" "$xlive_start"
+wait "$xlive" 2>/dev/null
+
 # sup-eintr in the core: a signal while the process table is read (a second
 # Ctrl-C, a hangup) cuts a wait short, or ends the reading; the table is read
 # again, never taken for one that cannot be read, which would be a barrier.
@@ -428,6 +588,7 @@ close($f);
 exit($st & 127 ? 128 + ($st & 127) : $st >> 8);
 PERL
 chmod +x "$T/storm"
+: >"$T/storm-start"
 C_WRAP="$T/storm $SESS/req-$n.core $T/sent" c_run_raw execute "$T/request-$n"
 st=$C_RC
 r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
@@ -439,15 +600,15 @@ r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
 # tests/bash-trap-comsub.sh reproduces it without this tool. The core's own
 # code holds no such command; lib/common.sh's log_event and lib/state.sh's
 # run lock do, and stay byte for byte the accepted baseline's (test-static).
-# Only that — Bash 5.2, the signature, in one of those two files — is
-# reported as what it is; anything else is judged. CI runs this storm under
-# the target's Bash 5.3.15 as well, where nothing is skipped.
-if [ "$r" != "status=done code=ok" ] && [ "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" = 5.2 ] &&
-  grep -Eq '/lib/(common|state)\.sh: trap: line [0-9]+: unexpected EOF while looking for matching' "$T/stderr"; then
+# Only that — the core's shell Bash 5.2, the death at one of those two
+# commands, and the state such a death leaves (c_storm_exempt, tested above
+# as sup-eintr-exemption) — is reported as what it is, and only what it left
+# is removed; anything else is judged. CI runs this storm under the target's
+# Bash 5.3.15 as well, where nothing is skipped.
+C_WHY=""
+if [ "$r" != "status=done code=ok" ] &&
+  c_storm_exempt "$("${C_BASH:-$T_BASH}" -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')" "$st" "$T" "$SESS" "$n" "$T/storm-start"; then
   skip "sup-eintr under a signal storm: Bash $BASH_VERSION loses a trap inside the baseline's two-substitution commands (Bash 5.2 upstream)"
-  # A core that died taking the run lock left it without an owner, which
-  # the baseline's lock counts as a run starting for a minute.
-  rm -rf "$OPS" "$T/state/lock"
 else
   [ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"
   assert_eq "$r" "status=done code=ok" "sup-eintr: signals during the reading leave a supervised completion"
@@ -456,6 +617,7 @@ else
     sed 's/^/      /' "$SESS/req-$n.events" | cut -c1-200
     printf '    its stderr:\n'
     sed 's/^/      /' "$T/stderr" | head -20
+    printf '    not exempt: %s\n' "$C_WHY"
   fi
   [ ! -e "$OPS" ] || ! grep -q 'state=unsupervised' "$OPS" && ok || fail "sup-eintr: no barrier from a signal"
 fi
