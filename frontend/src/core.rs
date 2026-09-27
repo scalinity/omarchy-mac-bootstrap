@@ -1174,14 +1174,23 @@ pub mod proctable {
 
         /// A live child whose command is NAME (a link to sleep so named) is
         /// read as a member of this group, with its start.
-        fn a_child_named(name: &std::ffi::OsStr) {
-            let d = std::env::temp_dir().join(format!("omb-proctable-{}", std::process::id()));
+        /// Returns the child's stat as read once it ran under NAME (Linux).
+        fn a_child_named(name: &std::ffi::OsStr) -> Vec<u8> {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let d = std::env::temp_dir().join(format!(
+                "omb-proctable-{}-{}",
+                std::process::id(),
+                N.fetch_add(1, Ordering::SeqCst)
+            ));
             let _ = std::fs::remove_dir_all(&d);
             std::fs::create_dir_all(&d).unwrap();
             let link = d.join(name);
             std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
             let mut child = std::process::Command::new(&link).arg("5").spawn().unwrap();
             let id = child.id() as i32;
+            // Until its exec, the child runs under this test's own name.
+            let stat = running_as(id, name);
             let g = group(my_group()).unwrap();
             let seen = member(&g, id);
             child.kill().unwrap();
@@ -1189,11 +1198,42 @@ pub mod proctable {
             let _ = std::fs::remove_dir_all(&d);
             let seen = seen.unwrap_or_else(|| panic!("{name:?} ({id}) not read as a member"));
             assert!(matches!(seen.start, Start::Known(_)), "{seen:?}");
+            stat
+        }
+
+        /// ID's stat once its command (field 2) is NAME, as the kernel keeps
+        /// it (at most 15 bytes).
+        #[cfg(target_os = "linux")]
+        fn running_as(id: i32, name: &std::ffi::OsStr) -> Vec<u8> {
+            use std::os::unix::ffi::OsStrExt;
+            let n = name.as_bytes();
+            let want = [b"(".as_slice(), &n[..n.len().min(15)], b")"].concat();
+            let t0 = std::time::Instant::now();
+            loop {
+                let stat = std::fs::read(format!("/proc/{id}/stat")).unwrap_or_default();
+                if stat.windows(want.len()).any(|w| w == want.as_slice()) {
+                    return stat;
+                }
+                assert!(
+                    t0.elapsed() < std::time::Duration::from_secs(10),
+                    "{id} never ran as {name:?}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        fn running_as(_: i32, _: &std::ffi::OsStr) -> Vec<u8> {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Vec::new()
         }
 
         #[test]
         fn a_command_with_parentheses_and_spaces_is_read() {
-            a_child_named(std::ffi::OsStr::new("omb) (x y"));
+            let stat = a_child_named(std::ffi::OsStr::new("omb) (x y"));
+            if cfg!(target_os = "linux") {
+                assert!(parse_stat(&stat).is_some(), "{stat:?}");
+            }
         }
 
         /// The review's counterexample: a live process of the group whose
@@ -1203,19 +1243,8 @@ pub mod proctable {
         #[test]
         fn a_command_that_is_not_utf8_is_read() {
             use std::os::unix::ffi::OsStrExt;
-            let name = std::ffi::OsStr::from_bytes(b"omb-\xff-probe");
-            a_child_named(name);
-            // And its stat really is not UTF-8.
-            let d = std::env::temp_dir().join(format!("omb-proctable-u-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&d);
-            std::fs::create_dir_all(&d).unwrap();
-            let link = d.join(name);
-            std::os::unix::fs::symlink("/bin/sleep", &link).unwrap();
-            let mut child = std::process::Command::new(&link).arg("5").spawn().unwrap();
-            let stat = std::fs::read(format!("/proc/{}/stat", child.id())).unwrap();
-            child.kill().unwrap();
-            child.wait().unwrap();
-            let _ = std::fs::remove_dir_all(&d);
+            let stat = a_child_named(std::ffi::OsStr::from_bytes(b"omb-\xff-probe"));
+            // Its stat, read while it ran under that name, is not UTF-8.
             assert!(
                 std::str::from_utf8(&stat).is_err(),
                 "the stat holds a byte that is not UTF-8"

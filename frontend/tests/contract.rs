@@ -52,13 +52,21 @@ fn seed_high_descriptors() -> Vec<i32> {
             .is_ok()
         })
         .expect("the descriptor limit can be raised to 4096");
+    use std::os::unix::io::AsRawFd;
     let null = std::fs::File::open("/dev/null").unwrap();
-    let fds = vec![255, 1023, 1024, 1500, top as i32 - 1];
+    // macOS also holds descriptors under kern.maxfilesperproc, which the
+    // raised limit may exceed: the high seed is the first of these that
+    // opens, always far above 1500.
+    // SAFETY (each dup2 here and below): onto a number no Rust object owns;
+    // the copy, without close-on-exec, is what a careless caller leaves
+    // open. It lives until the process ends.
+    let high = [top as i32 - 1, 24_575, 10_239, 4_095]
+        .into_iter()
+        .filter(|&fd| fd < top as i32)
+        .find(|&fd| unsafe { dup2(null.as_raw_fd(), fd) } == fd)
+        .expect("a descriptor above 4000 opens");
+    let fds = vec![255, 1023, 1024, 1500, high];
     for &fd in &fds {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: dup2 onto a number no Rust object owns; the copy, without
-        // close-on-exec, is what a careless caller leaves open. It lives
-        // until the process ends.
         assert_eq!(unsafe { dup2(null.as_raw_fd(), fd) }, fd);
         assert_eq!(
             unsafe { fcntl(fd, F_GETFD) } & FD_CLOEXEC,
