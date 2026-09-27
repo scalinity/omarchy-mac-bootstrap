@@ -503,16 +503,33 @@ action that changes the machine also keeps an **operation record**,
   managed mutating entry the registry marks as detaching without an owner
   (docs/TESTING.md → `sup-mutating-daemon-classification`). Process-group
   inspection is never claimed to prove that an arbitrary daemon has stopped.
-- **Unsupervised when supervision is lost.** A record whose core is no
-  longer alive, or one C itself marks unsupervised, means the outcome is
-  unknown and a mutating worker may still be running, even one that left the
-  group. An unsupervised record is a **barrier**: every act action in its
+- **Kept as failed when the effect is not there.** When 1 to 4 hold — C
+  supervised throughout, the child exited, no worker present, any owned
+  check done — but the postcondition does not hold on the fresh read, the
+  action ended and the machine does not show its effect. C does not remove
+  the record: it rewrites it as `state=failed`, with what the read showed
+  (`finding=absent`: no effect; `finding=unexpected`: something else), as a
+  new file renamed over the old one, so a record that cannot be rewritten
+  leaves the running one, which becomes unsupervised once C has exited —
+  never none. Then it records the result where the scope keeps results and
+  answers `failed`; a result that cannot be recorded leaves the failed
+  record in place. A failed record is a **barrier**: every act action in its
+  scope is refused (`code=unresolved`), saying that the operation ended but
+  the machine does not show its expected effect — never that it may still
+  be running — and naming the way forward; read commands keep working and
+  show it. Nothing in this boot clears it, not a matching postcondition; it
+  is reconciled after a new boot as an unsupervised record is (below).
+- **Unsupervised when supervision is lost.** A record, other than a
+  failed one, whose core is no longer alive, or one C itself marks
+  unsupervised, means the outcome is unknown and a mutating worker may
+  still be running, even one that left the group. An unsupervised record
+  is a **barrier**: every act action in its
   scope is refused (`code=unsupervised`), naming the operation and the one
   way forward, for the rest of this boot. Nothing in this boot clears it:
   not an empty-looking group, not a matching postcondition.
 - **Cleared only by a new boot, then reconciled.** Once the current boot
-  session differs from the record's, no process of the old boot can still
-  run. Then the scope's own reconciliation runs (the baseline's
+  session differs from the record's — an unsupervised or a failed one — no
+  process of the old boot can still run. Then the scope's own reconciliation runs (the baseline's
   creation-record check, the journal's judgement, a fresh classification)
   and records one of three findings: **no effect**, **the expected effect,
   completed**, or **something unexpected**. The first two remove the record;
@@ -577,8 +594,8 @@ that started it (SPEC.md → *Commands*).
 | `execute` | the action's | one available action, with its progress | `done`, `refused`, `failed`, `cancelled`, `stopped`, `error` |
 
 `refused` means the core declined before any effect (a code says why:
-`changed`, `busy`, `unsupervised`, `invalid`, `word`, `ceiling`, `scope`,
-`unavailable`, `protocol`, `frontend`); `failed` means the action ran and
+`changed`, `busy`, `unsupervised`, `unresolved`, `invalid`, `word`,
+`ceiling`, `scope`, `unavailable`, `protocol`, `frontend`); `failed` means the action ran and
 the machine does not show its postcondition; `stopped` means the action
 ended at a safe boundary because the machine differed from what it
 expected; `error` means the request could not be handled (admission,
@@ -843,8 +860,9 @@ In this order, stopping at the first refusal:
 2. **The session allows it**: intent within the ceiling, scope among the
    session's scopes, both from the environment.
 3. **Take exclusion**: the run lock; then the scope's operation records — an
-   unsupervised one refuses (`unsupervised`), a supervised one of a live
-   core refuses (`busy`) — then write this action's operation record.
+   unsupervised one refuses (`unsupervised`), a failed one refuses
+   (`unresolved`), a supervised one of a live core refuses (`busy`) — then
+   write this action's operation record.
 4. **Re-read** the action's machine and destination observations.
 5. **Available now**: the action is among those the fresh read allows,
    thresholds included (free space, free memory).

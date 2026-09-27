@@ -73,7 +73,7 @@ _rec_spec() {
     lock.artifact) REC_SPEC="target:id url:bytes size:uint sha256:hex64 minos:id? glibc_max:id? interp:bytes? needed:bytes* align_min:uint?" ;;
     children.child) REC_SPEC="action:id cmd:bytes class:enum(read|mutating|handoff) stdout:enum(functional|diagnostics|null) stderr:enum(functional|diagnostics|null) tty:enum(none|needs) detaches:enum(no|owned) owner:text? check:id?" ;;
     proc.proc) REC_SPEC="role:enum(launcher|frontend|core|worker) pid:uint start:text boot:bytes" ;;
-    op.op) REC_SPEC="action:id scope:$s basis:hex64 session:bytes state:enum(running|unsupervised) pid:uint start:text boot:bytes at:utc" ;;
+    op.op) REC_SPEC="action:id scope:$s basis:hex64 session:bytes state:enum(running|unsupervised|failed) finding:enum(absent|unexpected)? pid:uint start:text boot:bytes at:utc" ;;
     *) return 1 ;;
   esac
 }

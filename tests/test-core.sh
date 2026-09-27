@@ -258,12 +258,93 @@ assert_contains "$(cat "$SESS"/req-*.worker-* 2>/dev/null | grep -c 'role=worker
 ls "$SESS"/req-$C_N.worker-1 >/dev/null 2>&1 && ok || fail "the mutating child's identity is req-N.worker-1"
 rm -f "$EFFECT"
 
-# A child that leaves nothing, whose effect is not there: failed, not unknown.
+# A child that leaves nothing, whose effect is not there: failed, not
+# unknown — and the operation record stays, as failed, a barrier until a new
+# boot and reconciliation (docs/PROTOCOL.md → Operations and exclusion).
+bs0=$(cat "$C_FIX/cmd/bootsession")
 c_conf mutate effect=none
 c_exec test.mutate test
-assert_eq "$(c_result)" "failed postcondition" "no effect on the machine: failed, judged by the postcondition"
+assert_eq "$(c_result)" "failed postcondition" "sup-completion-failed: no effect on the machine: failed, judged by the postcondition"
 assert_contains "$C_OUT" "next=Run%20by%20hand" "the command is shown for running by hand"
-[ ! -e "$OPS" ] && ok || fail "a failed but supervised operation leaves no barrier"
+assert_contains "$(cat "$OPS" 2>/dev/null)" "	state=failed	finding=absent	" "sup-completion-failed: the operation record stays, failed, with what the machine showed"
+assert_contains "$(cat "$T/state/state.env")" "test_last_result=test.mutate failed" "and the result is recorded where the scope keeps results"
+c_conf mutate
+c_exec test.mutate test
+assert_eq "$(c_result)" "refused unresolved" "sup-failed-blocks: the next act in the scope is refused"
+assert_contains "$C_OUT" "test.mutate%20ended,%20but%20the%20machine%20does%20not%20show%20its%20expected%20effect:%20it%20shows%20no%20effect" "saying the action ended without its effect"
+assert_not_contains "$C_OUT" "may%20still%20be%20running" "never that it may still be running"
+[ ! -e "$EFFECT" ] && ok || fail "and nothing ran"
+c_exec test.read ""
+assert_eq "$(c_result)" "done ok" "sup-failed-blocks: read requests still work behind it"
+c_run snapshot "scope	name=journey"
+assert_contains "$C_OUT" "blocker	id=unresolved	text=test.mutate%20ended" "the snapshot shows the barrier"
+assert_eq "$(printf '%s\n' "$C_OUT" | awk -F'\t' '$1 == "action" { sub(/^id=/, "", $2); printf "%s ", $2 }')" "test.read " \
+  "and lists no act action in its scope"
+# In the same boot, the machine showing the expected effect after all: still blocked.
+printf '%s' "$(sed -n 's/.*	basis=\([0-9a-f]\{16\}\).*/\1/p' "$OPS")" >"$EFFECT"
+c_exec test.mutate test
+assert_eq "$(c_result)" "refused unresolved" "sup-failed-same-boot: a matching postcondition does not clear it within the boot"
+rm -f "$EFFECT"
+# A new boot: reconciled from what the machine then holds — here, no effect.
+printf '5E1D0B00-7A3C-4F21-9D6E-00000000F001\n' >"$C_FIX/cmd/bootsession"
+c_exec test.mutate test
+assert_eq "$(c_result)" "done ok" "sup-failed-reconcile: after a new boot, no effect: reconciled, and the action proceeds"
+assert_contains "$C_OUT" "reconciled:%20no-effect" "the finding is no effect"
+[ ! -e "$OPS" ] && ok || fail "and its own completion removed the record"
+rm -f "$EFFECT"
+# Something else on the machine: failed, unexpected; after a new boot too.
+c_conf mutate effect=unexpected
+c_exec test.mutate test
+assert_eq "$(c_result)" "failed postcondition" "sup-completion-unexpected: something else on the machine: failed"
+assert_contains "$(cat "$OPS")" "	state=failed	finding=unexpected	" "and the record says what it showed"
+c_conf mutate
+c_exec test.mutate test
+assert_eq "$(c_result)" "refused unresolved" "the next act is refused"
+assert_contains "$C_OUT" "it%20shows%20something%20else" "saying the machine shows something else"
+printf '5E1D0B00-7A3C-4F21-9D6E-00000000F002\n' >"$C_FIX/cmd/bootsession"
+c_exec test.mutate test
+assert_eq "$(c_result)" "refused unsupervised" "sup-failed-reconcile: after a new boot, something unexpected: the scope stays blocked"
+assert_contains "$C_OUT" "It%20needs%20you" "and needs the person"
+[ -e "$OPS" ] && ok || fail "the reboot is not counted as success: the record stays"
+rm -f "$OPS" "$EFFECT"
+printf '%s\n' "$bs0" >"$C_FIX/cmd/bootsession"
+# failed_run WHAT — a failed test.mutate while the child runs, with WHAT done
+# to the state folder meanwhile (and undone after); sets r and ev.
+failed_run() {
+  c_conf mutate effect=none sleep=2
+  c_prepare execute "exec	action=test.mutate	basis=$(c_basis test.mutate)	confirm=test"
+  n=$C_N
+  (c_run_raw execute "$T/request-$n") &
+  bg=$!
+  c_wait_file "$SESS/req-$n.worker-1"
+  case "$1" in
+    result) mv "$T/state/state.env" "$T/state.env.kept" && ln -s /dev/null "$T/state/state.env" ;;
+    record) chmod 500 "$T/state/ops" ;;
+  esac
+  wait "$bg"
+  case "$1" in
+    result) rm -f "$T/state/state.env" && mv "$T/state.env.kept" "$T/state/state.env" ;;
+    record) chmod 700 "$T/state/ops" ;;
+  esac
+  ev=$(cat "$SESS/req-$n.events")
+  r=$(printf '%s\n' "$ev" | awk -F'\t' '$1 == "result" { print $2 " " $3 }')
+  c_conf mutate
+}
+# The result cannot be recorded: the failed record is already in place.
+failed_run result
+assert_eq "$r" "status=failed code=postcondition" "sup-failed-result-unrecorded: failed"
+assert_contains "$ev" "the%20result%20could%20not%20be%20recorded" "and says the result could not be recorded"
+assert_contains "$(cat "$OPS")" "	state=failed	" "the failed record stays: the barrier holds"
+rm -f "$OPS"
+# The record cannot be rewritten: the running one stays, unsupervised once
+# its core has ended — never no record.
+failed_run record
+assert_eq "$r" "status=failed code=postcondition" "sup-failed-record-unwritten: failed"
+assert_contains "$ev" "could%20not%20be%20updated" "and says the record could not be updated"
+assert_contains "$(cat "$OPS")" "	state=running	" "the running record stays"
+c_exec test.mutate test
+assert_eq "$(c_result)" "refused unsupervised" "sup-failed-record-unwritten: the next act is refused, as unsupervised"
+rm -f "$OPS" "$EFFECT"
 
 # diag-mutator-no-backpressure: 1 GiB on stdout and stderr goes nowhere.
 c_conf mutate out_bytes=1073741824
@@ -525,7 +606,7 @@ c_oprec() { # STATE PID START BOOT
     mkdir -p "$T/state/ops"
     {
       printf 'omb-op 1\n'
-      rec_line op action test.mutate scope journey basis "$(printf '%064d' 7)" session "$SESS" state "$1" pid "$2" start "$3" boot "$4" at 2026-09-26T00:00:00Z
+      rec_line op action test.mutate scope journey basis "$(printf '%064d' 7)" session "$SESS" state "$1" finding "" pid "$2" start "$3" boot "$4" at 2026-09-26T00:00:00Z
     } >"$OPS"
     rec_seal_write "$OPS"
     omb_cleanup

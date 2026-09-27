@@ -385,7 +385,7 @@ mkdir -p "$T/state/ops"
   # shellcheck source=lib/records.sh
   . "$REPO/lib/records.sh"
   f=$T/state/ops/journey.omb
-  { printf 'omb-op 1\n' && rec_line op action test.mutate scope journey basis "$(printf '%064d' 1)" session "$d3" state unsupervised pid 1 start x boot x at 2026-09-26T00:00:00Z; } >"$f"
+  { printf 'omb-op 1\n' && rec_line op action test.mutate scope journey basis "$(printf '%064d' 1)" session "$d3" state unsupervised finding "" pid 1 start x boot x at 2026-09-26T00:00:00Z; } >"$f"
   rec_seal_write "$f"
   omb_cleanup
 )

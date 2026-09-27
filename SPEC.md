@@ -577,7 +577,7 @@ is invalidated by behaviour. docs/QUALIFICATION.md.
 | restore | `not-started`, `partial`, `blocked`, `complete`; per item `planned`, `ready`, `applied`, `verified`, `kept`, `skipped`, `unsupported`, `failed`, `blocked`, `degraded`, `needs-sign-in`, `needs-secret`, `accepted` |
 | AI tool (observed) | `wrapper_present`, `artifact_installed`, `selected_version`, `tool_runnable`, `configured`, `authenticated`, each on its own |
 | rescue (per option) | `unavailable`, `available`, `installed`, `signed-in`, `open` (remote rescue), `failed`, `skipped`; the system's SSH `stopped`, `key-only`, `exposed`, `unproven` |
-| operation (per scope) | none; running (its supervising core alive); `unsupervised` (a barrier until a new boot and reconciliation) |
+| operation (per scope) | none; running (its supervising core alive); `unsupervised` (a barrier until a new boot and reconciliation); `failed` (the action ended supervised without its expected effect: a barrier until a new boot and reconciliation) |
 | qualification round (macOS, local) | `created`, `finished`, `cleaned`, each one immutable file |
 | qualification | `not-started`, `waiting-for-linux`, `waiting-for-macos`, `in-progress`, `passed`, `failed`, `blocked` |
 | journey (per stage) | `done`, `current`, `todo`, `skipped`, `blocked`; each `machine` or `recorded` |
@@ -653,9 +653,11 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
 - `downloads/` — fetched upstream scripts, kept for provenance.
 - (M14) `ops/<scope>.omb` — an act action's operation record, with the
   boot session, written before its effect and removed by its supervising
-  core after its result is recorded; one whose core is gone is
-  unsupervised, a barrier for that scope until a new boot and
-  reconciliation (docs/PROTOCOL.md → *Operations and exclusion*).
+  core after its postcondition holds and its result is recorded; one whose
+  action ended supervised without its expected effect is kept as failed,
+  and one whose core is gone is unsupervised: each a barrier for that scope
+  until a new boot and reconciliation (docs/PROTOCOL.md → *Operations and
+  exclusion*).
 - (M14) `profile-draft.omb` and `profile.omb` — the Migration Profile being
   made, and finished (macOS); `availability/` — the advisory aarch64
   check's downloads and their provenance; `exports/<name>.omb` — each
@@ -876,8 +878,9 @@ acceptance; the test ids are in docs/TESTING.md):
     headers and summaries included, stays within the child, request and
     session limits; a missing result is an unknown outcome; an operation
     completes with its controllers alive once its workers are quiescent and
-    its postcondition holds, and one whose supervisor is gone stays a
-    barrier until a new boot; the owner launcher cleans up its own scratch,
+    its postcondition holds, one whose postcondition does not hold stays a
+    barrier as failed, and one whose supervisor is gone stays a barrier
+    until a new boot; the owner launcher cleans up its own scratch,
     and a later launcher reclaims one only when every recorded identity is
     dead; nothing is added inside Shared's critical interval.
 20. (M14) The core refuses every request the execute rules refuse, including

@@ -53,7 +53,7 @@ for want in "$(printf 'end\n.')" "$(printf 'end\n\n.')" "$(printf 'end\t\n.')" "
   {
     printf 'omb-op 1\n'
     rec_line op action test.mutate scope journey basis "$(printf '%064d' 0)" session "$want" \
-      state running pid 1 start x boot b at 2026-01-01T00:00:00Z
+      state running finding "" pid 1 start x boot b at 2026-01-01T00:00:00Z
   } >"$opdoc"
   rec_seal_write "$opdoc"
   rec_admit_file op - "$opdoc" || fail "a session of [$shown] admits ($REC_REASON)"

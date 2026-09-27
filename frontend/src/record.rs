@@ -214,7 +214,7 @@ pub fn spec(family: Family, ty: &str) -> Option<&'static str> {
             "role:enum(launcher|frontend|core|worker) pid:uint start:text boot:bytes"
         }
         (Family::Op, "op") => {
-            "action:id scope:$s basis:hex64 session:bytes state:enum(running|unsupervised) pid:uint start:text boot:bytes at:utc"
+            "action:id scope:$s basis:hex64 session:bytes state:enum(running|unsupervised|failed) finding:enum(absent|unexpected)? pid:uint start:text boot:bytes at:utc"
         }
         _ => return None,
     })

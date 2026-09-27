@@ -673,20 +673,26 @@ core_diag_saturated() {
 
 core_op_path() { printf '%s/ops/%s.omb' "$OMB_STATE_DIR" "$1"; }
 
-# core_op_write SCOPE ACTION BASIS STATE — the scope's operation record,
-# checked and sealed, renamed into place; 1 when it cannot be written (the
-# action then stops, as state_must_set does).
+# core_op_write SCOPE ACTION BASIS STATE [FINDING] — the scope's operation
+# record, checked and sealed, written beside the old one and renamed over it
+# (a record that cannot be written leaves the old one in place); 1 when it
+# cannot be written (the action then stops, as state_must_set does).
 core_op_write() {
-  local f tmp
+  local f tmp start at
   state_dir_ready || return 1
   [ -L "$OMB_STATE_DIR/ops" ] && return 1
   (umask 077 && mkdir -p "$OMB_STATE_DIR/ops") || return 1
   f=$(core_op_path "$1")
   tmp=$(mktemp "$OMB_STATE_DIR/ops/.$1.XXXXXX") || return 1
+  # One command substitution per command: Bash 5.2 can lose a trap that
+  # runs while a command holding two is expanded (docs/TESTING.md →
+  # sup-eintr).
+  start=$(LC_ALL=C _proc_started "$$")
+  at=$(now_utc)
   if {
     printf 'omb-op 1\n' &&
-      rec_line op action "$2" scope "$1" basis "$3" session "$CORE_SESSION" state "$4" pid "$$" \
-        start "$(LC_ALL=C _proc_started "$$")" boot "$CORE_BOOT" at "$(now_utc)"
+      rec_line op action "$2" scope "$1" basis "$3" session "$CORE_SESSION" state "$4" \
+        finding "${5:-}" pid "$$" start "$start" boot "$CORE_BOOT" at "$at"
   } >"$tmp" && rec_seal_write "$tmp" && mv -f "$tmp" "$f"; then
     log_event record "operation $2 ($4) in scope $1"
     return 0
@@ -700,20 +706,28 @@ core_op_write() {
 core_op_read() {
   local f
   f=$(core_op_path "$1")
-  CO_ACTION="" CO_BASIS="" CO_SESSION="" CO_STATE="" CO_PID="" CO_START="" CO_BOOT=""
+  CO_ACTION="" CO_BASIS="" CO_SESSION="" CO_STATE="" CO_FINDING="" CO_PID="" CO_START="" CO_BOOT=""
   [ -e "$f" ] || [ -L "$f" ] || return 0
   _state_file_ok "$f" || return 2
   rec_admit_file op - "$f" || return 2
-  CO_ACTION=$(rec_get 0 action) CO_BASIS=$(rec_get 0 basis) CO_SESSION=$(rec_get 0 session)
-  CO_STATE=$(rec_get 0 state) CO_PID=$(rec_get 0 pid) CO_START=$(rec_get 0 start) CO_BOOT=$(rec_get 0 boot)
+  rec_get_into CO_ACTION 0 action
+  rec_get_into CO_BASIS 0 basis
+  rec_get_into CO_SESSION 0 session
+  rec_get_into CO_STATE 0 state
+  rec_get_into CO_FINDING 0 finding
+  rec_get_into CO_PID 0 pid
+  rec_get_into CO_START 0 start
+  rec_get_into CO_BOOT 0 boot
   return 1
 }
 
 core_op_remove() { state_remove_file "ops/$1.omb"; }
 
 # core_barrier SCOPE — CORE_BAR: none, busy (a live core supervises it),
-# unsupervised (a barrier for this boot), stale (from an earlier boot:
-# reconciliation may run), or corrupt; CORE_BAR_ACTION names the operation.
+# failed (it ended supervised without its expected effect: a barrier for
+# this boot), unsupervised (a barrier for this boot), stale (from an earlier
+# boot: reconciliation may run), or corrupt; CORE_BAR_ACTION names the
+# operation.
 core_barrier() {
   local rc
   CORE_BAR=none CORE_BAR_ACTION=""
@@ -729,10 +743,15 @@ core_barrier() {
     # This boot cannot be identified: nothing is cleared on its strength.
     CORE_BAR=unsupervised
     [ "$CO_STATE" = running ] && CORE_BAR=busy
+    [ "$CO_STATE" = failed ] && CORE_BAR=failed
     return 0
   fi
   if [ "$CO_BOOT" != "$CORE_BOOT" ]; then
     CORE_BAR=stale
+    return 0
+  fi
+  if [ "$CO_STATE" = failed ]; then
+    CORE_BAR=failed
     return 0
   fi
   if [ "$CO_STATE" = running ]; then
@@ -1066,9 +1085,15 @@ _core_snapshot_body() {
     none) rec_line fact scope journey key operation label "Operation" value "none" state ok ;;
     busy) rec_line fact scope journey key operation label "Operation" value "$CORE_BAR_ACTION running" state info ;;
     stale) rec_line fact scope journey key operation label "Operation" value "$CORE_BAR_ACTION from an earlier boot, to reconcile" state warn ;;
+    failed) rec_line fact scope journey key operation label "Operation" value "$CORE_BAR_ACTION ended without its expected effect" state fail ;;
     *) rec_line fact scope journey key operation label "Operation" value "${CORE_BAR_ACTION:-unknown} unsupervised" state fail ;;
   esac
   case "$CORE_BAR" in
+    failed)
+      core_failed_text
+      rec_line blocker id unresolved text "$CORE_FAILED_TEXT" \
+        fix "Restart this Mac (or this Linux system), then run the tool again: the scope is reconciled from what the machine then holds."
+      ;;
     unsupervised)
       rec_line blocker id unsupervised text "The outcome of ${CORE_BAR_ACTION:-an operation} is unknown and a process it started may still be running." \
         fix "Restart this Mac (or this Linux system), then run the tool again."
@@ -1206,6 +1231,11 @@ core_execute_act() {
       core_result refused busy "$CORE_BAR_ACTION is still running under a live core."
       return
       ;;
+    failed)
+      core_failed_text
+      core_result refused unresolved "$CORE_FAILED_TEXT Nothing in this scope runs until it is reconciled: restart this Mac (or this Linux system), then run the tool again."
+      return
+      ;;
     unsupervised)
       core_result refused unsupervised "The outcome of ${CORE_BAR_ACTION:-an operation} is unknown and it may still be running: restart this Mac (or this Linux system), then run the tool again."
       return
@@ -1315,13 +1345,33 @@ core_execute_act() {
     core_op_remove "$scope"
     core_result "done" ok "" ""
   else
-    state_must_set test_last_result "$action failed $(now_utc)" || {
-      core_op_write "$scope" "$action" "$basis" unsupervised
-      core_result stopped unsupervised "The result could not be recorded."
+    # The action ended, supervised, and the machine does not show its effect:
+    # the record stays, rewritten as failed with what the read showed — a
+    # barrier (docs/PROTOCOL.md → Operations and exclusion). The rewrite is
+    # renamed over the running record, so one that cannot be written leaves
+    # that record, unsupervised once this core has exited: never none.
+    local finding=absent
+    if [ -e "$effect" ] || [ -L "$effect" ]; then finding=unexpected; fi
+    if ! core_op_write "$scope" "$action" "$basis" failed "$finding"; then
+      core_result failed postcondition "The machine does not show $action's effect, and its operation record could not be updated: every act in its scope is refused as unsupervised until this Mac (or this Linux system) restarts." \
+        "Restart, then run the tool again."
       return
-    }
-    core_op_remove "$scope"
-    core_result failed postcondition "The machine does not show $action's effect (the child exited with status $CORE_CHILD_RC)." \
+    fi
+    if ! state_must_set test_last_result "$action failed $(now_utc)"; then
+      core_result failed postcondition "The machine does not show $action's effect, and the result could not be recorded; every act in its scope is refused until it is reconciled." \
+        "Restart, then run the tool again."
+      return
+    fi
+    core_result failed postcondition "The machine does not show $action's effect (the child exited with status $CORE_CHILD_RC); every act in its scope is refused until it is reconciled after a restart." \
       "Run by hand to see its output: $CORE_CHILD_CMD"
   fi
+}
+
+# core_failed_text — CORE_FAILED_TEXT: what a failed record says, from
+# CO_ACTION and CO_FINDING (core_op_read): the action ended, supervised,
+# and the machine does not show its expected effect.
+core_failed_text() {
+  local shows="it shows no effect"
+  [ "$CO_FINDING" = unexpected ] && shows="it shows something else"
+  CORE_FAILED_TEXT="${CO_ACTION:-An operation} ended, but the machine does not show its expected effect: $shows."
 }
