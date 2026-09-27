@@ -117,6 +117,13 @@ pub fn run(args: &[String]) -> i32 {
                     if matches!(req, Req::Execute { handoff: true, .. }) {
                         let outcome =
                             handoff(&mut term, &mut session, &req, &mut model, &sig, &mut trace);
+                        if let Outcome::Lost(why) = &outcome {
+                            // The child may still own the terminal: it is
+                            // left as it is, and the launcher, which reads
+                            // the recorded identities, decides.
+                            trace.line(&format!("lost {why}; the terminal is left to the child"));
+                            return 1;
+                        }
                         // A stop and continue during the child was the
                         // child's; the handoff has re-entered already.
                         sig.cont.store(false, Ordering::SeqCst);
@@ -162,6 +169,9 @@ pub fn run(args: &[String]) -> i32 {
                     trace.line(&format!("exit {code}"));
                     if !why.is_empty() {
                         eprintln!("omb-tui: {why}");
+                    }
+                    if let Some(p) = terminal::worker_panic() {
+                        eprintln!("omb-tui: a background thread stopped ({p})");
                     }
                     return code;
                 }
@@ -301,7 +311,11 @@ fn handoff(
         std::thread::sleep(Duration::from_millis(20));
     };
     trace.line(&format!("handoff followed {followed} records"));
-    // Not back while any worker is still present.
+    if matches!(outcome, Outcome::Lost(_)) {
+        return outcome;
+    }
+    // Not back while any worker is still present, nor while that cannot be
+    // known: then the terminal stays the child's.
     let waited = Instant::now();
     let mut said = false;
     loop {

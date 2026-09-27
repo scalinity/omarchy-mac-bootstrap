@@ -78,6 +78,9 @@ pub enum Outcome {
     Unknown(String),
     /// The request could not be delivered (EPIPE, no core): nothing ran.
     NotSent(String),
+    /// The core's state could not be read: it may still be running, and
+    /// nothing will say when it ends.
+    Lost(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +131,8 @@ pub struct Model {
     pub scroll: usize,
     pub quit_after: bool,
     pub asked_quit: bool,
+    /// The interface lost track of a core: it starts nothing more.
+    pub lost: bool,
 }
 
 /// What the event loop does next.
@@ -175,6 +180,7 @@ impl Default for Model {
             scroll: 0,
             quit_after: false,
             asked_quit: false,
+            lost: false,
         }
     }
 }
@@ -286,7 +292,8 @@ pub fn update(m: &mut Model, msg: Msg) -> Vec<Cmd> {
         }
         Msg::Terminate => {
             if m.pending.is_none() {
-                return vec![Cmd::Quit(0, String::new())];
+                let code = if m.lost { 1 } else { 0 };
+                return vec![Cmd::Quit(code, String::new())];
             }
             m.quit_after = true;
             let cancel = m.pending.as_ref().is_some_and(|p| p.cancellable);
@@ -338,6 +345,19 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
     };
     let records = match outcome {
         Outcome::Answer(r) => r,
+        Outcome::Lost(why) => {
+            // No request starts again in this session: the launcher, which
+            // reads the recorded identities itself, decides what is safe.
+            m.lost = true;
+            m.screen = Screen::Fatal;
+            m.fatal = format!(
+                "The interface lost track of the core ({why}), so it starts nothing more. ./omarchy-bootstrap status shows where the machine is."
+            );
+            if m.quit_after {
+                return vec![Cmd::Quit(1, m.fatal.clone())];
+            }
+            return Vec::new();
+        }
         Outcome::Unknown(why) => {
             // Never "failed", never "nothing happened". After an action, the
             // machine is read again; a read that itself ended without an
@@ -476,6 +496,7 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             return Vec::new();
         }
         return match &m.pending {
+            None if m.lost => vec![Cmd::Quit(1, m.fatal.clone())],
             None => vec![Cmd::Quit(0, String::new())],
             Some(p) if p.cancellable => {
                 m.status = Some((Level::Info, "Cancelling at the next safe boundary…".into()));
@@ -530,8 +551,9 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         Screen::Fatal => match k.code {
+            KeyCode::Char('q') | KeyCode::Esc if m.lost => vec![Cmd::Quit(1, m.fatal.clone())],
             KeyCode::Char('q') | KeyCode::Esc => vec![Cmd::Quit(10, m.fatal.clone())],
-            KeyCode::Char('r') if m.pending.is_none() => m.start(),
+            KeyCode::Char('r') if m.pending.is_none() && !m.lost => m.start(),
             _ => Vec::new(),
         },
         Screen::Connecting => match k.code {
@@ -893,6 +915,34 @@ mod tests {
         assert_eq!(lvl, Level::Warn);
         assert!(s.contains("without a complete answer"));
         assert!(!s.contains("failed"));
+    }
+
+    /// H03: a core whose state cannot be read ends the session's requests:
+    /// nothing starts again, and leaving is a failure, not the text interface.
+    #[test]
+    fn a_lost_core_starts_nothing_more() {
+        let mut m = ready();
+        let req = match update(&mut m, press(KeyCode::Enter)).remove(0) {
+            Cmd::Send(r) => r,
+            _ => panic!(),
+        };
+        let c = update(
+            &mut m,
+            Msg::Done(req, Outcome::Lost("waitpid failed".into())),
+        );
+        assert_eq!(c, vec![], "no snapshot after a lost core");
+        assert_eq!(m.screen, Screen::Fatal);
+        assert!(m.fatal.contains("starts nothing more"), "{}", m.fatal);
+        assert_eq!(update(&mut m, press(KeyCode::Char('r'))), vec![]);
+        assert!(matches!(
+            &update(&mut m, press(KeyCode::Char('q')))[..],
+            [Cmd::Quit(1, _)]
+        ));
+        assert!(matches!(&update(&mut m, ctrlk('c'))[..], [Cmd::Quit(1, _)]));
+        assert!(matches!(
+            &update(&mut m, Msg::Terminate)[..],
+            [Cmd::Quit(1, _)]
+        ));
     }
 
     #[test]

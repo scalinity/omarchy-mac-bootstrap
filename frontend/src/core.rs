@@ -34,7 +34,20 @@ pub const CHANNEL: usize = 1024;
 /// What the reader thread passes on.
 pub enum Spool {
     Record(Record),
-    End(Result<record::Document, Refusal>),
+    End(End),
+}
+
+/// How the reader's following of a spool ended.
+#[derive(Debug)]
+pub enum End {
+    /// The core had exited and the spool was read to its end: admission's
+    /// verdict on the whole of it.
+    Complete(Result<record::Document, Refusal>),
+    /// A read failed, other than by an interruption: what had been read is
+    /// not an answer, however whole it looked.
+    IoError(String),
+    /// The reader thread panicked.
+    ReaderPanic,
 }
 
 /// The session the launcher made: its scratch folder and this tool's home.
@@ -181,7 +194,7 @@ impl Session {
         drop(wr);
         let (tx, rx) = sync_channel(CHANNEL);
         let done = Arc::new(AtomicBool::new(false));
-        let reader = reader(spool, op, tx, done.clone());
+        let reader = reader(spool, op, n, tx, done.clone());
         Ok(Running {
             child,
             reader: Some(reader),
@@ -190,7 +203,7 @@ impl Session {
             n,
             sent,
             exited: false,
-            end: None,
+            verdict: None,
         })
     }
 
@@ -250,20 +263,42 @@ fn pipe() -> io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
 /// The reader thread: follows the spool as it grows, admits what arrives,
 /// and passes each admitted record on. It never touches the terminal. When
 /// the main thread has seen the core exit, it reads what is left and gives
-/// the verdict.
-fn reader(spool: File, op: Op, tx: SyncSender<Spool>, done: Arc<AtomicBool>) -> JoinHandle<()> {
+/// the verdict. A panic in its body stops at the thread's boundary and
+/// becomes its verdict; the panic hook, which runs first, restores nothing
+/// from this thread (`terminal::own_panics`).
+fn reader(
+    spool: File,
+    op: Op,
+    n: u32,
+    tx: SyncSender<Spool>,
+    done: Arc<AtomicBool>,
+) -> JoinHandle<()> {
     std::thread::spawn(move || {
-        #[cfg(feature = "test-hooks")]
-        if std::env::var("OMB_TEST_HOOK").as_deref() == Ok("reader-panic") {
-            panic!("test hook: the reader thread dies");
+        let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            test_hook_reader(n);
+            follow(spool, op, &tx, &done);
+        }));
+        if body.is_err() {
+            let _ = tx.send(Spool::End(End::ReaderPanic));
         }
-        follow(spool, op, &tx, &done);
     })
+}
+
+/// A test hook (the `test-hooks` feature, never in a release): the reader of
+/// every request (`reader-panic`) or of request N (`reader-panic:N`) dies.
+fn test_hook_reader(_n: u32) {
+    #[cfg(feature = "test-hooks")]
+    if let Ok(h) = std::env::var("OMB_TEST_HOOK")
+        && (h == "reader-panic" || h == format!("reader-panic:{_n}"))
+    {
+        panic!("test hook: the reader thread dies");
+    }
 }
 
 /// The reader's loop over any byte source: admit what arrives, pass each
 /// admitted record on, and once DONE is set (the core has exited) read what
-/// is left and give the verdict.
+/// is left and give the verdict. A failed read ends it with that failure,
+/// never with a verdict on what came before it.
 pub fn follow<R: Read>(mut spool: R, op: Op, tx: &SyncSender<Spool>, done: &AtomicBool) {
     let mut adm = Admitter::new(Family::Res, Some(op));
     // The header was written by the frontend; admission reads it too.
@@ -282,10 +317,13 @@ pub fn follow<R: Read>(mut spool: R, op: Op, tx: &SyncSender<Spool>, done: &Atom
             }
             // A signal interrupting a read: the call is retried.
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
+            Err(e) => {
+                let _ = tx.send(Spool::End(End::IoError(e.to_string())));
+                return;
+            }
         }
     }
-    let _ = tx.send(Spool::End(adm.finish()));
+    let _ = tx.send(Spool::End(End::Complete(adm.finish())));
 }
 
 #[cfg(test)]
@@ -337,9 +375,165 @@ mod tests {
         }
         assert_eq!(records, 2);
         assert!(
-            end.unwrap().is_ok(),
+            matches!(end, Some(End::Complete(Ok(_)))),
             "the whole answer, despite every other read being interrupted"
         );
+    }
+
+    const HELLO: &[u8] = b"omb-res 1\nhello\tcore=0.2.0\tcommit=\tsource=5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e5f2e\tproto=1\tplatform=macos\tarch=arm64\tuser=user\tceiling=act\tdry_run=0\tfixture=1\nresult\tstatus=done\tcode=ok\ttext=\tnext=\n";
+
+    /// A spool whose read fails with EIO once AT bytes have been read.
+    struct Broken {
+        data: Vec<u8>,
+        at: usize,
+        pos: usize,
+    }
+    impl Read for Broken {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.pos >= self.at {
+                return Err(io::Error::from_raw_os_error(5));
+            }
+            let n = buf
+                .len()
+                .min(self.at - self.pos)
+                .min(self.data.len() - self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    /// How following DATA ends when its read fails at AT (the core has
+    /// exited, so the end of the bytes would be the end of the answer).
+    fn end_of(data: &[u8], at: usize) -> End {
+        let (tx, rx) = sync_channel(CHANNEL);
+        let src = Broken {
+            data: data.to_vec(),
+            at,
+            pos: 0,
+        };
+        follow(src, Op::Hello, &tx, &AtomicBool::new(true));
+        drop(tx);
+        rx.iter()
+            .find_map(|m| match m {
+                Spool::End(e) => Some(e),
+                Spool::Record(_) => None,
+            })
+            .expect("a verdict")
+    }
+
+    /// H03: a read that fails is never the end of the stream, wherever it
+    /// falls — even after a whole, valid answer.
+    #[test]
+    fn a_failed_read_is_never_the_end_of_the_answer() {
+        let hello_end = HELLO.iter().position(|&b| b == b'\n').unwrap() + 1;
+        let hello_end =
+            hello_end + HELLO[hello_end..].iter().position(|&b| b == b'\n').unwrap() + 1;
+        for (at, what) in [
+            (0, "before the header"),
+            (5, "in the header"),
+            (10, "after the header"),
+            (40, "in a record"),
+            (hello_end, "after hello"),
+            (HELLO.len(), "after a valid result"),
+        ] {
+            let end = end_of(HELLO, at);
+            assert!(matches!(end, End::IoError(_)), "EIO {what}: {end:?}");
+        }
+        let junk = [HELLO, b"junk\n"].concat();
+        let end = end_of(&junk, HELLO.len());
+        assert!(
+            matches!(end, End::IoError(_)),
+            "EIO before trailing bytes: {end:?}"
+        );
+        // The same bytes, read whole, are the answer.
+        assert!(matches!(end_of(HELLO, usize::MAX), End::Complete(Ok(_))));
+    }
+
+    fn running(child: std::process::Child, rx: Receiver<Spool>) -> Running {
+        Running {
+            child,
+            reader: None,
+            rx,
+            done: Arc::new(AtomicBool::new(false)),
+            n: 1,
+            sent: Ok(()),
+            exited: false,
+            verdict: None,
+        }
+    }
+
+    fn settle(r: &mut Running) -> Outcome {
+        let t0 = std::time::Instant::now();
+        loop {
+            if let Some(o) = r.poll(&mut |_| {}, false) {
+                return o;
+            }
+            assert!(
+                t0.elapsed() < Duration::from_secs(10),
+                "the request never ended"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// H03: whatever the reader says, and whenever it stops, a request ends
+    /// only once its core has exited.
+    #[test]
+    fn nothing_ends_before_the_core_has_exited() {
+        let whole = || End::Complete(record::admit(Family::Res, Some(Op::Hello), HELLO));
+        let cases: [(&str, Option<End>, &str); 4] = [
+            ("a whole answer", Some(whole()), "answer"),
+            (
+                "an I/O error after a valid result",
+                Some(End::IoError("EIO".into())),
+                "could not be read",
+            ),
+            (
+                "a reader that panicked",
+                Some(End::ReaderPanic),
+                "reader stopped",
+            ),
+            ("a reader gone without a word", None, "reader stopped"),
+        ];
+        for (what, verdict, then) in cases {
+            let (tx, rx) = sync_channel(CHANNEL);
+            let core = Command::new("sleep").arg("30").spawn().unwrap();
+            let mut r = running(core, rx);
+            match verdict {
+                Some(v) => tx.send(Spool::End(v)).unwrap(),
+                None => drop(tx),
+            }
+            for _ in 0..40 {
+                assert!(
+                    r.poll(&mut |_| {}, false).is_none(),
+                    "{what}: ended while the core runs"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            r.child.kill().unwrap();
+            let o = settle(&mut r);
+            match (&o, then) {
+                (Outcome::Answer(_), "answer") => {}
+                (Outcome::Unknown(w), t) if w.contains(t) => {}
+                _ => panic!("{what}: {o:?}"),
+            }
+        }
+    }
+
+    /// H03: a core whose state cannot be read (collected by another, so
+    /// waitpid fails) is lost at once, not polled for ever.
+    #[test]
+    fn a_core_whose_state_cannot_be_read_is_lost() {
+        let (_tx, rx) = sync_channel(CHANNEL);
+        let core = Command::new("sleep").arg("0").spawn().unwrap();
+        let pid = rustix::process::Pid::from_raw(core.id() as i32).unwrap();
+        rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::empty()).unwrap();
+        let mut r = running(core, rx);
+        match r.poll(&mut |_| {}, false) {
+            Some(Outcome::Lost(w)) => assert!(w.contains("could not be read"), "{w}"),
+            o => panic!("{o:?}"),
+        }
     }
 }
 
@@ -352,17 +546,19 @@ pub struct Running {
     pub n: u32,
     sent: io::Result<()>,
     exited: bool,
-    end: Option<Outcome>,
+    verdict: Option<End>,
 }
 
 impl Running {
     /// Take in what has arrived; `Some` when the request has ended. Live
     /// records go to ON_RECORD. `hold` leaves the channel full (a test hook
     /// for a slow frontend): the reader then waits, and only the reader.
+    ///
+    /// A request ends only once the core has exited and the reader has given
+    /// its verdict: a reader that failed or died early leaves the request
+    /// running until the core is gone. A core whose state cannot be read is
+    /// `Lost` at once — nothing will ever say it has ended.
     pub fn poll(&mut self, on_record: &mut dyn FnMut(Record), hold: bool) -> Option<Outcome> {
-        if let Some(o) = self.end.take() {
-            return Some(o);
-        }
         if !self.exited {
             match self.child.try_wait() {
                 Ok(Some(_)) => {
@@ -370,44 +566,47 @@ impl Running {
                     self.done.store(true, Ordering::Release);
                 }
                 Ok(None) => {}
-                Err(_) => {}
+                Err(e) => {
+                    return Some(Outcome::Lost(format!(
+                        "the state of core {} could not be read ({e})",
+                        self.child.id()
+                    )));
+                }
             }
         }
         if hold {
             return None;
         }
-        loop {
+        while self.verdict.is_none() {
             match self.rx.try_recv() {
                 Ok(Spool::Record(r)) => on_record(r),
-                Ok(Spool::End(verdict)) => {
-                    if let Some(h) = self.reader.take() {
-                        let _ = h.join();
-                    }
-                    return Some(self.outcome(verdict));
-                }
-                Err(TryRecvError::Empty) => return None,
-                Err(TryRecvError::Disconnected) => {
-                    // The reader died: once the core has exited, the outcome
-                    // is unknown and the state is read again.
-                    if self.exited {
-                        self.reader.take();
-                        return Some(Outcome::Unknown("the spool reader stopped".into()));
-                    }
-                    return None;
-                }
+                Ok(Spool::End(v)) => self.verdict = Some(v),
+                Err(TryRecvError::Empty) => break,
+                // The reader ended without a verdict.
+                Err(TryRecvError::Disconnected) => self.verdict = Some(End::ReaderPanic),
             }
         }
+        if !self.exited {
+            return None;
+        }
+        let verdict = self.verdict.take()?;
+        if let Some(h) = self.reader.take() {
+            let _ = h.join();
+        }
+        Some(self.outcome(verdict))
     }
 
-    fn outcome(&mut self, verdict: Result<record::Document, Refusal>) -> Outcome {
+    fn outcome(&mut self, verdict: End) -> Outcome {
         // A request the core stopped reading (EPIPE: over its bound) was
         // refused before anything ran, whatever the spool then says.
         if let Err(e) = &self.sent {
             return Outcome::NotSent(format!("the request could not be written: {e}"));
         }
         match verdict {
-            Ok(doc) => Outcome::Answer(doc.records),
-            Err(r) => Outcome::Unknown(format!("{} at line {}", r.reason, r.at)),
+            End::Complete(Ok(doc)) => Outcome::Answer(doc.records),
+            End::Complete(Err(r)) => Outcome::Unknown(format!("{} at line {}", r.reason, r.at)),
+            End::IoError(e) => Outcome::Unknown(format!("the response could not be read: {e}")),
+            End::ReaderPanic => Outcome::Unknown("the response reader stopped".into()),
         }
     }
 

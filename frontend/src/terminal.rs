@@ -3,12 +3,14 @@
 //!
 //! Start: the frontend's own panic hook first; the terminal's settings saved
 //! once (`tcgetattr`); then Ratatui's `try_init()` (raw mode, the alternate
-//! screen, its restoring hook chained in front of ours). Mouse capture,
-//! bracketed paste and keyboard-enhancement modes are never turned on.
-//! Every way out — normal exit, error, panic, a signal, a handoff, a suspend
-//! — leaves the alternate screen, shows the cursor (restore does not) and
-//! puts the saved settings back, because a child that left the terminal odd
-//! must never become the new baseline.
+//! screen, its restoring hook chained in front of ours); then the gate
+//! around that whole chain, which runs it only for a panic on the thread
+//! that owns the terminal. Mouse capture, bracketed paste and
+//! keyboard-enhancement modes are never turned on. Every way out — normal
+//! exit, error, panic, a signal, a handoff, a suspend — leaves the alternate
+//! screen, shows the cursor (restore does not) and puts the saved settings
+//! back, because a child that left the terminal odd must never become the
+//! new baseline.
 
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::{
@@ -20,7 +22,41 @@ use rustix::termios::{OptionalActions, Termios, tcgetattr, tcsetattr};
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::ThreadId;
 use std::time::Duration;
+
+// Panic hooks are process-wide, and Ratatui 0.30's `try_init` chains an
+// unconditional restore in front of every earlier hook (its `set_panic_hook`
+// is private). A panic on another thread — the spool reader — would then
+// restore the terminal under a main thread still drawing on it, or take it
+// from a child during a handoff. So the whole chain runs only for a panic on
+// the thread that owns the terminal; another thread's panic is kept here,
+// untouched by the screen, for the owner to report once it has restored.
+static WORKER_PANIC: Mutex<Option<String>> = Mutex::new(None);
+
+/// Gate the panic hook now installed to OWNER: its panics run it, any other
+/// thread's are only kept (the first one).
+pub fn own_panics(owner: ThreadId) {
+    let chain = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if std::thread::current().id() == owner {
+            chain(info);
+        } else {
+            let mut kept = WORKER_PANIC.lock().unwrap_or_else(|e| e.into_inner());
+            if kept.is_none() {
+                *kept = Some(info.to_string());
+            }
+        }
+    }));
+}
+
+/// The first panic of a thread other than the terminal's owner, if any.
+pub fn worker_panic() -> Option<String> {
+    WORKER_PANIC
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
 
 // Crossterm 0.29 retries a terminal read forever once the terminal answers
 // end of file or an error — what a closed window or a dropped SSH link leaves
@@ -133,11 +169,15 @@ pub fn start(console: bool) -> io::Result<Term> {
         previous(info);
     }));
     match ratatui::try_init() {
-        Ok(terminal) => Ok(Term {
-            terminal,
-            saved,
-            console,
-        }),
+        Ok(terminal) => {
+            // No other thread exists yet: the gate is in place before one can.
+            own_panics(std::thread::current().id());
+            Ok(Term {
+                terminal,
+                saved,
+                console,
+            })
+        }
         Err(e) => {
             // try_init is not transactional: undo whatever it managed.
             let _ = ratatui::try_restore();

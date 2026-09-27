@@ -451,6 +451,173 @@ fn pty_panic_restores() {
     );
 }
 
+// --- pty-reader-panic: a worker's panic leaves the terminal to its owner (H02) ----------
+// Request 1 is hello and 2 the first snapshot, so `reader-panic:3` kills the
+// reader of the first request the person makes.
+
+/// Bytes the terminal received since BEFORE.
+fn since(p: &Pty, before: usize) -> String {
+    String::from_utf8_lossy(&p.raw.lock().unwrap()[before..]).to_string()
+}
+
+/// The interface still owns the terminal as it did: the alternate screen,
+/// the cursor hidden, raw mode as on the dashboard, and nothing written that
+/// leaves the alternate screen.
+#[cfg(feature = "test-hooks")]
+fn still_owned(p: &Pty, raw_mode: &str, before: usize, what: &str) {
+    {
+        let s = p.screen.lock().unwrap();
+        assert!(
+            s.screen().alternate_screen(),
+            "{what}: the alternate screen"
+        );
+        assert!(s.screen().hide_cursor(), "{what}: the cursor hidden");
+    }
+    assert_eq!(p.termios(), raw_mode, "{what}: raw mode as it was");
+    assert!(
+        !since(p, before).contains("\x1b[?1049l"),
+        "{what}: nothing left the alternate screen"
+    );
+}
+
+/// The session ends: the terminal restored by the main thread, the worker's
+/// panic reported after that, nothing left running, the scratch removed.
+#[cfg(feature = "test-hooks")]
+fn ends_cleanly(mut p: Pty) {
+    let f = p.frontend_pid();
+    p.idle();
+    p.keys("q");
+    assert_eq!(p.wait_exit(), 0);
+    assert!(p.restored());
+    assert_eq!(p.termios(), p.initial);
+    let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()).to_string();
+    let restored_at = raw.rfind("\x1b[?1049l").expect("the main thread restored");
+    let reported_at = raw.rfind("a background thread stopped").expect("reported");
+    assert!(reported_at > restored_at, "reported on the normal screen");
+    assert!(!alive(f), "no frontend left");
+    assert!(p.sessions().is_empty(), "the scratch removed");
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn pty_reader_panic_on_an_idle_refresh() {
+    let mut p = Pty::start(
+        "rpanic-idle",
+        Opts {
+            cols: 120,
+            env: vec![("OMB_TEST_HOOK", "reader-panic:3".into())],
+            ..Opts::default()
+        },
+    );
+    p.dashboard();
+    p.idle();
+    let raw_mode = p.termios();
+    let before = p.raw.lock().unwrap().len();
+    p.keys("r");
+    p.wait_for("without a complete answer");
+    still_owned(&p, &raw_mode, before, "after the reader's panic");
+    // The interface goes on: the next read is answered.
+    p.keys("r");
+    p.idle();
+    p.dashboard();
+    still_owned(&p, &raw_mode, before, "after the next read");
+    ends_cleanly(p);
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn pty_reader_panic_during_a_live_request() {
+    let mut p = Pty::start(
+        "rpanic-live",
+        Opts {
+            cols: 120,
+            env: vec![("OMB_TEST_HOOK", "reader-panic:3".into())],
+            ..Opts::default()
+        },
+    );
+    p.conf("mutate", "sleep=2\n");
+    p.dashboard();
+    p.idle();
+    let raw_mode = p.termios();
+    let before = p.raw.lock().unwrap().len();
+    p.select(1);
+    p.send(b"\r");
+    p.wait_for("Type test to continue");
+    p.keys("test");
+    p.send(b"\r");
+    // The child runs under the core; the reader is already dead.
+    let t0 = Instant::now();
+    while !p
+        .sessions()
+        .iter()
+        .any(|s| s.join("req-3.worker-1").exists())
+    {
+        assert!(
+            t0.elapsed() < Duration::from_secs(30),
+            "the child did not start"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let trace = || std::fs::read_to_string(p.dir.join("trace")).unwrap_or_default();
+    assert_eq!(
+        trace().matches("outcome ").count(),
+        2,
+        "no outcome for the request while its core runs: {}",
+        trace()
+    );
+    still_owned(&p, &raw_mode, before, "while the core runs");
+    p.wait_for("without a complete answer");
+    assert!(
+        p.dir.join("state/test/effect-mutate").exists(),
+        "the outcome came only after the core had finished its work"
+    );
+    assert!(trace().contains("outcome Unknown(\"the response reader stopped\")"));
+    still_owned(&p, &raw_mode, before, "after the request");
+    p.dashboard();
+    ends_cleanly(p);
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn pty_reader_panic_during_a_handoff_leaves_the_child_the_terminal() {
+    let mut p = Pty::start(
+        "rpanic-handoff",
+        Opts {
+            cols: 120,
+            env: vec![("OMB_TEST_HOOK", "reader-panic:3".into())],
+            ..Opts::default()
+        },
+    );
+    start_handoff(&mut p);
+    p.wait_until("the child", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("type a line and press Enter")
+    });
+    // The reader died as the core started. The child owns the terminal: its
+    // group in the foreground, its settings, nothing written over it.
+    let (fg, settings) = (p.master.process_group_leader(), p.termios());
+    let before = p.raw.lock().unwrap().len();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(p.master.process_group_leader(), fg, "the foreground group");
+    assert_eq!(p.termios(), settings, "the child's settings");
+    assert!(
+        !p.screen.lock().unwrap().screen().alternate_screen(),
+        "not taken back to the alternate screen"
+    );
+    assert_eq!(
+        since(&p, before),
+        "",
+        "nothing written while the child owns it"
+    );
+    p.send(b"a line\r");
+    p.wait_for("without a complete answer");
+    assert!(
+        p.dir.join("state/test/effect-handoff").exists(),
+        "the child finished its work"
+    );
+    p.dashboard();
+    ends_cleanly(p);
+}
+
 // --- pty-resize -------------------------------------------------------------------
 
 #[test]
