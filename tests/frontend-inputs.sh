@@ -83,40 +83,66 @@ case "$cmd" in
     ;;
   closure)
     depdir=${1:?closure DEPDIR, the target folder deps/ holding the *.d files}
+    command -v jq >/dev/null 2>&1 || die "jq is needed to read cargo metadata"
     sysroot=$(cd frontend && rustc --print sysroot) || die "no rustc"
     registry="${CARGO_HOME:-$HOME/.cargo}/registry/src"
     root=$(pwd -P)
     tracked=$(git ls-files -- frontend) || die "git ls-files failed"
-    found=0
-    for d in "$depdir"/omb_tui-*.d "$depdir"/omb_tui*.d "$depdir"/omb-tui*.d; do
-      [ -f "$d" ] || continue
-      found=1
-      # A dependency file: "target: dep dep ...", one rule per line; spaces
-      # in paths are escaped with a backslash; lines from '#' on are rustc's
-      # notes (env-dep, checksum), not files. Each rule's target (an output)
-      # is dropped; everything after it is a file rustc read.
-      grep -v '^#' "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/^[^ ]*:( |$)//' | tr ' ' '\n' | sed -e 's/@SP@/ /g' | grep -v '^$' | while IFS= read -r p; do
-        # rustc names the crate's own files relative to the package
-        # (frontend/): resolve them, `..` included, before judging.
-        case "$p" in
-          /*) ;;
-          *)
-            dir=$(cd "frontend/$(dirname "$p")" 2>/dev/null && pwd -P) || die "rustc read a file that is gone: $p"
-            p="$dir/$(basename "$p")"
-            ;;
-        esac
-        case "$p" in
-          "$registry"/* | "$sysroot"/*) continue ;;
-          "$root"/frontend/*)
-            rel=${p#"$root"/}
-            printf '%s\n' "$tracked" | grep -qxF -- "$rel" || die "rustc read $rel, which Git does not track"
-            ;;
-          *) die "rustc read a file outside the closure: $p" ;;
-        esac
-      done || exit 1
+    # Every crate of the frontend's own packages (cargo metadata: each
+    # package under frontend/, each library and binary it builds). A crate's
+    # dependency files are named after it, `-` read as `_`; one it built none
+    # of means this is not the folder its build wrote.
+    # Without --no-deps: a path dependency is not a workspace member, and
+    # --no-deps lists members only.
+    m=$(cd frontend && cargo metadata --format-version 1 --locked --offline) || die "cargo metadata --locked failed"
+    crates=$(printf '%s' "$m" | jq -r '.packages[] | select(.source == null) | .targets[]
+      | select(any(.kind[]; test("^(lib|rlib|dylib|cdylib|staticlib|proc-macro|bin)$"))) | .name' | tr - _ | sort -u)
+    [ -n "$crates" ] || die "cargo metadata names no crate of the frontend's own"
+    for c in $crates; do
+      found=0
+      for d in "$depdir/$c"-*.d; do
+        [ -f "$d" ] || continue
+        found=1
+        # rustc's notes: `# env-dep:NAME[=VALUE]` for every env!() and
+        # option_env!() the crate read at compile time. Such a value is an
+        # input the listing does not hold, so only CARGO_PKG_* — which Cargo
+        # sets from the tracked Cargo.toml — is accepted.
+        grep '^# env-dep:' "$d" | while IFS= read -r e; do
+          name=${e#\# env-dep:}
+          name=${name%%=*}
+          case "$name" in
+            CARGO_PKG_[A-Z]*) ;;
+            *) die "$c reads the build environment's $name at compile time, an input the listing does not hold" ;;
+          esac
+        done || exit 1
+        # A dependency file: "target: dep dep ...", one rule per line; spaces
+        # in paths are escaped with a backslash; lines from '#' on are rustc's
+        # notes (above), not files. Each rule's target (an output) is dropped;
+        # everything after it is a file rustc read.
+        grep -v '^#' "$d" | sed -E -e 's/\\ /@SP@/g' -e 's/^[^ ]*:( |$)//' | tr ' ' '\n' | sed -e 's/@SP@/ /g' | grep -v '^$' | while IFS= read -r p; do
+          # Cargo runs rustc in the workspace folder, frontend/, and names a
+          # local crate's files relative to it: resolve them, `..` included,
+          # before judging.
+          case "$p" in
+            /*) ;;
+            *)
+              dir=$(cd "frontend/$(dirname "$p")" 2>/dev/null && pwd -P) || die "rustc read a file that is gone: $p"
+              p="$dir/$(basename "$p")"
+              ;;
+          esac
+          case "$p" in
+            "$registry"/* | "$sysroot"/*) continue ;;
+            "$root"/frontend/*)
+              rel=${p#"$root"/}
+              printf '%s\n' "$tracked" | grep -qxF -- "$rel" || die "rustc read $rel, which Git does not track"
+              ;;
+            *) die "rustc read a file outside the closure: $p (crate $c)" ;;
+          esac
+        done || exit 1
+      done
+      [ "$found" = 1 ] || die "no dependency files for the frontend's crate $c in $depdir"
     done
-    [ "$found" = 1 ] || die "no dependency files for the frontend in $depdir"
-    echo "every file rustc read is a tracked input, a registry crate or the toolchain"
+    echo "every file each of the frontend's crates read is a tracked input, a registry crate or the toolchain; no build environment but Cargo.toml's"
     ;;
   metadata)
     command -v jq >/dev/null 2>&1 || die "jq is needed to read cargo metadata"

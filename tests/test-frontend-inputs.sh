@@ -172,6 +172,58 @@ if command -v jq >/dev/null 2>&1; then
   assert_rc "$?" 1 "frontend-input-local-path-dependency: a git dependency is refused"
   (cd "$R/frontend" && cargo generate-lockfile --offline --quiet)
   commit "plain again"
+
+  # --- frontend-input-local-crate: every crate of the frontend's own is read ------------------
+  # A path package under frontend/ is allowed; what its crate reads is held
+  # to the same closure as the frontend's.
+  mkdir -p "$R/frontend/local-helper/src"
+  printf '[package]\nname = "local-helper"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n' >"$R/frontend/local-helper/Cargo.toml"
+  printf 'pub const OUTSIDE: &[u8] = include_bytes!("../../../outside.txt");\n' >"$R/frontend/local-helper/src/lib.rs"
+  cp "$R/frontend/Cargo.toml" "$T/Cargo.toml.plain"
+  printf '\n[dependencies]\nlocal-helper = { path = "local-helper" }\n' >>"$R/frontend/Cargo.toml"
+  printf 'fn main() {\n    println!("{}", local_helper::OUTSIDE.len());\n}\n' >"$R/frontend/src/main.rs"
+  (cd "$R/frontend" && cargo generate-lockfile --offline --quiet)
+  commit "a local crate that includes a file outside frontend/"
+  check metadata
+  assert_rc "$?" 0 "a path package under frontend/ is allowed"
+  rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
+  build || fail "the local crate builds: $(cat "$T/build")"
+  check closure "$CARGO_TARGET_DIR/debug/deps"
+  assert_rc "$?" 1 "frontend-input-local-crate: a local crate's include from outside frontend/ fails the closure"
+  assert_contains "$(cat "$T/out")" "outside the closure: $(cd "$R" && pwd -P)/outside.txt (crate local_helper)" "and names the file and the crate"
+  printf 'pub const OUTSIDE: &[u8] = b"inside";\n' >"$R/frontend/local-helper/src/lib.rs"
+  commit "the local crate reads nothing outside"
+  rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
+  build || fail "the local crate builds: $(cat "$T/build")"
+  check closure "$CARGO_TARGET_DIR/debug/deps"
+  assert_rc "$?" 0 "a local crate reading only tracked inputs passes"
+  rm -f "$CARGO_TARGET_DIR/debug/deps"/local_helper-*.d
+  check closure "$CARGO_TARGET_DIR/debug/deps"
+  assert_rc "$?" 1 "a crate of the frontend's own with no dependency file fails (the wrong folder)"
+  assert_contains "$(cat "$T/out")" "no dependency files for the frontend's crate local_helper" "and names it"
+  git_ rm -q -r frontend/local-helper
+  cp "$T/Cargo.toml.plain" "$R/frontend/Cargo.toml"
+  (cd "$R/frontend" && cargo generate-lockfile --offline --quiet)
+
+  # --- frontend-input-env-dep: the build environment read at compile time ---------------------
+  env_case() { # CODE ENV... — the closure's status over a build of main() { CODE } with ENV
+    printf 'fn main() {\n    %s\n}\n' "$1" >"$R/frontend/src/main.rs"
+    shift
+    commit "an environment read"
+    rm -f "$CARGO_TARGET_DIR/debug/deps"/*.d
+    (cd "$R/frontend" && env "$@" cargo build --offline --quiet) >"$T/build" 2>&1 || fail "the build: $(cat "$T/build")"
+    check closure "$CARGO_TARGET_DIR/debug/deps"
+  }
+  env_case 'println!("{}", env!("OMB_BUILD_ONLY"));' OMB_BUILD_ONLY=x
+  assert_rc "$?" 1 "frontend-input-env-dep: env!() of an unapproved variable fails the closure"
+  assert_contains "$(cat "$T/out")" "reads the build environment's OMB_BUILD_ONLY" "and names it"
+  env_case 'println!("{:?}", option_env!("OMB_MAYBE"));' OMB_UNRELATED=1
+  assert_rc "$?" 1 "frontend-input-env-dep: option_env!() of an unset variable fails too (its absence is an input)"
+  assert_contains "$(cat "$T/out")" "OMB_MAYBE" "and names it"
+  env_case 'println!("{}", env!("CARGO_PKG_VERSION"));' OMB_UNRELATED=1
+  assert_rc "$?" 0 "frontend-input-env-dep: CARGO_PKG_* (from the tracked Cargo.toml) is the approved set"
+  printf 'fn main() {}\n' >"$R/frontend/src/main.rs"
+  commit "plain again"
 else
   fail "jq is needed to read cargo metadata (frontend-input-build-rs, -local-path-dependency)"
 fi

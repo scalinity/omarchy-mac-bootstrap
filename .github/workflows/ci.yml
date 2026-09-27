@@ -136,10 +136,14 @@ jobs:
       - name: Layers A–F (state, frames, snapshots, emphasis, degraded modes, lifecycle), H against the Bash 5 core, proto-diff-*
         working-directory: frontend
         run: |
-          cargo test --locked --offline --lib --bins --test frames --test contract --test proto_diff
+          cargo test --locked --offline --lib --bins --test frames --test contract --test proto_diff --test panics
           cargo test --locked --offline --features test-hooks --test contract
-      - name: Every file rustc read is a tracked input, a registry crate or the toolchain
-        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/debug/deps"
+      # The release build's own dependency files: clippy's and the tests'
+      # record their own environment (CLIPPY_ARGS, CARGO_MANIFEST_DIR).
+      - name: Every file each crate of the frontend's own read is a tracked input, a registry crate or the toolchain; no build environment but Cargo.toml's
+        run: |
+          (cd frontend && cargo build --release --locked --offline)
+          tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps"
       - name: No pending snapshot, nothing written into frontend/
         run: tests/frontend-inputs.sh clean
       - name: frontend-input-* and frontend-lock-not-input
@@ -180,6 +184,7 @@ jobs:
           ldd --version | head -1
           rustc --version
           cargo --version
+          grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
       - name: Build the release artifact
         working-directory: frontend
         run: |
@@ -194,6 +199,9 @@ jobs:
       - name: Layer G (pty-*, the real L→F→C→X topology) and the launcher starting the verified artifact
         working-directory: frontend
         run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+      - name: The process table, descriptors and the panic gate on aarch64 (unit tests, H against the core, the gate)
+        working-directory: frontend
+        run: cargo test --locked --offline --features test-hooks --lib --test contract --test panics
       - name: sup-* and diag-* under Bash 5 on aarch64
         run: |
           s=0
@@ -236,6 +244,7 @@ jobs:
           /bin/bash --version | head -1
           rustc --version
           cargo --version
+          grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
       - name: Build the release artifact
         working-directory: frontend
         run: |
@@ -251,7 +260,7 @@ jobs:
         working-directory: frontend
         run: |
           OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
-          cargo test --locked --offline --features test-hooks --test contract --test proto_diff
+          cargo test --locked --offline --features test-hooks --lib --test contract --test proto_diff --test panics
       # diag-* and sup-overflow run under /bin/bash on arm64 in the macOS job
       # above; these are the other sup-* suites.
       - name: sup-* under /bin/bash 3.2 on arm64
