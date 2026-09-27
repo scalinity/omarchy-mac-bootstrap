@@ -1145,6 +1145,57 @@ fn launcher_leaves_the_terminal_when_an_identity_cannot_be_read() {
     assert!(!p.sessions().is_empty(), "the scratch kept");
 }
 
+/// The frontend killed under a raw-mode child, with `entry` of the session
+/// made a dangling link: an identity nothing can be read from, which is
+/// never taken for the absence of one.
+fn a_dangling_identity_leaves_the_terminal(name: &str, entry: &str) {
+    let (mut p, _dir) = frontend_killed_under_the_probe(name, true);
+    let session = p
+        .sessions()
+        .into_iter()
+        .find(|s| s.join("req-3.worker-1").exists())
+        .expect("the child's identity");
+    let link = session.join(entry);
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(session.join("gone"), &link).unwrap();
+    kill(p.frontend_pid(), "KILL");
+    p.send(&[b'x'; 100]);
+    p.send(b"\x1b[12;34R");
+    p.wait_until("the child to finish", |p| {
+        String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("probe: done")
+    });
+    let left = p.termios();
+    assert_ne!(left, p.initial, "the child left the terminal raw");
+    assert_eq!(p.wait_exit(), 1, "not known to be over: a failure");
+    assert_eq!(
+        p.termios(),
+        left,
+        "the launcher did not take the terminal back"
+    );
+    let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()).to_string();
+    assert!(raw.contains("not known to be over"), "it says so");
+    assert!(
+        !raw.contains("Continuing in text"),
+        "and no text interface follows"
+    );
+    assert!(session.is_dir(), "the scratch kept");
+    assert!(
+        link.symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink()),
+        "with the link in it"
+    );
+}
+
+#[test]
+fn launcher_leaves_the_terminal_on_a_dangling_worker_identity() {
+    a_dangling_identity_leaves_the_terminal("fdeath-dangling-worker", "req-3.worker-1");
+}
+
+#[test]
+fn launcher_leaves_the_terminal_on_a_dangling_core_identity() {
+    a_dangling_identity_leaves_the_terminal("fdeath-dangling-core", "req-9.core");
+}
+
 #[test]
 fn the_terminal_closes_during_a_live_request() {
     let mut p = Pty::start("hangup-live", Opts::default());

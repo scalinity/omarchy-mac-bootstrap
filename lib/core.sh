@@ -201,9 +201,11 @@ core_proc_write() {
 }
 
 # core_proc_read FILE — CP_PID, CP_START, CP_BOOT from an identity file; 1
-# when it cannot be admitted.
+# when it cannot be admitted. An identity is a plain file: a link, whatever
+# it points to, is never admitted.
 core_proc_read() {
   CP_PID="" CP_START="" CP_BOOT=""
+  [ -L "$1" ] && return 1
   rec_admit_file proc - "$1" || return 1
   rec_get_into CP_PID 0 pid && rec_get_into CP_START 0 start && rec_get_into CP_BOOT 0 boot
 }

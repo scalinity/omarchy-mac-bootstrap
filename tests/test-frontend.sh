@@ -66,6 +66,10 @@ case "$b" in
     )
     ;;
 esac
+# A core identity left as a dangling link, which no core ever writes.
+case "$b" in
+  *dangle*) ln -s "$dir/gone" "$dir/req-1.core" ;;
+esac
 code=${b%% *}
 exit "${code:-0}"
 EOF
@@ -422,6 +426,51 @@ d5=$(mk_scratch)
 BOOT=5E1D0B00-0000-0000-0000-000000000000 proc_file "$d5/req-1.core" core "$live"
 fe_call '' fe_reclaim >/dev/null
 [ ! -d "$d5" ] && ok || fail "sup-pid-reuse: a live PID recorded in a previous boot is not the recorded core"
+# sup-identity-link: an identity is a plain file. A link in its place,
+# dangling or pointing at an ended process's sealed identity, cannot be
+# established, so it keeps the scratch; the same identity as a plain file
+# lets it go. A pattern that matched nothing is no entry at all, which the
+# scratch reclaimed above (no req-* file) already shows.
+dead=$(mk_scratch)
+cp "$dead/launcher.omb" "$T/dead-identity"
+rm -rf "$dead"
+for name in req-1.core req-1.worker-1 frontend.omb launcher.omb; do
+  d6=$(mk_scratch)
+  rm -f "$d6/$name"
+  ln -s "$T/link-target" "$d6/$name"
+  fe_call '' fe_reclaim >/dev/null
+  [ -d "$d6" ] && ok || fail "sup-identity-link: a dangling $name keeps the scratch from reclaim"
+  case $name in
+    req-*)
+      fe_call '' eval "FE_SESSION=$d6 FE_SNAP='' FE_PGID=0; fe_owner_cleanup" >/dev/null
+      [ -d "$d6" ] && ok || fail "sup-identity-link: and from its owner's cleanup ($name)"
+      ;;
+  esac
+  cp "$T/dead-identity" "$T/link-target"
+  fe_call '' fe_reclaim >/dev/null
+  [ -d "$d6" ] && ok || fail "sup-identity-link: a $name linked to an ended process's identity is not admitted"
+  rm -f "$T/link-target" "$d6/$name"
+  cp "$T/dead-identity" "$d6/$name"
+  fe_call '' fe_reclaim >/dev/null
+  [ ! -d "$d6" ] && ok || fail "and as a plain file, the same identity lets the scratch go ($name)"
+done
+# A FIFO in a worker's place is not one either (nothing opens it).
+d6=$(mk_scratch)
+mkfifo "$d6/req-1.worker-1"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d6" ] && ok || fail "sup-identity-link: a FIFO in place of a worker identity keeps the scratch"
+fe_call '' eval "FE_SESSION=$d6 FE_SNAP='' FE_PGID=0; fe_owner_cleanup" >/dev/null
+[ -d "$d6" ] && ok || fail "and from its owner's cleanup"
+rm -f "$d6/req-1.worker-1"
+# A link in place of an operation record counts as naming every session.
+ln -s "$T/link-target" "$T/state/ops/journey.omb"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d6" ] && ok || fail "sup-reclaim-operation-barrier: a dangling link in place of an operation record keeps the scratch"
+fe_call '' eval "FE_SESSION=$d6 FE_SNAP='' FE_PGID=0; fe_owner_cleanup" >/dev/null
+[ -d "$d6" ] && ok || fail "and from its owner's cleanup"
+rm -f "$T/state/ops/journey.omb"
+fe_call '' fe_reclaim >/dev/null
+[ ! -d "$d6" ] && ok || fail "and without it, the scratch goes"
 kill "$live" 2>/dev/null
 wait "$live" 2>/dev/null
 [ -d "$d" ] && ok || fail "the live frontend's scratch is still there"
@@ -516,6 +565,21 @@ r=$(wait_case 'printf "proc\trole=worker\tpid=x" >"$FE_SESSION/req-1.worker-1"')
 assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-corrupt: a worker identity that cannot be read is unknown"
 r=$(wait_case 'mkdir "$FE_SESSION/req-1.core"')
 assert_contains "$r" "wait=2 " "an identity that is not a file is unknown"
+# launcher-identity-link: a dangling link is an entry, never the absence of
+# one (-e alone follows it and finds nothing); a link to an ended process's
+# sealed identity is not admitted either; nor is a FIFO.
+r=$(wait_case 'ln -s "$FE_SESSION/gone" "$FE_SESSION/req-1.core"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a dangling core identity is unknown, not over"
+r=$(wait_case 'ln -s "$FE_SESSION/gone" "$FE_SESSION/req-1.worker-1"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a dangling worker identity is unknown, not over"
+r=$(wait_case 'sleep 0.1 & p=$!; core_proc_write "$FE_SESSION/gone" core $p; wait $p; ln -s "$FE_SESSION/gone" "$FE_SESSION/req-1.core"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a link to an ended core's identity is unknown"
+r=$(wait_case 'mkfifo "$FE_SESSION/req-1.worker-1"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a FIFO in a worker's place is unknown"
+# fe_scratch_idle on its own, with no wait before it: the same answers.
+r=$(wait_case 'ln -s "$FE_SESSION/gone" "$FE_SESSION/req-2.worker-1"; fe_scratch_idle "$FE_SESSION"; echo "idle=$?"; rm -f "$FE_SESSION/req-2.worker-1"; fe_scratch_idle "$FE_SESSION"; echo "idle=$?"; :' 1)
+assert_contains "$r" "idle=2" "launcher-identity-link: fe_scratch_idle takes a dangling worker identity as unknown"
+assert_contains "$r" "idle=0" "and a session with no req-* entry at all, the patterns matching nothing, as idle"
 # A recorded core still alive at the limit: the wait ends, never as over.
 sleep 30 &
 live=$!
@@ -548,6 +612,18 @@ assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launche
 r=$(FE_PATH="$psbroken:$BASE_PATH" wait_case ": >'$psflag'")
 rm -f "$psflag"
 assert_eq "$r" "wait=2 the process table cannot be read" "launcher-table-unknown: the group that cannot be read is not over"
+# The whole launcher: a frontend that ends leaving a dangling core identity
+# never has its session called over, so neither its terminal settings nor
+# the text interface follow, and the scratch stays.
+mkdir -p "$T/tmp-dangle"
+printf '0 dangle' >"$T/fake-behaviour"
+r=$(FE_TMP=$T/tmp-dangle FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+assert_contains "$r" "1|unsettled|" "launcher-identity-link: a frontend leaving a dangling core identity: not known to be over"
+assert_contains "$(cat "$T/tmp-dangle/fe-out")" "not known to be over" "and the launcher says so"
+assert_not_contains "$r" "fallback" "and no text interface follows"
+assert_eq "$(ls "$T/tmp-dangle" | grep -c '^omb-session\.')" 1 "and the scratch stays"
+[ -L "$(ls -d "$T/tmp-dangle"/omb-session.* | head -1)/req-1.core" ] && ok || fail "with the link in it, untouched"
+rm -rf "$T/tmp-dangle"
 # No pause, no wait: fe_wait_cores refuses rather than start processes.
 r=$(FE_TMP=$T/tmp-wait fe_call '' eval 'omb_tmp_init; fe_session_create; FE_PAUSE=""; fe_wait_cores "$FE_SESSION"; echo "wait=$?"; rm -rf "$FE_SESSION"')
 assert_contains "$(cat "$T/tmp-wait/fe-out")" "wait=2" "launcher-no-pause: without its pause the launcher never calls the session over"

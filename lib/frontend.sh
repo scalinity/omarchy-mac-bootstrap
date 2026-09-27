@@ -273,12 +273,14 @@ fe_select() {
 # ---------------------------------------------------------------------------
 
 # fe_ops_name DIR — does an unresolved operation record name the session DIR?
-# 0 yes, 1 no, 2 unknown (a record that cannot be read counts as naming it).
+# 0 yes, 1 no, 2 unknown (a record that cannot be read counts as naming it,
+# a link or other non-plain entry included, as core_op_read counts it).
 fe_ops_name() {
   local f session
   [ -d "$OMB_STATE_DIR/ops" ] || return 1
   for f in "$OMB_STATE_DIR"/ops/*.omb; do
-    [ -e "$f" ] || continue
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    _state_file_ok "$f" || return 2
     rec_admit_file op - "$f" || return 2
     rec_get_into session 0 session
     [ "$session" = "$1" ] && return 0
@@ -288,10 +290,14 @@ fe_ops_name() {
 
 # fe_scratch_idle DIR — every recorded core and worker of the session DIR is
 # dead: 0 yes, 1 a live one, 2 one whose identity cannot be established.
+# Every entry a pattern matches is an identity to judge — a link, dangling or
+# not, a folder or a FIFO is one that cannot be established. Only a pattern
+# that matched nothing (left as it is, which neither -e nor -L finds) is no
+# entry: -e alone follows a link and would take a dangling one for none.
 fe_scratch_idle() {
   local f
   for f in "$1"/req-*.core "$1"/req-*.worker-*; do
-    [ -e "$f" ] || continue
+    [ -e "$f" ] || [ -L "$f" ] || continue
     # core_file_alive: 0 alive, 1 not alive, 2 cannot be established.
     core_file_alive "$f"
     case $? in
@@ -362,7 +368,7 @@ fe_reclaim() {
     [ -f "$d/launcher.omb" ] || continue
     core_file_alive "$d/launcher.omb"
     [ $? = 1 ] || continue
-    if [ -e "$d/frontend.omb" ]; then
+    if [ -e "$d/frontend.omb" ] || [ -L "$d/frontend.omb" ]; then
       core_file_alive "$d/frontend.omb"
       [ $? = 1 ] || continue
     fi
@@ -409,7 +415,9 @@ fe_wait_cores() {
   while :; do
     live=0 torn=0
     for f in "$1"/req-*.core "$1"/req-*.worker-*; do
-      [ -e "$f" ] || continue
+      # Every entry, as fe_scratch_idle counts them: a link or anything
+      # but a plain file has no PID to read, and so is torn.
+      [ -e "$f" ] || [ -L "$f" ] || continue
       pid=""
       if [ -f "$f" ] && [ ! -L "$f" ]; then
         while IFS= read -r line; do
