@@ -401,6 +401,11 @@ sleep 0.01 &
 xdead=$!
 wait "$xdead"
 xold="Mon Jan  1 00:00:00 2001"
+# The hello this core writes in this environment, from its whole answer to a
+# hello request: what a death after the hello leaves behind the header.
+c_run hello
+cp "$C_EV" "$T/hello-ref"
+assert_eq "$(c_admits hello)" ok "sup-eintr-exemption: the hello the made states hold is this core's, whole and admitted"
 # x_rec FILE HEADER FAMILY KEY VALUE... — a sealed record.
 x_rec() {
   (
@@ -415,15 +420,17 @@ x_rec() {
   )
 }
 # x_run NAME SITE — X=$T/x-NAME: request 1 of a run that ended with status 1,
-# its spool its header and hello, its stderr the trap loss at SITE
-# (common:155, state:269) or else the text SITE, and a marker from before it.
+# its spool its header and this core's hello (the first two lines of its
+# answer to a hello request, byte for byte), its stderr the trap loss at
+# SITE (common:155, state:269) or else the text SITE, and a marker from
+# before it.
 x_run() {
   local f l
   X=$T/x-$1
   mkdir -p "$X/sess" "$X/state/ops" "$X/state/test"
   : >"$X/marker"
   touch -t 200001010000 "$X/marker"
-  printf 'omb-res 1\nhello\tcore=0.1.0\n' >"$X/sess/req-1.events"
+  head -n 2 "$T/hello-ref" >"$X/sess/req-1.events"
   printf 'omb-req 1\nexec\taction=test.mutate\tbasis=%s\tconfirm=test\n' "$X_BASIS" >"$X/request-1"
   case $2 in
     common:155 | state:269)
@@ -443,7 +450,7 @@ x_op() {
 x_worker() { x_rec "$X/sess/req-1.worker-1" 'omb-proc 1' proc role worker pid "$1" start "$2" boot x; }
 # x_judge [VERSION] [STATUS] — "exempt", or "judged: why".
 x_judge() {
-  if c_storm_exempt "${1:-5.2}" "${2:-1}" "$X" "$X/sess" 1 "$X/marker"; then echo exempt; else echo "judged: $C_WHY"; fi
+  if c_storm_exempt "${1:-5.2}" "${2:-1}" "$X" "$X/sess" 1 "$X/marker" "$T/hello-ref"; then echo exempt; else echo "judged: $C_WHY"; fi
 }
 # The four states the two deaths leave: exempt, and only what the death left
 # is removed — never anything outside the run's own folder.
@@ -546,6 +553,83 @@ for msg in "" "$REPO/lib/core.sh: trap: line 2: unexpected EOF while looking for
   [ -d "$X/state/lock" ] && ok || fail "sup-eintr-exemption: and the lock is kept"
   rm -rf "$X"
 done
+# sup-eintr-exemption-prefix: the spool, held to its bytes — the header,
+# this core's hello, LF, and the end. Each case is written as bytes, judged
+# by c_hello_prefix alone, then by c_storm_exempt over each state a death
+# can leave (the empty lock; the running record), which a refusal leaves
+# exactly as it was.
+H=$(sed -n 2p "$T/hello-ref")
+TAB=$(printf '\t')
+# x_spool CASE — the case's bytes.
+x_spool() {
+  case $1 in
+    good) printf 'omb-res 1\n%s\n' "$H" ;;
+    wrong-header) printf 'omb-res 2\n%s\n' "$H" ;;
+    request-header) printf 'omb-req 1\n%s\n' "$H" ;;
+    header-no-lf) printf 'omb-res 1%s\n' "$H" ;;
+    result-as-header) printf 'result\tstatus=failed\tcode=child\ttext=\tnext=\n%s\n' "$H" ;;
+    incomplete-hello) printf 'omb-res 1\n%s\n' "${H%%"${TAB}commit="*}" ;;
+    nul-escape) printf 'omb-res 1\n%s\n' "${H/"${TAB}user=user"/${TAB}user=us%00er}" ;;
+    lowercase-escape) printf 'omb-res 1\n%s\n' "${H/"${TAB}core="/${TAB}core=a%2f}" ;;
+    non-canonical-escape) printf 'omb-res 1\n%s\n' "${H/"${TAB}core="/${TAB}core=%41}" ;;
+    raw-byte) printf 'omb-res 1\n%s\n' "${H/"${TAB}core="/${TAB}core=$(printf '\001')}" ;;
+    leading-tab) printf 'omb-res 1\n\t%s\n' "$H" ;;
+    doubled-tab) printf 'omb-res 1\n%s\n' "${H/"${TAB}core="/${TAB}${TAB}core=}" ;;
+    duplicate-field) printf 'omb-res 1\n%s\tfixture=1\n' "$H" ;;
+    unknown-field) printf 'omb-res 1\n%s\textra=1\n' "$H" ;;
+    field-order) printf 'omb-res 1\n%s\n' "$H" | sed "s/${TAB}platform=\([^${TAB}]*\)${TAB}arch=\([^${TAB}]*\)/${TAB}arch=\2${TAB}platform=\1/" ;;
+    typed-value) printf 'omb-res 1\n%s\n' "${H/"${TAB}proto=1"/${TAB}proto=x}" ;;
+    other-hello) printf 'omb-res 1\n%s\n' "${H/"${TAB}ceiling=act"/${TAB}ceiling=read}" ;;
+    no-final-lf) printf 'omb-res 1\n%s' "$H" ;;
+    extra-result) printf 'omb-res 1\n%s\nresult\tstatus=done\tcode=ok\ttext=\tnext=\n' "$H" ;;
+    extra-blank) printf 'omb-res 1\n%s\n\n' "$H" ;;
+    trailing-byte) printf 'omb-res 1\n%s\nx' "$H" ;;
+    partial-third) printf 'omb-res 1\n%s\nprogress\taction=test.mutate' "$H" ;;
+    incomplete-third) printf 'omb-res 1\n%s\nprogress\taction=test.mutate\n' "$H" ;;
+    valid-third) printf 'omb-res 1\n%s\nprogress\taction=test.mutate\tdone=1\ttotal=2\tunit=\tlabel=\n' "$H" ;;
+    header-only) printf 'omb-res 1\n' ;;
+    empty) : ;;
+  esac
+}
+# x_snap — every path under X, and every file's bytes.
+x_snap() { (cd "$X" && find . -print | LC_ALL=C sort && find . -type f -exec cksum {} \; | LC_ALL=C sort); }
+x_spool good >"$T/prefix-good"
+assert_eq "$(c_hello_prefix "$T/prefix-good" "$T/hello-ref")" ok "sup-eintr-exemption-prefix: the good prefix is the header and this core's hello, and nothing else"
+cmp -s "$T/prefix-good" "$T/x-lock/sess/req-1.events" && ok || fail "sup-eintr-exemption-prefix: the made states above hold exactly it"
+for c in "good|ok" \
+  "wrong-header|header at line 1" "request-header|header at line 1" "header-no-lf|header at line 1" \
+  "result-as-header|header at line 1" "incomplete-hello|schema at line 2" "nul-escape|nul-escape at line 2" \
+  "lowercase-escape|value at line 2" "non-canonical-escape|non-canonical at line 2" "raw-byte|byte at line 0" \
+  "leading-tab|tab at line 2" "doubled-tab|tab at line 2" "duplicate-field|schema at line 2" \
+  "unknown-field|schema at line 2" "field-order|schema at line 2" "typed-value|type at line 2" \
+  "other-hello|a hello other than the one this core writes here" "no-final-lf|eof at line 0" \
+  "extra-result|a whole response, its result included" "extra-blank|blank at line 3" "trailing-byte|eof at line 0" \
+  "partial-third|eof at line 0" "incomplete-third|schema at line 3" "valid-third|2 records, not one hello" \
+  "header-only|0 records, not one hello" "empty|eof at line 0"; do
+  case=${c%%|*} want=${c#*|}
+  x_spool "$case" >"$T/prefix-$case"
+  assert_contains "$(c_hello_prefix "$T/prefix-$case" "$T/hello-ref")" "$want" "sup-eintr-exemption-prefix: $case, judged alone"
+  for state in lock record; do
+    if [ "$state" = lock ]; then
+      x_run "p-$case-lock" state:269
+      mkdir "$X/state/lock"
+    else
+      x_run "p-$case-record" common:155
+      x_op running "$xdead" "$xold"
+    fi
+    cp "$T/prefix-$case" "$X/sess/req-1.events"
+    before=$(x_snap)
+    r=$(x_judge)
+    if [ "$case" = good ]; then
+      assert_eq "$r" exempt "sup-eintr-exemption-prefix: the good prefix over the $state a death leaves is exempt"
+    else
+      assert_contains "$r" "judged: the spool is not exactly the header and this core's hello: " "sup-eintr-exemption-prefix: $case over the $state is judged"
+      assert_contains "$r" "$want" "and for its bytes ($case)"
+      assert_eq "$(x_snap)" "$before" "sup-eintr-exemption-prefix: and the $state's folder is exactly as it was ($case)"
+    fi
+    rm -rf "$X"
+  done
+done
 t_signal TERM "$xlive" "$xlive_start"
 wait "$xlive" 2>/dev/null
 
@@ -553,6 +637,10 @@ wait "$xlive" 2>/dev/null
 # Ctrl-C, a hangup) cuts a wait short, or ends the reading; the table is read
 # again, never taken for one that cannot be read, which would be a barrier.
 c_conf mutate linger=1
+# The hello this core writes in this environment, for c_storm_exempt to hold
+# the storm's spool to.
+c_run hello
+cp "$C_EV" "$T/storm-hello"
 c_prepare execute "exec	action=test.mutate	basis=$(c_basis test.mutate)	confirm=test"
 n=$C_N
 # The signals come from the core's own parent, which made a process group of
@@ -591,7 +679,10 @@ chmod +x "$T/storm"
 : >"$T/storm-start"
 C_WRAP="$T/storm $SESS/req-$n.core $T/sent" c_run_raw execute "$T/request-$n"
 st=$C_RC
-r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
+# The result only from a whole response the protocol admits: a spool that is
+# not one has no result to read.
+r=""
+if [ "$(c_admits execute)" = ok ]; then r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events"); fi
 # Bash 5.2 (not a target: macOS runs 3.2.57, the Linux root 5.3.15) loses a
 # trap that runs while a command holding two command substitutions is
 # expanded ("trap: line N: unexpected EOF while looking for matching `)'"),
@@ -607,7 +698,7 @@ r=$(awk -F'\t' '$1 == "result" { print $2 " " $3 }' "$SESS/req-$n.events")
 # Bash 5.3.15 as well, where nothing is skipped.
 C_WHY=""
 if [ "$r" != "status=done code=ok" ] &&
-  c_storm_exempt "$("${C_BASH:-$T_BASH}" -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')" "$st" "$T" "$SESS" "$n" "$T/storm-start"; then
+  c_storm_exempt "$("${C_BASH:-$T_BASH}" -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"')" "$st" "$T" "$SESS" "$n" "$T/storm-start" "$T/storm-hello"; then
   skip "sup-eintr under a signal storm: Bash $BASH_VERSION loses a trap inside the baseline's two-substitution commands (Bash 5.2 upstream)"
 else
   [ "$(cat "$T/sent")" -gt 10 ] && ok || fail "sup-eintr: signals reached the core while it ran ($(cat "$T/sent"))"

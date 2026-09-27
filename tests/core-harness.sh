@@ -150,18 +150,61 @@ c_ended() {
   [ -n "$now" ] && [ "$now" != "$2" ]
 }
 
-# c_storm_exempt VERSION STATUS ROOT SESSION N MARKER — whether request N
+# c_hello_prefix SPOOL HELLO — SPOOL is exactly what a core that died just
+# after its hello leaves: the response header and the hello record this
+# core writes in this session's environment, each line ending in LF, and
+# nothing after. HELLO is a whole, admitted answer to a hello request in
+# the same environment; the hello record depends on that environment alone,
+# not on the request. Prints ok, or why not.
+#
+# No schema of its own: the protocol's admission (lib/records.sh) holds
+# SPOOL to every byte, framing, canonical-form and schema rule of a
+# response, and refuses a prefix that breaks none of them only for its
+# missing result, once every record has been admitted — `result`, at line
+# 0. Then one record, a hello; then the bytes, header and hello and LF and
+# end, compared with cmp.
+c_hello_prefix() {
+  (
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    spool=$1 ref=$2
+    if ! rec_admit_file res hello "$ref" || [ "$REC_N" -lt 1 ] || [ "${REC_T[0]}" != hello ]; then
+      echo "no admitted hello to hold it to (${REC_REASON:-no hello})"
+    else
+      { printf '%s\n' "$REC_HDR" && printf '%s\n' "${REC_L[0]}"; } >"$REC_TMP/prefix"
+      if rec_admit_file res execute "$spool"; then
+        echo "a whole response, its result included"
+      elif [ "$REC_REASON:$REC_AT" != result:0 ]; then
+        echo "refused by the protocol's admission: $REC_REASON at line $REC_AT"
+      elif [ "$REC_N" != 1 ] || [ "${REC_T[0]}" != hello ]; then
+        echo "$REC_N records, not one hello"
+      elif ! cmp -s "$spool" "$REC_TMP/prefix"; then
+        echo "a hello other than the one this core writes here"
+      else
+        echo ok
+      fi
+    fi
+    omb_cleanup
+  )
+}
+
+# c_storm_exempt VERSION STATUS ROOT SESSION N MARKER HELLO — whether request N
 # of a storm that did not complete died of Bash 5.2's upstream trap loss;
 # only then is the fixture state that death left removed. 0 exempt (and
 # cleared); 1 not, with nothing touched and C_WHY saying why. It reads the
 # run as c_run_raw leaves it: ROOT/stderr, ROOT/request-N, the state in
 # ROOT/state, the spool and identities in SESSION. VERSION is the
 # major.minor of the shell that ran the core, STATUS its exit status, MARKER
-# a file made just before the run.
+# a file made just before the run, HELLO the core's whole answer to a hello
+# request in the same environment (c_hello_prefix).
 #
 # Bash 5.2 loses a trap that runs while a command holding two command
 # substitutions is expanded, and the core dies of it with status 1 at that
-# command (tests/bash-trap-comsub.sh; docs/TESTING.md → sup-eintr). In what
+# command (tests/bash-trap-comsub.sh; docs/TESTING.md → sup-eintr). Its
+# spool is then exactly `omb-res 1` and the hello, as in every such death
+# seen: this storm's act reports no progress, and the result comes last.
+# In what
 # the core runs, two commands hold two, both in the baseline's pinned files:
 # lib/state.sh:269, the run lock's owner line, and lib/common.sh:155,
 # log_event's. Each death leaves one of four states — every failure of 60
@@ -179,8 +222,8 @@ c_ended() {
 # record or effect, a lock with an owner or from before the run — is the
 # test's to judge, never skipped.
 c_storm_exempt() {
-  local ver=$1 st=$2 root=$3 sess=$4 n=$5 marker=$6 home=${C_HOME:-$REPO}
-  local e1 e2 site f l basis rec pid start ops=none lock=none core=none workers=none effect=none w
+  local ver=$1 st=$2 root=$3 sess=$4 n=$5 marker=$6 hello=$7 home=${C_HOME:-$REPO}
+  local e1 e2 site f l basis rec pid start ops=none lock=none core=none workers=none effect=none w prefix
   local lk=$root/state/lock opsf=$root/state/ops/journey.omb eff=$root/state/test/effect-mutate
   C_WHY=""
   if [ "$ver" != 5.2 ]; then
@@ -191,9 +234,10 @@ c_storm_exempt() {
     C_WHY="the core exited $st, not 1"
     return 1
   fi
-  if [ "$(awk 'END { print NR }' "$sess/req-$n.events" 2>/dev/null)" != 2 ] ||
-    [ "$(awk -F'\t' 'NR == 2 { print $1 }' "$sess/req-$n.events")" != hello ]; then
-    C_WHY="the spool holds more than its header and hello"
+  # The spool, by its bytes: the header, this core's hello, and nothing else.
+  prefix=$(c_hello_prefix "$sess/req-$n.events" "$hello")
+  if [ "$prefix" != ok ]; then
+    C_WHY="the spool is not exactly the header and this core's hello: $prefix"
     return 1
   fi
   e1=$(sed -n 1p "$root/stderr")
