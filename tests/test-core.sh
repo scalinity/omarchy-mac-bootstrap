@@ -48,12 +48,21 @@ want=$( (printf 'omb-source 1\n%s\n' "$want") | { shasum -a 256 2>/dev/null || s
 assert_contains "$hello" "source=$want	" "hello: source is the SHA-256 of the omb-source listing"
 
 # --- proto-exit and proto-version --------------------------------------------------------
-C_FE=0.2.0 C_ENV="OMB_FRONTEND_DEV=" c_run hello
+# An unreleased tool: a copy with no release/ folder, whatever lock this
+# checkout itself holds. The released tool's cases use LT, below.
+UT=$T/unreleased-tool
+mkdir -p "$UT"
+cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$UT/"
+if [ -e "$UT/release/frontend.lock" ] || [ -L "$UT/release/frontend.lock" ]; then fail "the unreleased tool holds a release lock"; else ok; fi
+C_HOME=$UT C_FE=0.2.0 C_ENV="OMB_FRONTEND_DEV=" c_run hello
 assert_rc "$C_RC" 3 "a frontend version the lock does not name: exit 3"
 assert_eq "$(c_result)" "refused frontend" "and refused frontend"
 assert_eq "$(c_admits hello)" ok "the refusal is itself an admissible response"
-C_ENV="OMB_FRONTEND_DEV=" c_run hello
-assert_eq "$(c_result)" "refused frontend" "with no release lock, only the fixture-mode development override is accepted"
+C_HOME=$UT C_ENV="OMB_FRONTEND_DEV=" c_run hello
+assert_eq "$(c_result) $C_RC" "refused frontend 3" "with no release lock, only the fixture-mode development override is accepted"
+assert_contains "$C_OUT" "text=No%20frontend%20release%20is%20pinned" "refused because no release is pinned, not for another version"
+C_HOME=$UT c_run hello
+assert_eq "$(c_result) $C_RC" "done ok 0" "the fixture-mode development override is accepted by the unreleased tool"
 printf 'omb-req 1\nreq\top=hello\tproto=2\tfrontend=0.1.0\tsession=%s\n' "$S" >"$T/p2"
 C_N=$((C_N + 1)) C_EV=$SESS/req-$C_N.events
 printf 'omb-res 1\n' >"$C_EV"
