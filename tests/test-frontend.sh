@@ -103,11 +103,17 @@ CACHE=$T/home/.cache/omarchy-mac-bootstrap/frontend
 
 # fe_call INPUT FN ARGS... — load the libraries from the copy and call a
 # launcher function with the fake's world, answering prompts with INPUT;
-# prints "FE_STATE|FE_BIN|FE_WHY". FE_TMP gives it a TMPDIR of its own.
+# prints "FE_STATE|FE_BIN|FE_WHY". FE_TMP gives it a TMPDIR of its own. The
+# launcher runs in a process group of its own, as a terminal's job does: its
+# owner cleanup counts every process that joins its group after launcher.omb,
+# so it must not share the test runner's group, whose other members (the
+# runner's shells, anything a CI step left running) the test does not control.
+# (perl in the C locale, so a runner without LANG's locale adds no warning;
+# the launcher's environment is env -i's.)
 fe_call() {
   local input=$1
   shift
-  printf '%b' "$input" | env -i PATH="${FE_PATH:-$BASE_PATH}" HOME="$T/home" TMPDIR="${FE_TMP:-$T/tmp}" LANG=en_US.UTF-8 TERM=dumb \
+  printf '%b' "$input" | LC_ALL=C perl -e 'setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127' env -i PATH="${FE_PATH:-$BASE_PATH}" HOME="$T/home" TMPDIR="${FE_TMP:-$T/tmp}" LANG=en_US.UTF-8 TERM=dumb \
     OMB_FIXTURE="${FE_FIX-$FIXB}" OMB_STATE_DIR="$T/state" ${FE_ENV:-} "$T_BASH" -c '
       . "$1/lib/common.sh"; . "$1/lib/ui.sh"; . "$1/lib/state.sh"; . "$1/lib/records.sh"; . "$1/lib/core.sh"; . "$1/lib/frontend.sh"
       OMB_HOME=$1; shift
