@@ -97,7 +97,7 @@ fc_openssl() {
   FC_OPENSSL=""
   for o in "$(command -v openssl 2>/dev/null)" /opt/homebrew/bin/openssl /usr/local/bin/openssl \
     /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
-    [ -n "$o" ] && [ -x "$o" ] || continue
+    if [ -z "$o" ] || [ ! -x "$o" ]; then continue; fi
     case "$("$o" version 2>/dev/null)" in
       OpenSSL\ [3-9]*)
         FC_OPENSSL=$o
@@ -379,10 +379,10 @@ FC_ESC=$(printf '\033')
 fc_text() { LC_ALL=C sed -e "s/$FC_ESC\\[[0-9;?]*[A-Za-z]//g" -e "s/${FC_ESC}[()][0-9A-Za-z]//g" | LC_ALL=C tr -d '\r\000'; }
 
 # fc_screen — what the terminal of the current run holds now.
-fc_screen() { fc_frame; }
+fc_screen() { fc_frame ""; }
 
-# fc_frame [BYTES] — the screen a 40x120 terminal holds after the first
-# BYTES bytes of the run's output (all of it by default): one line a row,
+# fc_frame BYTES — the screen a 40x120 terminal holds after the first BYTES
+# bytes of the run's output (all of it when BYTES is empty): one line a row,
 # trailing blanks dropped, then "@alt=0|1 cursor=0|1" (the alternate screen
 # in use; the cursor shown). A small terminal: cursor addressing and moves,
 # erasing, scrolling, the alternate screen (1049) and the cursor (25);

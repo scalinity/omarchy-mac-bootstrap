@@ -77,7 +77,7 @@ help=$(fc_frame "$(fc_mark help)")
 assert_contains "$help" "The mouse is not captured" "frontend-check-terminal: ? answered with the keys"
 assert_not_contains "$help" "$DASH" "frontend-check-terminal: in place of the dashboard"
 fc_dashboard "$(fc_frame "$(fc_mark back)")" && ok || fail "frontend-check-terminal: and back to the dashboard"
-assert_eq "$(fc_frame | tail -n 1)" "@alt=0 cursor=1" "frontend-check-terminal: q left: the alternate screen left, the cursor shown"
+assert_eq "$(fc_frame "" | tail -n 1)" "@alt=0 cursor=1" "frontend-check-terminal: q left: the alternate screen left, the cursor shown"
 cmp -s "$T/pty/before" "$T/pty/after" && ok || fail "frontend-check-terminal: the terminal's settings equal the ones before"
 assert_contains "$FC_TEXT" "frontend-check: completed — omb-tui 0.1.0 ($FC_TARGET), SHA-256 $FC_SHA, from $D/omb-tui." "frontend-check-terminal: the report completed"
 held "frontend-check-terminal"
@@ -135,7 +135,7 @@ FC_KEYS=("wait:$DASH" "sleep:0.5" "do:kill_frontend")
 fc_run
 assert_eq "$FC_RC" 1 "frontend-check-cleanup: the frontend killed: status 1"
 assert_contains "$FC_TEXT" "frontend-check: not completed — crashed: the interface stopped (status 137)." "frontend-check-cleanup: crashed"
-assert_eq "$(fc_frame | tail -n 1)" "@alt=0 cursor=1" "frontend-check-cleanup: the launcher left the alternate screen and showed the cursor"
+assert_eq "$(fc_frame "" | tail -n 1)" "@alt=0 cursor=1" "frontend-check-cleanup: the launcher left the alternate screen and showed the cursor"
 # (The settings are put back too, but not compared here: a frontend killed
 # in raw mode can leave input unread, and the kernel then marks it pending
 # — macOS's PENDIN — as the terminal returns to canonical mode.)
