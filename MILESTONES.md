@@ -312,7 +312,36 @@ of docs/TESTING.md.
   (`diag-*`); Bash and Rust admission agreeing on the whole differential
   corpus and the golden examples; `frontend-lock-not-input` passing; no
   path that changes the machine.
-- **Status:** blocked — not accepted. The independent review of
+- **Status:** accepted and closed, 2026-09-28, by the final independent
+  review: Gate 1 accepted, Gate 2 authorized to begin, M17 not started.
+  - **Accepted implementation:** `548de43db2d395b19db0f69cbb550814984f3523`
+    (R2) on branch `m14-gate1-frontend-foundation`. CI run 36469184904 on
+    that exact commit: all six required jobs succeeded.
+  - **Identity chain:** frontend source `54c3770` (S), which
+    `frontend-v0.1.0` and its release carry; production lock commit
+    `569d67e` (L); accepted `frontend-check` contract `480a744` (B); first
+    implementation `ad10453` (R); accepted implementation `548de43` (R2).
+    The `frontend/` tree and `release/frontend.lock` are the ones of S and
+    L. Production `inputs_digest`
+    `3accc9ce9fd188cb599cbe7d805ac3eda7c29205fead5df0beb015f8dfa41aaa`;
+    lock seal
+    `5cb358224f7defb8ebe47c78eb3967321278aa5c39633302b242e299d87d278e`.
+  - **Production acceptance (`frontend-check-production-mac`):**
+    `./omarchy-bootstrap frontend-check` on this Mac, with no fixture,
+    development or test override, started the published `frontend-v0.1.0`
+    macOS artifact (SHA-256
+    `c651bdfe0271e2c8217741213a42de21a0164d0e7cfdc4716f6b4720ab1ee871`)
+    and exited 0. On the screen: the Foundation dashboard with the Check,
+    Interface, Session and Actions facts and zero available actions; the
+    Help and Logs screens; keyboard navigation; a normal `q` exit. From
+    the core and the launcher: core 0.2.0 identified R2; `hello` and the
+    journey snapshot answered; every exchange ended `done`; the terminal's
+    settings read back as saved; the session's files removed. The check
+    stayed read-only and action-free: no baseline action or installer flow
+    was exposed or exercised.
+  - **Next:** Gate 2 may begin. M17 is not started.
+  - **History (each statement as of its own checkpoint, kept as written).**
+    The independent review of
   `3a1561e` required remediation (H01–H07, M01–M03, L01–L02); its re-review
   at `38ed2f1` closed nine and left H06, H07 and M03 partial, and the review
   at `aa08ee0` closed H06 and M03 and left H07 partial: the storm's
