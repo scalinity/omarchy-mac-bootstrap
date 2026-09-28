@@ -225,7 +225,7 @@ fi
 # terminal the default run first tries the interface, and a fixture whose
 # user is root keeps root's frontend cache under its own root/ folder.
 pty_one() {
-  local tree=$1 d=$2 fx=$T/pty-fixture input=$4 shims i=0
+  local tree=$1 d=$2 fx=$T/pty-fixture input=$4 shims i=0 bs
   rm -rf "$fx"
   mkdir -p "$fx" "$d/tmp" "$d/home"
   cp -R "$FIX/$3/." "$fx/"
@@ -253,8 +253,12 @@ pty_one() {
   } | fc_script "$d/pty" "$T_BASH" "$d/inner" >/dev/null 2>&1
   [ ! -e "$d/stuck" ] && ok || fail "the default run on a terminal ($3, $(basename "$tree")): $(cat "$d/stuck")"
   # util-linux script logs its own start and end, with the time, even with
-  # -q when its input is not a terminal: its lines, not either tree's.
-  tr -d '\r' <"$d/pty" | grep -vE '^Script (started|done) on ' >"$d/out"
+  # -q when its input is not a terminal: its lines, not either tree's. And
+  # the terminal echoes a queued ^D (macOS: "^D" then two backspaces) when
+  # it takes it, which for a surplus one may be before or after the program
+  # has ended: the terminal's bytes, not the program's.
+  bs=$(printf '\b')
+  tr -d '\r' <"$d/pty" | grep -vE '^Script (started|done) on ' | sed -e "s/\\^D$bs$bs//g" -e 's/\^D//g' >"$d/out"
   touch "$d/record" "$d/shims.log"
 }
 # pty_same NAME FIXTURE KEYS — both trees, the same KEYS typed at once, then
