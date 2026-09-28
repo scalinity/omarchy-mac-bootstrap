@@ -71,7 +71,7 @@ follow=$(awk '/^pub fn follow</ { f = 1 } f { print } f && /^}/ { exit }' "$REPO
 assert_eq "$(printf '%s\n' "$follow" | grep -cE 'File::open|OpenOptions|Command|pipe\(')" 0 "nor does the loop it runs"
 spool_writes=$(grep -n '>>"\$CORE_EVENTS"' "$REPO/lib/core.sh")
 assert_eq "$(printf '%s\n' "$spool_writes" | grep -c .)" 2 "sup-one-spawner: the spool is appended in two places"
-for fn in core_emit core_op_snapshot; do
+for fn in core_emit _core_emit_body; do
   body=$(awk -v f="^$fn\\\\(\\\\) \\\\{" '$0 ~ f { p = 1 } p { print } p && /^}/ { exit }' "$REPO/lib/core.sh")
   assert_contains "$body" '>>"$CORE_EVENTS"' "one is $fn"
 done

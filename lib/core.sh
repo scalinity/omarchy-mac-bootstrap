@@ -33,7 +33,7 @@ CORE_KNOWN_DETACHING="setsid nohup daemon systemd-run start-stop-daemon sshd doc
 
 CORE_BYTES=0 CORE_RECS=0 CORE_SUPPRESSED=0 CORE_RESULT=0
 CORE_CANCEL=0 CORE_INTERRUPTED=0 CORE_WORKERS=0
-CORE_N="" CORE_SESSION="" CORE_EVENTS="" CORE_BOOT="" CORE_ENV_WHY=""
+CORE_N="" CORE_SESSION="" CORE_EVENTS="" CORE_BOOT="" CORE_ENV_WHY="" CORE_PURPOSE=""
 
 # ---------------------------------------------------------------------------
 # The environment (docs/PROTOCOL.md → §4, Environment)
@@ -43,7 +43,7 @@ CORE_N="" CORE_SESSION="" CORE_EVENTS="" CORE_BOOT="" CORE_ENV_WHY=""
 # CORE_EVENTS is set only when the spool can be written at all.
 core_env_check() {
   local home=${OMB_CORE_ENV_HOME:-} scopes=${OMB_SESSION_SCOPES:-} s seen=","
-  CORE_ENV_WHY="" CORE_EVENTS="" CORE_SESSION="" CORE_N=""
+  CORE_ENV_WHY="" CORE_EVENTS="" CORE_SESSION="" CORE_N="" CORE_PURPOSE=""
   local IFS
   # The session folder and the spool first: without them nothing can answer.
   case "${OMB_SESSION_DIR:-}" in
@@ -89,7 +89,41 @@ x" ]; then
   done
   set +f
   case "$scopes" in ,* | *, | *,,*) CORE_ENV_WHY=${CORE_ENV_WHY:-"OMB_SESSION_SCOPES is malformed"} ;; esac
+  # The session purpose: unset, the ordinary contract; frontend-check, only
+  # for exactly the check's session and with no production seam set; any
+  # other value, the empty string included, is refused. It authenticates
+  # nothing: it selects which reviewed contract answers.
+  if [ -n "${OMB_SESSION_PURPOSE+set}" ]; then
+    if [ "$OMB_SESSION_PURPOSE" != frontend-check ]; then
+      CORE_ENV_WHY=${CORE_ENV_WHY:-"OMB_SESSION_PURPOSE names no session contract"}
+    elif [ "${OMB_SESSION_INTENT:-}" != read ] || [ "$scopes" != journey ] || [ "${OMB_CORE_ENV_DRY:-}" != 0 ]; then
+      CORE_ENV_WHY=${CORE_ENV_WHY:-"a frontend-check session is read-only, the journey scope alone, and not a dry run"}
+    elif core_seam_found; then
+      CORE_ENV_WHY=${CORE_ENV_WHY:-"a frontend-check session runs with no fixture, development or test seam set"}
+    else
+      CORE_PURPOSE=frontend-check
+    fi
+  fi
   [ -z "$CORE_ENV_WHY" ]
+}
+
+# core_seam_found — the production seam rule (docs/FRONTEND.md → *The
+# startup check*): 0 when OMB_FIXTURE or OMB_FRONTEND_DEV is non-empty, or
+# any environment variable whose name begins exactly with OMB_TEST_ holds a
+# non-empty value; 1 when none does. The names come from compgen -e, which
+# stock Bash 3.2 has; an environment that cannot be listed counts as holding
+# a seam.
+core_seam_found() {
+  local names n IFS
+  [ -n "${OMB_FIXTURE:-}" ] && return 0
+  [ -n "${OMB_FRONTEND_DEV:-}" ] && return 0
+  names=$(compgen -e) || return 0
+  for n in $names; do
+    case "$n" in
+      OMB_TEST_*) [ -n "${!n:-}" ] && return 0 ;;
+    esac
+  done
+  return 1
 }
 
 # core_in_scopes SCOPE — is SCOPE among the session's scopes?
@@ -1040,6 +1074,12 @@ core_main() {
     fi
     return 3
   fi
+  # A startup-check session answers from its own closed table, before any
+  # action is looked up.
+  if [ "$CORE_PURPOSE" = frontend-check ]; then
+    core_check_op "$op" "$fe" "$proto"
+    return 0
+  fi
   case "$op" in
     hello) core_result "done" ok ;;
     snapshot) core_op_snapshot ;;
@@ -1049,10 +1089,63 @@ core_main() {
   return 0
 }
 
+# core_check_op OP FRONTEND PROTO — the startup-check session
+# (docs/PROTOCOL.md → *The startup-check session*): hello, and the journey
+# snapshot built from the session alone; every other operation, an execute
+# whatever its action, basis, word or arguments, and any operation added
+# later, refused here. No action is looked up, no lock taken, no operation
+# record read or written, nothing re-read, no child started.
+core_check_op() {
+  case "$1" in
+    hello) core_result "done" ok ;;
+    snapshot)
+      if [ "$CORE_REQ_SCOPE" = journey ]; then
+        core_check_snapshot "$2" "$3"
+      else
+        core_result refused scope "A frontend-check session answers the journey scope alone."
+      fi
+      ;;
+    *) core_result refused unavailable "A frontend-check session answers only hello and the journey snapshot." ;;
+  esac
+}
+
+# core_check_snapshot FRONTEND PROTO — the check's four facts: no stage, no
+# action, no parameter, and nothing read beyond what hello reads, so no
+# operation record is shown, reconciled or cleared. FRONTEND and PROTO are
+# the request's own values, already held to the lock and to this core.
+core_check_snapshot() {
+  local body gen
+  body=$(_core_check_body "$1" "$2")
+  gen=$(sha256_str "$body")
+  core_emit generation id "$gen" total 0
+  _core_emit_body "$body" || return 1
+  core_result "done" ok
+}
+
+_core_check_body() {
+  rec_line fact scope journey key check label "Check" value "frontend startup check (frontend-check)" state info
+  rec_line fact scope journey key interface label "Interface" value "frontend $1 as the lock pins, protocol $2" state ok
+  rec_line fact scope journey key session label "Session" value "read-only, journey scope only, not a dry run" state info
+  rec_line fact scope journey key actions label "Actions" value "none in this session" state info
+}
+
+# _core_emit_body BODY — append a snapshot's records, one per line of BODY,
+# counted as core_emit counts them.
+_core_emit_body() {
+  local a
+  while IFS= read -r a; do
+    [ -n "$a" ] || continue
+    printf '%s\n' "$a" >>"$CORE_EVENTS" || return 1
+    CORE_BYTES=$((CORE_BYTES + ${#a} + 1)) CORE_RECS=$((CORE_RECS + 1))
+  done <<EOF
+$1
+EOF
+}
+
 # core_op_snapshot — the journey scope of the foundation: its facts, the
 # barrier if any, and the actions available now.
 core_op_snapshot() {
-  local scope body a gen
+  local scope body gen
   scope=$CORE_REQ_SCOPE
   if ! core_in_scopes "$scope"; then
     core_result refused scope "This session does not include the $scope scope."
@@ -1066,13 +1159,7 @@ core_op_snapshot() {
   body=$(_core_snapshot_body)
   gen=$(sha256_str "$body")
   core_emit generation id "$gen" total 0
-  while IFS= read -r a; do
-    [ -n "$a" ] || continue
-    printf '%s\n' "$a" >>"$CORE_EVENTS" || return 1
-    CORE_BYTES=$((CORE_BYTES + ${#a} + 1)) CORE_RECS=$((CORE_RECS + 1))
-  done <<EOF
-$body
-EOF
+  _core_emit_body "$body" || return 1
   core_result "done" ok
 }
 

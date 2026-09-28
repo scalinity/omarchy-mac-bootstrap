@@ -935,5 +935,149 @@ assert_eq "$(c_result)" "done ok" "sup-read-orphan-no-barrier: the next act proc
 rm -f "$EFFECT"
 sleep 3
 
+# --- frontend-check-*: the startup-check session ---------------------------------------
+# (docs/PROTOCOL.md → The startup-check session.) No fixture: the core reads
+# this machine as it answers hello, and a uname shim gives every runner the
+# aarch64 answer a hello needs. Its state folder is its own and never made.
+CK_SHIM=$(t_tmp)
+case "$(uname -s)" in
+  Darwin) printf '#!/bin/sh\ncase "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) /usr/bin/uname "$@" ;; esac\n' >"$CK_SHIM/uname" ;;
+  *) printf '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo aarch64 ;; *) /bin/uname "$@" ;; esac\n' >"$CK_SHIM/uname" ;;
+esac
+chmod +x "$CK_SHIM/uname"
+CK_STATE=$T/ck-state
+# ck OP RECORD... — one request in a check session. CK_ENV's assignments
+# come last, and env -i keeps the last value a name is given; an empty
+# OMB_FIXTURE or OMB_FRONTEND_DEV is off.
+ck() {
+  C_PATH="$CK_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
+    C_ENV="OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_SESSION_PURPOSE=frontend-check OMB_STATE_DIR=$CK_STATE ${CK_ENV:-}" c_run "$@"
+}
+CK_H64=$(printf '%064d' 7)
+# ck_every — every operation, one request each: "OP=status code" per line,
+# and "OP=inadmissible" for an answer that is not a whole response to OP.
+ck_every() {
+  local op
+  for op in hello snapshot detail validate execute; do
+    case $op in
+      hello) ck hello ;;
+      snapshot) ck snapshot "scope	name=journey" ;;
+      detail) ck detail "page	scope=journey	kind=inventory	generation=$CK_H64	offset=0	limit=2" ;;
+      validate) ck validate "select	action=test.read" ;;
+      execute) ck execute "exec	action=test.read	basis=$CK_H64	confirm=" ;;
+    esac
+    if [ "$(c_admits "$op")" = ok ]; then echo "$op=$(c_result)"; else echo "$op=inadmissible"; fi
+  done
+}
+refused_all="hello=error environment
+snapshot=error environment
+detail=error environment
+validate=error environment
+execute=error environment"
+
+# frontend-check-purpose-env: the purpose with anything but the check's own
+# session, or with a production seam set, is refused for every operation.
+for e in "OMB_SESSION_INTENT=act" "OMB_SESSION_INTENT=plan" "OMB_SESSION_SCOPES=journey,disk" "OMB_SESSION_SCOPES=disk" \
+  "OMB_DRY_RUN=1" "OMB_FIXTURE=$C_FIX" "OMB_FIXTURE=$C_FIX OMB_FRONTEND_DEV=x" "OMB_TEST_HOOK=x" "OMB_TEST_FUTURE=x" \
+  "OMB_SESSION_PURPOSE=" "OMB_SESSION_PURPOSE=frontend-checks" "OMB_SESSION_PURPOSE=install"; do
+  r=$(CK_ENV="$e" ck_every)
+  assert_eq "$r" "$refused_all" "frontend-check-purpose-env: $e: every operation refused as environment"
+done
+# OMB_FRONTEND_DEV outside fixture mode never reaches the core: the entrypoint
+# refuses it first (status 2, no answer), as for every command.
+CK_ENV="OMB_FRONTEND_DEV=x" ck hello
+assert_rc "$C_RC" 2 "frontend-check-purpose-env: OMB_FRONTEND_DEV without a fixture is refused before the core"
+assert_eq "$C_OUT" "omb-res 1" "and nothing is answered"
+# The purpose unset: the ordinary contract, which refuses a snapshot outside
+# fixture mode (the gate's foundation reads only fixtures).
+C_PATH="$CK_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
+  C_ENV="OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_STATE_DIR=$CK_STATE" c_run snapshot "scope	name=journey"
+assert_eq "$(c_result)" "refused unavailable" "frontend-check-purpose-env: with no purpose, the ordinary contract answers"
+# Controls: names the prefix rule does not match, and an empty OMB_TEST_ one.
+for e in "OMB_TEST_FUTURE=" "OMB_TESTING=x" "OMB_TEST=x" "SOME_OMB_TEST_X=x"; do
+  CK_ENV="$e" ck hello
+  assert_eq "$(c_result)" "done ok" "frontend-check-purpose-env: $e is not a seam the rule refuses"
+done
+
+# frontend-check-snapshot: the check's journey snapshot, exactly.
+ck hello
+assert_eq "$(c_result)" "done ok" "frontend-check-read-session: hello answered"
+hello=$(printf '%s\n' "$C_OUT" | sed -n 2p)
+assert_contains "$hello" "	ceiling=read	dry_run=0	fixture=0" "frontend-check-no-fixture: the hello says read, not a dry run, no fixture"
+ck snapshot "scope	name=journey"
+assert_eq "$(c_admits snapshot)" ok "frontend-check-snapshot: admitted by the Bash admission"
+assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | tr '\n' ' ')" "omb-res 1 hello generation fact fact fact fact result " "frontend-check-snapshot: hello, generation, four facts, result"
+ck_first=$(sed -n '3,$p' "$C_EV")
+ck_corpus=$(t_tmp)
+"$T_BASH" "$REPO/tests/proto/corpus.sh" "$ck_corpus" >/dev/null || fail "the corpus generator failed"
+assert_eq "$ck_first" "$(sed -n '3,$p' "$ck_corpus/frontend-check-snapshot.doc")" \
+  "frontend-check-snapshot: after hello, byte for byte the corpus case both admissions read (tests/proto/corpus.sh)"
+facts=$(sed -n '4,7p' "$C_EV")
+assert_eq "$(sed -n 3p "$C_EV")" "generation	id=$( (printf '%s' "$facts") | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)	total=0" \
+  "frontend-check-snapshot: the generation is the SHA-256 of the records after it"
+ck snapshot "scope	name=journey"
+assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-snapshot: a refresh is byte-identical after hello"
+c_session
+ck snapshot "scope	name=journey"
+assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-snapshot: and so is another session of the same checkout"
+
+[ ! -e "$CK_STATE" ] && ok || fail "frontend-check-no-state: no check request made the state folder"
+
+# frontend-check-zero-actions: an unsupervised and a failed operation record
+# in the state folder are neither shown, reconciled nor touched.
+mkdir -p "$CK_STATE/ops"
+(
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  for s in journey:unsupervised disk:failed; do
+    f=$CK_STATE/ops/${s%%:*}.omb
+    fd=""
+    [ "${s#*:}" = failed ] && fd=absent
+    { printf 'omb-op 1\n' && rec_line op action test.mutate scope "${s%%:*}" basis "$CK_H64" session "$SESS" state "${s#*:}" finding "$fd" pid 1 start x boot x at 2026-09-26T00:00:00Z; } >"$f"
+    rec_seal_write "$f"
+  done
+  omb_cleanup
+)
+ck_before=$(t_snapshot "$CK_STATE")
+ck snapshot "scope	name=journey"
+assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-zero-actions: the same snapshot whatever operation records exist"
+assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | grep -cE '^(action|param|stage|blocker|warning)$')" 0 "frontend-check-zero-actions: no action, param, stage, blocker or warning"
+assert_eq "$(t_snapshot "$CK_STATE")" "$ck_before" "frontend-check-zero-actions: both records byte-identical after it"
+
+# frontend-check-forbidden-scope: every other scope refused, with the
+# generation of the empty data set.
+empty_gen=$( (printf '') | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)
+for s in disk plan profile resolve asahi network omarchy shared export restore rescue qualify debug; do
+  ck snapshot "scope	name=$s"
+  assert_eq "$(c_result) $(c_admits snapshot)" "refused scope ok" "frontend-check-forbidden-scope: $s refused scope"
+  assert_eq "$(sed -n 3p "$C_EV")" "generation	id=$empty_gen	total=0" "frontend-check-forbidden-scope: $s answered with the empty data set's generation"
+done
+
+# frontend-check-execute-refused: every execute refused before anything is
+# looked up, locked, recorded, re-read or started — whatever its action,
+# basis, word or arguments.
+# The last is the basis an ordinary fixture session shows for test.mutate.
+vb=$(c_basis test.mutate)
+[ -n "$vb" ] && ok || fail "an ordinary session lists test.mutate, whose basis the check's execute then carries"
+for x in "test.read	basis=$CK_H64	confirm=" "test.mutate	basis=$CK_H64	confirm=test" "test.handoff	basis=$CK_H64	confirm=start" \
+  "no.such.action	basis=$CK_H64	confirm=" "test.mutate	basis=${vb:-$CK_H64}	confirm=test"; do
+  ck execute "exec	action=$x" "arg	name=size	value=1" "arg	name=disk	value=disk0"
+  assert_eq "$(c_result) $(c_admits execute)" "refused unavailable ok" "frontend-check-execute-refused: ${x%%	*}"
+  assert_eq "$(ls "$SESS" | grep -c "^req-$C_N\.worker-")" 0 "frontend-check-execute-refused: ${x%%	*} started no child"
+done
+assert_eq "$(t_snapshot "$CK_STATE")" "$ck_before" "frontend-check-execute-refused: no lock, operation record or effect written"
+# frontend-check-detail-refused, frontend-check-validate-refused.
+ck detail "page	scope=journey	kind=inventory	generation=$CK_H64	offset=0	limit=2"
+assert_eq "$(c_result) $(c_admits detail)" "refused unavailable ok" "frontend-check-detail-refused"
+assert_eq "$(sed -n 3p "$C_EV")" "generation	id=$empty_gen	total=0" "frontend-check-detail-refused: with the empty data set's generation"
+ck validate "select	action=test.read"
+assert_eq "$(c_result) $(c_admits validate)" "refused unavailable ok" "frontend-check-validate-refused"
+# frontend-check-no-state: the core's side wrote nothing into its state
+# folder in any case above (the records placed there are the test's own).
+rm -rf "$CK_STATE/ops"
+assert_eq "$(find "$CK_STATE" | wc -l | tr -d ' ')" 1 "frontend-check-no-state: the check's cores wrote nothing into the state folder"
+rm -rf "$CK_STATE"
+
 t_decoys_survive test-core
 t_done test-core

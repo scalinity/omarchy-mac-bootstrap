@@ -68,6 +68,17 @@ for c in "token $TOKEN" "ombdone ombdone-1a2b3c4d-8f2a41c0e9b7-f5f0" "ombshare o
   res "$HELLO" "code	kind=${c%% *}	value=${c#* }" "$RESULT" | case_ "proto-golden-codes.${c%% *}" res execute ok
 done
 
+# --- frontend-check-snapshot (docs/PROTOCOL.md → The startup-check session) --------
+# The check's snapshot for frontend 0.1.0 and protocol 1, as the core writes
+# it: a read, journey-only hello, then the generation of the four facts (the
+# SHA-256 of their lines, LF between them), the facts, the result.
+CHECK_FACTS=$(lines "fact	scope=journey	key=check	label=Check	value=frontend%20startup%20check%20%28frontend-check%29	state=info" \
+  "fact	scope=journey	key=interface	label=Interface	value=frontend%200.1.0%20as%20the%20lock%20pins,%20protocol%201	state=ok" \
+  "fact	scope=journey	key=session	label=Session	value=read-only,%20journey%20scope%20only,%20not%20a%20dry%20run	state=info" \
+  "fact	scope=journey	key=actions	label=Actions	value=none%20in%20this%20session	state=info")
+CHECK_GEN=$(printf '%s' "$CHECK_FACTS" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)
+res "${HELLO/ceiling=act/ceiling=read}" "generation	id=$CHECK_GEN	total=0" "$CHECK_FACTS" "$RESULT" | case_ frontend-check-snapshot res snapshot ok
+
 # --- proto-diff-*: Bash and Rust agree ----------------------------------------------
 req "$REQ_HELLO" | case_ proto-diff-canonical.hello req - ok
 { printf '\000'; req "$REQ_HELLO"; } | case_ proto-diff-nul.first req - byte
