@@ -593,7 +593,7 @@ source never sets it. C reads it before any operation:
 | `OMB_SESSION_PURPOSE` | C |
 | --- | --- |
 | unset | the ordinary contract of this section and §5, unchanged |
-| `frontend-check` | *The startup-check session*, only when the session is exactly `OMB_SESSION_INTENT=read`, `OMB_SESSION_SCOPES=journey` and `OMB_DRY_RUN=0`, and `OMB_FIXTURE`, `OMB_FRONTEND_DEV` and every `OMB_TEST_*` variable are unset or empty; otherwise every operation is refused `result status=error code=environment` |
+| `frontend-check` | *The startup-check session*, only when the session is exactly `OMB_SESSION_INTENT=read`, `OMB_SESSION_SCOPES=journey` and `OMB_DRY_RUN=0`, and the production seam rule finds nothing: `OMB_FIXTURE` and `OMB_FRONTEND_DEV` unset or empty, and no environment variable whose name begins exactly with `OMB_TEST_` holding a non-empty value — the same rule the launcher applies before any effect (docs/FRONTEND.md → *The flow*); otherwise every operation is refused `result status=error code=environment` |
 | any other value, the empty string included | every operation refused `result status=error code=environment` |
 
 The purpose is environment, not a record: no request, response or record
@@ -652,7 +652,10 @@ development exception needs fixture mode, which the purpose refuses); then
 this table. An `execute` is refused there, before step 2 of *Executing*: no
 action is looked up, no run lock is taken, no operation record is read or
 written, nothing is re-read, no basis is built, no word compared, no child
-started. Each refusal meets its operation's response schema, and C exits 0
+started. Each refusal meets its operation's whole response schema — a
+refused `snapshot` or `detail` holds the `generation` record that schema
+requires, naming the empty data set, as every core's refusal does — and C
+exits 0
 with its `result`. The core is the enforcement; that the frontend shows no
 action is not.
 
@@ -685,8 +688,14 @@ result	status=done	code=ok	text=	next=
   `hello` — the checkout's commit, the architecture, the boot session, its
   own identity and source. It reads no operation record, so it can neither
   show nor settle one: no reconciliation runs, and nothing it does removes,
-  rewrites or clears a record, whatever barrier exists. The same lock and
-  session values always give the same records.
+  rewrites or clears a record, whatever barrier exists.
+- **What stays the same.** With one executing checkout, its lock and the
+  same session values, the records after `hello` — and so the generation —
+  are byte-identical, on every refresh and every run. The `hello` record is
+  not held to that across commits: it names the executing core, whose
+  `commit` and `source` truthfully change in a later Bash-only commit while
+  the lock and the artifact stay those of `54c3770` (docs/DECISIONS.md,
+  D10).
 
 ### Request schemas
 

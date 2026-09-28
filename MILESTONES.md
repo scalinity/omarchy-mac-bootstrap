@@ -295,9 +295,11 @@ of docs/TESTING.md.
   macOS artifact the committed production lock pins, acquired or verified
   and started through `./omarchy-bootstrap frontend-check` with no fixture,
   development or test override; `hello` and the production foundation
-  snapshot answered; the action-free dashboard visibly drawn; a normal
-  quit restoring the terminal and removing the session; no baseline state
-  written and no baseline action reached (`frontend-check-production-mac`);
+  snapshot answered; the action-free dashboard visibly drawn and seen; a
+  normal quit restoring the terminal and removing the session; no baseline
+  state written and no baseline action reached
+  (`frontend-check-production-mac`) — the command's status 0 alone is not
+  this evidence, because it cannot show that the dashboard was drawn;
   the Linux aarch64 artifact passing `frontend-compat-linux` and starting
   on the aarch64 runner; every
   `frontend-input-*` case behaving as written; start and every cleanup path
@@ -334,11 +336,20 @@ of docs/TESTING.md.
   `frontend-check`. The amendment needs no new release, tag, build or
   artifact: `frontend-v0.1.0` and the lock stay as they are, and only a
   change under `frontend/`, or Rust behaviour the released artifact cannot
-  give, would need a new release, under a new version. Blocked on, in
-  order: an independent review of the amendment; the bounded
-  `frontend-check` implementation; its focused safety review (D18); CI on
-  the exact remediation commit; the production start on this Mac, as this
-  exit states it. Gate 2 is not authorized. Open:
+  give, would need a new release, under a new version. The amendment is
+  `786a726`; its independent review accepted the architecture — the
+  explicit command, the split authorities, the session purpose, the
+  action-free snapshot, protocol 1 and `frontend-v0.1.0` as released — and
+  required four documentation corrections: FC01, what the command's result
+  can prove, apart from what only the drawn dashboard shows; FC02, the
+  cache's effects phase by phase; FC03, one `OMB_TEST_` prefix rule for the
+  launcher and the core; FC04, the terminal's eligibility before the dry
+  run. Their remediation, the documentation commit after `786a726`, is
+  written and awaits independent review; implementation is not authorized.
+  Blocked on, in order: that review; the bounded `frontend-check`
+  implementation; its focused safety review (D18); CI on the exact
+  remediation commit; the production start on this Mac, as this exit
+  states it. Gate 2 is not authorized. Open:
   - **Bash 5.2 (not a target):** Ubuntu's runners have 5.2.21, which loses
     a trap inside a command holding two command substitutions (upstream,
     fixed for 5.3; docs/UPSTREAM.md → *Experiments*). The core's own code

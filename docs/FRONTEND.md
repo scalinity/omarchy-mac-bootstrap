@@ -74,7 +74,7 @@ On macOS arm64 and on Linux aarch64 alike (*The startup check*):
   → the verified, published omb-tui (read ceiling, journey scope, purpose frontend-check)
   → hello → the check's journey snapshot → the foundation dashboard, no actions
   → the person leaves (q) → the session quiescent → terminal restored → scratch removed
-  → frontend-check: completed (status 0)
+  → frontend-check: completed (status 0: the exchanges and the session's end, not the drawing)
 ```
 
 ### On macOS
@@ -165,16 +165,24 @@ In this order, each step ending the check as its outcome says (*Outcomes*):
 
 1. **Arguments and seams.** `frontend-check` takes no argument; the global
    `--dry-run`, `--no-tui`, `--no-color` and `--ascii` apply, and `--help`
-   and `--version` answer as for every command. Any other argument, or any
-   of `OMB_FIXTURE`, `OMB_FRONTEND_DEV`, `OMB_TEST_ARTIFACT`,
-   `OMB_TEST_HOOK`, `OMB_TEST_HANDOFF_CHILD`, `OMB_TEST_RECORD`,
-   `OMB_TEST_AFTER`, `OMB_TEST_RC`, `OMB_TEST_QUAL_BYTES`,
-   `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT` or `OMB_TEST_PAUSE_AT` non-empty
-   (an empty value is off, as for every command), is a usage error before
-   anything is read, fetched or started. The seams keep their meaning for
-   every other command and for the tests that own them; this command
-   refuses them so that a production check can never turn into a fixture
-   or development run.
+   and `--version` answer as for every command. Any other argument is a
+   usage error. So is the production seam rule: `OMB_FIXTURE` non-empty,
+   `OMB_FRONTEND_DEV` non-empty, or any environment variable whose name
+   begins exactly with the nine characters `OMB_TEST_` holding a non-empty
+   value — `OMB_TEST_ARTIFACT`, `OMB_TEST_HOOK`, `OMB_TEST_HANDOFF_CHILD`,
+   `OMB_TEST_RECORD`, `OMB_TEST_AFTER`, `OMB_TEST_RC`,
+   `OMB_TEST_QUAL_BYTES`, `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT`,
+   `OMB_TEST_PAUSE_AT` and any seam added later alike; the named ones are
+   examples, not the rule. An empty value is off, as for every command, and
+   a name outside the prefix (`OMB_TEST`, `OMB_TESTING`, `SOME_OMB_TEST_X`)
+   is not matched by it. The environment's names are enumerated in a way
+   stock Bash 3.2 supports. Both refusals exit 2 before anything else in
+   this list — the terminal is not even looked at — and before any lock is
+   read, anything fetched or cached, or any scratch or process made. The
+   seams keep their meaning for every other command and for the tests that
+   own them; this command refuses them so that a production check can
+   never turn into a fixture or development run, and the core holds its
+   session to the same rule (docs/PROTOCOL.md → *Environment*).
 2. **Its own route.** The command is dispatched on its own, after the flags
    and before the run lock, the log's start line and every other command's
    routing, and it returns from there with its own status. No outcome
@@ -182,86 +190,147 @@ In this order, each step ending the check as its outcome says (*Outcomes*):
    or any other command.
 3. **Target.** macOS on arm64 is `aarch64-apple-darwin`, Linux on aarch64
    is `aarch64-unknown-linux-gnu`; any other system: not performed.
-4. **Dry run.** With `--dry-run`, *Dry run* below, and nothing else.
-5. **Terminal.** stdin and stdout are terminals, `TERM` is set and not
-   `dumb`, and `--no-tui` is absent; otherwise not performed, with nothing
-   acquired and nothing started.
+4. **Terminal.** stdin and stdout are terminals, `TERM` is set and not
+   `dumb`, and `--no-tui` is absent. Otherwise not performed, whatever
+   other flag is given, `--dry-run` included: no lock read, no cache
+   inspected or written, no scratch, no frontend and no core.
+5. **Dry run**, only once step 4 passed: with `--dry-run`, *Dry run* below,
+   and nothing else.
 6. **Lock.** This checkout's committed `release/frontend.lock`, admitted;
    its protocol the core's; an artifact for the target. No other lock,
    binary, CI artifact or local build is ever used.
 7. **Cache.** As for an act session: this user's cache, then root's; the
    file hashed on every launch; a verified one is started. A user-cache
    file under the digest's name whose bytes differ is named and never run,
-   and is moved aside only after a yes.
+   and is moved aside only after a yes; root's copy is never moved by
+   another user.
 8. **Acquisition**, when nothing verified is cached: the URL, version,
    target, size and SHA-256 shown as for an act session, then `[Y/n]`.
    After a yes, the lock's HTTPS URL is fetched with `curl` on the normal
-   path (never a fixture's copy) and held to its size and SHA-256 before it
-   is placed in the cache by rename or run; a failure keeps no file.
+   path (never a fixture's copy) into a private file this attempt owns, and
+   held to its size and SHA-256 before it is promoted into the cache by
+   rename; only a promoted file is ever run (*Effects*).
 9. **Session.** The session scratch of docs/PROTOCOL.md → *The session
-   scratch*; the session values above exported; `OMB_TUI_LOG` ignored,
-   with a one-line notice; `omb-tui --session <dir>` started.
+   scratch*; the terminal's settings saved; the session values above
+   exported; `OMB_TUI_LOG` ignored, with a one-line notice;
+   `omb-tui --session <dir>` started.
 10. **The interface.** `hello`, then the check's `journey` snapshot, then
     the dashboard: the check's facts, and "Nothing is available now." under
     its actions. `r` asks for the same snapshot again; help, focus,
     scrolling, resize and Ctrl-Z behave as in any session; `q` or Ctrl-C
     leaves.
-11. **After it.** The launcher waits for the session to be quiescent,
-    restores the terminal and removes its scratch, as after every session
-    (*The terminal*).
-12. **Result.** *Outcomes*.
+11. **After it**, *The command's result* below, in its order.
+
+### The command's result
+
+Two kinds of evidence answer two different questions, and neither stands in
+for the other:
+
+| Evidence | Established by | Shows | Does not show |
+| --- | --- | --- | --- |
+| **the command's result** (status 0, `completed`) | the launcher, from the processes it waited for, the session's spools and the terminal's settings | that the verified frontend ran, the core answered the required `hello` and `journey` snapshot exchanges, no exchange failed, and the session ended and was cleaned up | that the frontend consumed the snapshot, entered its dashboard, or drew anything |
+| **rendering evidence** | `frontend-check-terminal` in CI and `frontend-check-production-mac` on this Mac (docs/TESTING.md → *Frontend*) | that the dashboard was entered and drawn with the check's facts and its empty actions, that keys worked, that `q` left, and that the screen and cursor came back | — |
+
+After the frontend exits, the launcher works in this order, and returns
+`completed` only when every step holds:
+
+1. **The frontend's end.** It waits for the frontend; the frontend was the
+   binary verified against the lock for this launch, and it exited 0.
+2. **Quiescence.** It waits for the session to be quiescent (*The
+   terminal*). A session still running at the limit, or not knowable, is
+   `unsettled`: the terminal and the scratch stay as they are, and the
+   check is not completed.
+3. **The exchanges**, while the scratch still exists: every request spool
+   of the session is admitted as a response (docs/PROTOCOL.md → §2) and
+   judged, and the verdict kept. It needs at least one exchange answered
+   `done` without a `generation` record — a `hello`, since in this session
+   nothing else can answer `done` without one — and at least one answered
+   `done` with a `generation` record and no `action` record — a `journey`
+   snapshot, since no other operation can answer `done` with one. Every
+   exchange of the session must have ended `done`: one that ended in any
+   other status (`refused`, `error`, `failed`, `cancelled`, `stopped`), or
+   whose spool is malformed, unreadable, incomplete or holds only its
+   header, makes the outcome unknown or failed, and so the check not
+   completed. No recovery rule exists: a snapshot that answered `done`
+   followed by a refresh that did not is `not-completed`.
+4. **The terminal's settings.** The launcher saved them before the
+   frontend started (as `stty -g` prints them); after quiescence it puts
+   them back, reads them again, and the two representations are equal.
+   Settings that could not be saved, put back or read again, or that read
+   back differently, forbid `completed`. This is all the command measures
+   of the terminal: the alternate screen, the cursor and what was drawn are
+   rendering evidence.
+5. **Owner cleanup**, as every launcher does (docs/PROTOCOL.md → *The
+   session scratch*).
+6. **The scratch is gone**: the launcher confirms that this session's
+   scratch no longer exists. Nothing is inspected after it is removed.
+
+Then, and only then, `completed` (status 0). A step that does not hold
+ends the check as `not-completed`, after the lifecycle steps that still
+apply, never by skipping them.
+
+**An early quit can still read as completed.** The released frontend exits
+0 when the person leaves its connecting screen, and a snapshot it had
+already asked for can then still be answered by a core that finishes
+afterwards. The spools of that run are the same as those of a run whose
+dashboard was drawn, and the launcher cannot tell the two apart from them,
+so such a run may be `completed`. The command's result therefore never
+claims that the dashboard was drawn, and such a run is never rendering
+evidence: `frontend-check-terminal` and `frontend-check-production-mac`
+each require the dashboard to have been seen. No acknowledgement record,
+timing rule or frontend change is added to tell the two apart.
 
 ### Outcomes
 
 | Outcome | When | Status |
 | --- | --- | --- |
-| `completed` | all of: the frontend exited 0; the session was quiescent; its spools, admitted before the scratch was removed, hold a `hello` answered `done` and at least one `snapshot` answered `done` with a `generation` record and no `action` record; the saved terminal settings were put back; the scratch was removed | 0 |
-| `not-completed` | any failure of steps 6 to 11, a declined `[Y/n]`, or the person leaving before the dashboard's data arrived | 1 |
-| `not-performed` | step 3 or 5 stopped it, or `--dry-run` | 1 |
+| `completed` | every step of *The command's result* held | 0 |
+| `not-completed` | a failure of steps 6 to 11, a declined `[Y/n]`, an exchange that did not end `done`, a failed measurement of the terminal's settings, or a scratch that was not removed | 1 |
+| `not-performed` | step 3 or 4 stopped it, or `--dry-run` | 1 |
 
-A usage error (step 1) exits 2, as for every command. Ctrl-C at a prompt
-before the frontend starts ends the check as at any prompt (status 130),
-with nothing cached and no partial download left.
-
-The frontend exits 0 also when the person leaves before any snapshot has
-answered (`q` on its connecting screen), so its exit status alone is never
-the result; the spools are what show that it reached its core and received
-its dashboard. That the dashboard was drawn is shown by
-`frontend-check-terminal` in CI and seen by the person at gate 1's
-production start (MILESTONES.md → *Gate 1 — Frontend and transport
-foundation*).
+A usage error or a refused seam (step 1) exits 2, as for every command,
+before the terminal is looked at. Ctrl-C before the frontend starts — at a
+prompt or during the download — ends the check as the baseline's interrupt
+does (status 130), with the effects of *Effects*.
 
 Every outcome prints one bounded report. `completed` names the version, the
-target and the SHA-256 it started. `not-completed` begins `frontend-check:
-not completed —` with the launcher's state (`missing`, `mismatch`,
-`unrunnable`, `fallback`, `crashed`, `unsettled`) and its reason, as
-*When things go wrong* lists them; `not-performed` says which condition
-stopped it and that the interactive check was not performed. None of them
-says it continues in text: there is nothing to continue, and no outcome
-enters another command's flow. A session not known to be over leaves the
-terminal and the scratch as they are and says so, as every launcher does.
+target and the SHA-256 it started, and says that the startup exchanges
+completed and the session ended cleanly — never that the dashboard was
+drawn. `not-completed` begins `frontend-check: not completed —` with the
+launcher's state (`missing`, `mismatch`, `unrunnable`, `fallback`,
+`crashed`, `unsettled`) and its reason, as *When things go wrong* lists
+them, and names any residual file of *Effects*; `not-performed` says which
+condition stopped it and that the interactive check was not performed.
+None of them says it continues in text: there is nothing to continue, and
+no outcome enters another command's flow. The released frontend may print,
+on its own fallback path, that it continues in the text interface; the
+check's launcher takes neither those words nor the frontend's status 10 as
+leave to route anywhere, and reports its own result instead. A session not
+known to be over leaves the terminal and the scratch as they are and says
+so, as every launcher does.
 
 ### Dry run
 
-`frontend-check --dry-run` reads the lock and the cache and says what the
+Only an eligible check gets this far (step 4): on an interactive terminal,
+without `--no-tui`. There, `frontend-check --dry-run` may read and admit the
+committed lock and inspect the cache without changing it, and says what the
 check would do: the artifact (URL, version, target, size, SHA-256), whether
 a verified copy is cached and where, whether a download would be asked
 for, and what would start, each as `would run`. Then it reports the check
-not performed. It downloads nothing, not even into the per-run scratch,
-moves nothing, starts neither frontend nor core, and writes no trace. This
-is narrower than another command's dry run, which may start the frontend
-from a scratch copy: an interface started by a check's dry run would look
-like the check itself, and a dry run never counts as it.
+`not-performed` (status 1). It downloads nothing, not even into the per-run
+scratch, moves nothing, makes no session scratch, starts neither frontend
+nor core, and writes no trace; only the per-run scratch that admission
+itself uses exists, and it goes on exit. This is narrower than another
+command's dry run, which may start the frontend from a scratch copy: an
+interface started by a check's dry run would look like the check itself,
+and a dry run never counts as it.
 
 ### Effects
 
-- **Persistent: only the frontend cache**, and only after consent:
-  `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/omb-tui` (root's
-  under `/var/cache/omarchy-mac-bootstrap/` on Linux), the directories made
-  for it (0700), and a mismatching copy renamed `omb-tui.mismatch-<stamp>`
-  after a yes. A download that fails, has the wrong size or digest, or is
-  interrupted leaves no file there — at most the directories made for it,
-  empty.
+- **Persistent: only the frontend cache**, and only after consent, phase by
+  phase below: `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/`
+  (root's under `/var/cache/omarchy-mac-bootstrap/` on Linux) and the
+  directories made for it (0700).
 - **Never**: the state directory, state, logs, the run lock, a saved plan,
   an operation record (none is written, read by the check's snapshot,
   reconciled or cleared), a migration profile, export or restore state,
@@ -272,6 +341,37 @@ like the check itself, and a dry run never counts as it.
   scratch*. As every launcher does, its owner cleanup and stale reclaim
   read the state directory's operation records only to decide whether a
   scratch may be removed; they write nothing there.
+
+The cache changes in phases, and a later failure never undoes an earlier,
+consented phase:
+
+| Phase | What it does | What it leaves |
+| --- | --- | --- |
+| A. inspect | reads this user's cache and root's | nothing changed |
+| B. move aside | after a yes, renames a mismatching user-cache file to `omb-tui.mismatch-<stamp>` beside it | that backup, from then on, whatever happens later: no rollback, no deletion |
+| C. attempt file | after `[Y/n]`, makes the directories it needs and one private file this attempt owns (`.omb-tui.*`) in the digest's directory | the directories; the attempt file until D–F settle it |
+| D. writer ends | the download's writer has exited | — |
+| E. verify | the attempt file held to the lock's size and SHA-256 | — |
+| F. promote | renames the verified attempt file to `<sha256>/omb-tui` | the verified binary, which stays: a valid, consented cache entry |
+| G. session | starts the promoted or cached binary | only the temporary effects above |
+
+When the check stops at each point:
+
+| Stops at | The cache afterwards | The outcome |
+| --- | --- | --- |
+| the move or the download declined | as before the prompt; a move already made (B) stays | `not-completed` |
+| a download, network, size or digest failure before F | what B and C left, less the attempt file, removed once its writer has ended; never promoted, never run | `not-completed` |
+| a handled interruption before F (Ctrl-C, SIGTERM, SIGHUP) | the same: once the writer has ended, a bounded removal of this attempt's file; B's backup stays | status 130 for Ctrl-C, otherwise `not-completed`; a residual is named |
+| that removal failing | the attempt file stays and is named as the residual; the directory is not called empty, nothing else is deleted, and nothing continues into another command | `not-completed` |
+| after F: the frontend will not execute, `hello` or the snapshot fails, the frontend crashes, the person leaves, an interruption | the promoted binary stays; it is not rolled back because the check did not complete | `not-completed`, or `completed` when *The command's result* holds |
+| SIGKILL, a power loss, or any death that runs no cleanup, before the attempt file is settled | no cleanup is promised: a private attempt file (`.omb-tui.*`) may remain | no success is reported |
+
+"Cleanup attempted" and "cleanup succeeded" are kept apart: only a
+confirmed removal counts, and a failed one is reported, never assumed.
+Nothing is ever selected but the exact `<sha256>/omb-tui` path, verified by
+size and SHA-256 on every launch: an attempt file and a mismatch backup are
+never selected, run or promoted, whatever bytes they hold. This contract
+adds no scavenging of old attempt files or backups.
 
 ### Help
 

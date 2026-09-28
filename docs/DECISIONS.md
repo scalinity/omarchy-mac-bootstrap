@@ -197,7 +197,11 @@ apart: the launcher's cache authority comes from that command word alone and
 is never passed to a core, and a core's authority comes from its session
 values alone. No command inherits the exception by having a read session:
 `status`, `doctor`, `scan` and every other read command never download or
-cache the frontend, and `frontend-check --dry-run` does neither.
+cache the frontend, and `frontend-check --dry-run` does neither. The cache
+changes phase by phase, and a consented phase stays when a later one fails:
+a moved-aside mismatch and a promoted, verified binary remain; only this
+attempt's own download file is removed, and only once its writer has ended
+(docs/FRONTEND.md → *Effects*).
 
 **D48. M14 gate 1's production start is a command of its own,
 `frontend-check`.** Gate 1 exposes no baseline action, and every installer
@@ -210,13 +214,21 @@ bending it. Its session carries the purpose `frontend-check`, which the
 core validates and answers with an action-free snapshot built from the
 session alone; every other operation is refused by the core, and every
 failure ends the check, never another command (docs/FRONTEND.md → *The
-startup check*; docs/PROTOCOL.md → *The startup-check session*). *Set
-aside:* opening the foundation dashboard from the default run, which would
-put an unfinished flow in the installer's place; counting a fixture launch,
-which takes another acquisition path and another snapshot; deferring the
-production start, which gives up the first end-to-end evidence of
-distribution; a new wire operation, which `hello` and `snapshot` make
-unnecessary.
+startup check*; docs/PROTOCOL.md → *The startup-check session*). Its exit
+status reports what the launcher can observe — the verified frontend ran,
+the required core exchanges ended `done`, the terminal's settings came
+back, the session was cleaned up — and never that the dashboard was drawn:
+the released frontend exits 0 when left on its connecting screen, and a
+core it had already asked can answer afterwards, so spools cannot show
+receipt. Drawing is shown by the PTY test and seen on this Mac, and gate
+1's exit needs the latter. *Set aside:* opening the foundation dashboard
+from the default run, which would put an unfinished flow in the
+installer's place; counting a fixture launch, which takes another
+acquisition path and another snapshot; deferring the production start,
+which gives up the first end-to-end evidence of distribution; a new wire
+operation, which `hello` and `snapshot` make unnecessary; an
+acknowledgement record or a timing rule to prove receipt, which would need
+a new frontend release and would still not prove drawing.
 
 ## Migration
 

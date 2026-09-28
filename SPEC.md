@@ -177,7 +177,9 @@ ends the check as not completed; none continues into another command.
 
 - **read** commands create no state directory, write no state or log, and keep
   no download.
-- **read, frontend cache** (`frontend-check` only) splits two authorities.
+- **read, frontend cache** (`frontend-check` only) is a human-facing
+  summary of this table, not a fourth `OMB_SESSION_INTENT` value: the
+  command's core sessions carry `read`. It splits two authorities.
   Toward the machine it is a read command: no state directory, state, log
   or run lock, and `run` refuses everything. Its launcher alone may also
   establish the frontend cache — after `[Y/n]` download the artifact the
@@ -744,7 +746,7 @@ warning, and a token without it simply has no profile.
 | Ctrl-C at a prompt | Exit; nothing destructive ran |
 | Ctrl-C while a launched command runs | Report that it may have made changes; `status` re-derives where the machine is |
 | (M14) Frontend missing, unverifiable, unrunnable, or a version mismatch | Never run unverified; explain; continue in the text interface |
-| (M14) `frontend-check` fails at any step, is declined, or is left before its dashboard | Never run unverified; explain; the check ends not completed (status 1) and continues into nothing |
+| (M14) `frontend-check` fails at any step, is declined, or any of its exchanges does not end `done` | Never run unverified; explain, naming any residual file; the check ends not completed (status 1) and continues into nothing; consented cache effects already made stay (docs/FRONTEND.md → *Effects*) |
 | (M14) Frontend crash | Its hook and the launcher restore the terminal; report, with the log and `debug` |
 | (M14) The machine changed between review and action | The core refuses the stale basis; the frontend shows the fresh state |
 | (M14) The core ends without its result (crash, kill) | Outcome unknown, never "failed"; the machine is read again; the scope's operation record is reconciled before any new act in it, and refused as busy while its processes live |
@@ -790,8 +792,11 @@ warning, and a token without it simply has no profile.
   new seams `OMB_TEST_QUAL_BYTES`, `OMB_TEST_HANDOFF_CHILD`,
   `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT`, `OMB_TEST_PAUSE_AT` and
   `OMB_FRONTEND_DEV`, which also work only in fixture mode. (M14)
-  `frontend-check` refuses every one of them, and `OMB_TEST_HOOK` and
-  `OMB_TEST_ARTIFACT` too, before any effect.
+  `frontend-check` refuses, before any effect, a non-empty `OMB_FIXTURE`
+  or `OMB_FRONTEND_DEV` and any environment variable whose name begins
+  exactly with `OMB_TEST_` holding a non-empty value (`OMB_TEST_HOOK` and
+  `OMB_TEST_ARTIFACT` among them), and its core holds its session to the
+  same rule.
 - (M14–M16) **The product expansion adds no disk authority.** Nothing new
   partitions, formats, mounts APFS or touches the boot chain. The new
   privileged changes are exactly: in `restore`, packages and system setup
@@ -897,10 +902,12 @@ acceptance; the test ids are in docs/TESTING.md):
     interface takes over for every failure in docs/FRONTEND.md; the
     terminal is restored after exit, error, panic, SIGTERM and every
     handoff. `frontend-check` changes nothing persistent but the frontend
-    cache, after consent; its cores answer only `hello` and the `journey`
-    snapshot, with zero actions; it reports completed only after the
-    snapshot answered and the session ended cleanly, and no failure of it
-    continues into another command.
+    cache, after consent and phase by phase; its cores answer only `hello`
+    and the `journey` snapshot, with zero actions; it reports completed
+    only when every exchange of its session ended `done`, the terminal's
+    saved settings read back equal and its scratch is gone — which is not
+    evidence that the dashboard was drawn: that is the PTY test's and this
+    Mac's own — and no failure of it continues into another command.
 19. (M14) Every protocol document is admitted byte by byte before it is
     parsed, identically in Bash and Rust, and matches the golden examples;
     no protocol descriptor reaches a child; a mutating child has no
