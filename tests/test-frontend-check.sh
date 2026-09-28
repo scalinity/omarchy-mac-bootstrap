@@ -558,18 +558,22 @@ rm -rf "$T/tmp"/omarchy-bootstrap.*
 fc_held "frontend-check-refresh-failure"
 
 # --- frontend-check-termios ----------------------------------------------------------------------
-# The launcher's stty, through a shim: its saved settings unreadable; the
-# restore failing; the settings read back other than saved, once the
-# stand-in has run.
+# The launcher's stty, through a shim: its saved settings unreadable; its
+# settings printed by a stty -g that fails, and a stty -g that prints
+# nothing; the restore failing; the settings read back other than saved.
+# A flag made before the run meets the save, one the stand-in makes meets
+# the readback.
 mkdir -p "$T/termios-shim"
 real=$(command -v stty)
-printf '#!/bin/sh\nif [ "$1" = -g ]; then\n  [ -e "%s/stty-nosave" ] && exit 1\n  o=$(%s -g) || exit 1\n  [ -e "%s/stty-differ" ] && o="$o:1"\n  printf "%%s\\n" "$o"\n  exit 0\nfi\n[ -e "%s/stty-norestore" ] && exit 1\nexec %s "$@"\n' \
-  "$T" "$real" "$T" "$T" "$real" >"$T/termios-shim/stty"
+printf '#!/bin/sh\nif [ "$1" = -g ]; then\n  [ -e "%s/stty-nosave" ] && exit 1\n  [ -e "%s/stty-g-empty" ] && exit 0\n  o=$(%s -g) || exit 1\n  [ -e "%s/stty-differ" ] && o="$o:1"\n  printf "%%s\\n" "$o"\n  [ -e "%s/stty-g-fails" ] && exit 1\n  exit 0\nfi\n[ -e "%s/stty-norestore" ] && exit 1\nexec %s "$@"\n' \
+  "$T" "$T" "$real" "$T" "$T" "$T" "$real" >"$T/termios-shim/stty"
 chmod +x "$T/termios-shim/stty"
 guard_path=$FC_PATH
 FC_PATH="$T/termios-shim:$guard_path"
 fc_reset
 fc_warm
+fc_run
+assert_eq "$FC_RC" 0 "frontend-check-termios: through the shim, saved and read back equal: completed"
 fc_plan env hello "snapshot journey"
 : >"$T/stty-nosave"
 fc_run
@@ -577,6 +581,20 @@ assert_eq "$FC_RC" 1 "frontend-check-termios: the saved settings unreadable: sta
 assert_contains "$FC_TEXT" "the terminal's settings could not be saved, so the interface was not started" "frontend-check-termios: and why"
 [ ! -e "$T/standin-env" ] && ok || fail "frontend-check-termios: no frontend started without them"
 rm -f "$T/stty-nosave"
+for flag in stty-g-fails stty-g-empty; do
+  : >"$T/$flag"
+  fc_run
+  assert_eq "$FC_RC" 1 "frontend-check-termios: the save by a $flag stty -g: status 1"
+  assert_contains "$FC_TEXT" "the terminal's settings could not be saved, so the interface was not started" "frontend-check-termios: $flag, and why"
+  [ ! -e "$T/standin-env" ] && ok || fail "frontend-check-termios: $flag, no frontend started"
+  rm -f "$T/$flag" "$T/standin-env"
+  fc_plan hello "snapshot journey" "touch $T/$flag"
+  fc_run
+  assert_eq "$FC_RC" 1 "frontend-check-termios: the readback by a $flag stty -g: status 1"
+  assert_contains "$FC_TEXT" "the terminal's settings could not be read again" "frontend-check-termios: $flag readback, and why"
+  rm -f "$T/$flag"
+  fc_plan env hello "snapshot journey"
+done
 fc_plan hello "snapshot journey" "touch $T/stty-norestore"
 fc_run
 assert_eq "$FC_RC" 1 "frontend-check-termios: the restore failing: status 1"
@@ -613,6 +631,23 @@ rm -f "$T/rm-refuse"
 assert_eq "$FC_RC" 1 "frontend-check-completion-order: a scratch that cannot be removed: status 1"
 assert_contains "$FC_TEXT" "frontend-check: not completed — verified: the session's files could not be removed." "frontend-check-completion-order: not completed, and why"
 assert_contains "$FC_TEXT" "The session's files remain: $T/tmp/omb-session." "frontend-check-completion-order: the scratch named"
+rm -rf "$T/tmp"/omb-session.*
+# Owner cleanup's status and the scratch's absence each forbid completed:
+# a cleanup that removed the scratch and still failed; one that succeeded
+# and left it.
+: >"$T/rm-fails-after"
+fc_run
+rm -f "$T/rm-fails-after"
+assert_eq "$FC_RC" 1 "frontend-check-completion-order: a cleanup that failed with the scratch gone: status 1"
+assert_contains "$FC_TEXT" "frontend-check: not completed — verified: the session's cleanup reported a failure." "frontend-check-completion-order: the failed cleanup, and why"
+assert_not_contains "$FC_TEXT" "The session's files remain" "frontend-check-completion-order: no scratch claimed to remain"
+fc_tmp_empty "frontend-check-completion-order: a cleanup that failed with the scratch gone"
+: >"$T/rm-skip"
+fc_run
+rm -f "$T/rm-skip"
+assert_eq "$FC_RC" 1 "frontend-check-completion-order: a cleanup that succeeded and left the scratch: status 1"
+assert_contains "$FC_TEXT" "frontend-check: not completed — verified: the session's files could not be removed." "frontend-check-completion-order: the scratch left, and why"
+assert_contains "$FC_TEXT" "The session's files remain: $T/tmp/omb-session." "frontend-check-completion-order: the scratch left, named"
 rm -rf "$T/tmp"/omb-session.*
 FC_PATH=$guard_path
 

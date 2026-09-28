@@ -62,8 +62,9 @@ fc_guard() {
 # fc_order — $T/order-shim, for FC_PATH ahead of the guard: the launcher's
 # head, stty, ps and rm each logged into $T/order.log with its parent and
 # its parent's parent (a command substitution runs in a child of the
-# launcher), then run. rm refuses an omb-session path while $T/rm-refuse
-# exists.
+# launcher), then run. For an omb-session path, rm refuses while
+# $T/rm-refuse exists, removes it and still fails while $T/rm-fails-after
+# does, and succeeds without removing it while $T/rm-skip does.
 fc_order() {
   local n real ps
   ps=$(PATH="$FC_PATH" command -v ps)
@@ -71,7 +72,8 @@ fc_order() {
   for n in head stty ps rm; do
     real=$(PATH="$FC_PATH" command -v "$n")
     printf '#!/bin/sh\nprintf "%%s %%s %s %%s\\n" "$PPID" "$(%s -o ppid= -p "$PPID" | tr -d " ")" "$*" >>"%s"\n' "$n" "$ps" "$T/order.log" >"$T/order-shim/$n"
-    [ "$n" = rm ] && printf 'case "$*" in *omb-session.*) [ -e "%s" ] && exit 1 ;; esac\n' "$T/rm-refuse" >>"$T/order-shim/$n"
+    [ "$n" = rm ] && printf 'case "$*" in\n  *omb-session.*)\n    [ -e "%s/rm-refuse" ] && exit 1\n    [ -e "%s/rm-skip" ] && exit 0\n    if [ -e "%s/rm-fails-after" ]; then %s "$@"; exit 1; fi\n    ;;\nesac\n' \
+      "$T" "$T" "$T" "$real" >>"$T/order-shim/$n"
     printf 'exec %s "$@"\n' "$real" >>"$T/order-shim/$n"
     chmod +x "$T/order-shim/$n"
   done

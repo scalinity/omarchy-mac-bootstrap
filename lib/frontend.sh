@@ -760,13 +760,14 @@ fe_check_dry() {
 # every step held; otherwise 1, after the steps that still apply, FE_STATE and
 # FE_WHY saying why and FE_LEFT naming a scratch that remains.
 fe_check_run() {
-  local saved now rc xwhy="" twhy=""
+  local saved now rc crc xwhy="" twhy=""
   FE_WHY="" FE_LEFT="" FE_CORE=""
   if ! omb_tmp_init; then
     FE_WHY="the per-run scratch could not be made, so the interface was not started"
     return 1
   fi
-  saved=$(stty -g </dev/tty 2>/dev/null)
+  # A stty that fails saved nothing, whatever it printed.
+  saved=$(stty -g </dev/tty 2>/dev/null) || saved=""
   if [ -z "$saved" ]; then
     FE_WHY="the terminal's settings could not be saved, so the interface was not started"
     return 1
@@ -797,7 +798,7 @@ fe_check_run() {
   if ! stty "$saved" </dev/tty 2>/dev/null; then
     twhy="the terminal's saved settings could not be put back"
   else
-    now=$(stty -g </dev/tty 2>/dev/null)
+    now=$(stty -g </dev/tty 2>/dev/null) || now=""
     if [ -z "$now" ]; then
       twhy="the terminal's settings could not be read again"
     elif [ "$now" != "$saved" ]; then
@@ -808,8 +809,9 @@ fe_check_run() {
   fe_session_state
   [ "$FE_ST" = 10 ] && FE_WHY="the interface refused the session (status 10)"
   # 5 and 6: owner cleanup, then the scratch confirmed gone; nothing in it
-  # is read after this.
+  # is read after this. Each forbids completed on its own.
   fe_owner_cleanup
+  crc=$?
   if [ -e "$FE_SESSION" ] || [ -L "$FE_SESSION" ]; then FE_LEFT=$FE_SESSION; fi
   [ "$FE_STATE" = verified ] || return 1
   if [ -n "$xwhy" ]; then
@@ -818,6 +820,8 @@ fe_check_run() {
     FE_WHY=$twhy
   elif [ -n "$FE_LEFT" ]; then
     FE_WHY="the session's files could not be removed"
+  elif [ "$crc" != 0 ]; then
+    FE_WHY="the session's cleanup reported a failure"
   else
     return 0
   fi
