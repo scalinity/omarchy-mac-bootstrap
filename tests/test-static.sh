@@ -208,6 +208,41 @@ assert_eq "$(cd "$REPO" && twosub lib/core.sh lib/records.sh)" "" \
 assert_eq "$(cd "$REPO" && twosub lib/common.sh lib/state.sh | tr '\n' ' ')" "lib/common.sh:138 lib/common.sh:155 lib/state.sh:269 " \
   "and the baseline's that the core calls are the three the storm test may name"
 
+# --- frontend-check-route (static): its own route, and nothing of any other --------------
+# fbody FILE NAME — the function NAME's lines in FILE.
+fbody() { awk -v f="^$2\\\\(\\\\) \\\\{" '$0 ~ f { p = 1 } p { print } p && /^}/ { exit }' "$1"; }
+route=$(awk '/^  if \[ "\$cmd" = frontend-check \]; then$/ { p = 1 } p { print } p && /^  fi$/ { exit }' "$REPO/omarchy-bootstrap")
+[ -n "$route" ] && ok || fail "frontend-check-route: the route is found"
+assert_eq "$(printf '%s\n' "$route" | sed -n '$!p' | tail -n 1 | tr -d ' ')" "return" "frontend-check-route: the route ends by returning, whatever the check's outcome"
+route_line=$(grep -n '^  if \[ "\$cmd" = frontend-check \]; then$' "$REPO/omarchy-bootstrap" | cut -d: -f1)
+for later in 'state_init || return 1' 'state_lock || return 1' 'log_event start ' 'mac_main install' 'lx_main default' '_usage_error "OMB_FIXTURE, OMB_TEST_RECORD'; do
+  n=$(grep -nF -- "$later" "$REPO/omarchy-bootstrap" | head -1 | cut -d: -f1)
+  [ -n "$n" ] && [ -n "$route_line" ] && [ "$route_line" -lt "$n" ] && ok || fail "frontend-check-route: dispatched before '$later'"
+done
+check_code=$(printf '%s\n' "$route"
+  for fn in fe_check fe_check_dry fe_check_run fe_check_exchanges _fe_check_stop _fe_check_failed _fe_check_left; do
+    fbody "$REPO/lib/frontend.sh" "$fn"
+  done)
+assert_eq "$(printf '%s\n' "$check_code" | grep -vE '^[[:space:]]*#' | sed -e "s/\"[^\"]*\"/\"\"/g" -e "s/'[^']*'/''/g" | grep -cE '(^|[^a-z_])(mac_main|lx_main|mac_resume|lx_resume|dev_main|cmd_[a-z]+|state_lock|state_set|state_must_set|log_event|fetch_upstream|run|sudo|fe_run)([^a-z_]|$)')" 0 \
+  "frontend-check-route: the check calls none of the installer's routing, the command handlers, run, sudo, the run lock or the log"
+assert_eq "$(printf '%s\n' "$check_code" | grep -c 'Continuing in text\|continuing in the text')" 0 "frontend-check-route: no outcome of the check continues in text"
+snap_code=$(for fn in core_check_op core_check_snapshot _core_check_body _core_emit_body; do fbody "$REPO/lib/core.sh" "$fn"; done)
+[ "$(printf '%s\n' "$snap_code" | grep -c '^[a-z_]*() {')" = 4 ] && ok || fail "frontend-check-route: the check's snapshot path is found"
+assert_eq "$(printf '%s\n' "$snap_code" | grep -vE '^[[:space:]]*#' | grep -cE 'core_barrier|core_reconcile|core_op_(read|write|remove|path)|core_failed_text|core_action_info|core_available|core_basis|core_child|core_execute|core_op_execute|_core_snapshot_body|state_lock|OMB_FIXTURE')" 0 \
+  "frontend-check-route: the check's snapshot path reads no barrier, reconciles nothing, touches no operation record and starts nothing"
+# frontend-check-no-render-claim (static): the check's report never says
+# what was drawn; it names the exchanges and the session's end.
+reports=$(printf '%s\n' "$check_code" | grep -E '_fe_check_say|ui_note|ui_would|ui_kv|ui_section')
+[ -n "$reports" ] && ok || fail "frontend-check-no-render-claim: the check's report lines are found"
+assert_eq "$(printf '%s\n' "$reports" | grep -ciE 'dashboard|drawn|draw |shown|display|render|receiv|seen|visible')" 0 \
+  "frontend-check-no-render-claim: no report of the check says what was drawn, shown or received"
+assert_contains "$reports" "answered hello and the journey snapshot, every exchange of the session ended done" "frontend-check-no-render-claim: the completed report names the exchanges"
+# The session purpose: set in the check's session alone, removed from every
+# other the launcher starts.
+assert_eq "$(grep -c 'OMB_SESSION_PURPOSE=frontend-check' "$REPO/lib/frontend.sh")" 1 "frontend-check-read-session: one place sets the purpose"
+assert_contains "$(fbody "$REPO/lib/frontend.sh" fe_check_run)" "OMB_SESSION_PURPOSE=frontend-check" "and it is the check's session"
+assert_contains "$(fbody "$REPO/lib/frontend.sh" fe_run)" "unset OMB_SESSION_PURPOSE" "frontend-check-read-session: every other session the launcher starts drops an inherited one"
+
 # --- test-owned-signal-only: tests signal only processes they own ---------------------
 # A name or a command line matches the developer's own programs too; tests
 # signal a PID they recorded (held to its start time) or a group they made

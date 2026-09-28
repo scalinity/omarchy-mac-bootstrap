@@ -212,6 +212,12 @@ for v in "OMB_HOME=$TOOL" OMB_SESSION_INTENT=act OMB_SESSION_SCOPES=journey OMB_
   assert_contains "$e" "$v" "the launcher sets $v for the frontend"
 done
 assert_eq "$(ls "$T/tmp" | grep -c '^omb-session\.')" 0 "sup-owner-cleanup: the launcher removed its own scratch"
+# frontend-check-read-session: a session purpose is frontend-check's alone;
+# every other session the launcher starts drops an inherited one.
+for p in frontend-check install ""; do
+  r=$(FE_ENV="OMB_SESSION_PURPOSE=$p" fe_call '' fe_run act journey)
+  assert_eq "$(grep -c '^OMB_SESSION_PURPOSE=' "$CACHE/$FAKE_SHA/fake-env")" 0 "frontend-check-read-session: an inherited purpose ('$p') never reaches an ordinary session"
+done
 printf '1' >"$CACHE/$FAKE_SHA/fake-behaviour"
 r=$(fe_call '' fe_run act journey)
 assert_eq "${r%%|*}" 1 "a frontend that fails: a failure the launcher reports"

@@ -103,6 +103,7 @@ usage() {
   _help_row "shared test" "write, read back and remove one test file"
   _help_row "sources [--check]" "upstream URLs and versions; --check compares live (read-only)"
   _help_row "logs" "log location and recent entries (read-only)"
+  _help_row "frontend-check" "check that the interface starts: downloads it once, changes nothing else"
   ui_section "Flags"
   _help_row "--dry-run" "show every step; change nothing, keep nothing"
   _help_row "--no-color" "plain output (also: NO_COLOR=1)"
@@ -156,6 +157,33 @@ main() {
         ;;
     esac
   done
+  # frontend-check (docs/FRONTEND.md → The startup check) has its own route,
+  # before every other command's checks, the run lock, the log and the
+  # installer's routing, and returns from it with its own status: no outcome
+  # continues into another command. It refuses any argument, and every
+  # production seam before anything is read, fetched, cached or started.
+  if [ "$cmd" = frontend-check ]; then
+    [ "${#rest[@]}" = 0 ] || { _usage_error "frontend-check takes no argument" ; return 2; }
+    case "$OMB_DRY_RUN" in
+      0 | 1) ;;
+      *) _usage_error "OMB_DRY_RUN must be 0 or 1, not '$OMB_DRY_RUN'" ; return 2 ;;
+    esac
+    # shellcheck source=lib/records.sh
+    . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
+    # shellcheck source=lib/core.sh
+    . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
+    # shellcheck source=lib/frontend.sh
+    . "$OMB_HOME/lib/frontend.sh" || _omb_unloaded frontend
+    if core_seam_found; then
+      _usage_error "frontend-check runs with no OMB_FIXTURE, OMB_FRONTEND_DEV or non-empty OMB_TEST_ variable set"
+      return 2
+    fi
+    OMB_CMD=frontend-check OMB_INTENT=read OMB_PERSIST=0
+    umask 022
+    ui_init
+    fe_check
+    return
+  fi
   # Test seams stay out of root runs: a fixture or recorder carried through
   # `sudo -E` or `su` must not steer anything done with root's authority.
   if [ "$(id -u)" = 0 ] && [ -n "${OMB_FIXTURE:-}${OMB_TEST_RECORD:-}${OMB_TEST_AFTER:-}${OMB_TEST_RC:-}" ]; then

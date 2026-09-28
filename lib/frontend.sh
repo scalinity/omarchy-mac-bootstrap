@@ -12,6 +12,13 @@
 # Needs lib/common.sh, lib/state.sh, lib/ui.sh, lib/records.sh, lib/core.sh.
 
 FE_STATE="" FE_WHY="" FE_BIN="" FE_SHA="" FE_FPID="" FE_FSTART="" FE_PAUSE=""
+# An acquisition's own download file, until it is promoted or removed; one
+# whose removal failed; the download's writer while it runs (frontend-check
+# waits for it in the background); a copy moved aside after a yes.
+FE_ATTEMPT="" FE_RESIDUAL="" FE_WRITER="" FE_WRITER_START="" FE_ASIDE="" FE_CHECK=""
+# The frontend's own status; the core that answered a check; a scratch a
+# check could not remove.
+FE_ST="" FE_CORE="" FE_LEFT=""
 # How long (seconds) the launcher waits for a session's cores and workers
 # before it stops waiting — never concluding they have ended.
 FE_WAIT_LIMIT=3600
@@ -135,6 +142,16 @@ fe_fetch() {
     fi
     cp "$OMB_FIXTURE/net/frontend-$FE_TARGET" "$dest" 2>/dev/null
     st=$?
+  elif [ -n "$FE_CHECK" ]; then
+    # frontend-check waits for its writer in the background, so SIGTERM or
+    # SIGHUP to the launcher is handled at once: _fe_check_stop ends the
+    # writer, waits for it, then removes this attempt's file.
+    curl -fsSL --proto '=https' --tlsv1.2 --max-time 120 -o "$dest" "$FE_URL" 2>/dev/null &
+    FE_WRITER=$!
+    FE_WRITER_START=$(LC_ALL=C _proc_started "$FE_WRITER")
+    _core_wait "$FE_WRITER"
+    st=$?
+    FE_WRITER="" FE_WRITER_START=""
   else
     curl -fsSL --proto '=https' --tlsv1.2 --max-time 120 -o "$dest" "$FE_URL" 2>/dev/null
     st=$?
@@ -203,15 +220,38 @@ fe_acquire() {
     FE_WHY="the frontend cache $(tildify "$FE_CACHE") is not private to this user"
     return 1
   fi
-  tmp=$(mktemp "$dir/.omb-tui.XXXXXX") || return 1
-  fe_fetch "$tmp" || return 1
-  mv -f "$tmp" "$dir/omb-tui" || { rm -f "$tmp"; return 1; }
+  tmp=$(mktemp "$dir/.omb-tui.XXXXXX") || {
+    FE_WHY="no download file could be made in $(tildify "$dir")"
+    return 1
+  }
+  FE_ATTEMPT=$tmp
+  if ! fe_fetch "$tmp"; then
+    _fe_attempt_remove
+    return 1
+  fi
+  if ! mv -f "$tmp" "$dir/omb-tui"; then
+    FE_WHY="the verified download could not be placed at $(tildify "$dir/omb-tui")"
+    _fe_attempt_remove
+    return 1
+  fi
+  FE_ATTEMPT=""
   FE_BIN=$dir/omb-tui
   log_event frontend "acquired $FE_URL sha256=$FE_SHA"
 }
 
+# _fe_attempt_remove — remove this acquisition's own download file, once its
+# writer has ended. A removal that does not take leaves FE_RESIDUAL naming
+# the file; nothing else is ever removed.
+_fe_attempt_remove() {
+  [ -n "$FE_ATTEMPT" ] || return 0
+  rm -f "$FE_ATTEMPT" 2>/dev/null
+  if [ -e "$FE_ATTEMPT" ] || [ -L "$FE_ATTEMPT" ]; then FE_RESIDUAL=$FE_ATTEMPT; fi
+  FE_ATTEMPT=""
+}
+
 # fe_select INTENT — decide which frontend binary may start for a session of
-# INTENT (act, plan or dry-run), following docs/FRONTEND.md → *Intent and
+# INTENT (act, plan or dry-run; check for frontend-check's launcher, which
+# acquires as act does), following docs/FRONTEND.md → *Intent and
 # persistence*. FE_BIN and FE_STATE on success; FE_STATE and FE_WHY otherwise.
 fe_select() {
   local intent=$1 aside
@@ -241,17 +281,18 @@ fe_select() {
   if [ -n "$FE_BAD" ]; then
     FE_STATE=mismatch
     FE_WHY="the cached frontend $(tildify "$FE_BAD") is not the pinned bytes (SHA-256 ${FE_GOT_SHA:-unreadable}, expected $FE_SHA)"
-    [ "$intent" = act ] || return 1
-    # Only an act session moves it aside, after a yes.
+    # Only an act session, or frontend-check, moves it aside, after a yes.
+    case "$intent" in act | check) ;; *) return 1 ;; esac
     ui_warn "$FE_WHY"
     if ! ui_yesno "Move it aside and download the pinned one again?" y; then return 1; fi
     aside="$FE_BAD.mismatch-$(now_stamp)"
     mv -f "$FE_BAD" "$aside" || return 1
+    FE_ASIDE=$aside
     log_event frontend "moved a mismatching cached frontend aside: $aside"
     FE_STATE=""
   fi
   case "$intent" in
-    act | dry-run)
+    act | check | dry-run)
       if fe_acquire "$intent"; then
         FE_STATE=verified
         return 0
@@ -489,7 +530,7 @@ fe_forward() {
 # interface (FE_STATE, FE_WHY say why); any other status is a failure that
 # has been reported.
 fe_run() {
-  local intent=$1 scopes=$2 saved="" fpid st rc
+  local intent=$1 scopes=$2 saved="" rc
   fe_select "$intent"
   rc=$?
   if [ "$rc" != 0 ]; then
@@ -505,15 +546,52 @@ fe_run() {
   fi
   saved=$(stty -g </dev/tty 2>/dev/null)
   # The session's values: set here, passed unchanged by the frontend, checked
-  # by every core. The trace file only in an act session.
+  # by every core. The trace file only in an act session; a session purpose
+  # only in frontend-check's (fe_check_run), whatever this launcher inherited.
   export OMB_HOME OMB_SESSION_DIR=$FE_SESSION OMB_SESSION_SCOPES=$scopes
   OMB_SESSION_INTENT=$intent OMB_DRY_RUN=0
   [ "$intent" = dry-run ] && OMB_SESSION_INTENT=act OMB_DRY_RUN=1
   export OMB_SESSION_INTENT OMB_DRY_RUN
+  unset OMB_SESSION_PURPOSE
   if [ "$intent" != act ] && [ -n "${OMB_TUI_LOG:-}" ]; then
     [ "$intent" = plan ] && ui_note "OMB_TUI_LOG is ignored outside an act session."
     unset OMB_TUI_LOG
   fi
+  fe_session_run
+  rc=$?
+  if [ "$rc" = 3 ]; then
+    fe_report
+    return 10
+  fi
+  if [ "$rc" != 0 ]; then
+    FE_STATE=unsettled
+    fe_report
+    return 1
+  fi
+  [ -n "$saved" ] && stty "$saved" </dev/tty 2>/dev/null
+  fe_session_state
+  fe_owner_cleanup
+  case "$FE_STATE" in
+    verified) return 0 ;;
+    crashed)
+      fe_report
+      ui_note "Nothing was left half-done by the interface itself: the core records every action. ./omarchy-bootstrap status shows where the machine is; --no-tui runs this command in text."
+      return 1
+      ;;
+  esac
+  fe_report
+  return 10
+}
+
+# fe_session_run — start the verified frontend FE_BIN for the session
+# FE_SESSION, whose values are exported: the pause, the signals, the
+# frontend waited for, then the session waited for. FE_ST: the frontend's own
+# status. 0 when the session is over; 1 still running at the wait's limit, 2
+# not knowable (fe_wait_cores); 3 when no frontend was started, the scratch
+# removed and FE_STATE and FE_WHY saying why.
+fe_session_run() {
+  local fpid rc
+  FE_ST=""
   # The pause fe_wait_cores uses: a FIFO held open for reading and writing
   # never has data, so `read -t` on it waits without starting a process. It
   # is made now, before any core can be supervising a child; without it the
@@ -523,8 +601,7 @@ fe_run() {
     FE_PAUSE=""
     rm -rf "$FE_SESSION"
     FE_STATE=fallback FE_WHY="the launcher could not make its pause"
-    fe_report
-    return 10
+    return 3
   fi
   # Ctrl-C and Ctrl-\ are caught (never ignored), so a child after exec has
   # the default disposition; SIGTERM and SIGHUP are passed to the frontend,
@@ -543,7 +620,7 @@ fe_run() {
   core_proc_write "$FE_SESSION/frontend.omb" frontend "$fpid" || true
   # The frontend's own status, however many caught signals end the wait early.
   _core_wait "$fpid"
-  st=$?
+  FE_ST=$?
   FE_FPID="" FE_FSTART=""
   # A core of this session may still be supervising a child, and a handoff
   # child may own the terminal: the terminal is taken back only once the
@@ -552,35 +629,24 @@ fe_run() {
   fe_wait_cores "$FE_SESSION"
   rc=$?
   trap - INT QUIT TERM HUP
-  if [ "$rc" != 0 ]; then
-    FE_STATE=unsettled
-    fe_report
-    return 1
-  fi
-  [ -n "$saved" ] && stty "$saved" </dev/tty 2>/dev/null
-  case "$st" in
+  return "$rc"
+}
+
+# fe_session_state — FE_STATE and FE_WHY from the frontend's own status,
+# FE_ST, once the session is over.
+fe_session_state() {
+  case "$FE_ST" in
     0) FE_STATE=verified ;;
     10) FE_STATE=fallback ;;
-    126 | 127) FE_STATE=unrunnable FE_WHY="$(tildify "$FE_BIN") would not execute (status $st; SHA-256 ${FE_SHA:-unpinned}, $FE_TARGET)" ;;
+    126 | 127) FE_STATE=unrunnable FE_WHY="$(tildify "$FE_BIN") would not execute (status $FE_ST; SHA-256 ${FE_SHA:-unpinned}, $FE_TARGET)" ;;
     *)
       # The frontend did not restore the terminal itself. In a subshell: a
       # terminal that has gone keeps a builtin's unwritten bytes in bash's
       # buffer, and the next builtin output, to any file, would carry them.
       (printf '\033[?1049l\033[?25h') >/dev/tty 2>/dev/null
-      FE_STATE=crashed FE_WHY="the interface stopped (status $st)"
+      FE_STATE=crashed FE_WHY="the interface stopped (status $FE_ST)"
       ;;
   esac
-  fe_owner_cleanup
-  case "$FE_STATE" in
-    verified) return 0 ;;
-    crashed)
-      fe_report
-      ui_note "Nothing was left half-done by the interface itself: the core records every action. ./omarchy-bootstrap status shows where the machine is; --no-tui runs this command in text."
-      return 1
-      ;;
-  esac
-  fe_report
-  return 10
 }
 
 # fe_report — one line on the frontend's state, for the text interface.
@@ -599,3 +665,275 @@ fe_report() {
   esac
   log_event frontend "state=$FE_STATE ${FE_WHY:-}"
 }
+
+# ---------------------------------------------------------------------------
+# frontend-check (docs/FRONTEND.md → *The startup check*)
+# ---------------------------------------------------------------------------
+
+# fe_check — the startup check, once the entrypoint has refused any argument
+# and every production seam: the target, the terminal, the dry run, then the
+# check. Its launcher alone holds the cache authority (FE_CHECK: acquisition
+# after [Y/n], a mismatching copy moved aside after a yes); its cores get a
+# read session, the journey scope alone and the purpose frontend-check.
+# 0 completed; 1 not completed or not performed; 130 Ctrl-C before the
+# frontend started. Every outcome ends here, never in another command.
+fe_check() {
+  local why=""
+  platform_init
+  ui_header "frontend-check"
+  if ! fe_target; then
+    _fe_check_say "frontend-check: not performed — no frontend is built for this system ($(uname -s 2>/dev/null) $(uname -m 2>/dev/null)); the interactive check was not performed."
+    return 1
+  fi
+  if [ -n "${OMB_NO_TUI:-}" ]; then
+    why="--no-tui was given"
+  elif [ ! -t 0 ]; then
+    why="stdin is not a terminal"
+  elif [ ! -t 1 ]; then
+    why="stdout is not a terminal"
+  elif [ -z "${TERM:-}" ] || ! printenv TERM >/dev/null 2>&1; then
+    # Bash gives TERM the value dumb when the environment has none, without
+    # exporting it: only the environment says whether it was set.
+    why="TERM is not set"
+  elif [ "$TERM" = dumb ]; then
+    why="TERM is dumb"
+  fi
+  if [ -n "$why" ]; then
+    _fe_check_say "frontend-check: not performed — $why; the interactive check was not performed."
+    return 1
+  fi
+  if ! state_init; then
+    _fe_check_say "frontend-check: not completed — the state folder's location is not usable; nothing was started."
+    return 1
+  fi
+  trap omb_cleanup EXIT
+  if [ "$OMB_DRY_RUN" = 1 ]; then
+    fe_check_dry
+    return 1
+  fi
+  FE_CHECK=1
+  trap '_fe_check_stop INT' INT
+  trap '_fe_check_stop TERM' TERM
+  trap '_fe_check_stop HUP' HUP
+  if fe_select check && fe_check_run; then
+    _fe_check_say "frontend-check: completed — omb-tui $FE_VERSION ($FE_TARGET), SHA-256 $FE_SHA, from $(tildify "$FE_BIN"). The core (${FE_CORE}) answered hello and the journey snapshot, every exchange of the session ended done, the terminal's settings read back as saved, and the session ended with its files removed."
+    return 0
+  fi
+  _fe_check_failed
+  return 1
+}
+
+# fe_check_dry — frontend-check --dry-run on an eligible terminal: the lock
+# admitted and the cache inspected, neither changed; what the check would
+# do, as would run. Nothing is downloaded, moved or started.
+fe_check_dry() {
+  if ! fe_lock_read; then
+    _fe_check_say "frontend-check: not performed — a dry run, and this checkout's lock pins nothing to start: $FE_WHY."
+    return 1
+  fi
+  fe_find_cached
+  ui_section "The interface" "what frontend-check would do"
+  ui_kv "URL" "$FE_URL"
+  ui_kv "Version" "$FE_VERSION ($FE_TARGET)"
+  ui_kv "Size" "$FE_SIZE bytes"
+  ui_kv "SHA-256" "$FE_SHA"
+  if [ -n "$FE_BIN" ]; then
+    ui_kv "Cached" "$(tildify "$FE_BIN"), verified"
+  else
+    if [ -n "$FE_BAD" ]; then
+      ui_kv "Cached" "$(tildify "$FE_BAD"), not the pinned bytes"
+      ui_would "ask to move $(tildify "$FE_BAD") aside"
+    else
+      ui_kv "Cached" "no verified copy"
+    fi
+    FE_BIN=$FE_CACHE/$FE_SHA/omb-tui
+    ui_would "ask [Y/n], then download $FE_URL into $(tildify "$FE_BIN")"
+  fi
+  ui_would "start $(tildify "$FE_BIN") for a read-only session with the journey scope"
+  _fe_check_say "frontend-check: not performed — a dry run: nothing was downloaded, moved or started."
+}
+
+# fe_check_run — the check's session, then its result in the order of
+# docs/FRONTEND.md → *The command's result*: the frontend's end, quiescence,
+# the exchanges judged while the scratch exists, the terminal's settings put
+# back and read again, owner cleanup, the scratch confirmed gone. 0 only when
+# every step held; otherwise 1, after the steps that still apply, FE_STATE and
+# FE_WHY saying why and FE_LEFT naming a scratch that remains.
+fe_check_run() {
+  local saved now rc xwhy="" twhy=""
+  FE_WHY="" FE_LEFT="" FE_CORE=""
+  if ! omb_tmp_init; then
+    FE_WHY="the per-run scratch could not be made, so the interface was not started"
+    return 1
+  fi
+  saved=$(stty -g </dev/tty 2>/dev/null)
+  if [ -z "$saved" ]; then
+    FE_WHY="the terminal's settings could not be saved, so the interface was not started"
+    return 1
+  fi
+  fe_reclaim
+  if ! fe_session_create; then
+    FE_STATE=fallback FE_WHY="the session scratch could not be made"
+    return 1
+  fi
+  # The session's values: the core's authority comes from these alone, never
+  # from this launcher's cache authority.
+  export OMB_HOME OMB_SESSION_DIR=$FE_SESSION OMB_SESSION_SCOPES=journey OMB_SESSION_INTENT=read OMB_DRY_RUN=0 OMB_SESSION_PURPOSE=frontend-check
+  if [ -n "${OMB_TUI_LOG:-}" ]; then
+    ui_note "OMB_TUI_LOG is ignored: frontend-check writes no trace."
+    unset OMB_TUI_LOG
+  fi
+  # 1 and 2: the frontend's end, and the session quiescent.
+  fe_session_run
+  rc=$?
+  [ "$rc" = 3 ] && return 1
+  if [ "$rc" != 0 ]; then
+    FE_STATE=unsettled
+    return 1
+  fi
+  # 3: every exchange, judged while the scratch still exists.
+  fe_check_exchanges "$FE_SESSION" || xwhy=$FE_WHY
+  # 4: the terminal's settings put back, read again, and equal.
+  if ! stty "$saved" </dev/tty 2>/dev/null; then
+    twhy="the terminal's saved settings could not be put back"
+  else
+    now=$(stty -g </dev/tty 2>/dev/null)
+    if [ -z "$now" ]; then
+      twhy="the terminal's settings could not be read again"
+    elif [ "$now" != "$saved" ]; then
+      twhy="the terminal's settings read back other than they were saved"
+    fi
+  fi
+  FE_WHY=""
+  fe_session_state
+  [ "$FE_ST" = 10 ] && FE_WHY="the interface refused the session (status 10)"
+  # 5 and 6: owner cleanup, then the scratch confirmed gone; nothing in it
+  # is read after this.
+  fe_owner_cleanup
+  if [ -e "$FE_SESSION" ] || [ -L "$FE_SESSION" ]; then FE_LEFT=$FE_SESSION; fi
+  [ "$FE_STATE" = verified ] || return 1
+  if [ -n "$xwhy" ]; then
+    FE_WHY=$xwhy
+  elif [ -n "$twhy" ]; then
+    FE_WHY=$twhy
+  elif [ -n "$FE_LEFT" ]; then
+    FE_WHY="the session's files could not be removed"
+  else
+    return 0
+  fi
+  return 1
+}
+
+# fe_check_exchanges DIR — every request spool of the session DIR admitted as
+# a response and judged (docs/FRONTEND.md → *The command's result*, step 3).
+# 0 when every exchange ended done, each answered for a read session with no
+# fixture and not a dry run, at least one without a generation (a hello)
+# and at least one with a generation and no action (the journey snapshot);
+# 1 otherwise, FE_WHY saying which and why. A spool that is not a plain
+# file, cannot be read, or is not a whole response to any operation fails.
+# FE_CORE: the answering core, from the first hello record.
+fe_check_exchanges() {
+  local f op n=0 hello=0 snap=0 v got
+  for f in "$1"/req-*.events; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    n=$((n + 1))
+    if [ ! -f "$f" ] || [ -L "$f" ]; then
+      FE_WHY="the exchange ${f##*/} is not a plain file"
+      return 1
+    fi
+    for op in hello snapshot detail validate execute ""; do
+      [ -n "$op" ] || break
+      rec_admit_file res "$op" "$f" && break
+    done
+    if [ -z "$op" ]; then
+      FE_WHY="the exchange ${f##*/} is not a whole answer ($REC_REASON at line $REC_AT)"
+      return 1
+    fi
+    rec_find result
+    rec_get_into got "$REC_AT_I" status
+    if [ "$got" != "done" ]; then
+      FE_WHY="the exchange ${f##*/} ended $got"
+      return 1
+    fi
+    for v in ceiling=read dry_run=0 fixture=0; do
+      rec_get_into got 0 "${v%%=*}"
+      if [ "$got" != "${v#*=}" ]; then
+        FE_WHY="the exchange ${f##*/} was answered with ${v%%=*}=$got"
+        return 1
+      fi
+    done
+    if [ -z "$FE_CORE" ]; then
+      rec_get_into FE_CORE 0 core
+      rec_get_into got 0 commit
+      FE_CORE="$FE_CORE at ${got:-an unknown commit}"
+    fi
+    if rec_find generation; then
+      if rec_find action; then
+        FE_WHY="the exchange ${f##*/} listed an action"
+        return 1
+      fi
+      snap=1
+    else
+      hello=1
+    fi
+  done
+  if [ "$n" = 0 ]; then
+    FE_WHY="the interface asked the core nothing"
+  elif [ "$hello" = 0 ]; then
+    FE_WHY="no hello was answered"
+  elif [ "$snap" = 0 ]; then
+    FE_WHY="no journey snapshot was answered"
+  else
+    return 0
+  fi
+  return 1
+}
+
+# _fe_check_stop SIGNAL — Ctrl-C, SIGTERM or SIGHUP before the frontend
+# started. The download's writer, if one runs, is ended — only while it is
+# still the process started, its PID with its start time — and waited for;
+# then this attempt's own file is removed, and a session scratch made for a
+# frontend that never started. 130 for Ctrl-C, otherwise 1.
+_fe_check_stop() {
+  if [ -n "$FE_WRITER" ]; then
+    if [ -n "$FE_WRITER_START" ] && [ "$(LC_ALL=C _proc_started "$FE_WRITER")" = "$FE_WRITER_START" ]; then
+      kill -TERM "$FE_WRITER" 2>/dev/null
+    fi
+    _core_wait "$FE_WRITER"
+    FE_WRITER="" FE_WRITER_START=""
+  fi
+  _fe_attempt_remove
+  if [ -n "${FE_SESSION:-}" ]; then fe_owner_cleanup; fi
+  _p '\n'
+  _fe_check_say "frontend-check: not completed — stopped by SIG$1 before the interface started."
+  _fe_check_left
+  [ "$1" = INT ] && exit 130
+  exit 1
+}
+
+# _fe_check_failed — the not-completed report: the launcher's state and its
+# reason, then whatever the check leaves behind.
+_fe_check_failed() {
+  case "$FE_STATE" in
+    missing) FE_WHY=${FE_WHY:-the interface is not downloaded} ;;
+    fallback) FE_WHY=${FE_WHY:-it refused the session} ;;
+    unsettled) FE_WHY="the session is not known to be over (${FE_WHY:-its state cannot be read})" ;;
+  esac
+  _fe_check_say "frontend-check: not completed — ${FE_STATE:-verified}: ${FE_WHY:-a step did not hold}."
+  if [ "$FE_STATE" = unsettled ]; then
+    _fe_check_say "The terminal and the session's files were left as they are, in case a program still uses them."
+  fi
+  _fe_check_left
+}
+
+# _fe_check_left — the files a check that did not complete leaves: a copy
+# moved aside after a yes, this attempt's download file that could not be
+# removed, a session scratch that could not be.
+_fe_check_left() {
+  [ -n "$FE_ASIDE" ] && _fe_check_say "The cached copy that did not match was moved aside to $(tildify "$FE_ASIDE"), where it stays."
+  [ -n "$FE_RESIDUAL" ] && _fe_check_say "This attempt's download file could not be removed and remains: $(tildify "$FE_RESIDUAL"). It is never started; nothing else was removed."
+  [ -n "${FE_LEFT:-}" ] && _fe_check_say "The session's files remain: $(tildify "$FE_LEFT")."
+  return 0
+}
+
+_fe_check_say() { _p '   %s\n' "$*"; }

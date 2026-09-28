@@ -203,11 +203,16 @@ jobs:
       - name: The process table, descriptors and the panic gate on aarch64 (unit tests, H against the core, the gate)
         working-directory: frontend
         run: cargo test --locked --offline --features test-hooks --lib --test contract --test panics
-      - name: sup-* and diag-* under Bash 5 on aarch64
+      - name: sup-*, diag-* and frontend-check-* under Bash 5 on aarch64
         run: |
           s=0
-          for t in core diag frontend static; do tests/run.sh "$t" || s=1; done
+          for t in core diag frontend frontend-check static; do tests/run.sh "$t" || s=1; done
           exit "$s"
+      # The launcher starting the build above through frontend-check's own
+      # route, on a real terminal (docs/TESTING.md → frontend-check-*); the
+      # stand-in cases run in the suites.
+      - name: frontend-check-* with the native build, the dashboard read from the screen
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui tests/frontend-check.sh
 
   frontend-macos-arm64:
     # macos-15: the oldest arm64 image GitHub still runs reliably; macOS 14's
@@ -264,11 +269,13 @@ jobs:
           cargo test --locked --offline --features test-hooks --lib --test contract --test proto_diff --test panics
       # diag-* and sup-overflow run under /bin/bash on arm64 in the macOS job
       # above; these are the other sup-* suites.
-      - name: sup-* under /bin/bash 3.2 on arm64
+      - name: sup-* and frontend-check-* under /bin/bash 3.2 on arm64
         run: |
           s=0
-          for t in core frontend static; do tests/run.sh "$t" || s=1; done
+          for t in core frontend frontend-check static; do tests/run.sh "$t" || s=1; done
           exit "$s"
+      - name: frontend-check-* with the native build, the dashboard read from the screen
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui tests/frontend-check.sh
 
   linux-target-shell:
     # The Linux root's shell is GNU Bash 5.3.15 (docs/UPSTREAM.md); the
