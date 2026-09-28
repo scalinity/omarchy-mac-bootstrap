@@ -12,6 +12,12 @@ push.
   fixtures, with `run` recording argv instead of running, as the baseline's
   suite does. The frontend's PTY tests drive a core in fixture mode. The
   persistence tests write only inside temporary folders.
+- **The startup check is its own class.** The `frontend-check-*` tests
+  drive the production route, with no fixture and no development override,
+  because that route is what they prove; they do it only inside the
+  hermetic boundary their own section defines (*Frontend*, below), and
+  they relax nothing for the other PTY tests, which keep driving a core in
+  fixture mode.
 - **Both shells, both systems.** Every Bash test runs under stock `/bin/bash`
   3.2 on macOS and Bash 5 on Linux, with strict skips; a macOS-fixture
   section on Linux is gated on `plutil` as today.
@@ -566,6 +572,78 @@ And:
 | `frontend-intent-read`, `frontend-intent-plan`, `frontend-intent-dry-run`, `frontend-intent-no-tui` | a corrupted cache and `OMB_TUI_LOG` set, for each | the filesystem outside the scratch folders unchanged: nothing moved, no trace |
 | `frontend-intent-act` | the same in an act session | the move offered and done after a yes; the trace written 0600 |
 
+### `frontend-check-*`: the startup check
+
+docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The
+startup-check session*.
+
+**The boundary.** Each case runs a copy of the tool's checkout in a
+temporary folder, with a temporary `HOME`, `XDG_CACHE_HOME`,
+`XDG_STATE_HOME` and `TMPDIR`, and none of `OMB_FIXTURE`,
+`OMB_FRONTEND_DEV`, `OMB_TEST_*` or `OMB_STATE_DIR` set. The copy's
+`release/frontend.lock` is a test lock: it pins the native release build CI
+already makes for the PTY tests (no `test-hooks` feature), or for a failure
+case a stand-in program built for that case, each by its size and SHA-256,
+at an `https://127.0.0.1:<port>/…` URL served by a loopback HTTPS server the
+test owns. The server's throwaway certificate authority is trusted only
+through curl's own `CURL_CA_BUNDLE` in the test's environment, because the
+launcher accepts only HTTPS; the implementation confirms that both runners'
+`curl` honours it before a case counts, and a runner whose `curl` does not
+is reported for review, never worked around with a launcher seam. So
+acquisition runs its normal path — `curl`, the size, the digest, the
+rename into the cache — and nothing bypasses it. Every persistent write
+lands in the temporary cache; nothing is fetched from outside the loopback;
+no baseline probe or action runs; and the actual release is proved only by
+`frontend-check-production-mac`.
+
+| Id | Case | Expected |
+| --- | --- | --- |
+| `frontend-check-route` | the command, on a terminal, warm cache; statically, its route | the frontend starts with the session values of the check; the route calls none of the installer's routing (`mac_main`, `lx_main`), `resume`, the command handlers, the run lock or the log's start line, and its snapshot path calls no barrier read, reconciliation or operation-record function |
+| `frontend-check-default-unchanged` | the bare command over every baseline fixture, as text and on a terminal | recorded commands, records, output and status equal those of `569d67e` (the commit before the route) |
+| `frontend-check-install-unchanged` | `install`, and every other command of SPEC.md → *Commands*, the same way | equal to `569d67e`'s |
+| `frontend-check-no-fixture` | a completed check | the core's `hello` says `fixture=0`, `ceiling=read`, `dry_run=0`; the cores' environment held no fixture, development or test variable; the frontend's header shows neither fixture nor dry-run tag |
+| `frontend-check-overrides-refused` | each of `OMB_FIXTURE`, `OMB_FRONTEND_DEV`, `OMB_TEST_ARTIFACT`, `OMB_TEST_HOOK`, `OMB_TEST_HANDOFF_CHILD`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER`, `OMB_TEST_RC`, `OMB_TEST_QUAL_BYTES`, `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT`, `OMB_TEST_PAUSE_AT` set non-empty; an extra argument | status 2 before anything else: no connection to the server, no cache, no scratch, no frontend; the same variables still work for the commands and tests that own them |
+| `frontend-check-cold-cache` | empty cache; yes to `[Y/n]` | the provenance shown; one HTTPS request; the file held to size and digest, then renamed into the cache (0700); the frontend started from there; `completed` |
+| `frontend-check-decline` | empty cache; no to `[Y/n]` | no request made; the cache folder absent; `not-completed`, status 1 |
+| `frontend-check-warm-cache` | the pinned file already cached | no request made; the file hashed before it starts; `completed`; the cache byte-identical |
+| `frontend-check-bad-cache` | a cached file of the right name with other bytes; the move declined; then accepted; a root-cache copy that fails, with none of the user's | never executed in any case; declined: `not-completed`, the file untouched; accepted: renamed `omb-tui.mismatch-<stamp>`, the pinned file downloaded, `completed`; the root copy never moved, the user's own acquired |
+| `frontend-check-read-session` | a stand-in frontend that records its environment and each core's `hello` | `OMB_SESSION_INTENT=read`, `OMB_SESSION_SCOPES=journey`, `OMB_DRY_RUN=0`, `OMB_SESSION_PURPOSE=frontend-check`; every `hello` `ceiling=read`, `dry_run=0`; an inherited `OMB_SESSION_PURPOSE` of any value is replaced; in every other session the launcher starts, it is absent |
+| `frontend-check-purpose-env` | the core with the purpose and, in turn, another intent, other scopes, `OMB_DRY_RUN=1`, `OMB_FIXTURE`, `OMB_FRONTEND_DEV` or an `OMB_TEST_*` variable non-empty; the purpose empty; an unknown purpose | every operation `result status=error code=environment` |
+| `frontend-check-snapshot` | `snapshot scope name=journey` in a check session | admitted by both admissions; exactly the records of docs/PROTOCOL.md → *The startup-check session*, in order; byte-identical on refresh and across runs with the same lock |
+| `frontend-check-zero-actions` | the same, with an unsupervised and a failed operation record placed in the temporary state folder's `ops/` | no `action`, `param` or `stage` record; no operation state shown; both records byte-identical before and after |
+| `frontend-check-forbidden-scope` | `snapshot` of each other scope | `refused`, `code=scope` |
+| `frontend-check-execute-refused` | `execute` of `test.read`, `test.mutate`, `test.handoff`, an unknown action, a valid-looking basis and word, with arguments | `refused`, `code=unavailable`, before any lock, operation record, basis or child: nothing recorded, nothing written, no child started |
+| `frontend-check-detail-refused`, `frontend-check-validate-refused` | `detail` with a page; `validate` with a `select` | `refused`, `code=unavailable` |
+| `frontend-check-no-state` | every case above | the temporary state folder never created, or byte-identical where it was placed: no state, log, lock, plan, operation record or download |
+| `frontend-check-no-install-fallback` | each failure: an inadmissible lock, no artifact for the target, a declined download or move, a refused connection, a wrong size, a wrong digest, a stand-in that will not execute, the core refusing `hello` (the lock naming another frontend version), a stand-in that asks for another scope's snapshot and exits 10, a stand-in that leaves before any snapshot with status 0, a crash, a session left unsettled | each `not-completed` or `unsettled` with its reason, status 1; no installer routing, prompt, probe, lock or log reached — nothing of `mac_main` or `lx_main` in the output or the recorded order |
+| `frontend-check-ineligible-terminal` | `--no-tui`; stdin not a terminal; stdout not a terminal; `TERM` unset; `TERM=dumb` | `not-performed`, status 1: no lock read, no request made, no scratch, no frontend |
+| `frontend-check-dry-run` | `--dry-run`, cold and warm | the artifact and the cache state reported as `would run`; `not-performed`, status 1; no request made, no file in the cache or the per-run scratch, no frontend or core started |
+| `frontend-check-cleanup` | a completed check; the frontend killed while idle | the per-run and session scratch removed only once the session is quiescent, under docs/PROTOCOL.md → *The session scratch*; the killed case reports `crashed` and `not-completed` |
+| `frontend-check-terminal` | real PTY on both arm64 runners: the command, warm cache, the native build | the dashboard shows the four facts and "Nothing is available now."; `q` exits; the alternate screen left, the cursor shown, the settings equal to the ones before; the report `completed`, status 0 |
+| `frontend-check-lock` | the copy's lock changed: another digest, another size, another version, no artifact for the target, a broken seal | never a binary the lock does not pin; each `not-completed` with its reason; a version other than the frontend's refused by the core as `frontend` |
+| `frontend-check-production-mac` | acceptance only, by hand on this Mac: the reviewed checkout, its committed lock and the published macOS artifact, no seam set | see MILESTONES.md → *Gate 1 — Frontend and transport foundation* (Exit); recorded with the cache path and digest, the core's `hello`, and the terminal before and after |
+
+**Effects.** Around each case below the test snapshots the temporary
+`HOME`, cache, state folder and `TMPDIR` (type, mode, size and digest of
+every entry) before and after. Only the listed paths may differ; in every
+case the state folder is unchanged or absent and no installer routing is
+reached:
+
+| Case | May change |
+| --- | --- |
+| cold cache, completed | `<cache>/<sha256>/omb-tui` added (0700), with any folder of its path made for it (0700) |
+| warm cache, completed | nothing |
+| download declined | nothing |
+| download fails, or is interrupted | at most the folders made for the file, empty |
+| digest or size mismatch | the same |
+| the frontend will not execute | as cold or warm: the verified file stays cached |
+| `hello` refused | the same |
+| snapshot refused, or left before it | the same |
+| normal quit | the same as completed, cold or warm |
+
+In `TMPDIR`, nothing may remain after any case except a session scratch the
+launcher reported as not known to be over.
+
 ### Layers
 
 | Layer | What | How |
@@ -643,8 +721,8 @@ A validator, `tests/test-docs.sh` (M14 gate 1), runs in CI over `SPEC.md`,
 | macOS (existing) | `/bin/bash` 3.2, every Bash test, the launcher step, fixture freshness |
 | equivalence | both systems: the baseline worktree and `equiv-*` |
 | frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's |
-| frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, the unit tests (the process table included), H, the panic gate, `sup-*`, `frontend-compat-linux` |
-| frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, the unit tests, the panic gate, `sup-*`, `frontend-compat-macos` |
+| frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, the unit tests (the process table included), H, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-linux` |
+| frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, the unit tests, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-macos` |
 | Linux target shell | `ubuntu-24.04-arm`: GNU Bash 5.3.15, the Linux root's, built from GNU's sources held to `tests/bash-5.3.15.sha256`; `tests/bash-trap-comsub.sh` under it; the records, core (the signal storm with no skip), diagnostics, launcher and static suites, layer H and layer G under it |
 | release | on a `frontend-v*` tag: native builds, the checks above, `SHA256SUMS`, artifact attestations, no `test-hooks` feature |
 | benchmark | by hand (`workflow_dispatch`) on both arm64 runners: `bench-*`; its numbers are recorded in MILESTONES.md → *Gate 2 — Read-only equivalence* |

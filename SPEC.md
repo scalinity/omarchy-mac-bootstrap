@@ -92,11 +92,14 @@ arbitrary partitions.
   ASCII (the Linux VT console, `TERM=linux`, always gets ASCII).
 - (M14) **The frontend.** Interactive commands on a terminal run in
   `omb-tui`, a Rust/Ratatui binary for `aarch64-apple-darwin` and
-  `aarch64-unknown-linux-gnu`. It is not needed to start: the launcher stays
-  stock Bash 3.2, acquires the binary pinned by `release/frontend.lock`
-  (version, size, SHA-256) with provenance in act sessions only, checks its
+  `aarch64-unknown-linux-gnu`, each from the milestone that exposes its
+  whole flow; in M14 gate 1 the only one is `frontend-check`. It is not
+  needed to start: the launcher stays stock Bash 3.2, acquires the binary
+  pinned by `release/frontend.lock` (version, size, SHA-256) with
+  provenance only in act sessions and in `frontend-check`, checks its
   digest on every launch, and falls back to the text interface when it
-  cannot verify or start it. No Rust toolchain is ever needed on the Mac.
+  cannot verify or start it — except in `frontend-check`, which then ends
+  as not completed. No Rust toolchain is ever needed on the Mac.
   The frontend spawns only the core, one short-lived `omarchy-bootstrap
   core <op>` per request, speaking the record-format protocol, whose bytes
   are admitted before anything parses them (docs/FRONTEND.md,
@@ -140,6 +143,7 @@ is in.
 | `debug save [--raw]` (M15) | act | The safe report and the brief into the state directory; with `--raw`, the raw diagnostics too, after a yes/no | Same |
 | `qualify`, `qualify clean` (M16) | act | The step due on this system; typed `test`, `clean` | Same (docs/QUALIFICATION.md) |
 | `qualify status`, `report` (M16) | read | The check's state; the hardware report | Same |
+| `frontend-check` (M14) | read, frontend cache | Opens the published frontend to check that it can be acquired, started, reach its core, show its foundation dashboard and exit; installs, plans and changes nothing on the machine (docs/FRONTEND.md → *The startup check*) | Same |
 | `core OP` (M14) | per operation | The frontend's protocol entry (docs/PROTOCOL.md); not for people | Same |
 
 Global flags: `--dry-run`, `--no-color`, `--ascii`, `-h/--help`, `--version`;
@@ -163,8 +167,24 @@ scopes (docs/PROTOCOL.md → *Scopes*): the default run, `install` and
 action above the ceiling or outside the scopes, and any request when either
 is missing.
 
+(M14) `frontend-check` is not one of those commands and never becomes the
+default: it is an additional, explicit command whose whole flow is
+starting the interface, and every command above keeps its routing until
+its own milestone. Its session has a read ceiling, the `journey` scope
+alone, no dry run and the purpose `frontend-check`, which the core
+validates (docs/PROTOCOL.md → *The startup-check session*). Every failure
+ends the check as not completed; none continues into another command.
+
 - **read** commands create no state directory, write no state or log, and keep
   no download.
+- **read, frontend cache** (`frontend-check` only) splits two authorities.
+  Toward the machine it is a read command: no state directory, state, log
+  or run lock, and `run` refuses everything. Its launcher alone may also
+  establish the frontend cache — after `[Y/n]` download the artifact the
+  committed lock pins, and after a yes move aside a cached copy that fails
+  its digest. That permission comes from the command word, stays in the
+  launcher and never reaches a core; no other command gains it by having a
+  read session.
 - **plan** writes only the choices, the survey stamp, the Shared plan record
   and its log.
 - **`--dry-run`** walks any command's flow, prints each command as `would run`,
@@ -582,6 +602,7 @@ is invalidated by behaviour. docs/QUALIFICATION.md.
 | qualification | `not-started`, `waiting-for-linux`, `waiting-for-macos`, `in-progress`, `passed`, `failed`, `blocked` |
 | journey (per stage) | `done`, `current`, `todo`, `skipped`, `blocked`; each `machine` or `recorded` |
 | frontend (launcher) | `verified`, `missing`, `mismatch`, `unrunnable`, `fallback` |
+| frontend check (`frontend-check`) | `completed`, `not-completed`, `not-performed` |
 
 All are re-derived from the machine where the machine can show them;
 records are input.
@@ -679,7 +700,9 @@ Location: `$XDG_STATE_HOME/omarchy-mac-bootstrap` (default
   decide that.
 - (M14) The frontend cache is outside the state directory:
   `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/`, root's under
-  `/var/cache/omarchy-mac-bootstrap/`, checked like the state directory. The
+  `/var/cache/omarchy-mac-bootstrap/`, checked like the state directory,
+  and written only by the launcher of an act session or of
+  `frontend-check`, after consent. The
   person's own registry is `~/.config/omarchy-mac-bootstrap/registry.local.omb`.
 - (M15) Written only in the everyday user's home, by `restore`:
   `~/.config/omarchy-mac-bootstrap/shell.bash` and one marked line in
@@ -721,6 +744,7 @@ warning, and a token without it simply has no profile.
 | Ctrl-C at a prompt | Exit; nothing destructive ran |
 | Ctrl-C while a launched command runs | Report that it may have made changes; `status` re-derives where the machine is |
 | (M14) Frontend missing, unverifiable, unrunnable, or a version mismatch | Never run unverified; explain; continue in the text interface |
+| (M14) `frontend-check` fails at any step, is declined, or is left before its dashboard | Never run unverified; explain; the check ends not completed (status 1) and continues into nothing |
 | (M14) Frontend crash | Its hook and the launcher restore the terminal; report, with the log and `debug` |
 | (M14) The machine changed between review and action | The core refuses the stale basis; the frontend shows the fresh state |
 | (M14) The core ends without its result (crash, kill) | Outcome unknown, never "failed"; the machine is read again; the scope's operation record is reconciled before any new act in it, and refused as busy while its processes live |
@@ -765,7 +789,9 @@ warning, and a token without it simply has no profile.
   refused as root, and fixture mode never executes. (M14–M16) So are the
   new seams `OMB_TEST_QUAL_BYTES`, `OMB_TEST_HANDOFF_CHILD`,
   `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT`, `OMB_TEST_PAUSE_AT` and
-  `OMB_FRONTEND_DEV`, which also work only in fixture mode.
+  `OMB_FRONTEND_DEV`, which also work only in fixture mode. (M14)
+  `frontend-check` refuses every one of them, and `OMB_TEST_HOOK` and
+  `OMB_TEST_ARTIFACT` too, before any effect.
 - (M14–M16) **The product expansion adds no disk authority.** Nothing new
   partitions, formats, mounts APFS or touches the boot chain. The new
   privileged changes are exactly: in `restore`, packages and system setup
@@ -870,7 +896,11 @@ acceptance; the test ids are in docs/TESTING.md):
     `--no-tui` sessions change no persistent frontend state; the text
     interface takes over for every failure in docs/FRONTEND.md; the
     terminal is restored after exit, error, panic, SIGTERM and every
-    handoff.
+    handoff. `frontend-check` changes nothing persistent but the frontend
+    cache, after consent; its cores answer only `hello` and the `journey`
+    snapshot, with zero actions; it reports completed only after the
+    snapshot answered and the session ended cleanly, and no failure of it
+    continues into another command.
 19. (M14) Every protocol document is admitted byte by byte before it is
     parsed, identically in Bash and Rust, and matches the golden examples;
     no protocol descriptor reaches a child; a mutating child has no

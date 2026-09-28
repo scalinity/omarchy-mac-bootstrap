@@ -264,6 +264,10 @@ these hold; otherwise it leaves the scratch for a later launcher:
   the reading's own processes;
 - no unresolved operation record in the state directory names this session.
 
+For the startup check, L also reads its own session's spools before it
+removes them, to decide the check's outcome (docs/FRONTEND.md → *The
+startup check*); it reads nothing else in the scratch for that.
+
 **Stale reclaim.** A later launcher that finds an old `omb-session.*`
 directory has no exemption. It removes the directory only when:
 
@@ -579,12 +583,29 @@ a plain file inside `OMB_SESSION_DIR`. The session variables are protected by
 the frontend's pinned digest and by a static check that its source never
 sets them; they are not a boundary against a program running as the person.
 
+**The session purpose.** `OMB_SESSION_PURPOSE` selects a reviewed session
+contract. It is not a secret and authenticates nothing. L sets it for
+`frontend-check` only, to exactly `frontend-check`, and removes it from the
+environment of every other session it starts, whatever its own environment
+held; F passes it unchanged, as it passes the other session values, and its
+source never sets it. C reads it before any operation:
+
+| `OMB_SESSION_PURPOSE` | C |
+| --- | --- |
+| unset | the ordinary contract of this section and §5, unchanged |
+| `frontend-check` | *The startup-check session*, only when the session is exactly `OMB_SESSION_INTENT=read`, `OMB_SESSION_SCOPES=journey` and `OMB_DRY_RUN=0`, and `OMB_FIXTURE`, `OMB_FRONTEND_DEV` and every `OMB_TEST_*` variable are unset or empty; otherwise every operation is refused `result status=error code=environment` |
+| any other value, the empty string included | every operation refused `result status=error code=environment` |
+
+The purpose is environment, not a record: no request, response or record
+schema changes, so the protocol stays version 1.
+
 ### Scopes
 
 `journey`, `disk`, `plan`, `profile`, `resolve`, `asahi`, `network`,
 `omarchy`, `shared`, `export`, `restore`, `rescue`, `qualify`, `debug`.
 Each action belongs to exactly one. A session's scopes come from the command
-that started it (SPEC.md → *Commands*).
+that started it (SPEC.md → *Commands*); a startup-check session has
+`journey` alone.
 
 ### Operations
 
@@ -610,6 +631,62 @@ sends SIGTERM to C, which finishes the unit in hand and reports
 `status=cancelled` with what completed. A read request may be cancelled at
 any time; a managed act only at its declared safe boundaries; a handoff
 child is never signalled by F.
+
+### The startup-check session
+
+A session whose purpose is `frontend-check` (*Environment*) answers:
+
+| Operation | Result |
+| --- | --- |
+| `hello` | `done` |
+| `snapshot`, `scope name=journey` | `done`, with the check's snapshot below, as often as it is asked |
+| `snapshot` of any other scope | `refused`, `code=scope` |
+| `detail` | `refused`, `code=unavailable` |
+| `validate` | `refused`, `code=unavailable` |
+| `execute`, whatever its action — the fixture's read-class `test.read` included — and whatever its basis, word or arguments | `refused`, `code=unavailable` |
+| any operation added later | refused, until a reviewed change admits it to this purpose |
+
+In order: the environment; admission; the request's operation; its
+protocol; its frontend version, held to the lock's without exception (the
+development exception needs fixture mode, which the purpose refuses); then
+this table. An `execute` is refused there, before step 2 of *Executing*: no
+action is looked up, no run lock is taken, no operation record is read or
+written, nothing is re-read, no basis is built, no word compared, no child
+started. Each refusal meets its operation's response schema, and C exits 0
+with its `result`. The core is the enforcement; that the frontend shows no
+action is not.
+
+**The check's snapshot** is exactly these records, in this order, with
+`<version>` and `<proto>` the request's own `frontend` and `proto` values,
+which the core has already held to the lock and to itself:
+
+```text
+hello	core=…	commit=…	source=…	proto=<proto>	platform=…	arch=…	user=…	ceiling=read	dry_run=0	fixture=0
+generation	id=<the SHA-256 of the records below, as for every snapshot>	total=0
+fact	scope=journey	key=check	label=Check	value=frontend%20startup%20check%20%28frontend-check%29	state=info
+fact	scope=journey	key=interface	label=Interface	value=frontend%20<version>%20as%20the%20lock%20pins,%20protocol%20<proto>	state=ok
+fact	scope=journey	key=session	label=Session	value=read-only,%20journey%20scope%20only,%20not%20a%20dry%20run	state=info
+fact	scope=journey	key=actions	label=Actions	value=none%20in%20this%20session	state=info
+result	status=done	code=ok	text=	next=
+```
+
+- **What it says, and why each is true.** That this is the startup check;
+  that the frontend's version is the one the lock pins and both sides speak
+  one protocol (the request that asked for it was admitted and held to
+  both); that the session is read-only, `journey` only and not a dry run
+  (the environment the core has just validated); that it offers no action
+  (this table).
+- **What it never says.** No fixture and no fixture's text, no `stage`
+  record (no journey stage is claimed; the released frontend's rail says
+  the journey is not derived), no disk, storage, health, qualification,
+  migration or installation result, no operation state, and no `action` or
+  `param` record: zero actions.
+- **What it reads.** Nothing beyond what every core reads to answer
+  `hello` — the checkout's commit, the architecture, the boot session, its
+  own identity and source. It reads no operation record, so it can neither
+  show nor settle one: no reconciliation runs, and nothing it does removes,
+  rewrites or clears a record, whatever barrier exists. The same lock and
+  session values always give the same records.
 
 ### Request schemas
 

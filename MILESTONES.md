@@ -275,14 +275,31 @@ of docs/TESTING.md.
   fallback; one fake read, one fake mutating and one fake handoff child
   (`OMB_TEST_HANDOFF_CHILD`); `release/frontend.lock`, the build-input
   closure checks and the release workflow; the frontend CI jobs;
-  `tests/test-docs.sh`. **No baseline action is exposed.**
+  `tests/test-docs.sh`; and the production startup check,
+  `./omarchy-bootstrap frontend-check` (docs/FRONTEND.md → *The startup
+  check*): its own route, which leaves every other command's routing as it
+  is; the launcher's cache authority held apart from the core session's
+  read ceiling and `journey` scope; the session purpose the core validates;
+  the action-free production foundation snapshot (docs/PROTOCOL.md → *The
+  startup-check session*); and its own failure path, which ends the check
+  and never continues into another command. The entrypoint's routing change
+  gets its own focused safety review (docs/DECISIONS.md, D18). **No
+  baseline action is exposed.**
 - **Verification:** `proto-diff-*`, `proto-golden-hello`,
   `proto-invalid-schemas`, `proto-code-kind`, `proto-admit-io`,
   `proto-env`, `proto-version`, `proto-exit`, `sup-*`, `diag-*`, `pty-*`,
-  `frontend-*`, `docs-*`; frontend layers A–H for the two screens.
+  `frontend-*` (the `frontend-check-*` class included), `docs-*`; frontend
+  layers A–H for the two screens.
 - **Exit:** the macOS arm64 artifact built, verified and started by the
-  launcher on CI and on this Mac's macOS; the Linux aarch64 artifact
-  passing `frontend-compat-linux` and starting on the aarch64 runner; every
+  launcher on CI and on this Mac's macOS — on this Mac, the published
+  macOS artifact the committed production lock pins, acquired or verified
+  and started through `./omarchy-bootstrap frontend-check` with no fixture,
+  development or test override; `hello` and the production foundation
+  snapshot answered; the action-free dashboard visibly drawn; a normal
+  quit restoring the terminal and removing the session; no baseline state
+  written and no baseline action reached (`frontend-check-production-mac`);
+  the Linux aarch64 artifact passing `frontend-compat-linux` and starting
+  on the aarch64 runner; every
   `frontend-input-*` case behaving as written; start and every cleanup path
   verified; every descriptor, diagnostics and process-death test passing
   on the real topology — a supervised completion with L, F and C alive
@@ -293,24 +310,35 @@ of docs/TESTING.md.
   (`diag-*`); Bash and Rust admission agreeing on the whole differential
   corpus and the golden examples; `frontend-lock-not-input` passing; no
   path that changes the machine.
-- **Status:** implemented — code remediation still required; not accepted.
-  The independent review of `3a1561e` required remediation (H01–H07,
-  M01–M03, L01–L02); its re-review at `38ed2f1` closed nine and left H06,
-  H07 and M03 partial, and the review at `aa08ee0` closed H06 and M03 and
-  left H07 partial: the storm's exemption did not hold the spool to its
-  bytes. Its remediation, on branch `m14-gate1-frontend-foundation` from
-  `21904d6`, awaits independent re-review. CI runs every job on each push
-  (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS `/bin/bash`
-  3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and `macos-15`
-  arm64, and the Linux target shell — GNU Bash 5.3.15 built from pinned
-  sources on `ubuntu-24.04-arm`), and the remediation report names the runs.
-  Open:
-  - **Staging, after the code is accepted, on its own authorization:** the
-    `frontend-v0.1.0` release of the accepted commit, the production
-    `release/frontend.lock` generated from it, and the verified start on
-    this Mac. Until then the lock check reports the frontend unreleased, and
-    the verified start is proved on CI with test locks pinning each native
-    build — machinery, not production evidence.
+- **Status:** blocked — not accepted. The independent review of
+  `3a1561e` required remediation (H01–H07, M01–M03, L01–L02); its re-review
+  at `38ed2f1` closed nine and left H06, H07 and M03 partial, and the review
+  at `aa08ee0` closed H06 and M03 and left H07 partial: the storm's
+  exemption did not hold the spool to its bytes. Its remediation is on
+  branch `m14-gate1-frontend-foundation` from `21904d6`. CI runs every job
+  on each push (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS
+  `/bin/bash` 3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and
+  `macos-15` arm64, and the Linux target shell — GNU Bash 5.3.15 built from
+  pinned sources on `ubuntu-24.04-arm`), and the remediation report names
+  the runs. Staging followed: tag `frontend-v0.1.0` on `54c3770`, release
+  run 36362043228 (both artifacts, `SHA256SUMS`, attestations), and the
+  production `release/frontend.lock` committed at `569d67e`
+  (`source_commit` `54c3770`, `inputs_digest`
+  `3accc9ce9fd188cb599cbe7d805ac3eda7c29205fead5df0beb015f8dfa41aaa`, the
+  `frontend/` tree unchanged from `54c3770`). The independent review of the
+  local-launch preflight at `569d67e` kept the release and the lock valid,
+  and found that no production route reached the frontend there: the
+  entrypoint started it only with `OMB_FIXTURE` set, and the core refused
+  every snapshot outside fixture mode, so this exit's production start
+  could not be met without the contract amendment that defines
+  `frontend-check`. The amendment needs no new release, tag, build or
+  artifact: `frontend-v0.1.0` and the lock stay as they are, and only a
+  change under `frontend/`, or Rust behaviour the released artifact cannot
+  give, would need a new release, under a new version. Blocked on, in
+  order: an independent review of the amendment; the bounded
+  `frontend-check` implementation; its focused safety review (D18); CI on
+  the exact remediation commit; the production start on this Mac, as this
+  exit states it. Gate 2 is not authorized. Open:
   - **Bash 5.2 (not a target):** Ubuntu's runners have 5.2.21, which loses
     a trap inside a command holding two command substitutions (upstream,
     fixed for 5.3; docs/UPSTREAM.md → *Experiments*). The core's own code

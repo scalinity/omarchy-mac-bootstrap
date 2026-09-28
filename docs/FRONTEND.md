@@ -1,8 +1,8 @@
 # The frontend
 
 **Status: the implementation contract for M14 gate 1 (distribution,
-lifecycle, fallback) and the screens of M14–M16 (MILESTONES.md); not
-implemented.** Library and platform facts: docs/UPSTREAM.md → *Ratatui and
+lifecycle, fallback, the startup check) and the screens of M14–M16
+(MILESTONES.md); not implemented.** Library and platform facts: docs/UPSTREAM.md → *Ratatui and
 distribution*.
 
 The product's interface is a compiled Rust program built with Ratatui,
@@ -32,9 +32,10 @@ descriptors and supervision are defined once, in docs/PROTOCOL.md → §3.
 | Situation | Interface |
 | --- | --- |
 | an interactive command whose flow is exposed through the protocol, on a terminal | the frontend |
+| `frontend-check` on a terminal (M14 gate 1) | the frontend: its whole flow is the startup check (*The startup check*) |
 | a one-shot command (`status`, `doctor`, `shared`, `logs`, `sources`, `scan`, `profile show`, `restore status`, `restore why`, `qualify status`, `debug`, `debug context`, `debug raw`, `report`, `--help`, `--version`) | text on stdout: a contract for scripts and agents |
-| `--no-tui`, stdin or stdout not a terminal, `TERM=dumb` | text |
-| the frontend cannot be verified, cannot start, or refuses the handshake | the text recovery surface, saying why |
+| `--no-tui`, stdin or stdout not a terminal, `TERM` unset or `dumb` | text; for `frontend-check`, a report that the check was not performed |
+| the frontend cannot be verified, cannot start, or refuses the handshake | the text recovery surface, saying why; for `frontend-check`, the check's own report that it was not completed, never another command's flow |
 
 A command moves to the frontend only when every action its flow needs is
 exposed (MILESTONES.md): `profile` and `export` with M14's gates 4 and 5;
@@ -42,9 +43,45 @@ exposed (MILESTONES.md): `profile` and `export` with M14's gates 4 and 5;
 time in M16. Until then a command stays in text, so no command opens a
 frontend that cannot finish it.
 
+`frontend-check` meets the same rule rather than bending it: its whole flow
+is starting the interface — acquire or verify it, reach the core, show the
+foundation dashboard, leave — so a dashboard with no actions finishes it.
+It is an additional, explicit command and never becomes a default: the
+default run, `install`, `plan`, `resume`, `profile`, `export`, `restore`,
+`rescue`, `qualify`, `shared create` and `shared activate` keep their routing
+until the milestone above moves each of them.
+
 ## Starting
 
+In M14 gate 1 the one production route to the frontend is `frontend-check`
+(the first diagram). The diagrams after it are the normal commands' routes:
+each becomes active only in the milestone that moves its command to the
+frontend (*When the frontend runs*); until then that command runs in text.
+
+### The startup check (M14 gate 1)
+
+On macOS arm64 and on Linux aarch64 alike (*The startup check*):
+
+```text
+./omarchy-bootstrap frontend-check
+  → launcher: stock Bash startup, libraries load (baseline)
+  → a test or development seam set?  yes → refused (status 2), nothing read or started
+  → platform and target: aarch64-apple-darwin or aarch64-unknown-linux-gnu
+  → an interactive terminal?  no → not performed (status 1)
+  → this checkout's committed release/frontend.lock: version, size, SHA-256 for the target
+  → a cached binary with that digest?  yes → start it
+                                       no  → provenance, [Y/n] → download, size and SHA-256 → cache
+  → the verified, published omb-tui (read ceiling, journey scope, purpose frontend-check)
+  → hello → the check's journey snapshot → the foundation dashboard, no actions
+  → the person leaves (q) → the session quiescent → terminal restored → scratch removed
+  → frontend-check: completed (status 0)
+```
+
 ### On macOS
+
+From M16, once the default run's family moves to the frontend
+(MILESTONES.md → *M16 — The full journey through the frontend, and
+qualification*); until then `./omarchy-bootstrap` is the text installer:
 
 ```text
 ./omarchy-bootstrap
@@ -57,6 +94,10 @@ frontend that cannot finish it.
 ```
 
 ### On the fresh Asahi system
+
+From M16, once `resume`'s family (network and the Omarchy handoff) moves to
+the frontend; until then `resume` is the text flow, and `frontend-check` is
+the only command that opens the frontend here.
 
 The earliest the frontend can draw is the first run of this tool, which
 needs the repository, which needs the network:
@@ -83,9 +124,169 @@ arrived leaves the baseline's text flow, which runs `nmtui` itself.
 
 ### The everyday user on Omarchy
 
-Root's download is in root's cache. The user's first act session finds that
-digest there (root-owned, not writable by the user, checked like any cache)
-or acquires its own copy into the user's cache.
+Root's download is in root's cache. The user's first act session, or
+`frontend-check`, finds that digest there (root-owned, not writable by the
+user, checked like any cache) or acquires its own copy into the user's
+cache.
+
+## The startup check
+
+`./omarchy-bootstrap frontend-check` opens the real production frontend to
+check that this checkout's published interface can be acquired, started,
+reach its core, show its foundation dashboard, and exit. It does not
+install Linux, change any disk, run a Shared operation, install packages or
+run setup, qualify hardware, or migrate anything. Its whole flow is that
+start, so it needs no action to finish, and it is M14 gate 1's only
+production route to the frontend. It is one command on both frontend
+platforms: macOS arm64 (13.5 or later) and Asahi/Omarchy Linux aarch64;
+anywhere else it is not performed.
+
+### Two authorities
+
+For every other command one intent answers two questions at once: may the
+launcher acquire its own interface, and what may the core do. The startup
+check answers them separately:
+
+| Authority | Where it comes from | Permits | Never |
+| --- | --- | --- | --- |
+| **launcher cache authority** | the command word `frontend-check`, in the launcher; never exported, never seen by a core | inspecting the frontend cache; after a yes, moving aside a user-cache binary that fails its digest; after `[Y/n]`, downloading the artifact the committed lock pins for this target, holding it to size and SHA-256, and placing it in the cache by rename | any other persistent write: no state directory, state, log, run lock, trace file |
+| **core session authority** | the session values: `OMB_SESSION_INTENT=read`, `OMB_SESSION_SCOPES=journey`, `OMB_DRY_RUN=0`, `OMB_SESSION_PURPOSE=frontend-check` | `hello`; the `journey` snapshot, repeated on refresh | `detail`, `validate`, every `execute`, any other scope (docs/PROTOCOL.md → *The startup-check session*) |
+
+The launcher's baseline side runs as a read command (`OMB_INTENT=read`,
+`OMB_PERSIST=0`): no state directory, state, log or run lock, and `run`
+refuses everything. The cache write is the object under check, not
+authority over the machine being orchestrated, so it gives the core
+nothing: the core's ceiling is read whatever the launcher was allowed to
+cache (docs/DECISIONS.md, D43 and D48).
+
+### The flow
+
+In this order, each step ending the check as its outcome says (*Outcomes*):
+
+1. **Arguments and seams.** `frontend-check` takes no argument; the global
+   `--dry-run`, `--no-tui`, `--no-color` and `--ascii` apply, and `--help`
+   and `--version` answer as for every command. Any other argument, or any
+   of `OMB_FIXTURE`, `OMB_FRONTEND_DEV`, `OMB_TEST_ARTIFACT`,
+   `OMB_TEST_HOOK`, `OMB_TEST_HANDOFF_CHILD`, `OMB_TEST_RECORD`,
+   `OMB_TEST_AFTER`, `OMB_TEST_RC`, `OMB_TEST_QUAL_BYTES`,
+   `OMB_TEST_STOP_AT`, `OMB_TEST_FAIL_AT` or `OMB_TEST_PAUSE_AT` non-empty
+   (an empty value is off, as for every command), is a usage error before
+   anything is read, fetched or started. The seams keep their meaning for
+   every other command and for the tests that own them; this command
+   refuses them so that a production check can never turn into a fixture
+   or development run.
+2. **Its own route.** The command is dispatched on its own, after the flags
+   and before the run lock, the log's start line and every other command's
+   routing, and it returns from there with its own status. No outcome
+   continues into the installer's routing (`mac_main`, `lx_main`), `resume`
+   or any other command.
+3. **Target.** macOS on arm64 is `aarch64-apple-darwin`, Linux on aarch64
+   is `aarch64-unknown-linux-gnu`; any other system: not performed.
+4. **Dry run.** With `--dry-run`, *Dry run* below, and nothing else.
+5. **Terminal.** stdin and stdout are terminals, `TERM` is set and not
+   `dumb`, and `--no-tui` is absent; otherwise not performed, with nothing
+   acquired and nothing started.
+6. **Lock.** This checkout's committed `release/frontend.lock`, admitted;
+   its protocol the core's; an artifact for the target. No other lock,
+   binary, CI artifact or local build is ever used.
+7. **Cache.** As for an act session: this user's cache, then root's; the
+   file hashed on every launch; a verified one is started. A user-cache
+   file under the digest's name whose bytes differ is named and never run,
+   and is moved aside only after a yes.
+8. **Acquisition**, when nothing verified is cached: the URL, version,
+   target, size and SHA-256 shown as for an act session, then `[Y/n]`.
+   After a yes, the lock's HTTPS URL is fetched with `curl` on the normal
+   path (never a fixture's copy) and held to its size and SHA-256 before it
+   is placed in the cache by rename or run; a failure keeps no file.
+9. **Session.** The session scratch of docs/PROTOCOL.md → *The session
+   scratch*; the session values above exported; `OMB_TUI_LOG` ignored,
+   with a one-line notice; `omb-tui --session <dir>` started.
+10. **The interface.** `hello`, then the check's `journey` snapshot, then
+    the dashboard: the check's facts, and "Nothing is available now." under
+    its actions. `r` asks for the same snapshot again; help, focus,
+    scrolling, resize and Ctrl-Z behave as in any session; `q` or Ctrl-C
+    leaves.
+11. **After it.** The launcher waits for the session to be quiescent,
+    restores the terminal and removes its scratch, as after every session
+    (*The terminal*).
+12. **Result.** *Outcomes*.
+
+### Outcomes
+
+| Outcome | When | Status |
+| --- | --- | --- |
+| `completed` | all of: the frontend exited 0; the session was quiescent; its spools, admitted before the scratch was removed, hold a `hello` answered `done` and at least one `snapshot` answered `done` with a `generation` record and no `action` record; the saved terminal settings were put back; the scratch was removed | 0 |
+| `not-completed` | any failure of steps 6 to 11, a declined `[Y/n]`, or the person leaving before the dashboard's data arrived | 1 |
+| `not-performed` | step 3 or 5 stopped it, or `--dry-run` | 1 |
+
+A usage error (step 1) exits 2, as for every command. Ctrl-C at a prompt
+before the frontend starts ends the check as at any prompt (status 130),
+with nothing cached and no partial download left.
+
+The frontend exits 0 also when the person leaves before any snapshot has
+answered (`q` on its connecting screen), so its exit status alone is never
+the result; the spools are what show that it reached its core and received
+its dashboard. That the dashboard was drawn is shown by
+`frontend-check-terminal` in CI and seen by the person at gate 1's
+production start (MILESTONES.md → *Gate 1 — Frontend and transport
+foundation*).
+
+Every outcome prints one bounded report. `completed` names the version, the
+target and the SHA-256 it started. `not-completed` begins `frontend-check:
+not completed —` with the launcher's state (`missing`, `mismatch`,
+`unrunnable`, `fallback`, `crashed`, `unsettled`) and its reason, as
+*When things go wrong* lists them; `not-performed` says which condition
+stopped it and that the interactive check was not performed. None of them
+says it continues in text: there is nothing to continue, and no outcome
+enters another command's flow. A session not known to be over leaves the
+terminal and the scratch as they are and says so, as every launcher does.
+
+### Dry run
+
+`frontend-check --dry-run` reads the lock and the cache and says what the
+check would do: the artifact (URL, version, target, size, SHA-256), whether
+a verified copy is cached and where, whether a download would be asked
+for, and what would start, each as `would run`. Then it reports the check
+not performed. It downloads nothing, not even into the per-run scratch,
+moves nothing, starts neither frontend nor core, and writes no trace. This
+is narrower than another command's dry run, which may start the frontend
+from a scratch copy: an interface started by a check's dry run would look
+like the check itself, and a dry run never counts as it.
+
+### Effects
+
+- **Persistent: only the frontend cache**, and only after consent:
+  `$XDG_CACHE_HOME/omarchy-mac-bootstrap/frontend/<sha256>/omb-tui` (root's
+  under `/var/cache/omarchy-mac-bootstrap/` on Linux), the directories made
+  for it (0700), and a mismatching copy renamed `omb-tui.mismatch-<stamp>`
+  after a yes. A download that fails, has the wrong size or digest, or is
+  interrupted leaves no file there — at most the directories made for it,
+  empty.
+- **Never**: the state directory, state, logs, the run lock, a saved plan,
+  an operation record (none is written, read by the check's snapshot,
+  reconciled or cleared), a migration profile, export or restore state,
+  `downloads/`, a trace file, and any disk, package or boot change.
+- **Temporary**: the per-run scratch, the session scratch (identities,
+  spools, the diagnostics summary), and the terminal's modes while the
+  frontend owns it, all removed under docs/PROTOCOL.md → *The session
+  scratch*. As every launcher does, its owner cleanup and stale reclaim
+  read the state directory's operation records only to decide whether a
+  scratch may be removed; they write nothing there.
+
+### Help
+
+`--help` lists `frontend-check` among the commands with one line, "check
+that the interface starts: downloads it once, changes nothing else". It is
+written with the command, not before.
+
+### Identities
+
+The check starts the artifact the committed lock pins. Its `source_commit`
+and `inputs_digest` name what it was built from and stay as released; the
+core that answers is the checkout that runs, named by its `hello`'s
+`commit`, which may be a later commit that changes nothing under
+`frontend/`. Those are two components' identities, and a difference between
+them is expected, never a mismatch (docs/DECISIONS.md, D10).
 
 ## Distribution and provenance
 
@@ -197,16 +398,24 @@ else:
 | one-shot read | never | never: `doctor` and `status` report a bad cache | never | never (one-shots are text) |
 | `--dry-run` | into the per-run scratch directory, run from there, kept nowhere | never | never | yes, from the scratch copy |
 | `--no-tui` | never | never | never | never |
+| `frontend-check` (its launcher; its cores are read) | yes, after `[Y/n]` | yes, after a yes | never: `OMB_TUI_LOG` ignored, with a one-line notice | yes, with a read ceiling and the `journey` scope |
+| `frontend-check --dry-run` | never | never | never | never |
 
 Every launch hashes the cached binary before starting it. The per-run and
 session scratch directories are temporary and removed on exit; they are
 not persistent state.
 
+`frontend-check` is the one row not named by an intent: its launcher holds
+the cache authority of *The startup check*, and its cores a read ceiling.
+No other command gains that row by having a read session: `status`,
+`doctor`, `scan` and every other read command never download or cache the
+frontend, and act sessions keep their row as it is.
+
 ### Upgrades and downgrades
 
 There is no updater. The checkout's lock decides the version: a `git pull`
-that brings a new lock means the next act session acquires that version
-with its provenance shown; an older checkout uses the older version, which
+that brings a new lock means the next act session, or `frontend-check`,
+acquires that version with its provenance shown; an older checkout uses the older version, which
 may still be cached. Nothing is fetched to look for newer versions.
 
 ### When things go wrong
@@ -227,11 +436,17 @@ handshake or exited with status 10). The text interface is always a
 complete way to finish the install; it is the recovery path, not the
 intended experience.
 
+In `frontend-check`, every row above ends the check as `not-completed`,
+with that state and reason in its report (*The startup check*); "text"
+there means the check's report, never the installer's text flow or any
+other command.
+
 ### Development
 
 `OMB_FRONTEND_DEV=<path>` runs an unreleased build only in fixture mode
 (`OMB_FIXTURE` set: the core reads recorded machines and runs nothing),
 never as root. An unreleased frontend never drives a real machine.
+`frontend-check` refuses both variables.
 
 ## The terminal
 
@@ -307,9 +522,10 @@ The frontend ships with the core and is still treated, by the core, as
 input:
 
 - **It gains no authority by being the interface.** Every execute passes
-  docs/PROTOCOL.md → §5; the session's ceiling, scopes and dry run are set
-  by the launcher and pass through unchanged, and the core refuses to work
-  when any is missing; no schema carries a state, a plan or a verdict.
+  docs/PROTOCOL.md → §5; the session's ceiling, scopes and dry run — and,
+  for the startup check, its purpose — are set by the launcher and pass
+  through unchanged, and the core refuses to work when any is missing or
+  inconsistent; no schema carries a state, a plan or a verdict.
 - **Typed words are intent, validated by the core.** A gate the frontend
   collects is checked by the core exactly as the text flow's is.
   Authentication is separate: upstream programs and `sudo` ask for their own
@@ -330,7 +546,8 @@ input:
 
 - **`--no-tui`** gives the text interface for every command. It skips no
   gate: the typed word must still be given on stdin, as the baseline's text
-  flow reads it.
+  flow reads it. `frontend-check`, whose whole flow is the interface, has
+  no text flow: with `--no-tui` it reports the check not performed.
 - **The installer's flows in text** are the baseline's own screens.
 - **Migration in text**: `profile --select FILE` (docs/MIGRATION.md →
   *Choices in a file*) and `restore --plan FILE` (docs/RESTORE.md →

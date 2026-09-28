@@ -88,8 +88,13 @@ metadata`. The lock is not a build input, so updating it cannot change what
 it records. At run time only the artifact digest counts; CI checks the
 commit's `inputs_digest` against the lock's; GitHub attestations link the
 artifact to its commit as optional evidence. No updater, no signing
-infrastructure. *Set aside:* excluding tests from the inputs, which would
-need a proof that production code never reads them.
+infrastructure. The lock's `source_commit` names the artifact's source,
+not the checkout that runs it: a later reviewed commit that changes nothing
+under `frontend/` keeps the lock's bytes, its `inputs_digest` and the
+artifact, while the core's `hello` names that later commit. Those are two
+components' identities, never a mismatch, and the lock is never rewritten to
+name the later commit. *Set aside:* excluding tests from the inputs, which
+would need a proof that production code never reads them.
 
 **D11. On fresh Asahi, the frontend is downloaded once the network is up**,
 checked against the lock of the checkout the Phase 1 guide pinned.
@@ -122,7 +127,11 @@ never redefine baseline functions. Each baseline action exposed through the
 protocol is compared with the **accepted baseline, `2edb76a`**, through
 recorded commands and records over fixtures — not only with the new text
 path, which could share a regression. Every change to a baseline file is its
-own reviewed safety delta.
+own reviewed safety delta. A change to the entrypoint's routing is one even
+when it adds no privileged command: adding `frontend-check` (D48) gets its
+own focused safety review, which holds that no existing action becomes
+newly reachable, that every other command routes as before, and that no
+`sudo`, child-registry action or disk, package or boot authority is added.
 
 **D38. One process model, with a spool instead of a response pipe.** The
 request travels on fd 3, which the core reads (bounded) and closes before
@@ -174,10 +183,40 @@ hold nothing. *Set aside:* treating an empty-looking process group as
 proof (the controllers are always in it, and a daemonised descendant never
 is); a general process tracker.
 
-**D43. The frontend's own persistence follows intent.** Only an act
-session downloads and caches the frontend, moves aside a bad cached binary,
-or writes a trace file; read, plan, dry-run and `--no-tui` sessions report
-and change nothing persistent (docs/FRONTEND.md → *Intent and persistence*).
+**D43. The frontend's own persistence follows intent, with one named
+exception.** For every ordinary command, only an act session downloads and
+caches the frontend, moves aside a bad cached binary, or writes a trace
+file; read, plan, dry-run and `--no-tui` sessions report and change nothing
+persistent (docs/FRONTEND.md → *Intent and persistence*), and act flows keep
+their acquisition as it is. The one exception is `frontend-check` (D48): its
+launcher may establish the frontend cache — download after `[Y/n]`, move a
+bad copy aside after a yes — while its core session has a read ceiling and
+the `journey` scope alone, and it writes no trace. The cache write is the
+object under check, not authority over the machine, so the two stay
+apart: the launcher's cache authority comes from that command word alone and
+is never passed to a core, and a core's authority comes from its session
+values alone. No command inherits the exception by having a read session:
+`status`, `doctor`, `scan` and every other read command never download or
+cache the frontend, and `frontend-check --dry-run` does neither.
+
+**D48. M14 gate 1's production start is a command of its own,
+`frontend-check`.** Gate 1 exposes no baseline action, and every installer
+command stays in text until its whole flow is exposed, yet the gate's exit
+needs the published artifact started by the launcher on this Mac. A command
+whose whole flow is starting the interface — acquire or verify the pinned
+artifact, reach the core, show the foundation dashboard, leave — is
+finished by a dashboard with no actions, so it keeps the rule instead of
+bending it. Its session carries the purpose `frontend-check`, which the
+core validates and answers with an action-free snapshot built from the
+session alone; every other operation is refused by the core, and every
+failure ends the check, never another command (docs/FRONTEND.md → *The
+startup check*; docs/PROTOCOL.md → *The startup-check session*). *Set
+aside:* opening the foundation dashboard from the default run, which would
+put an unfinished flow in the installer's place; counting a fixture launch,
+which takes another acquisition path and another snapshot; deferring the
+production start, which gives up the first end-to-end evidence of
+distribution; a new wire operation, which `hello` and `snapshot` make
+unnecessary.
 
 ## Migration
 
@@ -433,4 +472,5 @@ the postcondition.
 | 34 | Protecting the frozen baseline | D18, D38; docs/TESTING.md → *Equivalence with the accepted baseline*; MILESTONES.md → *Accepted baseline* |
 | 35 | Bash as the target shell | docs/RESOLVER.md → *From Zsh to Bash*; D2 |
 | — | The frontend: distribution, start-up, the split, the protocol, handoff, lifecycle, the boundary, working without it | docs/FRONTEND.md, docs/PROTOCOL.md; D5–D16, D38, D43 |
+| — | Gate 1's production start, and its authority | docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The startup-check session*; D10, D18, D43, D48 |
 | — | The interface | docs/UX.md |
