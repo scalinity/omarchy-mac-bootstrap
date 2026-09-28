@@ -160,8 +160,12 @@ n=0
 table=$(section SPEC.md Commands | grep -E '^\| (`|\*\(none\))')
 while IFS='|' read -r _ cell intent _; do
   intent=$(printf '%s' "$intent" | sed 's/^ *//; s/ *$//')
-  case "$intent" in
-    read | plan | act | 'act, scoped' | 'per operation') ;;
+  # One human-facing label beyond the five, paired with its one command
+  # (docs/TESTING.md → docs-commands): `frontend-check`, read, frontend cache.
+  case "$cell|$intent" in
+    ' `frontend-check` (M14) |read, frontend cache') ;;
+    *'`frontend-check`'* | *'|read, frontend cache') fail "docs-commands: SPEC.md → *Commands* gives '$cell' the intent '$intent'" ;;
+    *'|read' | *'|plan' | *'|act' | *'|act, scoped' | *'|per operation') ;;
     *) fail "docs-commands: SPEC.md → *Commands* gives '$cell' the intent '$intent'" ;;
   esac
   for span in $(printf '%s' "$cell" | grep -oE '`[^`]+`' | tr ' ' '_'); do
