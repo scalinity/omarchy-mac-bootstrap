@@ -775,9 +775,24 @@ delta `CP0-Q3b-overflow` (docs/DECISIONS.md → D52): no partial answer, no
 truncation, no larger window. The resume token `status` prints is a `code`
 of kind `token`, not a row. The doctor's rows are open.
 
-**The snapshot's content.** `hello`, `generation`, `fact`, `blocker`,
-`guide` and `message` records, and no `action` or `param`: nothing a
-baseline action needs is listed. A blocker is one line of `mac_blockers`;
+**The snapshot's content.** `hello`, `generation`, `fact`, `guide`, `code`,
+`blocker` and `message` records, in the existing response-schema order, and
+no `action` or `param`: no execution authority is exposed. The ordinary
+`journey` snapshot must include `code kind=token` with the existing
+`token_encode` value exactly when baseline `mac_status` exposes it:
+`state_get cfg_user` is nonempty. Otherwise no token code is emitted.
+The token is never a row or command-text row in `detail kind=status`;
+neither machine nor status detail emits it. Its presence, absence and
+canonical encoded value belong to the authoritative journey dataset and
+its generation. Both detail kinds re-read that same whole dataset, so a
+token-only change invalidates an older detail generation even when its
+rows are unchanged. When present, `code` follows `guide` and precedes the
+later response families. This is read data only: it makes no `resume`
+action available and changes no execute authority, session intent,
+persistence, scope or Protocol-1 schema. The separate `frontend-check`
+snapshot remains byte-frozen and token-free.
+
+A blocker is one line of `mac_blockers`;
 the next step, `guide id=next step=1`, is the text the baseline prints under
 *Next*. A `fact` key is an `id` namespaced by its owner (`machine.*` for the
 machine's identity); a fact read from a record has the prefix `recorded.`,
