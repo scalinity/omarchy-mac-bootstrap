@@ -143,3 +143,51 @@ END_DATASET
   _core_emit_body "$body" || return 1
   core_result "done" ok
 }
+
+# Both authorized detail kinds are projections of exactly the snapshot read.
+core_journey_detail() {
+  local rows='' line prefix
+  case "$CORE_REQ_KIND" in
+    machine | status) ;;
+    *) core_result refused unavailable "This journey detail kind is not available."; return ;;
+  esac
+  if ! core_journey_read; then
+    core_result error io "The journey dataset could not be read."
+    return
+  fi
+  prefix=$(printf 'row\tkind=%s\t' "$CORE_REQ_KIND")
+  while IFS= read -r line; do
+    case "$line" in "$prefix"*) rows="$rows$line
+" ;; esac
+  done <<END_DATASET
+$CORE_JOURNEY
+END_DATASET
+  core_read_page "$CORE_JOURNEY_GEN" "$rows"
+}
+
+# A page over already encoded, ordered projection rows. Admission has checked
+# generation and bounded offset/limit before this function can be reached.
+# The generation belongs to the whole scope; total belongs to this projection.
+core_read_page() {
+  local generation=$1 rows=$2 total=0 i=0 line page=''
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if [ "$total" -ge "$CORE_REQ_OFFSET" ] && [ "$i" -lt "$CORE_REQ_LIMIT" ]; then
+      page="$page$line
+"
+      i=$((i + 1))
+    fi
+    total=$((total + 1))
+  done <<END_ROWS
+$rows
+END_ROWS
+  core_emit generation id "$generation" total "$total"
+  if [ "$generation" != "$CORE_REQ_GENERATION" ]; then
+    core_result refused changed "The journey dataset changed; open this detail from a fresh snapshot."
+  elif [ "$CORE_REQ_OFFSET" -gt "$total" ]; then
+    core_result refused invalid "The offset is beyond this projection's total."
+  else
+    _core_emit_body "$page" || return 1
+    core_result "done" ok
+  fi
+}

@@ -59,6 +59,21 @@ for fixture in "$T/base/tests/fixtures/"*; do
     if [ "$name" = linux-alarm-fresh ]; then
       assert_eq "$(cat "$T/body")" "$(cat "$TESTS_DIR/gate2/linux-alarm-fresh.snapshot")" 'settled producer golden'
     fi
+    gen=$(printf '%s\n' "$C_OUT" | sed -n 's/^generation	id=\([^	]*\).*/\1/p')
+    for kind in machine status; do
+      C_PATH="$shims:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV="OMB_TEST_RECORD=$T/record SHIM_LOG=$T/shims.log" \
+        c_run detail "page	scope=journey	kind=$kind	generation=$gen	offset=0	limit=500"
+      assert_eq "$(c_result) $C_RC" 'done ok 0' "$name $kind detail succeeds"
+      assert_eq "$(c_admits detail)" ok "$name $kind detail admitted"
+      assert_eq "$C_ERR" '' "$name $kind detail clean stderr"
+      if [ "$kind" = machine ]; then
+        want=$(cat "$T/base.probes.machine")
+      else
+        want=$(grep '^row	' "$T/base.out")
+      fi
+      assert_eq "$(printf '%s\n' "$C_OUT" | grep '^row	')" "$want" "$name $kind page equals accepted baseline projection"
+      assert_contains "$C_OUT" "generation	id=$gen" "$name $kind shares snapshot generation"
+    done
   fi
   assert_eq "$(t_snapshot "$T/state")" '(absent)' "$name actual snapshot persists nothing"
   assert_eq "$(t_snapshot "$fixture")" "$before" "$name actual snapshot leaves machine unchanged"

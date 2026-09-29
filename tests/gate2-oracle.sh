@@ -10,10 +10,8 @@ done
 . "$G2_CANDIDATE/lib/records.sh"
 OMB_INTENT=read OMB_PERSIST=0 OMB_ASCII=1 OMB_COLOR=never
 # Trace the existing probe seams; keep each original implementation intact.
-for seam in sys_cmd sys_path sys_has sys_net sys_reachable; do
-  eval "$(declare -f "$seam" | sed "1s/$seam/g2_original_$seam/")"
-  eval "$seam() { printf '%s\\n' \"$seam \$*\" >>\"\$G2_PROBES\"; g2_original_$seam \"\$@\"; }"
-done
+# shellcheck source=tests/gate2-probe-taps.sh
+. "$G2_CANDIDATE/tests/gate2-probe-taps.sh"
 platform_init
 state_init
 ui_init

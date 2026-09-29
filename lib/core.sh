@@ -1052,6 +1052,14 @@ core_main() {
   local i=0
   CORE_REQ_SCOPE="" CORE_REQ_ACTION="" CORE_REQ_BASIS="" CORE_REQ_CONFIRM="" CORE_REQ_ARGS=0
   if rec_find scope; then rec_get_into CORE_REQ_SCOPE "$REC_AT_I" name; fi
+  CORE_REQ_KIND="" CORE_REQ_GENERATION="" CORE_REQ_OFFSET="" CORE_REQ_LIMIT=""
+  if rec_find page; then
+    rec_get_into CORE_REQ_SCOPE "$REC_AT_I" scope
+    rec_get_into CORE_REQ_KIND "$REC_AT_I" kind
+    rec_get_into CORE_REQ_GENERATION "$REC_AT_I" generation
+    rec_get_into CORE_REQ_OFFSET "$REC_AT_I" offset
+    rec_get_into CORE_REQ_LIMIT "$REC_AT_I" limit
+  fi
   if rec_find exec; then
     rec_get_into CORE_REQ_ACTION "$REC_AT_I" action
     rec_get_into CORE_REQ_BASIS "$REC_AT_I" basis
@@ -1109,10 +1117,13 @@ core_read_op() {
     snapshot | detail)
       if ! core_in_scopes "$CORE_REQ_SCOPE"; then
         core_result refused scope "This session does not include the requested scope."
-      elif [ "$1" = snapshot ] && [ "$CORE_REQ_SCOPE" = journey ] && [ -n "${OMB_FIXTURE:-}" ]; then
+      elif [ "$CORE_REQ_SCOPE" = journey ] && [ -n "${OMB_FIXTURE:-}" ]; then
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
-        core_journey_snapshot
+        case "$1" in
+          snapshot) core_journey_snapshot ;;
+          detail) core_journey_detail ;;
+        esac
       else
         core_result refused unavailable "This read dataset is not available."
       fi

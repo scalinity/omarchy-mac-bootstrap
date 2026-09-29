@@ -44,3 +44,20 @@ producer order. SHA-256 covers these canonical record bytes joined by LF,
 with no trailing LF. It includes both projections, section annotations, notes,
 and the conditional token. Snapshot total is zero. Frontend-check uses none
 of this producer or generation logic.
+
+S3 uses `core_read_page` over the already encoded projection rows. It emits
+the fresh scope generation and the selected row total, refuses a mismatching
+well-formed generation as `changed` without rows, refuses an offset beyond
+the total as `invalid`, and otherwise emits at most the admitted limit.
+Offset equal to total is an empty successful page. Requests still use the
+existing `page` schema; malformed fields fail admission before the producer.
+
+Evidence is split by responsibility: `test-gate2-read.sh` checks authority;
+`test-gate2-journey.sh` compares all baseline fixture observations, identity,
+snapshot and detail projections; `test-gate2-probes.sh` compares actual
+snapshot/detail probe sequences and effects; `test-gate2-paging.sh` checks
+generations, traversal and page boundaries; `test-gate2-token.sh` checks the
+conditional token and invalidation of both projections after a token-only
+change; `test-gate2-edge.sh` covers unknown identity, upstream blank lines
+and a hash tool that prints a digest then fails. The existing core suite
+continues to pin the separate frontend-check bytes.
