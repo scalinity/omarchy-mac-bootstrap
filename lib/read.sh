@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2329 # callbacks invoked by the baseline status owners
+# shellcheck disable=SC2317,SC2329 # callbacks invoked by the baseline status owners
 # The ordinary journey dataset. Status owns the reads and presentation values;
 # only this isolated subshell replaces its sinks. No bootstrap text is parsed.
 # Both snapshot and detail consume this exact canonical dataset.
