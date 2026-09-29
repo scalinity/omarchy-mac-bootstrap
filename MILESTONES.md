@@ -405,7 +405,7 @@ of docs/TESTING.md.
   docs/DECISIONS.md.
 - **Status:** in progress, begun 2026-09-28 on branch
   `m14-gate2-readonly-equivalence` from the Gate 1 closeout commit
-  `07b57583ec85ca7a606c1db0c1afe9857490463d`. Only the contract is written:
+  `07b57583ec85ca7a606c1db0c1afe9857490463d`. The contract is written in
   docs/PROTOCOL.md → *The Gate 2 read surface*, docs/UX.md's amended
   direction, and D49–D53 with the open questions the first independent
   review ruled on (docs/DECISIONS.md → *Open review questions*: the doctor's
@@ -414,10 +414,15 @@ of docs/TESTING.md.
   records, three corrections: the candidate check applies the commit's own
   lock admission, the generation test matrix separates a changed generation
   from a malformed one, and the backdrop is the dark navy of the reference.
-  No read
-  operation, screen or benchmark exists yet, no frontend is released, and
-  the frontend under development is the unreleased candidate `0.2.0` (D49).
-  Gate 3 is not started.
+  The authorized S1–S3 ordinary fixture-only journey snapshot and machine/status
+  detail reads are implemented. The focused review of
+  `5a7c659c29b32a4de94f07aa938dc084b3585ed6` required G2-H01/G2-H02
+  remediation: explicit owned foundation authority and the accepted
+  `Gate2-read-representation-failure` rule. Both are implemented and require
+  focused independent remediation re-review; Gate 2 is not accepted. S4+
+  remains unauthorized; Doctor Q2, Logs Q3a and Validate Q4 remain blocked.
+  No Gate 2 screen or benchmark exists. The published frontend remains
+  `0.1.0`; candidate `0.2.0` is unreleased (D49). Gate 3 and M17 are not started.
 
 ### Gate 3 — The action contract under fixtures
 

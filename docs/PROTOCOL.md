@@ -2,7 +2,8 @@
 
 **Status: the implementation contract for M14 gate 1 (framing, admission,
 processes, diagnostics; implemented and accepted), gate 2 (the read surface,
-*The Gate 2 read surface*; in progress, none of it implemented) and gate 3
+*The Gate 2 read surface*; only ordinary journey snapshot and machine/status
+detail implemented, awaiting focused remediation re-review) and gate 3
 (actions and bases; not implemented).**
 Local experiments that ground it are recorded in docs/UPSTREAM.md →
 *Experiments*.
