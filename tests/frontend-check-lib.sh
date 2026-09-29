@@ -488,7 +488,7 @@ fc_mark() { sed -n "s/^$1 //p" "$T/pty/marks" 2>/dev/null | tail -n 1; }
 fc_dashboard() {
   local f=$1 want
   case "$f" in *"@alt=1 "*) ;; *) return 1 ;; esac
-  for want in "frontend startup check (frontend-check)" "frontend 0.1.0 as the lock pins, protocol 1" \
+  for want in "frontend startup check (frontend-check)" "frontend ${FC_VERSION:-0.1.0} as the lock pins, protocol 1" \
     "read-only, journey scope only, not a dry run" "none in this session" "Nothing is available now."; do
     case "$f" in *"$want"*) ;; *) return 1 ;; esac
   done

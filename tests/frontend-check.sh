@@ -37,7 +37,12 @@ fc_setup && ok || fail "the hermetic boundary could not be made"
 fc_guard
 guard_path=$FC_PATH
 fc_serve && ok || fail "the loopback server did not start"
-fc_pin "$ART"
+# The native build's own version: the crate's. The check's core refuses a
+# frontend whose version is not the lock's, so the lock pinned for this build
+# names the version the build carries (an unreleased candidate is not 0.1.0).
+FC_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$REPO/frontend/Cargo.toml" | sed -n 1p)
+[ -n "$FC_VERSION" ] && ok || fail "the crate's version cannot be read from frontend/Cargo.toml"
+fc_pin "$ART" "$FC_VERSION"
 D=$FC_CACHE/$FC_SHA
 Q_DOWNLOAD="Download and check it now?"
 Q_MOVE="Move it aside and download the pinned one again?"
@@ -79,7 +84,7 @@ assert_not_contains "$help" "$DASH" "frontend-check-terminal: in place of the da
 fc_dashboard "$(fc_frame "$(fc_mark back)")" && ok || fail "frontend-check-terminal: and back to the dashboard"
 assert_eq "$(fc_frame "" | tail -n 1)" "@alt=0 cursor=1" "frontend-check-terminal: q left: the alternate screen left, the cursor shown"
 cmp -s "$T/pty/before" "$T/pty/after" && ok || fail "frontend-check-terminal: the terminal's settings equal the ones before"
-assert_contains "$FC_TEXT" "frontend-check: completed — omb-tui 0.1.0 ($FC_TARGET), SHA-256 $FC_SHA, from $D/omb-tui." "frontend-check-terminal: the report completed"
+assert_contains "$FC_TEXT" "frontend-check: completed — omb-tui $FC_VERSION ($FC_TARGET), SHA-256 $FC_SHA, from $D/omb-tui." "frontend-check-terminal: the report completed"
 held "frontend-check-terminal"
 COMPLETED="$COMPLETED
 $FC_TEXT"

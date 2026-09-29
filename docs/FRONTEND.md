@@ -455,6 +455,20 @@ How they relate:
   which means the frontend's inputs changed since the release and a new
   release is needed. A commit that changes only the lock leaves
   `inputs_digest` unchanged.
+- **An unreleased candidate is a state of its own, never a passing lock.**
+  While the next version is being built, the frontend's inputs differ from
+  the lock's on purpose, and the lock check keeps failing: it means only that
+  the inputs equal the published release's. CI then runs `candidate VERSION`
+  for the version the workflow names — a number edited by hand, never read
+  from `Cargo.toml` — which passes only when the lock is well formed and
+  sealed, its release is intact (its source commit is in the checkout, holds
+  the inputs the lock names, and carries the release's tag when the tag is
+  there), the release's protocol is the core's, the version is newer than the
+  release's and is the one `Cargo.toml` and `Cargo.lock` hold, and the
+  commit's inputs differ from the release's. It reports the frontend as
+  unreleased and claims no equality; every other difference, and a candidate
+  with the release's own version, fails. The release workflow never runs it
+  and stays exact (docs/DECISIONS.md → D49).
 - **The attestation connects the release to its commit.** It is evidence
   anyone can check; nothing at run time depends on it, and no signing
   infrastructure is added.

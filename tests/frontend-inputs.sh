@@ -12,6 +12,8 @@
 #   frontend-inputs.sh metadata            no build script of its own; every package here or from crates.io
 #   frontend-inputs.sh config [WORKFLOW]   no Cargo configuration elsewhere; no *FLAGS in the release workflow
 #   frontend-inputs.sh lock [COMMIT]       the commit's inputs_digest against release/frontend.lock's
+#   frontend-inputs.sh candidate VERSION [COMMIT]   an unreleased next version against the pinned release
+#                                          (the release's intactness and the difference, never equality)
 #   frontend-inputs.sh compat-linux FILE   the Linux artifact's contract
 #   frontend-inputs.sh compat-macos FILE   the macOS artifact's contract
 #   frontend-inputs.sh lock-head VERSION [COMMIT]     the lock's header and frontend line
@@ -287,6 +289,65 @@ EOF
     [ -n "$c" ] || die "the core's protocol cannot be read from lib/records.sh"
     [ "$p" = "$c" ] || die "the lock's frontend speaks protocol ${p:-none}, the core $c"
     echo "inputs_digest $d matches the lock; protocol $p, the core's"
+    ;;
+  candidate)
+    # An unreleased frontend that means to be the next release (docs/DECISIONS.md
+    # → D49). It is not the pinned release and never says it is: `lock` stays the
+    # exact-release check and fails on any difference. This passes only when the
+    # lock is well formed and its release intact, VERSION is newer than the
+    # release's and is the commit's own, the commit's inputs differ from the
+    # release's, and the release's protocol is the core's. The release workflow
+    # never runs it.
+    want=${1:?candidate VERSION [COMMIT]}
+    commit=$(git rev-parse --verify --quiet "${2:-HEAD}^{commit}") || die "not a commit: ${2:-HEAD}"
+    tab=$(printf '\t')
+    semver='^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$'
+    newer() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 1 }'; }
+    printf '%s\n' "$want" | grep -Eq "$semver" || die "the candidate version is not MAJOR.MINOR.PATCH: $want"
+    lf=$(mktemp "${TMPDIR:-/tmp}/omb-lock.XXXXXX") || die "no temporary file"
+    trap 'rm -f "$lf"' EXIT
+    git cat-file -e "$commit:release/frontend.lock" 2>/dev/null || die "no release/frontend.lock at $commit: there is no pinned release for a candidate to differ from"
+    git show "$commit:release/frontend.lock" >"$lf" || die "cannot read the lock at $commit"
+    # The lock, as the launcher reads it: its header, one frontend line, at
+    # least one artifact line, and a seal that is the SHA-256 of every byte
+    # before it.
+    [ "$(sed -n 1p "$lf")" = "omb-frontend-lock 1" ] || die "the lock's first line is not 'omb-frontend-lock 1'"
+    [ "$(tail -c 1 "$lf" | od -An -c | tr -d ' ')" = '\n' ] || die "the lock does not end with a newline"
+    stray=$(sed '1d;$d' "$lf" | grep -Ev "^(frontend|artifact)${tab}" || true)
+    [ -z "$stray" ] || die "the lock holds a line that is neither frontend nor artifact: $(printf '%s\n' "$stray" | sed -n 1p)"
+    [ "$(grep -c "^frontend${tab}" "$lf")" = 1 ] || die "the lock does not hold exactly one frontend line"
+    [ "$(grep -c "^artifact${tab}" "$lf")" -ge 1 ] || die "the lock holds no artifact line"
+    last=$(tail -n 1 "$lf")
+    printf '%s\n' "$last" | grep -Eq "^seal${tab}sha256=[0-9a-f]{64}\$" || die "the lock's last line is not a seal"
+    [ "$(grep -c '^seal' "$lf")" = 1 ] || die "the lock holds more than one seal"
+    sealed=$(printf '%s\n' "$last" | sed "s/^seal${tab}sha256=//")
+    [ "$(sed '$d' "$lf" | sha256)" = "$sealed" ] || die "the lock's seal does not match its bytes"
+    fl=$(grep "^frontend${tab}" "$lf")
+    printf '%s\n' "$fl" | grep -Eq "^frontend${tab}version=[0-9.]+${tab}proto=[0-9]+${tab}source_commit=[0-9a-f]{40}${tab}inputs_digest=[0-9a-f]{64}${tab}rust=[^${tab}]+\$" || die "the lock's frontend line is malformed"
+    field() { printf '%s\n' "$fl" | awk -F'\t' -v k="$1" '{ for (i = 2; i <= NF; i++) if (index($i, k "=") == 1) { print substr($i, length(k) + 2); exit } }'; }
+    lv=$(field version) lp=$(field proto) sc=$(field source_commit) ld=$(field inputs_digest)
+    printf '%s\n' "$lv" | grep -Eq "$semver" || die "the lock's version is not MAJOR.MINOR.PATCH: $lv"
+    # The pinned release stays intact: its source commit is here, holds the
+    # inputs the lock names, and carries the release's tag when the tag is.
+    git rev-parse --verify --quiet "$sc^{commit}" >/dev/null || die "the release's source commit $sc is not in this checkout: fetch the full history"
+    rd=$("$0" digest "$sc") || exit 1
+    [ "$rd" = "$ld" ] || die "the lock's inputs_digest $ld is not what its source commit $sc holds ($rd): the pinned release is not intact"
+    tc=$(git rev-parse --verify --quiet "refs/tags/frontend-v$lv^{commit}" || true)
+    if [ -n "$tc" ] && [ "$tc" != "$sc" ]; then die "the tag frontend-v$lv names $tc, not the release's source commit $sc"; fi
+    # The candidate: newer, its own, different.
+    newer "$want" "$lv" || die "the candidate $want is not newer than the pinned release $lv"
+    cv=$(git show "$commit:frontend/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | sed -n 1p)
+    [ "$cv" = "$want" ] || die "frontend/Cargo.toml names ${cv:-no version} at $commit, not the candidate $want"
+    cl=$(git show "$commit:frontend/Cargo.lock" | awk '/^name = "omb-tui"$/ { getline; print; exit }' | sed -n 's/^version = "\(.*\)"$/\1/p')
+    [ "$cl" = "$want" ] || die "frontend/Cargo.lock names ${cl:-no version} for omb-tui at $commit, not the candidate $want"
+    d=$("$0" digest "$commit") || exit 1
+    [ "$d" != "$ld" ] || die "the commit's inputs_digest is the release's ($d): this is the released frontend, and the lock check is the one that applies"
+    # The release's protocol against the core's (the candidate's own is held by
+    # proto-diff-*).
+    cp=$(git show "$commit:lib/records.sh" | sed -n 's/^REC_PROTO=\([0-9]*\)$/\1/p')
+    [ -n "$cp" ] || die "the core's protocol cannot be read at $commit"
+    [ "$lp" = "$cp" ] || die "the lock's frontend speaks protocol $lp, the core $cp"
+    echo "candidate $want at $commit is UNRELEASED: inputs_digest $d differs from the pinned release $lv ($ld, source $sc), which the lock still pins and which is intact; protocol $lp is the core's. No release equality is claimed."
     ;;
   compat-linux)
     f=${1:?compat-linux FILE}

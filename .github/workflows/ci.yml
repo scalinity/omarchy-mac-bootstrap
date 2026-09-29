@@ -97,8 +97,15 @@ jobs:
     env:
       CARGO_TERM_COLOR: never
       INSTA_UPDATE: "no"
+      # The unreleased frontend this branch builds, named on purpose: the
+      # number is edited by hand, never read from Cargo.toml (docs/DECISIONS.md → D49).
+      FRONTEND_CANDIDATE_VERSION: "0.2.0"
     steps:
+      # The full history: the candidate check reproduces the pinned release's
+      # inputs from its source commit and reads its tag.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: The checkout is exactly the commit
         run: tests/frontend-inputs.sh clean
       - name: The toolchain frontend/rust-toolchain.toml names
@@ -122,12 +129,15 @@ jobs:
           (cd frontend && cargo fetch --locked)
           tests/frontend-inputs.sh metadata
           tests/frontend-inputs.sh config
-      - name: inputs_digest against release/frontend.lock (3 = no release pinned yet)
+      - name: inputs_digest against release/frontend.lock (3 = no release pinned yet), or the named unreleased candidate
         run: |
           tests/frontend-inputs.sh digest
           rc=0
           tests/frontend-inputs.sh lock || rc=$?
-          [ "$rc" = 0 ] || [ "$rc" = 3 ]
+          case "$rc" in
+            0 | 3) ;;
+            *) tests/frontend-inputs.sh candidate "$FRONTEND_CANDIDATE_VERSION" ;;
+          esac
       - name: clippy -D warnings, with and without the test hooks
         working-directory: frontend
         run: |

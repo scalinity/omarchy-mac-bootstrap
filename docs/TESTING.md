@@ -551,6 +551,17 @@ And:
 | --- | --- | --- |
 | `frontend-lock-not-input` | a commit changing only `release/frontend.lock` | `inputs_digest` unchanged |
 | `frontend-input-source-change` | a commit changing a file under `frontend/src/` without a new release | `inputs_digest` changes; the CI comparison with the lock fails |
+| `frontend-input-candidate-released` | the released inputs, and the lock check and `candidate` on them | `lock` passes and the launcher's reader admits the lock; no candidate is named by an unchanged release, and the release's own version is never one |
+| `frontend-input-candidate-same-version` | changed inputs with the crate still at the release's version | `lock` fails; `candidate` fails for that version and for any newer one the crate does not hold |
+| `frontend-input-candidate-classified` | the next version in both `Cargo` files with changed inputs | `lock` still fails; `candidate` passes for exactly that version, says *unreleased* and claims no equality, and leaves the release's lock untouched |
+| `frontend-input-candidate-version-expected` | a candidate version the crate does not hold, an older one, and `0.2`, `v0.2.0`, `0.2.0-rc1`, `01.2.0` and the empty string | refused |
+| `frontend-input-candidate-cargo-lock` | `Cargo.toml` at the candidate version and `Cargo.lock` at another | refused |
+| `frontend-input-candidate-protocol` | a core whose protocol the pinned release does not speak | refused, naming both |
+| `frontend-input-candidate-malformed-lock` | a lock edited after sealing; with no seal; with a line after its seal; with no artifact; with two frontend lines; with another header; with a frontend line missing a field; with an unknown record; without its final newline; and no lock | each refused with its reason, and the launcher's reader refuses each one too, so the two definitions of a well-formed lock agree |
+| `frontend-input-candidate-release-intact` | a lock whose digest its source commit does not hold; a source commit absent from the checkout; a release tag naming another commit; no tag at all | the first three refused, the last passing |
+| `frontend-input-candidate-identical` | inputs equal to the lock's under an older lock version | refused: it is the released frontend, and the lock check applies |
+| `frontend-input-candidate-ci-version` | the workflow's named candidate version and the crate's | equal; CI runs the exact lock check first |
+| `frontend-input-release-strict` | the release workflow | never runs `candidate` |
 | `frontend-input-cargo-lock` | a commit changing only `frontend/Cargo.lock` | the same |
 | `frontend-input-toolchain` | a commit changing only `frontend/rust-toolchain.toml` | the same |
 | `frontend-input-test-asset` | production code with `include_bytes!("../tests/schema.bin")`; a commit changing only that file | `inputs_digest` changes (tests are inputs); the closure check passes |
@@ -780,7 +791,7 @@ A validator, `tests/test-docs.sh` (M14 gate 1), runs in CI over `SPEC.md`,
 | Linux (existing) | Bash 5, ShellCheck 0.9.0, every Bash test, fixture freshness, `docs-*`, `persist-full-real` |
 | macOS (existing) | `/bin/bash` 3.2, every Bash test, the launcher step, fixture freshness |
 | equivalence | both systems: the baseline worktree and `equiv-*` |
-| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's |
+| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's, and either the exact lock check or the named unreleased candidate's (the job checks out the full history for it) |
 | frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, the unit tests (the process table included), H, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-linux` |
 | frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, the unit tests, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-macos` |
 | Linux target shell | `ubuntu-24.04-arm`: GNU Bash 5.3.15, the Linux root's, built from GNU's sources held to `tests/bash-5.3.15.sha256`; `tests/bash-trap-comsub.sh` under it; the records, core (the signal storm with no skip), diagnostics, launcher and static suites, layer H and layer G under it |

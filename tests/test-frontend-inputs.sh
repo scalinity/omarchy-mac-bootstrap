@@ -395,4 +395,212 @@ r=$(
 )
 assert_eq "$r" admitted "the launcher's reader admits the lock the release prints"
 
+# --- frontend-input-candidate-*: an unreleased next version, never the release ---------------
+# A second throwaway repository holding a release (its inputs, then its sealed
+# lock and tag) and, on top of it, candidates that each break one rule. `lock`
+# stays the exact-release check; `candidate` passes only the honest other state
+# (docs/DECISIONS.md → D49).
+C=$T/cand
+cg() { git -C "$C" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false "$@"; }
+cmt() { cg add -A >/dev/null && cg commit -q -m "$1" --allow-empty; }
+cand() { (cd "$C" && "$TOOL" candidate "$@") >"$T/out" 2>&1; }
+lockcheck() { (cd "$C" && "$TOOL" lock) >"$T/out" 2>&1; }
+sha_() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -c1-64; else sha256sum | cut -c1-64; fi; }
+ART="artifact	target=aarch64-apple-darwin	url=https://example.invalid/omb-tui	size=1	sha256=$(printf '%064d' 1)	minos=13.5	glibc_max=	interp=	align_min="
+# seal FILE — append the seal of what FILE holds.
+seal() { printf 'seal\tsha256=%s\n' "$(sha_ <"$1")" >>"$1"; }
+# mklock VERSION PROTO SOURCE DIGEST — the lock a release writes.
+mklock() {
+  {
+    printf 'omb-frontend-lock 1\n'
+    printf 'frontend\tversion=%s\tproto=%s\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n' "$1" "$2" "$3" "$4"
+    printf '%s\n' "$ART"
+  } >"$C/release/frontend.lock"
+  seal "$C/release/frontend.lock"
+}
+# admits — the launcher's own reader on the lock as it stands.
+admits() {
+  (
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    if rec_admit_file lock - "$C/release/frontend.lock"; then echo admitted; else echo refused; fi
+  )
+}
+cdigest() { (cd "$C" && "$TOOL" digest "${1:-HEAD}"); }
+setver() { # VERSION — the crate's version in both files that hold it
+  printf '[package]\nname = "omb-tui"\nversion = "%s"\nedition = "2024"\n' "$1" >"$C/frontend/Cargo.toml"
+  printf '[[package]]\nname = "omb-tui"\nversion = "%s"\ndependencies = []\n' "$1" >"$C/frontend/Cargo.lock"
+}
+mkdir -p "$C/frontend/src" "$C/lib" "$C/release"
+git -C "$C" init -q
+setver 0.1.0
+printf 'fn main() {}\n' >"$C/frontend/src/main.rs"
+printf 'REC_PROTO=1\n' >"$C/lib/records.sh"
+cmt "the release's inputs"
+rel=$(cg rev-parse HEAD)
+reld=$(cdigest)
+mklock 0.1.0 1 "$rel" "$reld"
+cmt "the release's lock"
+cg tag frontend-v0.1.0 "$rel"
+base=$(cg rev-parse HEAD)
+
+# The released frontend: `lock` passes, and `candidate` has nothing to classify.
+lockcheck
+assert_rc "$?" 0 "frontend-input-candidate-released: the released inputs pass the exact lock check"
+assert_eq "$(admits)" admitted "and the launcher's reader admits the lock (the definitions agree)"
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-released: no candidate is named by an unchanged release"
+assert_contains "$(cat "$T/out")" "not the candidate 0.2.0" "the crate does not name it"
+cand 0.1.0
+assert_rc "$?" 1 "the release's own version is never a candidate"
+assert_contains "$(cat "$T/out")" "is not newer than the pinned release 0.1.0" "and is not newer"
+
+# The same version with changed inputs is a failure, of both checks.
+printf 'fn main() { println!("changed"); }\n' >"$C/frontend/src/main.rs"
+cmt "changed inputs, still 0.1.0"
+lockcheck
+assert_rc "$?" 1 "frontend-input-candidate-same-version: the lock check fails on the difference"
+assert_contains "$(cat "$T/out")" "a new release is needed" "and says a release is needed"
+cand 0.1.0
+assert_rc "$?" 1 "frontend-input-candidate-same-version: 0.1.0 with a changed digest is refused"
+assert_contains "$(cat "$T/out")" "is not newer than the pinned release" "as no newer version"
+cand 0.2.0
+assert_rc "$?" 1 "an unexplained difference: the crate still says 0.1.0, so 0.2.0 is refused"
+assert_contains "$(cat "$T/out")" "frontend/Cargo.toml names 0.1.0" "naming the version the crate holds"
+cg reset -q --hard "$base"
+
+# An explicit next version with changed inputs is classified, and never called released.
+setver 0.2.0
+printf 'fn main() { println!("candidate"); }\n' >"$C/frontend/src/main.rs"
+cmt "the candidate 0.2.0"
+cnd=$(cg rev-parse HEAD)
+lockcheck
+assert_rc "$?" 1 "frontend-input-candidate-classified: the lock check still fails: the candidate is not the release"
+cand 0.2.0
+assert_rc "$?" 0 "frontend-input-candidate-classified: the named 0.2.0 candidate is accepted"
+assert_contains "$(cat "$T/out")" "UNRELEASED" "and called unreleased"
+assert_contains "$(cat "$T/out")" "No release equality is claimed" "with no equality claimed"
+assert_not_contains "$(cat "$T/out")" "matches the lock" "and never said to match the lock"
+assert_eq "$(git -C "$C" show HEAD:release/frontend.lock | sha_)" "$(git -C "$C" show "$base:release/frontend.lock" | sha_)" "the release's lock was not touched by the candidate"
+cand 0.3.0
+assert_rc "$?" 1 "frontend-input-candidate-version-expected: a version the crate does not hold is refused"
+assert_contains "$(cat "$T/out")" "not the candidate 0.3.0" "naming it"
+cand 0.2.1
+assert_rc "$?" 1 "frontend-input-candidate-version-expected: 0.2.1 is refused too"
+cand 0.0.9
+assert_rc "$?" 1 "frontend-input-candidate-version-expected: an older version is refused"
+assert_contains "$(cat "$T/out")" "is not newer than the pinned release" "as not newer"
+for bad in 0.2 v0.2.0 0.2.0-rc1 01.2.0 ""; do
+  cand "$bad"
+  assert_rc "$?" 1 "frontend-input-candidate-version-expected: '$bad' is not MAJOR.MINOR.PATCH"
+done
+
+# The crate's lock file must hold the candidate version as well.
+printf '[[package]]\nname = "omb-tui"\nversion = "0.1.0"\ndependencies = []\n' >"$C/frontend/Cargo.lock"
+cmt "Cargo.lock behind"
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-cargo-lock: a Cargo.lock at another version is refused"
+assert_contains "$(cat "$T/out")" "frontend/Cargo.lock names 0.1.0 for omb-tui" "naming it"
+cg reset -q --hard "$cnd"
+
+# The release's protocol must be the core's.
+printf 'REC_PROTO=2\n' >"$C/lib/records.sh"
+cmt "a core of another protocol"
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-protocol: a core whose protocol the pinned release does not speak is refused"
+assert_contains "$(cat "$T/out")" "the lock's frontend speaks protocol 1, the core 2" "naming both"
+cg reset -q --hard "$cnd"
+
+# A lock that is not well formed fails, and the launcher's reader agrees it is not.
+badlock() { # LABEL WANT — the lock as written now, committed, then judged by both
+  cmt "a lock: $1"
+  cand 0.2.0
+  assert_rc "$?" 1 "frontend-input-candidate-malformed-lock: $1 is refused"
+  assert_contains "$(cat "$T/out")" "$2" "$1: the reason is named"
+  assert_eq "$(admits)" refused "$1: the launcher's reader refuses it too (the definitions agree)"
+  cg reset -q --hard "$cnd"
+}
+mklock 0.1.0 1 "$rel" "$reld"
+assert_eq "$(admits)" admitted "a well-formed lock is admitted by the launcher's reader"
+sed -i.bak 's/size=1/size=2/' "$C/release/frontend.lock" && rm -f "$C/release/frontend.lock.bak"
+badlock "a lock edited after it was sealed" "seal does not match its bytes"
+mklock 0.1.0 1 "$rel" "$reld"
+sed '$d' "$C/release/frontend.lock" >"$T/nolock" && cp "$T/nolock" "$C/release/frontend.lock"
+badlock "a lock with no seal" "last line is not a seal"
+mklock 0.1.0 1 "$rel" "$reld"
+printf 'artifact\ttarget=x\n' >>"$C/release/frontend.lock"
+badlock "a lock with a line after its seal" "neither frontend nor artifact"
+{ printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n' "$rel" "$reld"; } >"$C/release/frontend.lock"
+seal "$C/release/frontend.lock"
+badlock "a lock with no artifact" "holds no artifact line"
+{
+  printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n' "$rel" "$reld"
+  printf 'frontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n%s\n' "$rel" "$reld" "$ART"
+} >"$C/release/frontend.lock"
+seal "$C/release/frontend.lock"
+badlock "a lock with two frontend lines" "exactly one frontend line"
+{
+  printf 'omb-frontend-lock 2\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n%s\n' "$rel" "$reld" "$ART"
+} >"$C/release/frontend.lock"
+seal "$C/release/frontend.lock"
+badlock "a lock with another header" "first line is not 'omb-frontend-lock 1'"
+{
+  printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\n%s\n' "$rel" "$reld" "$ART"
+} >"$C/release/frontend.lock"
+seal "$C/release/frontend.lock"
+badlock "a frontend line with a field missing" "frontend line is malformed"
+{
+  printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n%s\nnote\ttext=x\n' "$rel" "$reld" "$ART"
+} >"$C/release/frontend.lock"
+seal "$C/release/frontend.lock"
+badlock "a lock with a record that is neither frontend nor artifact" "neither frontend nor artifact"
+mklock 0.1.0 1 "$rel" "$reld"
+printf '%s' "$(cat "$C/release/frontend.lock")" >"$T/nonl" && cp "$T/nonl" "$C/release/frontend.lock"
+badlock "a lock without its final newline" "does not end with a newline"
+cg rm -q release/frontend.lock
+cmt "no lock"
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-malformed-lock: no lock at all is refused (there is no release to differ from)"
+assert_contains "$(cat "$T/out")" "no release/frontend.lock" "and says so"
+cg reset -q --hard "$cnd"
+
+# The pinned release must be intact: its inputs reproducible from its source commit.
+mklock 0.1.0 1 "$rel" "$(cdigest "$cnd")"
+cmt "a lock whose digest is not its source commit's"
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-release-intact: a lock whose digest its source commit does not hold is refused"
+assert_contains "$(cat "$T/out")" "the pinned release is not intact" "as not intact"
+cg reset -q --hard "$cnd"
+mklock 0.1.0 1 "$(printf '%040d' 1)" "$reld"
+cmt "a lock naming a commit this checkout lacks"
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-release-intact: a source commit that is not in the checkout is refused"
+assert_contains "$(cat "$T/out")" "is not in this checkout" "and says to fetch it"
+cg reset -q --hard "$cnd"
+cg tag -f frontend-v0.1.0 "$cnd" >/dev/null
+cand 0.2.0
+assert_rc "$?" 1 "frontend-input-candidate-release-intact: a release tag that names another commit is refused"
+assert_contains "$(cat "$T/out")" "the tag frontend-v0.1.0 names" "naming the tag"
+cg tag -d frontend-v0.1.0 >/dev/null
+cand 0.2.0
+assert_rc "$?" 0 "frontend-input-candidate-release-intact: with no tag in the checkout (a shallow one), the rest still holds"
+cg tag frontend-v0.1.0 "$rel"
+
+# A lock whose inputs the commit itself holds is the released frontend, never a candidate.
+mklock 0.0.1 1 "$rel" "$reld"
+git -C "$C" checkout -q "$base" -- frontend lib
+cmt "the release's inputs under an older lock"
+cand 0.1.0
+assert_rc "$?" 1 "frontend-input-candidate-identical: inputs equal to the lock's are the release, not a candidate"
+assert_contains "$(cat "$T/out")" "this is the released frontend" "and the lock check is the one that applies"
+cg reset -q --hard "$cnd"
+
+# The release workflow stays exact; CI names its candidate on purpose.
+assert_eq "$(grep -c 'candidate' "$REPO/.github/workflows/release.yml")" 0 "frontend-input-release-strict: the release workflow never runs the candidate check"
+ciwant=$(sed -n 's/^ *FRONTEND_CANDIDATE_VERSION: "\(.*\)"$/\1/p' "$REPO/.github/workflows/ci.yml")
+crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$REPO/frontend/Cargo.toml" | sed -n 1p)
+assert_eq "$ciwant" "$crate" "frontend-input-candidate-ci-version: the candidate version CI names is the crate's, set by hand in the workflow"
+grep -q 'tests/frontend-inputs.sh lock ||' "$REPO/.github/workflows/ci.yml" && ok || fail "frontend-input-candidate-ci-version: CI still runs the exact lock check first"
+
 t_done test-frontend-inputs
