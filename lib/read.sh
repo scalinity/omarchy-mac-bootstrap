@@ -112,11 +112,90 @@ END_BLOCKERS
   printf '%s%s%s' "$blockers" "$messages" "$rows"
 )
 
+# Read producer status: 0 admitted, 1 infrastructure failure, 2 established
+# representation invalidity. Canonical admission owns every wire/schema rule.
+core_read_admit() (
+  local st
+  REC_REASON=''
+  rec_admit_file res "$1" "$2"
+  st=$?
+  [ "$st" = 0 ] && return 0
+  [ "$st" = 1 ] || return 1
+  case "$REC_REASON" in
+    byte | eof | line | blank | tab | header | key | value | nul-escape | non-canonical | too-large | schema | type | result | after-result) return 2 ;;
+    *) return 1 ;;
+  esac
+)
+
+# The live prefix is copied, never reconstructed from another machine read.
+core_read_prefix() {
+  omb_tmp_init && cp "$CORE_EVENTS" "$OMB_TMP/journey.prefix"
+}
+
+# Stage a legal response document, not the internal mixed dataset. Each write
+# has its own checked status; failed machinery must not become representation.
+core_read_stage() {
+  local op=$1 generation=$2 total=$3 body=$4 status=${5:-done} code=${6:-ok} text=${7:-}
+  {
+    cat "$OMB_TMP/journey.prefix" &&
+      rec_line generation id "$generation" total "$total" &&
+      cat "$body" &&
+      rec_line result status "$status" code "$code" text "$text" next ''
+  } >"$OMB_TMP/journey.response" || return 1
+  core_read_admit "$op" "$OMB_TMP/journey.response"
+}
+
+# Canonically admit all rows in batches of at most 500. No row has a uniqueness
+# rule across pages. Admission proves each line <=16384 bytes (plus LF).
+# Any overlapping legal page therefore uses <=500*16385 bytes for rows;
+# header + even a maximum-length hello + generation + this fixed result add
+# <17000 bytes: <8210000 total, below 8388608. At most 503 records, below
+# 65536. This universal bound rejects no legal page and does not require all
+# pageable rows to fit one response. Snapshot's complete envelope is admitted
+# separately, including all required non-row records and the conditional code.
+core_read_rows() {
+  local file=$1 line batch='' n=0 st total
+  total=$(wc -l <"$file") || return 1
+  _whole "$total" '^ *[0-9]+$' || return 1
+  total=$((total + 0))
+  while IFS= read -r line; do
+    batch="$batch$line
+"
+    n=$((n + 1))
+    if [ "$n" = 500 ]; then
+      printf '%s' "$batch" >"$OMB_TMP/journey.batch" || return 1
+      core_read_stage detail "$2" "$total" "$OMB_TMP/journey.batch"
+      st=$?
+      [ "$st" = 0 ] || return "$st"
+      batch='' n=0
+    fi
+  done <"$file" || return 1
+  printf '%s' "$batch" >"$OMB_TMP/journey.batch" || return 1
+  core_read_stage detail "$2" "$total" "$OMB_TMP/journey.batch"
+}
+
 core_journey_read() {
-  local sum
+  local sum st placeholder
   CORE_JOURNEY=$(core_journey_dataset) || return 1
-  # Capture the hash tool's own status (not the status of a trailing awk).
+  core_read_prefix || return 1
   printf '%s' "$CORE_JOURNEY" >"$OMB_TMP/journey" || return 1
+  # Split only this capture. Commands read private scratch, never the machine.
+  awk -F '\t' '$1 != "scope" && $1 != "row"' "$OMB_TMP/journey" >"$OMB_TMP/journey.snapshot" || return 1
+  awk -F '\t' '$1 == "row" && $2 == "kind=machine"' "$OMB_TMP/journey" >"$OMB_TMP/journey.machine" || return 1
+  awk -F '\t' '$1 == "row" && $2 == "kind=status"' "$OMB_TMP/journey" >"$OMB_TMP/journey.status" || return 1
+  # All SHA-256 ids have identical wire width; no unusable digest is computed
+  # or exposed before whole-scope representability has been established.
+  placeholder=$(printf '%064d' 0)
+  core_read_stage snapshot "$placeholder" 0 "$OMB_TMP/journey.snapshot"
+  st=$?
+  [ "$st" = 0 ] || return "$st"
+  core_read_rows "$OMB_TMP/journey.machine" "$placeholder"
+  st=$?
+  [ "$st" = 0 ] || return "$st"
+  core_read_rows "$OMB_TMP/journey.status" "$placeholder"
+  st=$?
+  [ "$st" = 0 ] || return "$st"
+  # Capture the hash tool's own status (not a trailing pipeline's status).
   if command -v shasum >/dev/null 2>&1; then
     sum=$(shasum -a 256 "$OMB_TMP/journey") || return 1
   else
@@ -126,42 +205,47 @@ core_journey_read() {
   _whole "$CORE_JOURNEY_GEN" '^[0-9a-f]{64}$'
 }
 
-core_journey_snapshot() {
-  local body='' line
-  if ! core_journey_read; then
-    core_result error io "The journey dataset could not be read."
-    return
+core_read_failure() {
+  if [ "$1" = 2 ]; then
+    core_result error representation "The required journey response cannot be represented in Protocol 1."
+  else
+    core_result error io "The journey response could not be prepared."
   fi
-  while IFS= read -r line; do
-    case "$line" in $'scope\t'* | $'row\t'*) continue ;; esac
-    body="$body$line
-"
-  done <<END_DATASET
-$CORE_JOURNEY
-END_DATASET
-  core_emit generation id "$CORE_JOURNEY_GEN" total 0
-  _core_emit_body "$body" || return 1
-  core_result "done" ok
+}
+
+# Publish only the admitted bytes. Extract and count the suffix before touching
+# the live spool; there is no core_emit suppression, re-encoding or new read.
+core_read_publish() {
+  local bytes records
+  tail -n +3 "$OMB_TMP/journey.response" >"$OMB_TMP/journey.suffix" || { core_read_failure 1; return; }
+  bytes=$(wc -c <"$OMB_TMP/journey.suffix") || { core_read_failure 1; return; }
+  records=$(wc -l <"$OMB_TMP/journey.suffix") || { core_read_failure 1; return; }
+  cat "$OMB_TMP/journey.suffix" >>"$CORE_EVENTS" || return 1
+  CORE_BYTES=$((CORE_BYTES + bytes)) CORE_RECS=$((CORE_RECS + records)) CORE_RESULT=1
+}
+
+core_journey_snapshot() {
+  local st
+  core_journey_read
+  st=$?
+  if [ "$st" != 0 ]; then core_read_failure "$st"; return; fi
+  core_read_stage snapshot "$CORE_JOURNEY_GEN" 0 "$OMB_TMP/journey.snapshot"
+  st=$?
+  if [ "$st" != 0 ]; then core_read_failure "$st"; return; fi
+  core_read_publish
 }
 
 # Both authorized detail kinds are projections of exactly the snapshot read.
 core_journey_detail() {
-  local rows='' line prefix
+  local rows st
   case "$CORE_REQ_KIND" in
     machine | status) ;;
     *) core_result refused unavailable "This journey detail kind is not available."; return ;;
   esac
-  if ! core_journey_read; then
-    core_result error io "The journey dataset could not be read."
-    return
-  fi
-  prefix=$(printf 'row\tkind=%s\t' "$CORE_REQ_KIND")
-  while IFS= read -r line; do
-    case "$line" in "$prefix"*) rows="$rows$line
-" ;; esac
-  done <<END_DATASET
-$CORE_JOURNEY
-END_DATASET
+  core_journey_read
+  st=$?
+  if [ "$st" != 0 ]; then core_read_failure "$st"; return; fi
+  rows=$(cat "$OMB_TMP/journey.$CORE_REQ_KIND") || { core_read_failure 1; return; }
   core_read_page "$CORE_JOURNEY_GEN" "$rows"
 }
 
@@ -169,7 +253,7 @@ END_DATASET
 # generation and bounded offset/limit before this function can be reached.
 # The generation belongs to the whole scope; total belongs to this projection.
 core_read_page() {
-  local generation=$1 rows=$2 total=0 i=0 line page=''
+  local generation=$1 rows=$2 total=0 i=0 line page='' status='done' code=ok text='' st
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     if [ "$total" -ge "$CORE_REQ_OFFSET" ] && [ "$i" -lt "$CORE_REQ_LIMIT" ]; then
@@ -181,13 +265,15 @@ core_read_page() {
   done <<END_ROWS
 $rows
 END_ROWS
-  core_emit generation id "$generation" total "$total"
   if [ "$generation" != "$CORE_REQ_GENERATION" ]; then
-    core_result refused changed "The journey dataset changed; open this detail from a fresh snapshot."
+    status=refused code=changed text='The journey dataset changed; open this detail from a fresh snapshot.' page=''
   elif [ "$CORE_REQ_OFFSET" -gt "$total" ]; then
-    core_result refused invalid "The offset is beyond this projection's total."
-  else
-    _core_emit_body "$page" || return 1
-    core_result "done" ok
+    status=refused code=invalid text="The offset is beyond this projection's total." page=''
   fi
+  core_read_prefix || { core_read_failure 1; return; }
+  printf '%s' "$page" >"$OMB_TMP/journey.page" || { core_read_failure 1; return; }
+  core_read_stage detail "$generation" "$total" "$OMB_TMP/journey.page" "$status" "$code" "$text"
+  st=$?
+  if [ "$st" != 0 ]; then core_read_failure "$st"; return; fi
+  core_read_publish
 }
