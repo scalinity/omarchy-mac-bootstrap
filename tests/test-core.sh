@@ -946,7 +946,7 @@ CK_STATE=$T/ck-state
 # come last, and env -i keeps the last value a name is given; an empty
 # OMB_FIXTURE or OMB_FRONTEND_DEV is off.
 ck() {
-  C_PATH="$CK_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
+  C_FOUNDATION=0 C_PATH="$CK_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
     C_ENV="OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_SESSION_PURPOSE=frontend-check OMB_STATE_DIR=$CK_STATE ${CK_ENV:-}" c_run "$@"
 }
 CK_H64=$(printf '%064d' 7)
@@ -1053,9 +1053,9 @@ done
 # frontend-check-execute-refused: every execute refused before anything is
 # looked up, locked, recorded, re-read or started — whatever its action,
 # basis, word or arguments.
-# The last is the basis an ordinary fixture session shows for test.mutate.
-vb=$(c_basis test.mutate)
-[ -n "$vb" ] && ok || fail "an ordinary session lists test.mutate, whose basis the check's execute then carries"
+# The last is the basis an explicitly owned foundation fixture shows.
+vb=$(c_fixture; c_basis test.mutate)
+[ -n "$vb" ] && ok || fail "a foundation session lists test.mutate, whose basis the check's execute then carries"
 for x in "test.read	basis=$CK_H64	confirm=" "test.mutate	basis=$CK_H64	confirm=test" "test.handoff	basis=$CK_H64	confirm=start" \
   "no.such.action	basis=$CK_H64	confirm=" "test.mutate	basis=${vb:-$CK_H64}	confirm=test"; do
   ck execute "exec	action=$x" "arg	name=size	value=1" "arg	name=disk	value=disk0"

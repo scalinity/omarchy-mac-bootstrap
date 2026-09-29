@@ -82,7 +82,7 @@ fc_untouched() {
 fc_reset
 fc_plan env hello "snapshot journey"
 n0=$(fc_requests)
-for e in "OMB_FIXTURE=$FIX/linux-alarm-fresh" "OMB_FRONTEND_DEV=$SA" "OMB_TEST_ARTIFACT=x" "OMB_TEST_HOOK=x" \
+for e in "OMB_FIXTURE=$FIX/linux-alarm-fresh" "OMB_FRONTEND_DEV=$SA" "OMB_TEST_FOUNDATION=1" "OMB_TEST_ARTIFACT=x" "OMB_TEST_HOOK=x" \
   "OMB_TEST_HANDOFF_CHILD=x" "OMB_TEST_RECORD=x" "OMB_TEST_AFTER=x" "OMB_TEST_RC=0" "OMB_TEST_QUAL_BYTES=1" \
   "OMB_TEST_STOP_AT=x" "OMB_TEST_FAIL_AT=x" "OMB_TEST_PAUSE_AT=x" "OMB_TEST_FUTURE=x"; do
   fc_run "$e"

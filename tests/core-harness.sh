@@ -21,12 +21,12 @@ c_uname_arm() {
 # c_session — a fresh session folder, 0700, as the launcher makes it.
 c_session() {
   SESS=$(mktemp -d "$T/omb-session.XXXXXX") && chmod 700 "$SESS"
-  C_N=0
+  C_N=0 C_FOUNDATION=0
 }
 
 # c_fixture — a throwaway copy of the roomy M1 Pro fixture (the fake children read
 # their behaviour from it; nothing writes into the committed ones).
-c_fixture() { C_FIX=$(t_variant mac-m1pro-1tb-roomy); mkdir -p "$C_FIX/test-children"; }
+c_fixture() { C_FIX=$(t_variant mac-m1pro-1tb-roomy); mkdir -p "$C_FIX/test-children" && C_FOUNDATION=1; }
 
 # c_conf CHILD KEY=VALUE... — a fake child's behaviour in the fixture ("core"
 # for the core's own side: progress, children).
@@ -74,6 +74,7 @@ c_run_raw() {
     "OMB_FRONTEND_DEV=1"
   )
   local -a final=()
+  if [ "${C_FOUNDATION:-0}" = 1 ]; then envs+=("OMB_TEST_FOUNDATION=1"); fi
   # shellcheck disable=SC2086 # C_ENV is a list of assignments by design
   for v in "${envs[@]}" ${C_ENV:-}; do
     name=${v%%=*}

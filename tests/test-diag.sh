@@ -178,6 +178,7 @@ assert_contains "$(cat "$SESS/session.diag-summary")" "children not kept 0000001
 
 # --- diag-capture-failure: the drain killed mid-run ------------------------------------
 c_session
+c_fixture
 printf '%-127s\n' "diagnostics truncated: children not kept 0000000000, bytes discarded at least 0000000000" >"$SESS/session.diag-summary"
 c_conf read stderr_bytes=2000000000
 c_conf core children=1

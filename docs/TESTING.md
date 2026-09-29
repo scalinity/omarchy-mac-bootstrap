@@ -46,6 +46,7 @@ push.
 | fixture homes | `fixture/root/Users/alex/…` synthetic macOS homes, `fixture/root/home/alex/…` Omarchy homes | generated, synthetic values only |
 | `fixture/net/…` | the availability check's downloads | as `sys_net` today |
 | `OMB_TEST_QUAL_BYTES` | a small size for qualification data | fixture mode only; refused as root |
+| `OMB_TEST_FOUNDATION` | exactly `1` selects the fake-action foundation contract | requires a nonempty fixture and a real, non-symlink `test-children` directory; fixture data alone grants no authority; rejected by frontend-check |
 | `OMB_TEST_HANDOFF_CHILD` | a test program in place of an upstream one during a handoff | fixture mode only; refused as root |
 | `OMB_TEST_STOP_AT` | the core kills itself (`kill -9 $$`) right after the named persistence boundary | fixture mode only; refused as root |
 | `OMB_TEST_FAIL_AT` | the checked writer fails at the named boundary as a full disk would | fixture mode only; refused as root |

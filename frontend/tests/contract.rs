@@ -198,6 +198,7 @@ fn the_rust_client_against_the_real_core() {
             ("OMB_DRY_RUN", "0".into()),
             ("OMB_SESSION_DIR", sess.display().to_string()),
             ("OMB_FIXTURE", fix.display().to_string()),
+            ("OMB_TEST_FOUNDATION", "1".into()),
             ("OMB_STATE_DIR", t.join("state").display().to_string()),
             ("OMB_FRONTEND_DEV", "1".into()),
             ("TMPDIR", t.display().to_string()),

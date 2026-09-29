@@ -859,11 +859,10 @@ core_action_info() {
 
 CORE_TEST_ACTIONS="test.read test.mutate test.handoff"
 
-# The existing fake-child fixture directory selects the foundation harness,
-# not frontend identity or a new session purpose. Ordinary fixtures carry
-# only machine observations and cannot expose or execute these test actions.
+# Explicit test authority selects the foundation; fixture data alone cannot.
 core_foundation_fixture() {
-  [ -n "${OMB_FIXTURE:-}" ] && [ -d "$OMB_FIXTURE/test-children" ]
+  [ "${OMB_TEST_FOUNDATION:-}" = 1 ] && [ -n "${OMB_FIXTURE:-}" ] &&
+    [ -d "$OMB_FIXTURE/test-children" ] && [ ! -L "$OMB_FIXTURE/test-children" ]
 }
 
 core_test_effect() {

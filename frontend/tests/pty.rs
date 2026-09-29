@@ -149,6 +149,7 @@ impl Pty {
             ("PS1", "$ ".into()),
             ("HISTFILE", "/dev/null".into()),
             ("OMB_FIXTURE", fix.display().to_string()),
+            ("OMB_TEST_FOUNDATION", "1".into()),
             ("OMB_STATE_DIR", dir.join("state").display().to_string()),
             (
                 "OMB_FRONTEND_DEV",
