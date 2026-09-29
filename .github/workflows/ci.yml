@@ -101,11 +101,13 @@ jobs:
       # number is edited by hand, never read from Cargo.toml (docs/DECISIONS.md → D49).
       FRONTEND_CANDIDATE_VERSION: "0.2.0"
     steps:
-      # The full history: the candidate check reproduces the pinned release's
-      # inputs from its source commit and reads its tag.
+      # The full history and the tags: the candidate check reproduces the
+      # pinned release's inputs from its source commit and requires its tag
+      # to name that commit.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          fetch-tags: true
       - name: The checkout is exactly the commit
         run: tests/frontend-inputs.sh clean
       - name: The toolchain frontend/rust-toolchain.toml names

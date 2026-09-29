@@ -328,12 +328,14 @@ EOF
     lv=$(field version) lp=$(field proto) sc=$(field source_commit) ld=$(field inputs_digest)
     printf '%s\n' "$lv" | grep -Eq "$semver" || die "the lock's version is not MAJOR.MINOR.PATCH: $lv"
     # The pinned release stays intact: its source commit is here, holds the
-    # inputs the lock names, and carries the release's tag when the tag is.
+    # inputs the lock names, and the release's tag names it. A checkout that
+    # lacks the commit or the tag cannot show this, and is refused.
     git rev-parse --verify --quiet "$sc^{commit}" >/dev/null || die "the release's source commit $sc is not in this checkout: fetch the full history"
     rd=$("$0" digest "$sc") || exit 1
     [ "$rd" = "$ld" ] || die "the lock's inputs_digest $ld is not what its source commit $sc holds ($rd): the pinned release is not intact"
     tc=$(git rev-parse --verify --quiet "refs/tags/frontend-v$lv^{commit}" || true)
-    if [ -n "$tc" ] && [ "$tc" != "$sc" ]; then die "the tag frontend-v$lv names $tc, not the release's source commit $sc"; fi
+    [ -n "$tc" ] || die "the release tag frontend-v$lv is not in this checkout: fetch the tags"
+    [ "$tc" = "$sc" ] || die "the tag frontend-v$lv names $tc, not the release's source commit $sc"
     # The candidate: newer, its own, different.
     newer "$want" "$lv" || die "the candidate $want is not newer than the pinned release $lv"
     cv=$(git show "$commit:frontend/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | sed -n 1p)
@@ -347,7 +349,7 @@ EOF
     cp=$(git show "$commit:lib/records.sh" | sed -n 's/^REC_PROTO=\([0-9]*\)$/\1/p')
     [ -n "$cp" ] || die "the core's protocol cannot be read at $commit"
     [ "$lp" = "$cp" ] || die "the lock's frontend speaks protocol $lp, the core $cp"
-    echo "candidate $want at $commit is UNRELEASED: inputs_digest $d differs from the pinned release $lv ($ld, source $sc), which the lock still pins and which is intact; protocol $lp is the core's. No release equality is claimed."
+    echo "candidate $want at $commit is UNRELEASED: inputs_digest $d differs from the pinned release $lv ($ld, source $sc, tag frontend-v$lv), which the lock still pins and which is intact; protocol $lp is the core's. No release equality is claimed."
     ;;
   compat-linux)
     f=${1:?compat-linux FILE}

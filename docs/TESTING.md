@@ -558,7 +558,7 @@ And:
 | `frontend-input-candidate-cargo-lock` | `Cargo.toml` at the candidate version and `Cargo.lock` at another | refused |
 | `frontend-input-candidate-protocol` | a core whose protocol the pinned release does not speak | refused, naming both |
 | `frontend-input-candidate-malformed-lock` | a lock edited after sealing; with no seal; with a line after its seal; with no artifact; with two frontend lines; with another header; with a frontend line missing a field; with an unknown record; without its final newline; and no lock | each refused with its reason, and the launcher's reader refuses each one too, so the two definitions of a well-formed lock agree |
-| `frontend-input-candidate-release-intact` | a lock whose digest its source commit does not hold; a source commit absent from the checkout; a release tag naming another commit; no tag at all | the first three refused, the last passing |
+| `frontend-input-candidate-release-intact` | a lock whose digest its source commit does not hold; a source commit absent from the checkout; a release tag naming another commit; no tag at all; then the tag naming the source commit | the first four refused, the last passing and its report naming the tag |
 | `frontend-input-candidate-identical` | inputs equal to the lock's under an older lock version | refused: it is the released frontend, and the lock check applies |
 | `frontend-input-candidate-ci-version` | the workflow's named candidate version and the crate's | equal; CI runs the exact lock check first |
 | `frontend-input-release-strict` | the release workflow | never runs `candidate` |

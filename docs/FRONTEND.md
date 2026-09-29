@@ -462,8 +462,9 @@ How they relate:
   for the version the workflow names — a number edited by hand, never read
   from `Cargo.toml` — which passes only when the lock is well formed and
   sealed, its release is intact (its source commit is in the checkout, holds
-  the inputs the lock names, and carries the release's tag when the tag is
-  there), the release's protocol is the core's, the version is newer than the
+  the inputs the lock names, and the release's tag names it; a checkout
+  without the commit or the tag is refused, so the job fetches the full
+  history and the tags), the release's protocol is the core's, the version is newer than the
   release's and is the one `Cargo.toml` and `Cargo.lock` hold, and the
   commit's inputs differ from the release's. It reports the frontend as
   unreleased and claims no equality; every other difference, and a candidate

@@ -584,10 +584,15 @@ assert_rc "$?" 1 "frontend-input-candidate-release-intact: a release tag that na
 assert_contains "$(cat "$T/out")" "the tag frontend-v0.1.0 names" "naming the tag"
 cg tag -d frontend-v0.1.0 >/dev/null
 cand 0.2.0
-assert_rc "$?" 0 "frontend-input-candidate-release-intact: with no tag in the checkout (a shallow one), the rest still holds"
+assert_rc "$?" 1 "frontend-input-candidate-release-intact: a checkout without the release tag cannot show the release intact, and is refused"
+assert_contains "$(cat "$T/out")" "is not in this checkout: fetch the tags" "and says to fetch the tags"
 cg tag frontend-v0.1.0 "$rel"
+cand 0.2.0
+assert_rc "$?" 0 "frontend-input-candidate-release-intact: with the tag naming the release's source commit it holds"
+assert_contains "$(cat "$T/out")" "tag frontend-v0.1.0)" "and the report names the tag it verified"
 
 # A lock whose inputs the commit itself holds is the released frontend, never a candidate.
+cg tag frontend-v0.0.1 "$rel"
 mklock 0.0.1 1 "$rel" "$reld"
 git -C "$C" checkout -q "$base" -- frontend lib
 cmt "the release's inputs under an older lock"
