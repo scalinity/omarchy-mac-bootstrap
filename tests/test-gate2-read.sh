@@ -26,7 +26,8 @@ C_ENV=OMB_SESSION_INTENT=wrong c_run hello
 assert_eq "$(c_result) $C_RC" 'error environment 2' 'malformed intent refused'
 C_ENV=OMB_SESSION_SCOPES=disk c_run snapshot "scope	name=journey"
 assert_eq "$(c_result)" 'refused scope' 'wrong scope refused'
-C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' c_run snapshot "scope	name=journey"
+c_uname_arm "$T/native"
+C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' c_run snapshot "scope	name=journey"
 assert_eq "$(c_result)" 'refused unavailable' 'production read unavailable'
 c_run hello "arg	name=future	value=x"
 assert_eq "$C_RC" 2 'unknown request content refused'

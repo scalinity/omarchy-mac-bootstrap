@@ -112,7 +112,8 @@ c_run validate "select	action=plan.save"
 assert_eq "$(c_result)" 'refused unavailable' 'Validate remains blocked'
 C_ENV=OMB_SESSION_SCOPES=disk g_page machine "$fresh" 0 1
 assert_eq "$(c_result)" 'refused scope' 'detail outside session scope'
-C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' g_page machine "$fresh" 0 1
+c_uname_arm "$T/native"
+C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' g_page machine "$fresh" 0 1
 assert_eq "$(c_result)" 'refused unavailable' 'production detail unavailable'
 for ceiling in read plan act; do
   C_ENV="OMB_SESSION_INTENT=$ceiling" g_page status "$fresh" 0 500

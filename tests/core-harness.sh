@@ -6,6 +6,18 @@
 
 S=0123456789abcdef
 
+# The Gate 1 non-fixture boundary: describe an admitted ARM architecture on
+# every runner, while keeping OMB_FIXTURE unset and production routing real.
+c_uname_arm() {
+  mkdir -p "$1"
+  # shellcheck disable=SC2016 # Arguments belong to the generated uname shim.
+  case "$(uname -s)" in
+    Darwin) printf '#!/bin/sh\ncase "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) /usr/bin/uname "$@" ;; esac\n' >"$1/uname" ;;
+    *) printf '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo aarch64 ;; *) /bin/uname "$@" ;; esac\n' >"$1/uname" ;;
+  esac
+  chmod +x "$1/uname"
+}
+
 # c_session — a fresh session folder, 0700, as the launcher makes it.
 c_session() {
   SESS=$(mktemp -d "$T/omb-session.XXXXXX") && chmod 700 "$SESS"

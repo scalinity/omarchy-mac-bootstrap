@@ -940,11 +940,7 @@ sleep 3
 # this machine as it answers hello, and a uname shim gives every runner the
 # aarch64 answer a hello needs. Its state folder is its own and never made.
 CK_SHIM=$(t_tmp)
-case "$(uname -s)" in
-  Darwin) printf '#!/bin/sh\ncase "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) /usr/bin/uname "$@" ;; esac\n' >"$CK_SHIM/uname" ;;
-  *) printf '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo aarch64 ;; *) /bin/uname "$@" ;; esac\n' >"$CK_SHIM/uname" ;;
-esac
-chmod +x "$CK_SHIM/uname"
+c_uname_arm "$CK_SHIM"
 CK_STATE=$T/ck-state
 # ck OP RECORD... — one request in a check session. CK_ENV's assignments
 # come last, and env -i keeps the last value a name is given; an empty
