@@ -126,7 +126,10 @@ helper() {
       esac
       r_admit_original "$@"
       st=$?
-      if [ "$st" = 0 ]; then cp "$2" "$T/admitted" || return 1; fi
+      if [ "$st" = 0 ]; then
+        cp "$OMB_TMP/journey.admitted" "$T/admitted" || return 1
+        if [ "${R_MUTATE_STAGE:-0}" = 1 ]; then printf 'unadmitted source bytes\n' >"$2"; fi
+      fi
       # Machine input can change after proof: the captured bytes still own
       # the requested response and generation, with no second capture.
       if [ "${R_MUTATE:-0}" = 1 ]; then printf 'invalid later input\n' >"$T/material"; fi
@@ -136,6 +139,9 @@ helper() {
       staging-create) mkdir "$OMB_TMP/journey.response" ;;
       staging-read)
         cat() { case "$1" in */journey.prefix) return 1 ;; esac; command cat "$@"; }
+        ;;
+      admitted-copy)
+        cp() { case "$2" in */journey.admitted) return 2 ;; esac; command cp "$@"; }
         ;;
       admission-awk)
         awk() { case "$*" in *'hdr=omb-res 1'*) return 127 ;; esac; command awk "$@"; }
@@ -167,6 +173,13 @@ for kind in machine status; do
   helper detail "$kind" "$normal" "$total" 1
   success "$kind offset equals total" detail
   assert_eq "$(grep -c '^row	' "$C_EV")" 0 "$kind total page is empty"
+done
+
+R_MUTATE_STAGE=1 helper snapshot
+success 'changed staging source cannot change admitted snapshot bytes' snapshot
+for kind in machine status; do
+  R_MUTATE_STAGE=1 helper detail "$kind" "$normal" 0 1
+  success "$kind publishes the admitted copy after staging source changes" detail
 done
 
 # Test-only material reaches boundaries absent from today's baseline owners.
@@ -209,7 +222,7 @@ success '65537 pageable rows do not need one response' snapshot
 printf 'scope\tname=journey\nrow\tkind=machine\tkey=x\tcol=original\n' >"$T/material"
 R_MATERIAL=1 R_MUTATE=1 helper snapshot
 success 'input changes after admission without recapture' snapshot
-for fault in staging-create staging-read admission-execute admission-read admission-awk hash publish-read; do
+for fault in staging-create staging-read admitted-copy admission-execute admission-read admission-awk hash publish-read; do
   R_FAULT=$fault helper snapshot
   assert_eq "$(c_result) $C_RC" 'error io 0' "$fault: machinery failure is io"
   assert_eq "$(c_admits snapshot)" ok "$fault: complete safe io response admitted"

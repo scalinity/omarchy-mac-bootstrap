@@ -119,7 +119,12 @@ core_read_admit() (
   REC_REASON=''
   rec_admit_file res "$1" "$2"
   st=$?
-  [ "$st" = 0 ] && return 0
+  if [ "$st" = 0 ]; then
+    # Admission holds its bounded copy to the contract, not the source file.
+    # Retain exactly that copy for publication, even if the source changes.
+    cp "$REC_TMP/doc" "$OMB_TMP/journey.admitted" || return 1
+    return 0
+  fi
   [ "$st" = 1 ] || return 1
   case "$REC_REASON" in
     byte | eof | line | blank | tab | header | key | value | nul-escape | non-canonical | too-large | schema | type | result | after-result) return 2 ;;
@@ -217,7 +222,7 @@ core_read_failure() {
 # the live spool; there is no core_emit suppression, re-encoding or new read.
 core_read_publish() {
   local bytes records
-  tail -n +3 "$OMB_TMP/journey.response" >"$OMB_TMP/journey.suffix" || { core_read_failure 1; return; }
+  tail -n +3 "$OMB_TMP/journey.admitted" >"$OMB_TMP/journey.suffix" || { core_read_failure 1; return; }
   bytes=$(wc -c <"$OMB_TMP/journey.suffix") || { core_read_failure 1; return; }
   records=$(wc -l <"$OMB_TMP/journey.suffix") || { core_read_failure 1; return; }
   cat "$OMB_TMP/journey.suffix" >>"$CORE_EVENTS" || return 1

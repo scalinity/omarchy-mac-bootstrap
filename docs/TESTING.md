@@ -770,8 +770,12 @@ changed/offset handling. Machinery and hash faults are `error io`.
 Instrumented test-only capture/admission wrappers prove one capture, a clean
 live header/hello prefix during every preflight, complete canonical admission,
 and staged/published byte equality for snapshot and both detail kinds at offset
-0/limit 1, multirow pages and offset equal to total. No baseline validator or
-value owner changes, no Protocol-1 schema change, and no change to the deferred
+0/limit 1, multirow pages and offset equal to total. Changing the original
+staging file after admission must
+leave publication byte-identical to the retained canonical admission copy;
+failure to retain that copy is `error io`, including a copy tool's status 2.
+No baseline validator or value owner changes, no Protocol-1 schema change,
+and no change to the deferred
 `CP0-Q3b-overflow` policy is permitted. `test-gate2-foundation.sh` separately
 proves that real/symlink fixture marker directories alone cannot select actions,
 the explicit owned harness retains them, fresh sessions reset authority, and

@@ -784,6 +784,8 @@ exact response: header, the already-written hello, intended generation, exact
 selected records and final result. The live spool contains only header/hello
 until admission succeeds, then receives the exact admitted suffix bytes without
 rereading, re-encoding, filtering, truncation or suppression. Inability to
+retain the private copy canonical admission actually validated is an I/O
+failure; publication uses that retained copy. Inability to
 create/write/read staging, execute admission or compute the hash remains
 `error io`; representation means established invalidity, not an unavailable
 proof. Baseline value owners, validators, configuration loading, canonical
