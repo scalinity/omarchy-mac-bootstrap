@@ -853,11 +853,18 @@ core_action_info() {
       ;;
     *) return 1 ;;
   esac
-  # Test actions exist only in fixture mode.
-  [ -n "${OMB_FIXTURE:-}" ]
+  # Only the foundation harness's owned fixtures expose fake actions.
+  core_foundation_fixture
 }
 
 CORE_TEST_ACTIONS="test.read test.mutate test.handoff"
+
+# The existing fake-child fixture directory selects the foundation harness,
+# not frontend identity or a new session purpose. Ordinary fixtures carry
+# only machine observations and cannot expose or execute these test actions.
+core_foundation_fixture() {
+  [ -n "${OMB_FIXTURE:-}" ] && [ -d "$OMB_FIXTURE/test-children" ]
+}
 
 core_test_effect() {
   case "$1" in
@@ -1080,13 +1087,34 @@ core_main() {
     core_check_op "$op" "$fe" "$proto"
     return 0
   fi
+  if ! core_foundation_fixture; then
+    core_read_op "$op"
+    return 0
+  fi
   case "$op" in
     hello) core_result "done" ok ;;
     snapshot) core_op_snapshot ;;
     detail | validate) core_result refused unavailable "Nothing in this gate pages details or validates parameters." ;;
     execute) core_op_execute ;;
+    *) core_result refused unavailable "This operation is not available." ;;
   esac
   return 0
+}
+
+# Ordinary Gate 2 reads retain core_main's read intent and zero persistence,
+# at every admitted session ceiling. No path here reaches action lookup.
+core_read_op() {
+  case "$1" in
+    hello) core_result "done" ok ;;
+    snapshot | detail)
+      if ! core_in_scopes "$CORE_REQ_SCOPE"; then
+        core_result refused scope "This session does not include the requested scope."
+      else
+        core_result refused unavailable "This read dataset is not available."
+      fi
+      ;;
+    *) core_result refused unavailable "This operation is not available on the read surface." ;;
+  esac
 }
 
 # core_check_op OP FRONTEND PROTO — the startup-check session
