@@ -317,7 +317,9 @@ EOF
     # and run in a fresh shell, so the answer is the commit's own and nothing
     # here reads the lock's schema a second time.
     git archive "$commit" lib | tar -x -C "$libs"
-    [ -f "$libs/lib/common.sh" ] && [ -f "$libs/lib/state.sh" ] && [ -f "$libs/lib/records.sh" ] || die "the record admission cannot be read from lib/ at $commit"
+    for lib in common state records; do
+      if [ ! -f "$libs/lib/$lib.sh" ]; then die "the record admission cannot be read from lib/ at $commit"; fi
+    done
     # shellcheck disable=SC2016 # the inner script's $1 and $REC_* expand in the fresh shell
     verdict=$(cd "$libs" && env -i PATH="$PATH" HOME="$libs" TMPDIR="$libs" LC_ALL=C bash -c '
       . lib/common.sh && . lib/state.sh && . lib/records.sh || exit 9
