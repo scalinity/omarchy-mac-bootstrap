@@ -230,6 +230,85 @@ operation, which `hello` and `snapshot` make unnecessary; an
 acknowledgement record or a timing rule to prove receipt, which would need
 a new frontend release and would still not prove drawing.
 
+**D49. The frontend under development is an unreleased candidate,
+`0.2.0`, and the release lock stays exact.** Gate 2 changes `frontend/`, so
+its `inputs_digest` no longer equals the one in `release/frontend.lock`, and
+it must not be made to: the lock names the published `frontend-v0.1.0`,
+whose tag, assets and lock stay as they are (D10). The crate's version
+becomes `0.2.0` before its first substantive change, so no changed build
+identifies itself as 0.1.0. `tests/frontend-inputs.sh lock` keeps its one
+meaning — the frontend's inputs equal the published release's — and still
+fails on a difference. A separate command, `candidate VERSION [COMMIT]`,
+classifies the other honest state: an unreleased frontend whose version is
+the expected next one, whose digest differs from the pinned release's as
+expected, whose lock is well formed, whose pinned release is intact and
+whose protocol still equals the core's; it never says the candidate is
+released. CI accepts a commit when `lock` passes, when no lock exists, or
+when `candidate` passes for the version the workflow names — a number edited
+on purpose, never read from `Cargo.toml`. Every other difference stays a
+failure, and the release workflow never runs `candidate` and stays exact.
+Gate 2 publishes nothing: a manual look starts a build of the candidate as
+`OMB_FRONTEND_DEV` over a fixture, as D16 requires, and no command exists
+only to show it. When `0.2.0` becomes a release is a later gate's decision.
+*Set aside:* letting `lock` accept a larger version, which turns a failure of
+the exact oracle into a success; changing the lock so CI passes; a preview
+release; a production command for viewing an unfinished interface.
+
+**D50. Gate 2's reads use the ordinary session contract; there is no new
+purpose.** `snapshot`, `detail` and `validate` are read operations the
+ordinary contract already names, constrained by the session's intent, scopes
+and ceiling, and nothing on the read surface reaches `execute`: no baseline
+action is listed, and `plan.save` is named by `validate` alone. A new
+purpose would widen a reviewed authority table for the convenience of one
+gate, and nothing needs it: the property the gate needs — a read that
+persists nothing — belongs to the operations, which run with read intent and
+no persistence. What the frontend says about its authority comes from the
+core, from `hello`'s ceiling and the snapshot's action list, never from
+fixed text. The startup-check session stays the one closed purpose, its
+snapshot byte for byte. Gate 2's reads answer only in fixture mode (D16). If
+a review finds a property the ordinary contract cannot express, a purpose is
+proposed then, with that property named. *Set aside:* a `frontend-read`
+purpose.
+
+**D51. The interface's presentation follows the approved reference
+design.** docs/UX.md's earlier direction is replaced for presentation by a
+panelled one: a dark backdrop at 256 colours and above, single-line panels
+with cyan outlines and blue headings, green for what is current, focused or
+ok, a branded banner, a navigation rail, a workspace, a context sidebar and
+a footer of keys and authority. The references decide how the interface
+looks; the core's records decide what it says, so no image supplies a fact,
+a stage name, a version, a status or a capability. Kept as hard rules: no
+true-colour requirement, no Nerd Font or emoji, one-cell glyphs, ASCII, the
+Linux console, `NO_COLOR`, sixteen colours, reverse focus, no colour alone,
+keyboard reach, no mouse capture, the 60×20 floor with its truthful stop, and
+never bold with a colour. The backdrop is painted only at 256 colours and
+above, and no state depends on it. Panel nesting stays at two. *Set aside:*
+keeping hairlines; bold headings; a palette the console cannot show.
+
+**D52. Gate 2's read surface keeps the accepted baseline's meaning.** The
+oracle stays `2edb76a` (docs/TESTING.md → *Equivalence with the accepted
+baseline*); tests may read the baseline's text and the frontend never does.
+The `log` data set is what `logs` shows, the last 40 lines of the newest log;
+a longer window would be a separate reviewed delta. Any difference from the
+baseline — including one the record format forces, such as a value longer
+than the format allows — is named, bound to the review that accepts it, and
+tested on its own. The plan is validated, not presented: Gate 2 has the
+operation, its contract, its equivalence, its read-effect proof and its
+benchmark, and no screen for it; the Storage Planner and the Safety Gate
+belong to the gate that exposes their actions. *Set aside:* a 2 000-line log
+window; a validation screen in this gate.
+
+**D53. The O1 workloads are not reduced.** The representative workload of
+the `bench-*` benchmark (docs/TESTING.md) — 2 000 items and 400 profile
+entries — is met with fixed synthetic loaded data where the real dataset
+does not exist yet: the frontend's navigation, search and render
+benchmarks run over deterministic loaded models of both sizes, and the core's
+benchmarks run over the read families Gate 2 implements. The two are
+reported separately. A workload that returns no work is invalid, not fast,
+and each one proves its work before it is timed. Timing is never taken
+beside the test suite. *Set aside:* deferring the 400-entry workload until
+profiles exist; a 2 000-line production log to reach 2 000 items.
+
 ## Migration
 
 **D19. The scanner runs no inventoried tool.** It reads the package
@@ -444,6 +523,21 @@ the postcondition.
 | O8 | agent sessions | not in v1 (D41) |
 | O9 | unverified upstream facts | split into facts to verify from source before a feature's gate, and facts only the Mac can show in M17 (docs/UPSTREAM.md → *Not verified yet*) |
 
+## Open review questions
+
+Raised by M14 gate 2's source reads and awaiting the independent review at
+its first checkpoint. Until a question is answered, the gate takes the
+disposition in the last column and no code depends on another.
+
+| # | Question | Why it is open | Disposition until answered |
+| --- | --- | --- | --- |
+| Q1 | Which provenance and derivation do a stage's records carry? | SPEC.md → *States* and the `stage` schema give two provenances, `machine` and `recorded`; docs/QUALIFICATION.md → *The journey* names three (`machine`, derived on this system this run, `recorded`) and defines each stage's *done when* for M16. The baseline's rail has six stations and defaults some of their states (on macOS `omarchy` and `dev` are always *to do*; on Linux `survey`, `plan`, `asahi` and `reboot` are always *done*; `plan` is *done* when a plan is recorded, not when a fresh read of the disk agrees). No stage's baseline derivation equals its M16 rule. | Gate 2 emits no `stage` record and the frontend draws the ten stations as *later*. A new provenance value, or an M16 derivation before M16, is a protocol decision; nothing here assumes one. |
+| Q2 | Which scope owns the doctor's data set? | Doctor's reads are a superset of `status`'s and include network probes (`sys_reachable`, `sys_net`), so it cannot share the `journey` generation without making every journey snapshot as slow and as networked as a doctor run. No scope in the enum names health, and adding one changes an existing enum. | The doctor's rows are not defined; no doctor surface is built until answered. |
+| Q3 | Which scope owns the log's data set, and how is an over-long line carried? | `debug` is the scope of the M15 report; `journey` would couple the log's changes to the journey's generation. `logs` prints a whole line, the record format bounds a value (4 KiB), and `log_event` does not bound a line. | The `log` kind is defined, its scope is not. A line beyond the format's bound is a named delta to review, not a silent truncation. |
+| Q4 | How is a plan the disk cannot support answered, and what are `invalid`'s codes? | `blocker` is forbidden in `validate`'s answer; `parse_size` and `plan_validate` return prose, not codes; the baseline's planner file is a safety-reviewed file. | `validate` answers valid input and `invalid` records only; the code vocabulary and the blocked-plan answer wait for the review. |
+| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | Both are measured and reported under the workload's name; the mapping to a budget is decided with the numbers in hand. |
+| Q6 | May `validate` name `plan.save`, which `execute` refuses? | The golden and the basis family name `plan.save`; the action is not exposed until Gate 3. | It is named by `validate` alone, and no snapshot lists it. |
+
 ## Where each design question is answered
 
 | # | Question | Answer |
@@ -485,4 +579,6 @@ the postcondition.
 | 35 | Bash as the target shell | docs/RESOLVER.md → *From Zsh to Bash*; D2 |
 | — | The frontend: distribution, start-up, the split, the protocol, handoff, lifecycle, the boundary, working without it | docs/FRONTEND.md, docs/PROTOCOL.md; D5–D16, D38, D43 |
 | — | Gate 1's production start, and its authority | docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The startup-check session*; D10, D18, D43, D48 |
-| — | The interface | docs/UX.md |
+| — | Gate 2's read surface, generations and paging | docs/PROTOCOL.md → *The Gate 2 read surface*; D50, D52, D53, and *Open review questions* |
+| — | An unreleased frontend candidate | D49; docs/FRONTEND.md |
+| — | The interface | docs/UX.md; D51 |

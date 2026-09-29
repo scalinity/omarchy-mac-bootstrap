@@ -403,7 +403,15 @@ of docs/TESTING.md.
   representative, with its numbers recorded here, and either within its
   budgets or with the finding and its decision recorded in
   docs/DECISIONS.md.
-- **Status:** not started.
+- **Status:** in progress, begun 2026-09-28 on branch
+  `m14-gate2-readonly-equivalence` from the Gate 1 closeout commit
+  `07b57583ec85ca7a606c1db0c1afe9857490463d`. Only the contract is written:
+  docs/PROTOCOL.md → *The Gate 2 read surface*, docs/UX.md's amended
+  direction, and D49–D53 with the open questions that await the first
+  independent review (docs/DECISIONS.md → *Open review questions*). No read
+  operation, screen or benchmark exists yet, no frontend is released, and
+  the frontend under development is the unreleased candidate `0.2.0` (D49).
+  Gate 3 is not started.
 
 ### Gate 3 — The action contract under fixtures
 

@@ -3,28 +3,52 @@
 **Status: designed for M14–M16; not implemented.** How the frontend
 (docs/FRONTEND.md) looks and behaves. Everything on screen comes from the
 core's records (docs/PROTOCOL.md); this document decides how it is shown.
+The presentation follows the approved reference design (docs/DECISIONS.md →
+D51): the references decide how the interface looks, the core's records what
+it says, and nothing in an image is a fact, a version, a status or a
+capability.
 
-## Direction: a survey plate
+## Direction: a panelled instrument
 
-The baseline's identity carries over: one mark (◒, a rising sun), a journey
-drawn as a line of stations, and the disk strip as the centrepiece of
-planning. The interface is a **calm instrument**, not a dashboard: it is
-open for an afternoon of reboots, and it is read at the moments when a
-mistake costs a disk.
+The interface is a full-screen terminal application with a strong, quiet
+structure: a branded header, a navigation rail on the left, the task's
+workspace in the middle, a context sidebar on the right, and a footer of keys
+and authority. It is open for an afternoon of reboots, and it is read at the
+moments when a mistake costs a disk, so the structure stays still and only
+what the core reports changes.
 
-- **Hairlines, not boxes.** Sections are separated by one thin rule and
-  whitespace. No panel is boxed; the terminal's edge is the frame. The only
-  border is around an overlay (a gate at wide sizes), never nested.
-- **Colour says where, words say how.** Domain colours name places — steel
-  for macOS, coral for Linux, violet for boot, green for Shared, faint for
-  free space — and appear on the disk strip and in small badges. State is
-  always a word and a glyph (`✓ verified`, `! needs you`, `✗ failed`), with
-  colour only reinforcing it.
+- **One frame, three columns.** The frame is a title rule, a banner, a body
+  and a footer; the body is the navigation rail, the workspace and the
+  context sidebar. A panel has a single-line outline in the `frame` token
+  with its title set into the top border in `heading`. A panel holds rows or
+  one card, never a panel inside a panel inside a panel.
+- **Structure at full depth, meaning always in words.** At 256 colours the
+  page has a `backdrop`, cyan outlines, blue headings, and green for what is
+  current, focused or ok. At sixteen colours, without colour and on the Linux
+  console the same structure holds through glyphs and attributes on the
+  terminal's own background. State is always a word and a glyph
+  (`✓ verified`, `! needs you`, `✗ failed`), with colour only reinforcing it.
+- **Human first, raw on demand.** A value is shown as a person reads it
+  (`482 GB free`, `MacBookPro18,2`); its exact form — bytes, full
+  identifiers, hashes, URLs — is one Enter away in a detail view. A long
+  value truncates inside its panel and never crosses the border.
+- **Provenance is visible.** What the machine showed this run and what was
+  recorded are told apart by a word: a fact read from a record carries the
+  word *recorded*.
+- **Domain colours name places** — steel for macOS, coral for Linux, violet
+  for boot, green for Shared, faint for free space — and appear on the disk
+  strip and in small badges.
 - **The disk strip is a scale bar**: proportional, with tick marks and
   labels below it, like the scale on a survey plate, so sizes are read and
   not guessed.
 - **The journey is a traverse**: stations joined by a line, filled when
-  done, a diamond where you are.
+  done, a diamond where you are, and a dim *later* mark for a station the
+  core has not derived.
+- **The brand.** A block-character OMARCHY wordmark with the laptop and
+  mountains art where the terminal has room (120 columns by 36 rows and up,
+  Unicode); a one-line wordmark below that; plain spaced letters in ASCII.
+  The art uses ASCII characters only, and nothing private-use or
+  vendor-specific (no Apple logo glyph).
 - **Motion only when something is happening**: a spinner after a request
   has run 150 ms, elapsed time after two seconds, determinate progress where
   the core reports counts. Nothing animates while idle.
@@ -34,18 +58,20 @@ mistake costs a disk.
 
 ## Tokens
 
-The frontend styles by meaning, never by literal colour. Each token maps to
-the baseline's own palette (`lib/ui.sh`) in 256 colours, to the sixteen
-named colours (which follow the person's terminal theme), and to plain
-attributes.
+The frontend styles by meaning, never by literal colour. Each token has a
+256-colour value, a name among the sixteen (which follow the person's
+terminal theme), and a plain-attribute form.
 
 | Token | Means | 256 | 16 | No colour |
 | --- | --- | --- | --- | --- |
 | `text` | body text | 253 | default | default |
 | `muted` | labels, metadata | 245 | bright black | default |
-| `rule` | hairlines, the rail's line | 239 | bright black | default |
-| `accent` | the mark, the current station, headings' bar | 209 | bright red | underline |
-| `focus` | the focused row or field | reverse + 209 | reverse | reverse |
+| `rule` | dividers inside a panel, the rail's line | 239 | bright black | default |
+| `accent` | the mark, the current station, the primary control | 78 | green | underline |
+| `focus` | the focused row, field or control | reverse + 78 | reverse | reverse |
+| `frame` | panel outlines and the title rule | 44 | cyan | the outline's own glyphs |
+| `heading` | panel titles and section headings | 39 | blue | underline |
+| `backdrop` | the page behind everything | 233, at 256 colours and above only | the terminal's own | the terminal's own |
 | `selected` | an included item | 115 glyph | green glyph | the glyph alone (◉ / `[x]`) |
 | `ok` | verified, passed | 115 | green | the word and ✓ / `+` |
 | `info` | a note | 110 | cyan | the word |
@@ -57,9 +83,14 @@ attributes.
 | `macos`, `linux`, `boot`, `shared`, `free` | disk regions and badges | 110, 209, 141, 114, 239 | blue, bright red, magenta, green, bright black | the strip's letters (`M`, `L`, `b`, `s`, `.`) |
 
 - **Emphasis is reverse or underline, never bold with a colour**: the Linux
-  console cancels bold when a normal-intensity colour follows it.
+  console cancels bold when a normal-intensity colour follows it. Hierarchy
+  comes from the token, capitals and position, not from weight.
 - **Sixteen named colours only** on the Linux console and whenever the
   terminal reports fewer than 256; true colour is never assumed.
+- **The backdrop is never needed to read state.** It is painted only when
+  the terminal reports 256 colours or more; the Linux console, sixteen
+  colours, `NO_COLOR` and ASCII use the terminal's own background, and every
+  state keeps its word and glyph.
 - **`NO_COLOR` is the theme's job.** Crossterm 0.29.0 honours `NO_COLOR` by
   emitting a reset that also clears bold and reverse, which would erase the
   focus highlight; the frontend applies its own no-colour mapping (reset
@@ -72,6 +103,7 @@ attributes.
 | --- | --- | --- |
 | mark | ◒ | `(o)` |
 | station: done, current, to do, skipped, blocked | ● ◆ ○ ◌ ✗ | `*` `>` `.` `~` `x` |
+| station not derived (later) | · | `_` |
 | rule | ─ | `-` |
 | focus pointer | ❯ | `>` |
 | included, not included, opt-in | ◉ ○ ◌ | `[x]` `[ ]` `[?]` |
@@ -91,43 +123,56 @@ Nerd Font icons are never used.
 
 ## Layout
 
-Four bands, top to bottom: a **header** line (mark, name, where: `macOS ·
-MacBookPro18,2` or `Linux · root`), the **rail**, the **body**, and a
-**footer** (a status line when there is something to say, then three to five
-key hints generated from the keymap).
+The frame has four bands, top to bottom: the **title rule** (the screen's
+name and the frontend's version), the **banner**, the **body**, and the
+**footer** (three to five key hints generated from the keymap, then the
+authority statement). The body has up to three columns: the **navigation
+rail** (the screens, the current one filled), the **workspace** (the
+screen's panels and, at the top of the dashboard, the journey rail), and the
+**context sidebar** (the machine's identity and summary, and what comes
+next).
 
 | Width | Behaviour |
 | --- | --- |
-| **wide, 120+** | the rail becomes a column on the left (stations with names and which system each runs on); lists show a detail pane beside them |
-| **standard, 80–119** | the rail is one line; the body is one primary view; details open on Enter (from 100 columns a list may keep a narrow detail pane) |
-| **narrow, 60–79** | one pane; tables drop their lowest-priority columns (each table declares its order); the diff is unified; hints shrink to three plus `?` |
+| **wide, 120+** | all three columns: navigation 24 columns wide, the sidebar about 32, the workspace the rest; lists show a detail pane beside them |
+| **standard, 80–119** | navigation with short labels, and the workspace; the sidebar's panels move under the workspace's own; details open on Enter |
+| **narrow, 60–79** | one pane: navigation becomes one line of screen names and the sidebar a panel of its own, opened with `s`; tables drop their lowest-priority columns (each table declares its order); the diff is unified; hints shrink to three plus `?` |
 | **below 60×20** | a truthful stop: `terminal too small — needs 60×20, this is 54×18`; nothing else is drawn until it grows |
 
-At 80×24 the chrome is five rows (header, rail, two rules, hints) and the
-body has nineteen. Heights from 20 to 23 merge the header into the rail line.
-Paths truncate at the start (`…/nvim/lua/plugins.lua`), names and prose at
-the end; the full value is always one Enter away. Every list over a few
-hundred rows is virtualised; filters answer in under 100 ms.
+The banner has three heights: the wordmark with its art from 36 rows (and
+120 columns) up, a one-line wordmark from 24 to 35 rows, and none below 24,
+where the title rule carries the screen's name and the navigation line takes
+the banner's place. At 80×24 the chrome is at most five rows and the body at
+least nineteen. Paths truncate at the start (`…/nvim/lua/plugins.lua`),
+names and prose at the end; the full value is always one Enter away. Every
+list over a few hundred rows is virtualised; filters answer in under
+100 ms.
+
+**The footer says what the session can do, and the core says it.** The words
+*read-only* and *no system changes* appear only when the session's `hello`
+shows a read ceiling and the snapshot lists no action; otherwise the footer
+states the ceiling in words. It is never fixed text.
 
 ### The rail
 
+The journey rail is a strip across the top of the dashboard's workspace: a
+glyph per station joined by a line, with each station's name beneath it from
+100 columns up, and the glyphs alone with the current station's name below
+that.
+
 ```text
-wide (a column):          standard (one line):
- ● survey                  ● ● ◆ ○ ○ ○ ○ ○ ○ ○   resolve · 3 of 10
- │                        narrow ASCII:
- ● profile                 * * > . . . . . . .   resolve 3/10
- │
- ◆ resolve   macOS
- │
- ○ plan
- ┊
- ○ done
+ ●───●───◆───○───·───·───·───·───·───·     wide and standard
+ survey  profile  resolve  plan  asahi  …
+ ● ● ◆ ○ · · · · · ·   resolve · 3 of 10   narrow
+ * * > . _ _ _ _ _ _   resolve 3/10        narrow, ASCII
 ```
 
 The ten stations are `survey`, `profile`, `resolve`, `plan`, `asahi`,
 `omarchy`, `shared`, `restore`, `verify`, `done` (docs/QUALIFICATION.md).
 A station that only the other system can see is drawn with its recorded
-state and the word *recorded*.
+state and the word *recorded*. A station the core sent no `stage` record for
+is drawn as *later* (`·`, muted) and never as *to do*: an absent record is
+not a state, and the frontend derives none.
 
 ## Keys
 
@@ -138,6 +183,7 @@ copied.
 | Where | Keys |
 | --- | --- |
 | everywhere | `?` help · `q` quit (asks while a request runs) · `Esc` back or close · `r` refresh · `Tab`/`Shift-Tab` move focus · `L` logs · `D` debug report · Ctrl-C and Ctrl-Z as in docs/FRONTEND.md |
+| the frame | `↑` `↓` move in the focused panel · `←` `→` switch between the navigation rail and the workspace · `Enter` select · `s` the sidebar's panels at narrow widths |
 | lists and tables | `↑` `↓` (and `k` `j`) · `PgUp` `PgDn` · `Home` `End` (and `g` `G`) · `Enter` open · `Space` include or exclude · `/` filter (`Esc` clears) · `f` next category · `+` include all shown · `-` exclude all shown |
 | trees | `→` `←` (and `l` `h`) expand and collapse |
 | text fields | typed text, `Backspace`, Ctrl-U clears, `Enter` submits, `Esc` cancels; no single-letter commands while a field has focus |
@@ -176,14 +222,16 @@ leaves. On a narrow terminal the gate takes the whole screen.
 | partial | what is there, and what is missing with the reason (`apps: 2 bundles unreadable`) |
 | error | what failed, `r` to retry, `L` for the log, `D` to prepare a debug report |
 | blocked | the core's blocker text and its fix, in the `blocked` token |
-| changed | the review is dimmed with `changed since you looked — r` when the core refused a stale basis |
+| changed | the review, or the open detail, is dimmed with `changed since you looked — r` when the core refused a stale basis or a generation it no longer holds |
 | no answer | "the core stopped without answering", its diagnostics file, and the debug report |
 | too small | the size needed and the size now |
 
 ## Screens
 
 Wireframes are at 80 columns in Unicode; the ASCII forms follow the glyph
-table.
+table. They show each screen's content, order and keys; the frame around
+them (title rule, banner, navigation rail, sidebar, footer) is the one in
+*Layout*.
 
 **Journey dashboard** (standard):
 
@@ -349,8 +397,8 @@ provider at a time, `Tab` to switch):
 
 | # | Screen | Pattern | At 60 columns | Main keys |
 | --- | --- | --- | --- | --- |
-| 1 | Welcome and machine identity | one page of facts; records from another Mac named | labels shorten | `⏎` `?` `q` |
-| 2 | Journey dashboard | traverse and the current stage's card | one-line rail, the card only | `⏎`, the stage's own keys |
+| 1 | Welcome and machine identity | one page of facts: this machine, the tool and the core, where the journey stands; facts read from a record, and records from another Mac, are named *recorded* | labels shorten; the sidebar is a panel of its own (`s`) | `⏎` `?` `q` |
+| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the blockers, the next step, and the views of status, doctor and details; no action is offered before the gate that exposes it | one-line rail, the card only | `⏎`, the stage's own keys |
 | 3 | Environment scan | adapters with live counts and states (`done`, `partial`, `denied`) | same | Ctrl-C cancels (safe) |
 | 4 | Migration selection | category tabs over lists, defaults marked by who chose | tabs become one picker line | `Tab` categories |
 | 5 | Homebrew and tool inventory | virtualised table, detail on Enter | source and version drop | `Space` `/` `f` `⏎` |
@@ -372,24 +420,29 @@ provider at a time, `Tab` to switch):
 | 21 | Conflict and diff | both sides, the choices | unified only | `k` `R` `m` `s` `n` `v` |
 | 22 | Health | tools × observed states (docs/AI-TOOLS.md → *What is observed*), live checks on request | one tool per group | `c` |
 | 23 | Qualification | the steps, identity, digests | digests shortened | `⏎`; `test` |
-| 24 | Logs and diagnostics | the tool's log, the core's diagnostics, the restore journal; filter by level | same | `/` `Tab` `f` |
+| 24 | Logs and diagnostics | the tool's log (the entries `logs` shows), the core's diagnostics, and from M15 the restore journal; filter by level | same | `/` `Tab` `f` |
 | 25 | Completion | every stage and the report; on quit, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` | same | `q` |
 
 ## Clutter audit of this design
 
-- **Border depth: zero** on every screen; one (the overlay) for a gate at
-  wide sizes. No box contains another.
+- **Border depth: two at most** — a panel and the card inside it. An overlay
+  (a gate at wide sizes) is one, and nothing nests inside it. Every outline
+  is one line.
 - **Signals per state: two** — a glyph and a word — with colour reinforcing,
   never a third mark.
 - **No always-on markers.** The pointer appears on the focused row only;
   included items show ◉, excluded ○, so the marker carries the one fact.
-- **Chrome:** five of twenty-four rows at 80×24; no repeated full dates
-  (times are shown once per group, relative within a session).
+- **Chrome:** at most five of twenty-four rows at 80×24; no repeated full
+  dates (times are shown once per group, relative within a session); the
+  navigation rail, sidebar and footer repeat nothing the workspace says.
 
 ## Degraded and accessible
 
 - Monochrome keeps every meaning: stations by shape, states by word, focus by
   reverse.
+- The backdrop, the wordmark's gradient and the cyan and blue structure exist
+  only at 256 colours and above; every other profile keeps the same
+  structure and meaning through glyphs, words and reverse.
 - The Linux console gets ASCII, sixteen colours, and no bold-with-colour.
 - A screen reader or a script uses `--no-tui` and the one-shot commands,
   which carry the same facts as the screens (docs/FRONTEND.md → *Without

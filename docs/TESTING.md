@@ -689,7 +689,7 @@ death left.
 | E. degraded modes | 16 colours, no colour, ASCII: every state keeps its word and glyph; every glyph is one cell | frames under each profile |
 | F. lifecycle | start, exit, error and panic write the expected sequence | a recording writer in place of stdout |
 | G. PTY | `pty-*` | real runners |
-| H. contract | the Rust client against the real Bash core in fixture mode: every operation's golden request and response, every refusal | both CI systems; on macOS under `/bin/bash` 3.2 |
+| H. contract | the Rust client against the real Bash core in fixture mode: every operation's golden request and response, every refusal; at gate 2 also each read the frontend presents, over every baseline fixture, against the baseline's own read commands | both CI systems; on macOS under `/bin/bash` 3.2 |
 
 ### `bench-*`: the O1 benchmark (M14 gate 2)
 
@@ -698,6 +698,19 @@ warm, with a small inventory (50 items) and a representative one (2 000
 items, 400 profile entries), 200 repetitions each; the time is split into
 core start-up, admission, and probes.
 
+Two families are reported apart. The core's are measured over the read
+operations gate 2 implements (`snapshot`, `detail` and its paging,
+`validate`). The frontend's — navigation, search, and render — run over
+fixed synthetic loaded data of both sizes wherever the real dataset does
+not exist yet; neither family is measured over a smaller workload for want
+of a later feature. A workload proves its work before it is timed (the rows
+and records it returns are at least the expected count), and one that
+returns none is invalid, not fast. The benchmark never runs beside the test
+suite. Each result records the source commit, the system and runner, the
+Bash version, the frontend build, the workload and fixture, the iterations,
+warm-ups and samples, p50, p95, p99, the maximum, and the failures and
+timeouts.
+
 | Id | Operation | Budget |
 | --- | --- | --- |
 | `bench-nav` | navigation and focus | p95 < 50 ms, no core request |
@@ -705,6 +718,19 @@ core start-up, admission, and probes.
 | `bench-snapshot` | a small snapshot that reads no disk | p95 < 500 ms |
 | `bench-validate` | plan validation after inputs are loaded | p95 < 300 ms |
 | `bench-disk` | a full disk refresh | progress within 100 ms; investigated above p95 2 s |
+
+On macOS the journey snapshot runs the detection `status` runs, which reads
+the disk; which of `bench-snapshot` and `bench-disk` such a workload answers
+to is open (docs/DECISIONS.md → *Open review questions*, Q5).
+
+### Gate 2 read tests
+
+| Id | Case | Expected |
+| --- | --- | --- |
+| `read-effect-*` | every gate 2 read — `hello`, `snapshot`, each `detail` kind and page, `validate` — over every baseline fixture, under the purity checks of `tests/test-routing.sh` (`expect_pure`, `t_snapshot`) | nothing recorded but read probes; no state, log, plan or record file; nothing outside the session scratch; no `sudo`, installer or forbidden command; nothing left in `TMPDIR` |
+| `equiv-read-*` | each gate 2 surface over every baseline fixture, against the oracle `2edb76a` | the typed fields equal the baseline's, in order; the probes recorded equal the baseline command's; only listed, reviewed deltas differ |
+| `page-*` | an empty kind, one page, many pages, the last page, `offset` at and beyond `total`, `limit` 1 and 500, a kind the scope does not have | the answers docs/PROTOCOL.md → *The Gate 2 read surface* gives; every row once, in order, none missing |
+| `gen-*` | a generation current, old, unknown, malformed and from another scope; a refresh while a detail is open; a machine that changes between pages | `changed` with the fresh generation and no row; the frontend marks the detail stale and never adopts the new generation |
 
 ## Equivalence with the accepted baseline
 

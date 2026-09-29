@@ -1,7 +1,9 @@
 # Records and the core protocol
 
 **Status: the implementation contract for M14 gate 1 (framing, admission,
-processes, diagnostics) and gate 3 (actions and bases); not implemented.**
+processes, diagnostics; implemented and accepted), gate 2 (the read surface,
+*The Gate 2 read surface*; in progress, none of it implemented) and gate 3
+(actions and bases; not implemented).**
 Local experiments that ground it are recorded in docs/UPSTREAM.md →
 *Experiments*.
 
@@ -696,6 +698,100 @@ result	status=done	code=ok	text=	next=
   `commit` and `source` truthfully change in a later Bash-only commit while
   the lock and the artifact stay those of `54c3770` (docs/DECISIONS.md,
   D10).
+
+### The Gate 2 read surface
+
+M14 gate 2 fills the read half of the ordinary contract: `snapshot`,
+`detail` and `validate`. The session purpose is unset. No new purpose
+exists, and the startup-check session stays as *The startup-check session*
+defines it, byte for byte (docs/DECISIONS.md → D50). What is written here is
+what the source settles; what it does not settle is listed in
+docs/DECISIONS.md → *Open review questions*, and nothing below assumes an
+answer to them.
+
+**Where it answers, and what it may do.** Gate 2's reads answer only in
+fixture mode (D16); outside one, `snapshot`, `detail` and `validate` stay
+`refused` `unavailable`, as they are now. Each runs with `OMB_INTENT=read`
+and `OMB_PERSIST=0` whatever the session's ceiling is. It never reaches
+`run`, `fetch_upstream`, `sudo`, a state directory, a log, a plan, a record
+file or the installer, and it starts nothing but the read probes the
+baseline's `status`, `doctor` and `logs` already make. The frontend never
+reads a text output: it renders these records.
+
+**Datasets and generations.** A generation names one data set: the reads one
+scope's `snapshot` performs. The scope's `detail` kinds page projections of
+that same read — rows the snapshot's own probes already produced — and share
+its generation. A kind that needs a probe the snapshot does not make is a
+different data set and belongs to a scope of its own; a test compares the
+probes a scope's snapshot and each of its kinds record. The generation is
+the SHA-256 of the data set's canonical encoding, computed by the core; the
+frontend compares two ids for equality and nothing else.
+
+- The request schema has no other way to learn a generation, so a detail is
+  always opened from a `snapshot` of its scope: before page one, the
+  frontend holds the generation of that scope's last snapshot and names it in
+  `page`.
+- Every `detail` request re-reads the scope's data set and computes its
+  generation. If it differs from the one named, the answer is `refused`
+  `changed`, carrying the fresh `generation` and no `row`. A well-formed
+  generation the core does not hold — an old one, one that never existed, one
+  of another scope — is refused the same way. Rows of two data sets are never
+  mixed.
+- `total` in a `detail` answer is the number of rows of that kind. In a
+  `snapshot` it is 0.
+- Rows come in the order the producer built them, never sorted by the shell.
+  A traversal of every page from a valid generation returns each row once.
+- `offset` equal to `total` is a `done` page with no `row`; greater than
+  `total` is `refused` `invalid`. A `kind` the scope does not have is
+  `refused` `unavailable`. A generation or `limit` that breaks the schema is
+  refused at admission (exit status 2).
+- Refreshing a scope while one of its details is open takes a new snapshot.
+  If the generation differs, the detail is stale: it is shown as *changed
+  since you looked* until it is reopened from the new snapshot. The frontend
+  never adopts a new generation for an open detail.
+
+| Scope | Snapshot data set | `detail` kinds sharing its generation |
+| --- | --- | --- |
+| `journey` | the reads `status` makes | `machine`, `status` |
+
+The scopes of the doctor's and of the log's data sets are open.
+
+**Row kinds.** A `row` is `kind key col*`; its columns are positional.
+
+| Kind | `key` | `col` |
+| --- | --- | --- |
+| `machine` | the fact's key | `label value` |
+| `status` | the row's position | `section label value note`: the lines `status` prints, in its order, grouped by the section it prints them under |
+| `log` | the entry's position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
+
+The `log` window is what `logs` shows: the last 40 lines of the newest
+`omarchy-bootstrap-*.log`, in file order. Where no log exists the page is
+`done` with `total` 0. The resume token `status` prints is a `code` of kind
+`token`, not a row. The doctor's rows are open.
+
+**The snapshot's content.** `hello`, `generation`, `fact`, `blocker`,
+`guide` and `message` records, and no `action` or `param`: nothing a
+baseline action needs is listed. A blocker is one line of `mac_blockers`;
+the next step, `guide id=next step=1`, is the text the baseline prints under
+*Next*. A `fact` key is an `id` namespaced by its owner (`machine.*` for the
+machine's identity); a fact read from a record has the prefix `recorded.`,
+and the frontend uses a prefix to place and style a fact and never to decide
+what it means. The exact keys are written with each producer's golden.
+Gate 2 emits no `stage` record (open question Q1); the frontend draws each
+of the ten stations as *later* (docs/UX.md → *The rail*).
+
+**Plan validation.** `validate` names `plan.save` with `arg linux_size` and
+`arg shared_size`, as the golden shows. Each size is normalised to bytes as
+`parse_size` does, the plan is computed from a fresh read by `lib/storage.sh`
+(`plan_init`, `plan_compute`, `plan_layout`, `plan_verify`), and the answer
+carries the installer's answers as `answer` records, the warnings
+`plan_validate` gives as `warning` records, and `review` with the basis. A
+size the baseline refuses is an `invalid` record and `refused` `invalid`.
+Nothing is saved or run: `mac_save_plan`, `sudo`, `diskutil` and the
+installer are out of reach. `plan.save` is named only here; `execute` of it
+stays `refused` `unavailable`, and no snapshot lists it as an `action`. How a
+disk the plan cannot be computed on is answered, and the `invalid` codes, are
+open (Q4). The frontend presents no validation at Gate 2 (D52).
 
 ### Request schemas
 
