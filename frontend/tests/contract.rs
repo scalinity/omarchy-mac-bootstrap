@@ -212,11 +212,14 @@ fn the_rust_client_against_the_real_core() {
     let mut s = Session::new(sess.clone(), repo(), true);
 
     // --- proto-golden-hello: the request byte for byte ---------------------
+    // Every field is fixed except `frontend`, which is the client's own
+    // version (the golden in docs/PROTOCOL.md shows the released client's).
     s.id = "0123456789abcdef".into();
-    assert_eq!(
-        s.request(&Req::Hello),
-        b"omb-req 1\nreq\top=hello\tproto=1\tfrontend=0.1.0\tsession=0123456789abcdef\n"
+    let golden = format!(
+        "omb-req 1\nreq\top=hello\tproto=1\tfrontend={}\tsession=0123456789abcdef\n",
+        omb_tui::core::VERSION
     );
+    assert_eq!(s.request(&Req::Hello), golden.as_bytes());
     let (hello, _) = run(&mut s, &Req::Hello);
     assert_eq!(result(&hello), ("done".into(), "ok".into()));
     let Outcome::Answer(recs) = &hello else {
