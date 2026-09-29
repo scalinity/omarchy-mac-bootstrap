@@ -353,7 +353,7 @@ jobs:
       - name: The core under 5.3.15 — records, supervision with the signal storm, diagnostics, the launcher, static
         run: |
           s=0
-          for t in records core diag frontend static; do tests/run.sh "$t" || s=1; done
+          for t in records core diag frontend static 'gate2-*'; do tests/run.sh "$t" || s=1; done
           exit "$s"
       - name: Layer H and the real terminal (L→F→C→X) with the 5.3.15 launcher and core
         working-directory: frontend
