@@ -460,8 +460,10 @@ How they relate:
   the lock's on purpose, and the lock check keeps failing: it means only that
   the inputs equal the published release's. CI then runs `candidate VERSION`
   for the version the workflow names — a number edited by hand, never read
-  from `Cargo.toml` — which passes only when the lock is well formed and
-  sealed, its release is intact (its source commit is in the checkout, holds
+  from `Cargo.toml` — which passes only when the lock is admitted by that
+  commit's own lock admission (the launcher's: framing, seal, record order,
+  field types and unique artifact targets, run from the commit's `lib/`; the
+  check holds no second reading of the lock's schema), its release is intact (its source commit is in the checkout, holds
   the inputs the lock names, and the release's tag names it; a checkout
   without the commit or the tag is refused, so the job fetches the full
   history and the tags), the release's protocol is the core's, the version is newer than the

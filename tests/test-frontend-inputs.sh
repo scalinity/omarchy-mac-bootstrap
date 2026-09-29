@@ -436,7 +436,7 @@ mkdir -p "$C/frontend/src" "$C/lib" "$C/release"
 git -C "$C" init -q
 setver 0.1.0
 printf 'fn main() {}\n' >"$C/frontend/src/main.rs"
-printf 'REC_PROTO=1\n' >"$C/lib/records.sh"
+cp "$REPO/lib/common.sh" "$REPO/lib/state.sh" "$REPO/lib/records.sh" "$C/lib/"
 cmt "the release's inputs"
 rel=$(cg rev-parse HEAD)
 reld=$(cdigest)
@@ -505,59 +505,133 @@ assert_contains "$(cat "$T/out")" "frontend/Cargo.lock names 0.1.0 for omb-tui" 
 cg reset -q --hard "$cnd"
 
 # The release's protocol must be the core's.
-printf 'REC_PROTO=2\n' >"$C/lib/records.sh"
+sed -i.bak 's/^REC_PROTO=1$/REC_PROTO=2/' "$C/lib/records.sh" && rm -f "$C/lib/records.sh.bak"
+grep -q '^REC_PROTO=2$' "$C/lib/records.sh" && ok || fail "the throwaway core's protocol was not changed"
 cmt "a core of another protocol"
 cand 0.2.0
 assert_rc "$?" 1 "frontend-input-candidate-protocol: a core whose protocol the pinned release does not speak is refused"
 assert_contains "$(cat "$T/out")" "the lock's frontend speaks protocol 1, the core 2" "naming both"
 cg reset -q --hard "$cnd"
 
-# A lock that is not well formed fails, and the launcher's reader agrees it is not.
-badlock() { # LABEL WANT — the lock as written now, committed, then judged by both
-  cmt "a lock: $1"
+# The pinned lock must be admitted by the repository's own lock admission, not
+# by a second, partial reading of it. The oracle: for the lock bytes at a
+# commit, `candidate` stops at admission exactly when lib/records.sh's
+# rec_admit_file refuses them, and names the same reason. A refusal after
+# admission (a wrong digest, a protocol) is never reported as an admission
+# failure. Every schema case is RESEALED, so it passes the seal and only the
+# schema can refuse it; the stale-seal case is the one seal failure.
+verdict() { # FILE — the working tree's own reader: "admitted" or "refused REASON"
+  (
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    if rec_admit_file lock - "$1"; then echo admitted; else echo "refused $REC_REASON"; fi
+  )
+}
+assert_eq "$(verdict "$REPO/release/frontend.lock")" admitted "frontend-input-candidate-lock-admission: the production lock is admitted by the canonical reader"
+mklock 0.1.0 1 "$rel" "$reld"
+assert_eq "$(verdict "$C/release/frontend.lock")" admitted "and so is the valid lock of this repository"
+FRL="frontend	version=0.1.0	proto=1	source_commit=$rel	inputs_digest=$reld	rust=1.88.0"
+HDR="omb-frontend-lock 1"
+# reseal FILE — drop any seal line and seal what remains.
+reseal() { sed '/^seal	/d' "$1" >"$T/body" && cp "$T/body" "$1" && seal "$1"; }
+# variant LABEL EXPECT — the lock as written now, committed, judged by the
+# canonical reader and by `candidate`. EXPECT: `seal` (refused for its seal
+# alone), `schema` (refused, but not for its seal) or `agree` (whatever the
+# canonical reader says, and no more or less from candidate).
+variant() {
+  local label=$1 expect=$2 v why
+  cmt "a lock: $label"
   cand 0.2.0
-  assert_rc "$?" 1 "frontend-input-candidate-malformed-lock: $1 is refused"
-  assert_contains "$(cat "$T/out")" "$2" "$1: the reason is named"
-  assert_eq "$(admits)" refused "$1: the launcher's reader refuses it too (the definitions agree)"
+  local rc=$? out
+  out=$(cat "$T/out")
+  v=$(verdict "$C/release/frontend.lock")
+  case "$v" in
+    admitted)
+      assert_not_contains "$out" "not admitted by the record admission" "frontend-input-candidate-lock-admission: $label: admitted, so candidate does not stop at admission"
+      [ "$expect" = agree ] && ok || fail "$label: expected a refusal, the canonical reader admits it"
+      ;;
+    refused*)
+      why=${v#refused }
+      assert_rc "$rc" 1 "frontend-input-candidate-lock-admission: $label is refused"
+      assert_contains "$out" "not admitted by the record admission" "$label: candidate stops at admission"
+      assert_contains "$out" "reason: $why" "$label: and names the canonical reader's reason ($why)"
+      case "$expect:$why" in
+        seal:seal) ok ;;
+        schema:seal) fail "$label: refused for its seal, and it was to be resealed" ;;
+        schema:*) ok ;;
+        agree:*) ok ;;
+        *) fail "$label: refused for [$why], expected [$expect]" ;;
+      esac
+      ;;
+  esac
   cg reset -q --hard "$cnd"
 }
+# A stale seal is a seal failure, and only that.
 mklock 0.1.0 1 "$rel" "$reld"
-assert_eq "$(admits)" admitted "a well-formed lock is admitted by the launcher's reader"
 sed -i.bak 's/size=1/size=2/' "$C/release/frontend.lock" && rm -f "$C/release/frontend.lock.bak"
-badlock "a lock edited after it was sealed" "seal does not match its bytes"
+variant "a lock edited after it was sealed (stale seal)" seal
+# Resealed schema failures: the seal is valid, the schema is not.
+{ printf '%s\n%s\n%s\n%s\n' "$HDR" "$FRL" "$ART" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a duplicated artifact target (resealed)" schema
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$(printf '%s' "$ART" | sed 's/	sha256=[0-9a-f]*//')"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "an artifact missing a required field (resealed)" schema
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$(printf '%s' "$ART" | sed 's/size=[0-9]*/size=abc/')"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "an artifact whose size is not a number (resealed)" schema
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$(printf '%s' "$ART" | sed 's/sha256=[0-9a-f]*/sha256=abc/')"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "an artifact whose digest is too short (resealed)" schema
+{ printf '%s\n%s\n%s\n%s\n' "$HDR" "$FRL" "$FRL" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "two frontend records (resealed)" schema
+{ printf '%s\n%s\n%s\n' "$HDR" "$ART" "$FRL"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "an artifact before the frontend record (resealed)" schema
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL	extra=1" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a frontend record with an unknown field (resealed)" schema
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$ART	extra=1"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "an artifact with an unknown field (resealed)" schema
+{ printf '%s\n%s\n' "$HDR" "$FRL"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a lock with no artifact (resealed)" schema
+{ printf '%s\n%s\n%s\nnote	text=x\n' "$HDR" "$FRL" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a record of an unknown type (resealed)" schema
+{ printf 'omb-frontend-lock 2\n%s\n%s\n' "$FRL" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "another header (resealed)" agree
+# Framing and encoding boundaries: whatever the canonical reader says.
+{ printf '%s\n# a note\n%s\n%s\n' "$HDR" "$FRL" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a comment line (resealed)" agree
+{ printf '%s\n\n%s\n%s\n' "$HDR" "$FRL" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a blank line (resealed)" agree
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$(printf '%s' "$ART" | sed 's#https://example.invalid/omb-tui#https://example.invalid/a%2fb#')"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a lower-case percent escape in a value (resealed)" agree
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$(printf '%s' "$ART" | sed 's#https://example.invalid/omb-tui#https://example.invalid/a b#')"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "a raw space in a value (resealed)" agree
+{ printf '%s\r\n%s\r\n%s\r\n' "$HDR" "$FRL" "$ART"; } >"$C/release/frontend.lock"
+reseal "$C/release/frontend.lock"
+variant "carriage returns (resealed)" agree
+{ printf '%s\n%s\n%s\n' "$HDR" "$FRL" "$ART"; } >"$T/nolf"
+printf 'seal\tsha256=%s' "$(sha_ <"$T/nolf")" >>"$T/nolf" && cp "$T/nolf" "$C/release/frontend.lock"
+variant "a seal with no final line feed (resealed)" agree
+# A lock the canonical reader admits, changed only in ways it does not judge:
+# candidate goes on past admission and refuses for its own, later reason.
+mklock 0.1.0 2 "$rel" "$reld"
+variant "an admitted lock whose protocol is not the core's" agree
+mklock 0.1.0 1 "$rel" "$(printf '%064d' 7)"
+variant "an admitted lock whose digest its source commit does not hold" agree
 mklock 0.1.0 1 "$rel" "$reld"
-sed '$d' "$C/release/frontend.lock" >"$T/nolock" && cp "$T/nolock" "$C/release/frontend.lock"
-badlock "a lock with no seal" "last line is not a seal"
-mklock 0.1.0 1 "$rel" "$reld"
-printf 'artifact\ttarget=x\n' >>"$C/release/frontend.lock"
-badlock "a lock with a line after its seal" "neither frontend nor artifact"
-{ printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n' "$rel" "$reld"; } >"$C/release/frontend.lock"
-seal "$C/release/frontend.lock"
-badlock "a lock with no artifact" "holds no artifact line"
-{
-  printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n' "$rel" "$reld"
-  printf 'frontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n%s\n' "$rel" "$reld" "$ART"
-} >"$C/release/frontend.lock"
-seal "$C/release/frontend.lock"
-badlock "a lock with two frontend lines" "exactly one frontend line"
-{
-  printf 'omb-frontend-lock 2\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n%s\n' "$rel" "$reld" "$ART"
-} >"$C/release/frontend.lock"
-seal "$C/release/frontend.lock"
-badlock "a lock with another header" "first line is not 'omb-frontend-lock 1'"
-{
-  printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\n%s\n' "$rel" "$reld" "$ART"
-} >"$C/release/frontend.lock"
-seal "$C/release/frontend.lock"
-badlock "a frontend line with a field missing" "frontend line is malformed"
-{
-  printf 'omb-frontend-lock 1\nfrontend\tversion=0.1.0\tproto=1\tsource_commit=%s\tinputs_digest=%s\trust=1.88.0\n%s\nnote\ttext=x\n' "$rel" "$reld" "$ART"
-} >"$C/release/frontend.lock"
-seal "$C/release/frontend.lock"
-badlock "a lock with a record that is neither frontend nor artifact" "neither frontend nor artifact"
-mklock 0.1.0 1 "$rel" "$reld"
-printf '%s' "$(cat "$C/release/frontend.lock")" >"$T/nonl" && cp "$T/nonl" "$C/release/frontend.lock"
-badlock "a lock without its final newline" "does not end with a newline"
+variant "a valid lock (the candidate is classified, not stopped)" agree
 cg rm -q release/frontend.lock
 cmt "no lock"
 cand 0.2.0

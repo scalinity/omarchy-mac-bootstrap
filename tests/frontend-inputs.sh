@@ -294,7 +294,8 @@ EOF
     # An unreleased frontend that means to be the next release (docs/DECISIONS.md
     # → D49). It is not the pinned release and never says it is: `lock` stays the
     # exact-release check and fails on any difference. This passes only when the
-    # lock is well formed and its release intact, VERSION is newer than the
+    # lock is admitted by the commit's own lock admission and its release is
+    # intact (the seal is part of that admission), VERSION is newer than the
     # release's and is the commit's own, the commit's inputs differ from the
     # release's, and the release's protocol is the core's. The release workflow
     # never runs it.
@@ -305,25 +306,34 @@ EOF
     newer() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 1 }'; }
     printf '%s\n' "$want" | grep -Eq "$semver" || die "the candidate version is not MAJOR.MINOR.PATCH: $want"
     lf=$(mktemp "${TMPDIR:-/tmp}/omb-lock.XXXXXX") || die "no temporary file"
-    trap 'rm -f "$lf"' EXIT
+    libs=$(mktemp -d "${TMPDIR:-/tmp}/omb-lib.XXXXXX") || die "no temporary directory"
+    trap 'rm -rf "$lf" "$libs"' EXIT
     git cat-file -e "$commit:release/frontend.lock" 2>/dev/null || die "no release/frontend.lock at $commit: there is no pinned release for a candidate to differ from"
     git show "$commit:release/frontend.lock" >"$lf" || die "cannot read the lock at $commit"
-    # The lock, as the launcher reads it: its header, one frontend line, at
-    # least one artifact line, and a seal that is the SHA-256 of every byte
-    # before it.
-    [ "$(sed -n 1p "$lf")" = "omb-frontend-lock 1" ] || die "the lock's first line is not 'omb-frontend-lock 1'"
-    [ "$(tail -c 1 "$lf" | od -An -c | tr -d ' ')" = '\n' ] || die "the lock does not end with a newline"
-    stray=$(sed '1d;$d' "$lf" | grep -Ev "^(frontend|artifact)${tab}" || true)
-    [ -z "$stray" ] || die "the lock holds a line that is neither frontend nor artifact: $(printf '%s\n' "$stray" | sed -n 1p)"
-    [ "$(grep -c "^frontend${tab}" "$lf")" = 1 ] || die "the lock does not hold exactly one frontend line"
-    [ "$(grep -c "^artifact${tab}" "$lf")" -ge 1 ] || die "the lock holds no artifact line"
-    last=$(tail -n 1 "$lf")
-    printf '%s\n' "$last" | grep -Eq "^seal${tab}sha256=[0-9a-f]{64}\$" || die "the lock's last line is not a seal"
-    [ "$(grep -c '^seal' "$lf")" = 1 ] || die "the lock holds more than one seal"
-    sealed=$(printf '%s\n' "$last" | sed "s/^seal${tab}sha256=//")
-    [ "$(sed '$d' "$lf" | sha256)" = "$sealed" ] || die "the lock's seal does not match its bytes"
+    # The pinned lock must be admitted by the repository's own lock admission,
+    # the one the launcher and the core apply (rec_admit_file in lib/records.sh):
+    # its framing, seal, record order and cardinality, field types and the
+    # uniqueness of an artifact's target. That commit's libraries are extracted
+    # and run in a fresh shell, so the answer is the commit's own and nothing
+    # here reads the lock's schema a second time.
+    git archive "$commit" lib | tar -x -C "$libs"
+    [ -f "$libs/lib/common.sh" ] && [ -f "$libs/lib/state.sh" ] && [ -f "$libs/lib/records.sh" ] || die "the record admission cannot be read from lib/ at $commit"
+    # shellcheck disable=SC2016 # the inner script's $1 and $REC_* expand in the fresh shell
+    verdict=$(cd "$libs" && env -i PATH="$PATH" HOME="$libs" TMPDIR="$libs" LC_ALL=C bash -c '
+      . lib/common.sh && . lib/state.sh && . lib/records.sh || exit 9
+      if rec_admit_file lock - "$1"; then echo admitted; else echo "refused $REC_REASON $REC_AT"; fi' _ "$lf" 2>/dev/null) || die "the record admission of $commit could not be run"
+    case "$verdict" in
+      admitted) ;;
+      "refused "*)
+        why=${verdict#refused }
+        at=${why#* }
+        why=${why%% *}
+        die "the pinned lock at $commit is not admitted by the record admission of that commit (reason: $why, line $at)"
+        ;;
+      *) die "the record admission of $commit gave no answer" ;;
+    esac
+    # Admitted, the lock's values have their types: read the frontend line's.
     fl=$(grep "^frontend${tab}" "$lf")
-    printf '%s\n' "$fl" | grep -Eq "^frontend${tab}version=[0-9.]+${tab}proto=[0-9]+${tab}source_commit=[0-9a-f]{40}${tab}inputs_digest=[0-9a-f]{64}${tab}rust=[^${tab}]+\$" || die "the lock's frontend line is malformed"
     field() { printf '%s\n' "$fl" | awk -F'\t' -v k="$1" '{ for (i = 2; i <= NF; i++) if (index($i, k "=") == 1) { print substr($i, length(k) + 2); exit } }'; }
     lv=$(field version) lp=$(field proto) sc=$(field source_commit) ld=$(field inputs_digest)
     printf '%s\n' "$lv" | grep -Eq "$semver" || die "the lock's version is not MAJOR.MINOR.PATCH: $lv"

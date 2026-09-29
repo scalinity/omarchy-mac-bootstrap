@@ -241,9 +241,10 @@ meaning — the frontend's inputs equal the published release's — and still
 fails on a difference. A separate command, `candidate VERSION [COMMIT]`,
 classifies the other honest state: an unreleased frontend whose version is
 the expected next one, whose digest differs from the pinned release's as
-expected, whose lock is well formed, whose pinned release is intact and
-whose protocol still equals the core's; it never says the candidate is
-released. CI accepts a commit when `lock` passes, when no lock exists, or
+expected, whose lock that commit's own lock admission accepts (the
+launcher's reader, run from the commit's `lib/`, never a second parser),
+whose pinned release is intact and whose protocol still equals the core's;
+it never says the candidate is released. CI accepts a commit when `lock` passes, when no lock exists, or
 when `candidate` passes for the version the workflow names — a number edited
 on purpose, never read from `Cargo.toml`. Every other difference stays a
 failure, and the release workflow never runs `candidate` and stays exact.
@@ -272,7 +273,7 @@ purpose.
 
 **D51. The interface's presentation follows the approved reference
 design.** docs/UX.md's earlier direction is replaced for presentation by a
-panelled one: a dark backdrop at 256 colours and above, single-line panels
+panelled one: a dark-navy backdrop (xterm index 17) at 256 colours and above, single-line panels
 with cyan outlines and blue headings, green for what is current, focused or
 ok, a branded banner, a navigation rail, a workspace, a context sidebar and
 a footer of keys and authority. The references decide how the interface
@@ -292,7 +293,11 @@ The `log` data set is what `logs` shows, the last 40 lines of the newest log;
 a longer window would be a separate reviewed delta. Any difference from the
 baseline — including one the record format forces, such as a value longer
 than the format allows — is named, bound to the review that accepts it, and
-tested on its own. The plan is validated, not presented: Gate 2 has the
+tested on its own. The one accepted so far is **`CP0-Q3b-overflow`**: when
+any selected line cannot be represented within the canonical record and value
+limits, measured after encoding, the whole answer is `refused` with code
+`overflow` and presents no row — never a partial or truncated success, never
+a larger window. The plan is validated, not presented: Gate 2 has the
 operation, its contract, its equivalence, its read-effect proof and its
 benchmark, and no screen for it; the Storage Planner and the Safety Gate
 belong to the gate that exposes their actions. *Set aside:* a 2 000-line log
@@ -525,18 +530,28 @@ the postcondition.
 
 ## Open review questions
 
-Raised by M14 gate 2's source reads and awaiting the independent review at
-its first checkpoint. Until a question is answered, the gate takes the
-disposition in the last column and no code depends on another.
+Raised by M14 gate 2's source reads and ruled on by the independent review at
+its first checkpoint. A question that is deferred blocks only the work named
+beside it, and no code depends on another question's answer.
 
-| # | Question | Why it is open | Disposition until answered |
-| --- | --- | --- | --- |
-| Q1 | Which provenance and derivation do a stage's records carry? | SPEC.md → *States* and the `stage` schema give two provenances, `machine` and `recorded`; docs/QUALIFICATION.md → *The journey* names three (`machine`, derived on this system this run, `recorded`) and defines each stage's *done when* for M16. The baseline's rail has six stations and defaults some of their states (on macOS `omarchy` and `dev` are always *to do*; on Linux `survey`, `plan`, `asahi` and `reboot` are always *done*; `plan` is *done* when a plan is recorded, not when a fresh read of the disk agrees). No stage's baseline derivation equals its M16 rule. | Gate 2 emits no `stage` record and the frontend draws the ten stations as *later*. A new provenance value, or an M16 derivation before M16, is a protocol decision; nothing here assumes one. |
-| Q2 | Which scope owns the doctor's data set? | Doctor's reads are a superset of `status`'s and include network probes (`sys_reachable`, `sys_net`), so it cannot share the `journey` generation without making every journey snapshot as slow and as networked as a doctor run. No scope in the enum names health, and adding one changes an existing enum. | The doctor's rows are not defined; no doctor surface is built until answered. |
-| Q3 | Which scope owns the log's data set, and how is an over-long line carried? | `debug` is the scope of the M15 report; `journey` would couple the log's changes to the journey's generation. `logs` prints a whole line, the record format bounds a value (4 KiB), and `log_event` does not bound a line. | The `log` kind is defined, its scope is not. A line beyond the format's bound is a named delta to review, not a silent truncation. |
-| Q4 | How is a plan the disk cannot support answered, and what are `invalid`'s codes? | `blocker` is forbidden in `validate`'s answer; `parse_size` and `plan_validate` return prose, not codes; the baseline's planner file is a safety-reviewed file. | `validate` answers valid input and `invalid` records only; the code vocabulary and the blocked-plan answer wait for the review. |
-| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | Both are measured and reported under the workload's name; the mapping to a budget is decided with the numbers in hand. |
-| Q6 | May `validate` name `plan.save`, which `execute` refuses? | The golden and the basis family name `plan.save`; the action is not exposed until Gate 3. | It is named by `validate` alone, and no snapshot lists it. |
+| # | Question | Why it was open | Ruling of the independent review | What it blocks |
+| --- | --- | --- | --- | --- |
+| Q1 | Which provenance and derivation do a stage's records carry? | SPEC.md → *States* and the `stage` schema give two provenances, `machine` and `recorded`; docs/QUALIFICATION.md → *The journey* names three (`machine`, derived on this system this run, `recorded`) and defines each stage's *done when* for M16. The baseline's rail has six stations and defaults some of their states (on macOS `omarchy` and `dev` are always *to do*; on Linux `survey`, `plan`, `asahi` and `reboot` are always *done*; `plan` is *done* when a plan is recorded, not when a fresh read of the disk agrees). No stage's baseline derivation equals its M16 rule. | **Accepted for Gate 2.** The frontend shows the canonical ten stations as *later* and no `stage` record is emitted. No stage completion, progress or provenance is inferred before the milestone that owns its derivation. A new provenance value, or an M16 derivation before M16, would be a protocol decision and is not made. | Nothing further in Gate 2. |
+| Q2 | Which scope owns the doctor's data set? | Doctor's reads are a superset of `status`'s and include network probes (`sys_reachable`, `sys_net`), so it cannot share the `journey` generation without making every journey snapshot as slow and as networked as a doctor run. No scope in the enum names health, and adding one changes an existing enum. | **Deferred.** Doctor stays unimplemented until the scope's ownership is reviewed. No scope value is added and no existing scope is repurposed to avoid the decision. | The doctor's producer, client, screen, equivalence and benchmark. It does not block the journey snapshot, the status and machine projections, or their paging. |
+| Q3a | Which scope owns the log's data set? | `debug` is the scope of the M15 report; `journey` would couple the log's changes to the journey's generation. | **Deferred.** `journey` is not used to obtain a generation, and `debug` is not redefined as the log's data set. | The log's producer, client and screen, with their equivalence and benchmark. It does not block the journey data set or a paging engine built on it. |
+| Q3b | How is a line the record format cannot carry answered? | `logs` prints a whole line, the record format bounds a value (4 KiB), and `log_event` does not bound a line. | **Resolved, named `CP0-Q3b-overflow` (D52).** For the newest log's last 40 lines, when any selected line cannot be represented within the canonical record and value limits, measured after encoding, the whole answer is `refused` with code `overflow` and presents no row. No partial or truncated success, no silent truncation, no larger window. Tested against encoded expansion and the record and value limits when the log producer is built. | Nothing further; the log producer implements it. |
+| Q4 | How is a plan the disk cannot support answered, and what are `invalid`'s codes? | `blocker` is forbidden in `validate`'s answer; `parse_size` and `plan_validate` return prose, not codes; the baseline's planner file is a safety-reviewed file. | **Deferred until the validation slice.** `validate` answers valid input and `invalid` records only until then, and no earlier layer encodes a provisional convention for an uncomputable plan. | Plan validation's semantics, client, contract and benchmark. It does not block the read authority, the journey snapshot or paging. |
+| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | **Deferred until the benchmark results.** Measurements are named truthfully by their workload. The budget that applies, and why, must be settled before the O1 sign-off. A slow workload is not renamed, a threshold is not relaxed without a reviewed decision, a no-work answer is not a result, and a partial disk read is not a full refresh. | The O1 sign-off, not the collection of measurements. |
+| Q6 | May `validate` name `plan.save`, which `execute` refuses? | The golden and the basis family name `plan.save`; the action is not exposed until Gate 3. | **Accepted (Q6-A).** `validate` may name `plan.save` as the validation and basis family while `execute plan.save` stays unavailable and no Gate 2 snapshot lists it as an action. Naming it confers no authority, and validation saves nothing. | Nothing. |
+
+**Protocol status: decision deferred for specific blocked slices.** Protocol 1
+remains sufficient for the work authorized so far: the ordinary Gate 2 read
+authority, the journey snapshot, the machine and status projections, scoped
+generations and paging, the ten stations shown as *later* with no `stage`
+record, and `validate` naming `plan.save` when its slice is authorized. Still
+unresolved are the doctor's scope (Q2) and the log's scope (Q3a). No scope
+value is added, the protocol is not bumped, and no existing scope is
+repurposed to avoid either decision.
 
 ## Where each design question is answered
 

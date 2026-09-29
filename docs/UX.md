@@ -71,7 +71,7 @@ terminal theme), and a plain-attribute form.
 | `focus` | the focused row, field or control | reverse + 78 | reverse | reverse |
 | `frame` | panel outlines and the title rule | 44 | cyan | the outline's own glyphs |
 | `heading` | panel titles and section headings | 39 | blue | underline |
-| `backdrop` | the page behind everything | 233, at 256 colours and above only | the terminal's own | the terminal's own |
+| `backdrop` | the page behind everything, a dark navy | 17 (`#00005f`), at 256 colours and above only | the terminal's own | the terminal's own |
 | `selected` | an included item | 115 glyph | green glyph | the glyph alone (◉ / `[x]`) |
 | `ok` | verified, passed | 115 | green | the word and ✓ / `+` |
 | `info` | a note | 110 | cyan | the word |
@@ -91,6 +91,10 @@ terminal theme), and a plain-attribute form.
   the terminal reports 256 colours or more; the Linux console, sixteen
   colours, `NO_COLOR` and ASCII use the terminal's own background, and every
   state keeps its word and glyph.
+- **The backdrop is a blue, never a grey.** Index 17 is the darkest blue the
+  256-colour palette has. The reference's own background is a near-black navy
+  (about `#050d18`); the palette has no closer entry that keeps a blue hue,
+  and the greys (232–255) keep none.
 - **`NO_COLOR` is the theme's job.** Crossterm 0.29.0 honours `NO_COLOR` by
   emitting a reset that also clears bold and reverse, which would erase the
   focus highlight; the frontend applies its own no-colour mapping (reset

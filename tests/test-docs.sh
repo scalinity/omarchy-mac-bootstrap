@@ -267,4 +267,13 @@ bad=$(where 'sudo -k' | awk -F'\t' '!($1 == "docs/DECISIONS.md" && $2 ~ /^Reject
 bad=$(units | awk -F'\t' '{ t = tolower($2) } t ~ /agent sessions?|histories/ && t !~ /not in v1|no sessions or histories in v1|not carried/ { print $1 ": " substr($2, 1, 100) }')
 [ -z "$bad" ] && ok || fail "docs-sessions: agent sessions or histories not marked as not carried in v1: $bad"
 
+# --- docs-backdrop: the backdrop token is a blue of the colour cube, never a grey ----------
+# xterm 17 to 21 are the cube's blue column (red 0, green 0, blue 1 to 5); 16 is black and
+# 232 to 255 are greys, none of which is the dark navy of the reference design.
+bb=$(awk -F'|' '/^\| `backdrop` \|/ { print $4 }' docs/UX.md | grep -oE '^ *[0-9]+' | tr -d ' ')
+case "$bb" in
+  17 | 18 | 19 | 20 | 21) ok ;;
+  *) fail "docs-backdrop: docs/UX.md → *Tokens* gives the backdrop the 256-colour value [$bb], not a blue of the colour cube (17 to 21)" ;;
+esac
+
 t_done test-docs

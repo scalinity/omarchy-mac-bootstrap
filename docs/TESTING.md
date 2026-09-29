@@ -557,7 +557,8 @@ And:
 | `frontend-input-candidate-version-expected` | a candidate version the crate does not hold, an older one, and `0.2`, `v0.2.0`, `0.2.0-rc1`, `01.2.0` and the empty string | refused |
 | `frontend-input-candidate-cargo-lock` | `Cargo.toml` at the candidate version and `Cargo.lock` at another | refused |
 | `frontend-input-candidate-protocol` | a core whose protocol the pinned release does not speak | refused, naming both |
-| `frontend-input-candidate-malformed-lock` | a lock edited after sealing; with no seal; with a line after its seal; with no artifact; with two frontend lines; with another header; with a frontend line missing a field; with an unknown record; without its final newline; and no lock | each refused with its reason, and the launcher's reader refuses each one too, so the two definitions of a well-formed lock agree |
+| `frontend-input-candidate-lock-admission` | the production lock; then locks changed and **resealed**, so only the schema can refuse them: a duplicated artifact target, an artifact missing a field or with a non-numeric size or a short digest, two frontend records, an artifact before the frontend record, an unknown field on either record, no artifact, an unknown record type, another header, a comment line, a blank line, a lower-case percent escape, a raw space, carriage returns, a seal with no final line feed; and one lock edited after sealing | `candidate` stops at admission exactly when `rec_admit_file lock` of that commit refuses the bytes, and names the same reason; a resealed lock is never refused for its seal, the stale one only for its seal; an admitted lock that fails later (a protocol, a digest) is refused for that reason and never as an admission failure |
+| `frontend-input-candidate-malformed-lock` | no `release/frontend.lock` at the commit | refused: there is no release to differ from |
 | `frontend-input-candidate-release-intact` | a lock whose digest its source commit does not hold; a source commit absent from the checkout; a release tag naming another commit; no tag at all; then the tag naming the source commit | the first four refused, the last passing and its report naming the tag |
 | `frontend-input-candidate-identical` | inputs equal to the lock's under an older lock version | refused: it is the released frontend, and the lock check applies |
 | `frontend-input-candidate-ci-version` | the workflow's named candidate version and the crate's | equal; CI runs the exact lock check first |
@@ -741,7 +742,15 @@ to is open (docs/DECISIONS.md → *Open review questions*, Q5).
 | `read-effect-*` | every gate 2 read — `hello`, `snapshot`, each `detail` kind and page, `validate` — over every baseline fixture, under the purity checks of `tests/test-routing.sh` (`expect_pure`, `t_snapshot`) | nothing recorded but read probes; no state, log, plan or record file; nothing outside the session scratch; no `sudo`, installer or forbidden command; nothing left in `TMPDIR` |
 | `equiv-read-*` | each gate 2 surface over every baseline fixture, against the oracle `2edb76a` | the typed fields equal the baseline's, in order; the probes recorded equal the baseline command's; only listed, reviewed deltas differ |
 | `page-*` | an empty kind, one page, many pages, the last page, `offset` at and beyond `total`, `limit` 1 and 500, a kind the scope does not have | the answers docs/PROTOCOL.md → *The Gate 2 read surface* gives; every row once, in order, none missing |
-| `gen-*` | a generation current, old, unknown, malformed and from another scope; a refresh while a detail is open; a machine that changes between pages | `changed` with the fresh generation and no row; the frontend marks the detail stale and never adopts the new generation |
+| `gen-current` | a page requested with the scope's current generation | the page: its rows in the producer's order, the generation, and `total` |
+| `gen-old` | a well-formed generation the scope once had | `result status=refused code=changed`, the fresh `generation`, no `row` |
+| `gen-unknown` | a well-formed generation the scope never had | the same as `gen-old` |
+| `gen-foreign-scope` | another scope's current generation named in this scope's `page` | the same as `gen-old`: a generation binds its scope, so no page of one scope is served under another's |
+| `gen-malformed` | a generation that is not 64 lower-case hex digits, or missing | refused at admission: `result status=error` with the admission's reason and exit status 2, never `changed` and never a page |
+| `gen-refresh-same` | a refresh while a detail is open, the new snapshot's generation equal to the open detail's | the detail stays valid and pageable |
+| `gen-refresh-changed` | the same refresh with a different generation | the detail becomes stale: shown as changed, not pageable, and the frontend never adopts the new generation |
+| `gen-between-pages` | the machine changes between two pages of one traversal | the second page is `changed` with no `row`; no page mixes two data sets |
+| `gen-traversal` | every page of a generation that does not change | each row once, none missing, in the producer's order |
 
 ## Equivalence with the accepted baseline
 
@@ -783,6 +792,7 @@ A validator, `tests/test-docs.sh` (M14 gate 1), runs in CI over `SPEC.md`,
 | `docs-sudo-k` | `sudo -k` appears only in docs/DECISIONS.md → *Rejected* |
 | `docs-sessions` | agent sessions and histories appear only as not carried in v1 |
 | `docs-agents-claude` | `AGENTS.md` and `CLAUDE.md` are byte-identical |
+| `docs-backdrop` | the backdrop token's 256-colour value in docs/UX.md → *Tokens* is from the colour cube's blue column (17 to 21), never a grey or black |
 
 ## CI
 

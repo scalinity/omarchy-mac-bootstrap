@@ -407,8 +407,14 @@ of docs/TESTING.md.
   `m14-gate2-readonly-equivalence` from the Gate 1 closeout commit
   `07b57583ec85ca7a606c1db0c1afe9857490463d`. Only the contract is written:
   docs/PROTOCOL.md → *The Gate 2 read surface*, docs/UX.md's amended
-  direction, and D49–D53 with the open questions that await the first
-  independent review (docs/DECISIONS.md → *Open review questions*). No read
+  direction, and D49–D53 with the open questions the first independent
+  review ruled on (docs/DECISIONS.md → *Open review questions*: the doctor's
+  and the log's scopes and the validation semantics stay deferred, each
+  blocking only its own work). That review required, and this status
+  records, three corrections: the candidate check applies the commit's own
+  lock admission, the generation test matrix separates a changed generation
+  from a malformed one, and the backdrop is the dark navy of the reference.
+  No read
   operation, screen or benchmark exists yet, no frontend is released, and
   the frontend under development is the unreleased candidate `0.2.0` (D49).
   Gate 3 is not started.

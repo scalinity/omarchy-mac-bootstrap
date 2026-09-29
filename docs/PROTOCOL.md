@@ -724,7 +724,9 @@ that same read — rows the snapshot's own probes already produced — and share
 its generation. A kind that needs a probe the snapshot does not make is a
 different data set and belongs to a scope of its own; a test compares the
 probes a scope's snapshot and each of its kinds record. The generation is
-the SHA-256 of the data set's canonical encoding, computed by the core; the
+the SHA-256 of the data set's canonical encoding — every value its
+projections need, in the producer's order, under the scope's own name, so
+one scope's generation is never another's — computed by the core; the
 frontend compares two ids for equality and nothing else.
 
 - The request schema has no other way to learn a generation, so a detail is
@@ -766,8 +768,12 @@ The scopes of the doctor's and of the log's data sets are open.
 
 The `log` window is what `logs` shows: the last 40 lines of the newest
 `omarchy-bootstrap-*.log`, in file order. Where no log exists the page is
-`done` with `total` 0. The resume token `status` prints is a `code` of kind
-`token`, not a row. The doctor's rows are open.
+`done` with `total` 0. When any selected line cannot be represented within
+the canonical record and value limits, measured after encoding, the whole
+answer is `refused` with code `overflow` and presents no row — the named
+delta `CP0-Q3b-overflow` (docs/DECISIONS.md → D52): no partial answer, no
+truncation, no larger window. The resume token `status` prints is a `code`
+of kind `token`, not a row. The doctor's rows are open.
 
 **The snapshot's content.** `hello`, `generation`, `fact`, `blocker`,
 `guide` and `message` records, and no `action` or `param`: nothing a
@@ -777,8 +783,10 @@ the next step, `guide id=next step=1`, is the text the baseline prints under
 machine's identity); a fact read from a record has the prefix `recorded.`,
 and the frontend uses a prefix to place and style a fact and never to decide
 what it means. The exact keys are written with each producer's golden.
-Gate 2 emits no `stage` record (open question Q1); the frontend draws each
-of the ten stations as *later* (docs/UX.md → *The rail*).
+Gate 2 emits no `stage` record, by the review's ruling (docs/DECISIONS.md →
+*Open review questions*, Q1); the frontend draws each of the ten stations as
+*later* (docs/UX.md → *The rail*), and no stage completion, progress or
+provenance is inferred before the milestone that owns its derivation.
 
 **Plan validation.** `validate` names `plan.save` with `arg linux_size` and
 `arg shared_size`, as the golden shows. Each size is normalised to bytes as
