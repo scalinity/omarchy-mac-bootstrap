@@ -1,0 +1,11 @@
+fact	scope=journey	key=machine.platform	label=Platform	value=linux	state=info
+fact	scope=journey	key=machine.arch	label=Architecture	value=aarch64	state=info
+fact	scope=journey	key=machine.model	label=Model	value=Apple%20MacBook%20Pro%20%2816-inch,%20M1%20Pro,%202021%29	state=info
+fact	scope=journey	key=machine.chip	label=Chip	value=M1%20Pro	state=info
+fact	scope=journey	key=machine.os	label=System	value=Arch%20Linux%20ARM	state=info
+fact	scope=journey	key=machine.kernel	label=Kernel	value=6.16.8-asahi-1-1-ARCH	state=info
+fact	scope=journey	key=status.2	label=Omarchy	value=absent	state=info
+fact	scope=journey	key=status.3	label=Root	value=btrfs	state=info
+fact	scope=journey	key=status.4	label=/boot	value=on%20root	state=info
+fact	scope=journey	key=status.5	label=Network	value=default%20route	state=info
+guide	id=next	step=1	text=Run%20./omarchy-bootstrap%20as%20root%20to%20start%20Omarchy%20Mac.

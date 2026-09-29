@@ -1109,6 +1109,10 @@ core_read_op() {
     snapshot | detail)
       if ! core_in_scopes "$CORE_REQ_SCOPE"; then
         core_result refused scope "This session does not include the requested scope."
+      elif [ "$1" = snapshot ] && [ "$CORE_REQ_SCOPE" = journey ] && [ -n "${OMB_FIXTURE:-}" ]; then
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        core_journey_snapshot
       else
         core_result refused unavailable "This read dataset is not available."
       fi

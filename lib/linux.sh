@@ -399,7 +399,15 @@ lx_upstream_status() {
     ui_cmd "sudo $OMS_SELF --status"
     return 0
   fi
-  sys_cmd setup_status "$OMS_SELF" --status | sed "s/$ESC\[[0-9;]*m//g" | tr -cd '[:print:]\n' | sed 's/^/   /'
+  lx_upstream_status_lines
+}
+
+# Presentation sink; the caller retains the upstream root/read boundary.
+lx_upstream_status_lines() { lx_upstream_status_text | sed 's/^/   /'; }
+
+# Upstream's read-only status payload, before the text interface's indent.
+lx_upstream_status_text() {
+  sys_cmd setup_status "$OMS_SELF" --status | sed "s/$ESC\[[0-9;]*m//g" | tr -cd '[:print:]\n'
 }
 
 lx_in_progress() {

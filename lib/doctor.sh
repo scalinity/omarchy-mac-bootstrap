@@ -190,10 +190,14 @@ mac_status() {
   ui_para "$(mac_next_action)"
   if [ -n "$(state_get cfg_user)" ]; then
     ui_section "Resume token" "type this on Linux"
-    ui_cmd "./omarchy-bootstrap resume $(token_encode)"
+    status_token
   fi
   printf '\n'
 }
+
+# A typed presentation seam: the core uses the same condition and encoder,
+# without extracting a token from a rendered command line.
+status_token() { ui_cmd "./omarchy-bootstrap resume $(token_encode)"; }
 
 _status_row() {
   local v
