@@ -308,7 +308,8 @@ fn the_rust_client_against_the_real_core() {
         },
     );
     assert_eq!(result(&o), ("refused".into(), "word".into()));
-    let stale = format!("{}0", &b[..63]);
+    let suffix = if b.ends_with('0') { '1' } else { '0' };
+    let stale = format!("{}{suffix}", &b[..63]);
     let (o, _) = run(
         &mut s,
         &Req::Execute {
