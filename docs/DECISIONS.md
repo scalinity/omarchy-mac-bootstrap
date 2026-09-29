@@ -293,7 +293,7 @@ The `log` data set is what `logs` shows, the last 40 lines of the newest log;
 a longer window would be a separate reviewed delta. Any difference from the
 baseline — including one the record format forces, such as a value longer
 than the format allows — is named, bound to the review that accepts it, and
-tested on its own. The one accepted so far is **`CP0-Q3b-overflow`**: when
+tested on its own. **`CP0-Q3b-overflow`** settles the deferred log producer: when
 any selected line cannot be represented within the canonical record and value
 limits, measured after encoding, the whole answer is `refused` with code
 `overflow` and presents no row — never a partial or truncated success, never
@@ -302,6 +302,32 @@ operation, its contract, its equivalence, its read-effect proof and its
 benchmark, and no screen for it; the Storage Planner and the Safety Gate
 belong to the gate that exposes their actions. *Set aside:* a 2 000-line log
 window; a validation screen in this gate.
+
+**Gate2-read-representation-failure (accepted independent ruling).** For
+ordinary journey `snapshot` and `detail kind=machine|status`, required
+authoritative content that violates the frozen Protocol-1 representation
+contract returns `error representation`, the fixed safe text
+`The required journey response cannot be represented in Protocol 1.`, empty
+`next`, and the SHA-256 of empty bytes with `total=0`. No candidate data or
+unusable generation is published. This means the response supplies no dataset;
+it says nothing about whether the actual journey is empty.
+
+Whole-journey representability covers snapshot facts, guide, conditional token,
+blockers and messages, and every machine/status row, including off-page rows.
+After ordinary admission/authority/kind checks, capture once and establish
+representability before computing the current generation or resolving changed
+and offset behavior. Every legal contiguous page (limits 1..500) must fit;
+pageable rows need not fit together in one response. Canonical admission of the
+complete exact requested response precedes publication of its exact admitted
+suffix after the existing truthful hello. Staging, admission machinery and hash
+failures retain `error io`; only established wire invalidity is representation.
+
+Baseline validators, configuration loading, raw saved-user token presence and
+`token_encode` remain the owners. No required value is dropped, truncated,
+sanitized or replaced. Representable data keeps its existing bytes, ordering,
+whole-scope generation and paging semantics. Protocol 1, its schemas and
+cardinality remain unchanged. This rule settles only the authorized journey
+reads; `CP0-Q3b-overflow`, Doctor Q2, Logs Q3a and Validate Q4 remain unchanged.
 
 **D53. The O1 workloads are not reduced.** The representative workload of
 the `bench-*` benchmark (docs/TESTING.md) — 2 000 items and 400 profile

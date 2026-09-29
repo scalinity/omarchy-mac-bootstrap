@@ -755,6 +755,28 @@ to is open (docs/DECISIONS.md → *Open review questions*, Q5).
 
 ## Equivalence with the accepted baseline
 
+The focused Gate 2 remediation also tests the accepted decision
+`Gate2-read-representation-failure`: oversized decoded tokens (512 bytes), the
+raw-present but unloaded `cfg_user=root` token `omb2:`, canonical written values
+(4096 bytes), record lines (16384 bytes excluding LF), and complete responses
+(8388608 bytes and 65536 records). Existing opaque upstream status is the owner
+for encoded expansion; synthetic captured material reaches record/envelope
+limits without inventing production fields. Off-page bad status and bad machine
+rows fail snapshot and both detail projections with the fixed safe error,
+empty generation and no partial content. Representable changes still return
+`refused changed`; unrepresentable changes return `error representation` before
+changed/offset handling. Machinery and hash faults are `error io`.
+
+Instrumented test-only capture/admission wrappers prove one capture, a clean
+live header/hello prefix during every preflight, complete canonical admission,
+and staged/published byte equality for snapshot and both detail kinds at offset
+0/limit 1, multirow pages and offset equal to total. No baseline validator or
+value owner changes, no Protocol-1 schema change, and no change to the deferred
+`CP0-Q3b-overflow` policy is permitted. `test-gate2-foundation.sh` separately
+proves that real/symlink fixture marker directories alone cannot select actions,
+the explicit owned harness retains them, fresh sessions reset authority, and
+frontend-check refuses the seam.
+
 The oracle is the **accepted baseline, commit
 `2edb76a7de3f78ec90927ac93d5eec3a84636253`**, not the new text flow: two new
 paths could agree with each other and share a regression.

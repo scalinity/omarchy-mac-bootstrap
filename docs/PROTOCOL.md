@@ -758,6 +758,39 @@ frontend compares two ids for equality and nothing else.
 
 The scopes of the doctor's and of the log's data sets are open.
 
+**Required journey representation (Gate2-read-representation-failure).**
+Ordinary journey `snapshot` and `detail kind=machine|status` use one authoritative
+capture for validation, generation, projection, staging and publication. After
+normal environment/request/version/scope/fixture/kind checks, the whole capture
+must be representable: snapshot-required facts, guide, token, blockers and
+messages, plus every machine and status row, including off-page rows. Every
+legal contiguous page with limit 1..500 must fit the response envelope; all
+pageable rows need not fit one response. Only then is the normal generation
+computed and changed/current/offset behavior resolved.
+
+If required content cannot be represented, the complete answer is the header,
+the exact truthful existing hello, `generation` with SHA-256(empty bytes) and
+`total=0`, then `result status=error code=representation`, fixed text
+`The required journey response cannot be represented in Protocol 1.`, and empty
+`next`. No candidate fact, row, code, guide, blocker, message, warning, action,
+param or overflow is published, and no offending value or parser excerpt is
+echoed. The empty generation means this response supplies no dataset, not that
+the current journey is empty. This precedes `changed` and offset handling even
+for an old generation, an empty requested page or an unaffected projection.
+
+Before successful dataset publication, stage and canonically admit the complete
+exact response: header, the already-written hello, intended generation, exact
+selected records and final result. The live spool contains only header/hello
+until admission succeeds, then receives the exact admitted suffix bytes without
+rereading, re-encoding, filtering, truncation or suppression. Inability to
+create/write/read staging, execute admission or compute the hash remains
+`error io`; representation means established invalidity, not an unavailable
+proof. Baseline value owners, validators, configuration loading, canonical
+`token_encode` and raw nonempty saved `cfg_user` token presence remain unchanged.
+Representable response bodies and generations retain their existing semantics.
+Protocol 1 is preserved. The startup-check bypasses this entire path; the
+separate deferred log rule `CP0-Q3b-overflow` is unchanged.
+
 **Row kinds.** A `row` is `kind key col*`; its columns are positional.
 
 | Kind | `key` | `col` |
