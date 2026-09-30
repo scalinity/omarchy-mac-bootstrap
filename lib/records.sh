@@ -16,7 +16,7 @@
 # Needs lib/common.sh (sha256_str, sha256_of, omb_tmp_init) and lib/state.sh
 # (cfg_field_ok, the token's fields, _whole).
 
-REC_SCOPES="journey|disk|plan|profile|resolve|asahi|network|omarchy|shared|export|restore|rescue|qualify|debug"
+REC_SCOPES="journey|disk|plan|profile|resolve|asahi|network|omarchy|shared|export|restore|rescue|qualify|debug|health|logs"
 REC_STAGES="survey|profile|resolve|plan|asahi|omarchy|shared|restore|verify|done"
 REC_PROTO=1
 # Set here, so admission copies go only where this library makes them.

@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-pub const SCOPES: &str = "journey|disk|plan|profile|resolve|asahi|network|omarchy|shared|export|restore|rescue|qualify|debug";
+pub const SCOPES: &str = "journey|disk|plan|profile|resolve|asahi|network|omarchy|shared|export|restore|rescue|qualify|debug|health|logs";
 pub const STAGES: &str = "survey|profile|resolve|plan|asahi|omarchy|shared|restore|verify|done";
 
 const LINE_MAX: usize = 16384;
