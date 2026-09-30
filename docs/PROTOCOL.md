@@ -607,10 +607,31 @@ schema changes, so the protocol stays version 1.
 ### Scopes
 
 `journey`, `disk`, `plan`, `profile`, `resolve`, `asahi`, `network`,
-`omarchy`, `shared`, `export`, `restore`, `rescue`, `qualify`, `debug`.
+`omarchy`, `shared`, `export`, `restore`, `rescue`, `qualify`, `debug`,
+`health`, `logs`.
 Each action belongs to exactly one. A session's scopes come from the command
 that started it (SPEC.md → *Commands*); a startup-check session has
 `journey` alone.
+
+**CP1 compatibility: PROTOCOL 1 REMAINS SUFFICIENT — REVIEWED ADDITIVE SCOPE
+EXTENSION.** Exactly `health|logs` is appended, in that order, to both Bash
+and candidate Rust admission. `doctor` and `log` are future detail kinds, not
+scopes; unknown names remain rejected. Version 1, framing, cardinality and
+all other schemas stay unchanged. Every exchange supported by the released
+0.1.0 client remains in the old language: its product request builder sends
+hello, journey snapshot and execute only. New values appear only when an
+updated client explicitly requests them. An old core fails closed on those
+requests; there is no fallback, retry under journey, alias or substitution.
+The actual released parser rejects documents containing new scope values.
+This ruling covers these two additions, not arbitrary future enum changes.
+
+Admission is not availability: CP1 implements no health/logs producer or
+product request/UI behavior. With the requested scope in an ordinary
+session, their snapshot/detail are `refused unavailable`, in and outside
+fixtures. Without it they are `refused scope`, before any producer probe.
+The closed startup-check contract remains journey-only and refuses either
+new scope with `refused scope`. No action, record or persistence authority
+comes from the scope addition.
 
 ### Operations
 
@@ -758,8 +779,11 @@ frontend compares two ids for equality and nothing else.
 | Scope | Snapshot data set | `detail` kinds sharing its generation |
 | --- | --- | --- |
 | `journey` | the reads `status` makes | `machine`, `status` |
+| `health` (future producer) | one authoritative `cmd_doctor` invocation | `doctor` |
+| `logs` (future producer) | baseline context, selected-file identity and exact last-40-line window | `log` |
 
-The scopes of the doctor's and of the log's data sets are open.
+Q2 and Q3a are resolved. Only their CP1 admission prerequisite is authorized;
+the producers described below remain unimplemented.
 
 **Required journey representation (Gate2-read-representation-failure).**
 Ordinary journey `snapshot` and `detail kind=machine|status` use one authoritative
@@ -802,16 +826,14 @@ separate deferred log rule `CP0-Q3b-overflow` is unchanged.
 | --- | --- | --- |
 | `machine` | the fact's key | `label value` |
 | `status` | the row's position | `section label value note`: the lines `status` prints, in its order, grouped by the section it prints them under |
+| `doctor` (future) | one-based position | `pass\|warn\|fail\|info`, baseline label, baseline detail |
 | `log` | the entry's position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
 
-The `log` window is what `logs` shows: the last 40 lines of the newest
-`omarchy-bootstrap-*.log`, in file order. Where no log exists the page is
-`done` with `total` 0. When any selected line cannot be represented within
-the canonical record and value limits, measured after encoding, the whole
-answer is `refused` with code `overflow` and presents no row — the named
-delta `CP0-Q3b-overflow` (docs/DECISIONS.md → D52): no partial answer, no
-truncation, no larger window. The resume token `status` prints is a `code`
-of kind `token`, not a row. The doctor's rows are open.
+The future `log` window is what `cmd_logs` selects: the last 40 lines of the
+last sorted matching `omarchy-bootstrap-*.log` path, in file order, not
+mtime-newest. Its exact capture and `CP0-Q3b-overflow` precedence are defined
+under *Future health and logs producers*. The resume token `status` prints
+is a `code` of kind `token`, not a row.
 
 **The snapshot's content.** `hello`, `generation`, `fact`, `guide`, `code`,
 `blocker` and `message` records, in the existing response-schema order, and
@@ -841,18 +863,155 @@ Gate 2 emits no `stage` record, by the review's ruling (docs/DECISIONS.md →
 *later* (docs/UX.md → *The rail*), and no stage completion, progress or
 provenance is inferred before the milestone that owns its derivation.
 
-**Plan validation.** `validate` names `plan.save` with `arg linux_size` and
-`arg shared_size`, as the golden shows. Each size is normalised to bytes as
-`parse_size` does, the plan is computed from a fresh read by `lib/storage.sh`
-(`plan_init`, `plan_compute`, `plan_layout`, `plan_verify`), and the answer
-carries the installer's answers as `answer` records, the warnings
-`plan_validate` gives as `warning` records, and `review` with the basis. A
-size the baseline refuses is an `invalid` record and `refused` `invalid`.
-Nothing is saved or run: `mac_save_plan`, `sudo`, `diskutil` and the
-installer are out of reach. `plan.save` is named only here; `execute` of it
-stays `refused` `unavailable`, and no snapshot lists it as an `action`. How a
-disk the plan cannot be computed on is answered, and the `invalid` codes, are
-open (Q4). The frontend presents no validation at Gate 2 (D52).
+**Plan validation.** Q4 is resolved by *Future plan validation contract*.
+Validate remains unimplemented in CP1. The frontend presents no validation
+at Gate 2 (D52).
+
+### Future health and logs producers
+
+These are accepted Q2/Q3a contracts for later authorized slices, not CP1
+implementations. Each follows the same-capture, whole-dataset preflight and
+exact admitted-byte publication requirements of journey, under its own scope.
+
+**Health.** One authoritative invocation of `cmd_doctor`, dispatching to
+`mac_doctor` or `lx_doctor`, supplies counts and ordered rows. Its snapshot
+has `generation total=0`, exactly three `fact scope=health` records, then
+`result done ok`:
+
+| Key | Label | Value | State |
+| --- | --- | --- | --- |
+| `doctor.pass` | Passed | pass count | `info` |
+| `doctor.warn` | Warnings | warning count | `info` |
+| `doctor.fail` | Failures | failure count | `info` |
+
+Detail kind `doctor` uses one-based row positions with columns: baseline
+`pass|warn|fail|info`, label, detail. There is no action, token, stage or
+repair encoded as an action. Completed failed health checks are still a
+successful READ delivery.
+
+`Gate2-health-representation-failure`: required unrepresentable health
+content returns truthful hello, SHA256(empty bytes) generation with total
+0, `error representation`, fixed text
+`The required health response cannot be represented in Protocol 1.`, and
+empty next, with no candidate counts/rows. Infrastructure, capture,
+admission or hash failure is `error io`.
+
+**Logs.** `cmd_logs` selects the last sorted matching path. The authoritative
+dataset includes baseline state/location context, selected-file presence,
+selected-file identity, exact captured last-40-line window and file order.
+Snapshot facts use scope `logs`: `logs.state_dir`, `logs.directory`, and,
+when a file exists, `logs.source` (selected basename) and `logs.lines`
+(selected-window line count). Without a selected log, it supplies
+`message level=info text=No log yet.`. A selected empty file differs from no
+file and must have a different generation. The full selected path binds
+identity even when only its basename is displayed.
+
+Preserve blank lines, trailing blank lines and an unterminated final line.
+Do not first capture the raw window through shell command substitution or
+silently remove NUL. Generation binds location/source identity and exact
+window bytes/order; changes outside the window do not change it unless
+selection or another dataset value changes. A successful no-log dataset
+uses its normal scope-bound generation, not SHA256(empty bytes).
+
+`CP0-Q3b-overflow` remains distinct from journey representation failure.
+Selected lines means the complete selected 40-line window. If any selected
+line violates the canonical encoded value/record contract, both snapshot
+and detail return truthful hello, empty generation total 0,
+`refused overflow`, fixed text
+`The selected log window cannot be represented in Protocol 1.`, and empty
+next, before changed or offset handling. No partial metadata/rows,
+truncation or enlarged window. Unrepresentable required location metadata
+instead returns `error representation`; operational discovery/read/capture
+failure returns `error io`.
+
+### Future plan validation contract
+
+Q4 is resolved; this contract and `Q4-plan-validation-basis-v1` are
+documentation only in CP1. `validate select action=plan.save` belongs to
+scope `plan`, with arguments `linux_size` and `shared_size`. It answers only
+in ordinary macOS fixtures. Wrong platform/family/non-fixture is
+`refused unavailable`; a session without plan scope is `refused scope`.
+No action is advertised, state saved, installer/sudo run, run lock taken
+or operation record made. Execute stays unavailable; review is not execute
+authority.
+
+**Order and normalization.** Apply environment/admission/version/family/
+platform/fixture/scope checks, unknown argument names, fresh machine planning
+context, Shared, Linux, then construct/verify the plan. Choose the first
+unknown name in byte order. Return only the deterministic first parameter
+error. If Shared fails, Linux is not evaluated; if Linux fails after Shared
+passes, retain Shared normal plus Linux invalid. Successful full-output
+normal order remains Linux then Shared, despite Shared-first computation.
+
+Only surrounding-whitespace-trimmed Shared `0` is the family-specific None
+sentinel, normalizing to 0 bytes. `0GB` is ordinary numeric zero and invalid;
+Linux has no None sentinel. Positive parsed sizes round down to whole
+decimal GB before applicable minimum/capacity decisions. Return effective
+bytes actually planned, retaining baseline informational rounding notices.
+Linux max is evaluated only after Shared succeeds; Shared max is unavailable.
+
+Attribute positive Shared below minimum to `shared_size / below-minimum`;
+Shared above its established maximum that permits minimum Linux to
+`shared_size / above-maximum`. With Shared valid, attribute Linux below
+minimum or above the established remaining maximum to Linux alone. Linux
+at least minimum but below recommendation gives a warning only.
+
+**Finite invalid vocabulary.** Each parameter invalidity returns
+`result status=refused code=invalid next=`, with no review. The offending
+admitted name owns an unknown-parameter record; all other names are the
+parameter being evaluated. Fixed texts and meanings:
+
+| Code | Meaning | Text |
+| --- | --- | --- |
+| `unknown-parameter` | name outside linux_size/shared_size | This parameter is not accepted by plan validation. |
+| `required` | argument absent when its turn is reached | This size parameter is required. |
+| `empty` | admitted nonempty value trims to empty | Enter a size such as 250GB or 30%. |
+| `syntax` | size grammar fails | Use a number with GB, TB, or %. |
+| `leading-zero` | ambiguous leading zero | Sizes cannot have a leading zero. |
+| `too-large` | unit-specific magnitude bound | The numeric size is too large. |
+| `precision` | too many decimals | Use at most three decimals for GB/TB or one for %. |
+| `percentage-range` | percentage above 100 | A percentage cannot exceed 100%. |
+| `zero` | ordinary numeric zero, except Shared None | The numeric size must be greater than zero. |
+| `whole-disk` | size at least the whole disk | The size must be smaller than the whole internal disk. |
+| `max-unavailable` | max without a family maximum | max is not available for this parameter. |
+| `below-minimum` | effective allocation below applicable minimum | The size is below the minimum for this parameter. |
+| `above-maximum` | effective allocation above established maximum | The size exceeds the current maximum for this parameter. |
+
+**Unplannable and internal failures.** Valid parameters with machine/topology
+unable to establish a trustworthy plan return `message level=warn` with the
+safe owner-established explanation, then `refused unplannable`, fixed text
+`A trustworthy plan cannot be computed for this machine state.`, empty
+next, and no normal, answer, invalid or review. Unknown resize limits do not
+prohibit a plan fitting an existing verified gap, but prohibit relying on
+a resize whose applicable limit is unknown; do not blame a user maximum.
+
+| Failure | Status/code | Fixed safe text |
+| --- | --- | --- |
+| operational capture/read/staging/admission/hash | `error io` | The validation response could not be prepared. |
+| unexpected planner postcondition / plan_verify invariant | `error invariant` | The planner's internal checks did not hold. |
+| required output unrepresentable | `error representation` | The required validation response cannot be represented in Protocol 1. |
+
+Validate never carries a generation, including errors. Valid output carries
+the exact installer `answer` records, effective `normal` records, warnings
+and `review action=plan.save basis=<basis>`, then `done ok`. The warning
+`linux-below-recommended` has the existing `plan_validate` reason and empty
+fix; it does not block review. Rounding notices are informational messages.
+
+**Q4-plan-validation-basis-v1.** Retain the existing basis envelope: action
+plan.save, protocol, actor UID, home and executed-source digest. Input
+identity has effective normalized Shared then Linux in fixed family order.
+Seen geometry is the canonical digest of the complete consumed geometry:
+disk/block/usable bounds; ordered partition GUIDs/extents/content/roles;
+selected macOS store identity; APFS size/free space; resize-limit
+knownness/value; derived planning floor/availability. Seen plan is the
+canonical digest of resulting mode, selected region, allocation/reservation
+extents and exact ordered installer-answer records. Version records bind
+storage contract, template and this validation-family rule version.
+The same capture/computation owns response and basis. Relevant geometry,
+effective input and answer changes invalidate it; spellings normalizing to
+identical effective sizes do not. Bind no future undeclared choices,
+fabricate no plan_record and grant no execute authority. Gate 3 separately
+reviews any expanded save basis.
 
 ### Request schemas
 

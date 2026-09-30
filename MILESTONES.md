@@ -431,14 +431,18 @@ of docs/TESTING.md.
   Gate 2 as a whole is **not complete**. No Gate 2 frontend screen or benchmark
   has been accepted. The published frontend remains `0.1.0`; candidate
   `0.2.0` is **UNRELEASED** (D49). Gate 3 and M17 are **NOT STARTED**.
-- **Next checkpoint:** **RESOLVE THE NEXT BLOCKED GATE 2 SEMANTIC DECISIONS**.
-  This checkpoint is decision-only. Still unresolved: Q2 — Doctor scope
-  ownership; Q3a — Logs scope ownership; Q4 — Validate failure semantics and
-  invalid-code vocabulary for plans that cannot be computed or supported by
-  the disk; Q5 — benchmark classification and budget assignment before O1
-  signoff. Doctor implementation, Logs implementation, Validate implementation,
-  frontend product/UI slices, S4+, Gate 3, the frontend `0.2.0` release, M15,
-  M16 and M17 remain blocked. No decision on these questions is made here.
+- **Semantic checkpoint:** Q2 is **RESOLVED — health / doctor**; Q3a is
+  **RESOLVED — logs / log**; Q4's validation contract and
+  `Q4-plan-validation-basis-v1` are **RESOLVED**; Q5 is **RESOLVED FOR
+  MEASUREMENT**, with actual O1 signoff pending. The accepted ruling is
+  **GATE 2 SEMANTIC DECISIONS RESOLVED WITH PROTOCOL PREREQUISITE — IMPLEMENT
+  ONLY THE PREREQUISITE** (docs/DECISIONS.md → *Open review questions*).
+- **CP1 checkpoint:** scope-extension compatibility is the only authorized
+  implementation: synchronized admission of exactly `health|logs`, Protocol 1,
+  with request-selected old-client compatibility and absent new producers.
+  CP1 is in progress; independent compatibility review is required before any
+  next slice. Doctor, Logs, Validate, benchmarks, frontend product/UI slices,
+  S4+, Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized.
 
 ### Gate 3 — The action contract under fixtures
 
