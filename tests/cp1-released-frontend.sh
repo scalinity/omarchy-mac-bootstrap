@@ -5,6 +5,7 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 T=$(t_tmp)
+TMPDIR=$T
 trap 'rm -rf "$T"' EXIT
 # shellcheck source=lib/common.sh
 . "$REPO/lib/common.sh"
