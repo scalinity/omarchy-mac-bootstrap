@@ -418,11 +418,27 @@ of docs/TESTING.md.
   detail reads are implemented. The focused review of
   `5a7c659c29b32a4de94f07aa938dc084b3585ed6` required G2-H01/G2-H02
   remediation: explicit owned foundation authority and the accepted
-  `Gate2-read-representation-failure` rule. Both are implemented and require
-  focused independent remediation re-review; Gate 2 is not accepted. S4+
-  remains unauthorized; Doctor Q2, Logs Q3a and Validate Q4 remain blocked.
-  No Gate 2 screen or benchmark exists. The published frontend remains
-  `0.1.0`; candidate `0.2.0` is unreleased (D49). Gate 3 and M17 are not started.
+  `Gate2-read-representation-failure` rule. The focused independent remediation
+  review accepted S1–S3 at `f35be42e90bfb8fc29e61557f0a126a74cb6460b`
+  (R): **G2-H01/G2-H02 REMEDIATION ACCEPTED — S1–S3 ACCEPTED**.
+  G2-H01 and G2-H02 are **CLOSED**; there are no new material findings.
+  The representation rule is accepted and implemented; Protocol 1 remains
+  preserved for S1–S3. The accepted implementation identities remain:
+  C-doc `2c1b9033423b831da48b872b34d6daeab8395d74`,
+  S1 `8cb100e3ec2aa7419150a56210c9c9302a793917`,
+  S2 `04bacb3d9cd0a049e9e24730fc9b9cfa7089b6df`, and
+  S3 `e33a26fec83468b9979baf272703e150a1c2a01a`.
+  Gate 2 as a whole is **not complete**. No Gate 2 frontend screen or benchmark
+  has been accepted. The published frontend remains `0.1.0`; candidate
+  `0.2.0` is **UNRELEASED** (D49). Gate 3 and M17 are **NOT STARTED**.
+- **Next checkpoint:** **RESOLVE THE NEXT BLOCKED GATE 2 SEMANTIC DECISIONS**.
+  This checkpoint is decision-only. Still unresolved: Q2 — Doctor scope
+  ownership; Q3a — Logs scope ownership; Q4 — Validate failure semantics and
+  invalid-code vocabulary for plans that cannot be computed or supported by
+  the disk; Q5 — benchmark classification and budget assignment before O1
+  signoff. Doctor implementation, Logs implementation, Validate implementation,
+  frontend product/UI slices, S4+, Gate 3, the frontend `0.2.0` release, M15,
+  M16 and M17 remain blocked. No decision on these questions is made here.
 
 ### Gate 3 — The action contract under fixtures
 
