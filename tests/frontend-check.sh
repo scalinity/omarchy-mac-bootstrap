@@ -40,7 +40,10 @@ fc_serve && ok || fail "the loopback server did not start"
 # The native build's own version: the crate's. The check's core refuses a
 # frontend whose version is not the lock's, so the lock pinned for this build
 # names the version the build carries (an unreleased candidate is not 0.1.0).
-FC_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$REPO/frontend/Cargo.toml" | sed -n 1p)
+# CP1's published-artifact driver supplies the admitted production lock's
+# version. This override belongs only to this test driver, never fc_run's
+# sealed launcher environment.
+FC_VERSION=${OMB_TEST_ARTIFACT_VERSION:-$(sed -n 's/^version = "\(.*\)"$/\1/p' "$REPO/frontend/Cargo.toml" | sed -n 1p)}
 [ -n "$FC_VERSION" ] && ok || fail "the crate's version cannot be read from frontend/Cargo.toml"
 fc_pin "$ART" "$FC_VERSION"
 D=$FC_CACHE/$FC_SHA

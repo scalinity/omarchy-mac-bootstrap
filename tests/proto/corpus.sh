@@ -208,4 +208,27 @@ req "$REQ_VAL" "page	scope=profile	kind=inventory	generation=$GEN	offset=0	limit
 req "$REQ_SNAP" "scope	name=shared" "arg	name=v	value=1" | case_ proto-op-records.arg-in-snapshot req - schema
 req "$REQ_EXEC" "select	action=x" "exec	action=shared.create	basis=$H64	confirm=" | case_ proto-op-records.select-in-execute req - schema
 req "$REQ_DETAIL" "page	scope=profile	kind=inventory	generation=$GEN	offset=0	limit=501" | case_ proto-op-records.page-limit req - type
+# --- CP1: request-selected scope admission, not producer/action authority --------
+for scope in journey health logs healths doctor log unknown future Health health-; do
+  name=$scope
+  [ "$scope" != Health ] || name=case-health
+  want='type'
+  case "$scope" in journey | health | logs) want=ok ;; esac
+  kind=machine
+  case "$scope" in health) kind=doctor ;; logs) kind=log ;; esac
+  req "$REQ_SNAP" "scope	name=$scope" | case_ "cp1-scope-$name.snapshot" req - "$want"
+  req "$REQ_DETAIL" "page	scope=$scope	kind=$kind	generation=$GEN	offset=0	limit=1" | case_ "cp1-scope-$name.detail" req - "$want"
+  res "$HELLO" "generation	id=$GEN	total=0" "fact	scope=$scope	key=compat	label=Compatibility	value=only	state=info" "$RESULT" |
+    case_ "cp1-scope-$name.fact" res snapshot "$want"
+  res "$HELLO" "generation	id=$GEN	total=0" "action	id=compat.read	scope=$scope	label=Compatibility	intent=read	gate=	terminal=managed	cancel=1	basis=$H64	explain=" "$RESULT" |
+    case_ "cp1-scope-$name.action" res snapshot "$want"
+  body=$(lines 'omb-op 1' "op	action=compat.read	scope=$scope	basis=$H64	session=compat	state=failed	finding=	pid=1	start=owned	boot=owned	at=2026-09-29T00:00:00Z"; printf x)
+  body=${body%x}
+  if command -v shasum >/dev/null 2>&1; then
+    seal=$(printf '%s' "$body" | shasum -a 256 | awk '{print $1}')
+  else
+    seal=$(printf '%s' "$body" | sha256sum | awk '{print $1}')
+  fi
+  printf '%sseal\tsha256=%s\n' "$body" "$seal" | case_ "cp1-scope-$name.op" op - "$want"
+done
 exit 0
