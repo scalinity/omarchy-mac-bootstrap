@@ -801,6 +801,8 @@ isolation, private preflight and retained-admitted-copy publication. It injects
 discovery, sort, vanished source, selected read, scratch write/read, staging,
 admission, retained-copy, hash and publication-preparation faults: `error io`,
 no candidate records, independently admitted fixed safe responses. A partial
+or empty failed Bash line read must not masquerade as EOF: reconstruction
+must equal the original raw bytes before row admission. A partial
 transport append remains incomplete. Both suites match `gate2-*`, so Linux,
 stock macOS Bash 3.2 and pinned target Bash 5.3.15 run them without new skips.
 

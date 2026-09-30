@@ -71,6 +71,8 @@ helper() {
       vanished) basename() { command basename "$@"; rm -f "$file"; } ;;
       selected-read) tail() { case "$1" in -n) [ "$2" != 40 ] || return 1 ;; esac; command tail "$@"; } ;;
       scratch-write) head() { case "$1:$2" in -c:655401) return 1 ;; esac; command head "$@"; } ;;
+      parse-read) read() { if [ "${FUNCNAME[1]:-}" = core_logs_capture ] && [ "${2:-}" = line ]; then return 1; fi; builtin read "$@"; } ;;
+      parse-partial) read() { if [ "${FUNCNAME[1]:-}" = core_logs_capture ] && [ "${2:-}" = line ]; then line=partial; return 1; fi; builtin read "$@"; } ;;
       stage-write) mkdir "$OMB_TMP/journey.response" ;;
       stage-read) cat() { case "$1" in */journey.prefix) return 1 ;; esac; command cat "$@"; } ;;
       retained-copy) cp() { case "$2" in */journey.admitted) return 2 ;; esac; command cp "$@"; } ;;
@@ -104,7 +106,7 @@ for op in snapshot detail; do
   P_MUTATE=0 P_STAGE=0
   helper "$op" 3
   assert_eq "$(c_result) $C_RC $(c_admits "$op")" 'done ok 0 ok' 'offset total/preflight success'
-  for fault in discovery sort vanished selected-read scratch-write scratch-read stage-write stage-read retained-copy admit-execute admit-read admit-awk hash publish-prep; do
+  for fault in discovery sort vanished selected-read scratch-write scratch-read parse-read parse-partial stage-write stage-read retained-copy admit-execute admit-read admit-awk hash publish-prep; do
     P_FAULT=$fault helper "$op"
     assert_eq "$(c_result) $C_RC" 'error io 0' "$op/$fault infrastructure is io"
     assert_eq "$(c_admits "$op")" ok "$op/$fault safe response admitted"

@@ -70,7 +70,15 @@ core_logs_capture() {
     core_logs_window "$latest" || return "$?"
   fi
   : >"$OMB_TMP/logs.rows" || return 1
-  while IFS= read -r line || [ -n "$line" ]; do
+  : >"$OMB_TMP/logs.parsed" || return 1
+  while :; do
+    line=''
+    IFS= read -r line
+    st=$?
+    case "$st" in 0 | 1) ;; *) return 1 ;; esac
+    if [ "$st" = 1 ] && [ -z "$line" ]; then break; fi
+    printf '%s' "$line" >>"$OMB_TMP/logs.parsed" || return 1
+    if [ "$st" = 0 ]; then printf '\n' >>"$OMB_TMP/logs.parsed" || return 1; fi
     CORE_LOGS_LINES=$((CORE_LOGS_LINES + 1))
     time='' level='' phase='' message=$line
     if _whole "$line" "$pattern"; then
@@ -85,7 +93,11 @@ core_logs_capture() {
       esac
     fi
     rec_line row kind log key "$CORE_LOGS_LINES" col "$time" col "$level" col "$phase" col "$message" >>"$OMB_TMP/logs.rows" || return 1
+    [ "$st" = 0 ] || break
   done <"$OMB_TMP/logs.raw" || return 1
+  # read returns 1 for both EOF and I/O failure. Prove the parser consumed
+  # every ORIGINAL byte, including termination, before publishing any rows.
+  cmp -s "$OMB_TMP/logs.raw" "$OMB_TMP/logs.parsed" || return 1
   core_read_prefix || return 1
   # Whole-window row admission precedes metadata, hashing and paging.
   core_read_stage detail "$(printf '%064d' 0)" "$CORE_LOGS_LINES" "$OMB_TMP/logs.rows"
