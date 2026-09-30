@@ -51,6 +51,10 @@ assert_contains "$C_OUT" 'key=logs.lines	label=Lines	value=0	state=info' 'absent
 assert_contains "$C_OUT" 'message	level=info	text=No%20log%20yet.' 'absence message'
 assert_not_contains "$C_OUT" 'key=logs.source' 'absence source omitted'
 assert_eq "$(t_snapshot "$T/state")" '(absent)' 'no state creation'
+C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$T/missing/parents/state" l_snapshot
+l_good nested-absence snapshot
+assert_contains "$C_OUT" 'message	level=info	text=No%20log%20yet.' 'missing ancestors retain normal absence'
+assert_eq "$(t_snapshot "$T/missing")" '(absent)' 'missing ancestors are not created'
 mkdir -p "$T/state/logs"
 file=$T/state/logs/omarchy-bootstrap-20260902.log
 : >"$file"

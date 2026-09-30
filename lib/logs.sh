@@ -30,7 +30,7 @@ core_logs_window() {
 }
 
 core_logs_capture() {
-  local directory latest st source='' presence=absent line time level phase message expected
+  local directory latest ancestor st source='' presence=absent line time level phase message expected
   local pattern='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) (\[[^][]+\]) ([a-z]+)( +)(.*)$'
   CORE_LOGS_LINES=0
   omb_tmp_init || return 1
@@ -62,6 +62,17 @@ core_logs_capture() {
     st=$(wc -c <"$OMB_TMP/logs.selected") || return 1
     [ "$st" -lt 16385 ] || return 2
     latest=$(cat "$OMB_TMP/logs.selected") || return 1
+  else
+    # An existence test also fails when an ancestor cannot be searched. Only
+    # call this ordinary absence after finding a searchable directory above
+    # the missing path; otherwise discovery failed operationally.
+    ancestor=$directory
+    while [ ! -e "$ancestor" ] && [ ! -L "$ancestor" ]; do
+      [ "$ancestor" != / ] || return 1
+      ancestor=${ancestor%/*}
+      [ -n "$ancestor" ] || ancestor=/
+    done
+    [ -d "$ancestor" ] && [ -x "$ancestor" ] || return 1
   fi
   : >"$OMB_TMP/logs.raw" || return 1
   if [ -n "$latest" ]; then

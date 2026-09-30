@@ -798,7 +798,8 @@ generation changes and paging, metadata failures and read effects.
 journey snapshot/details to accepted CP1 P (only hello commit/source differ),
 and proves one capture, exact original bytes, source/selection mutation
 isolation, private preflight and retained-admitted-copy publication. It injects
-discovery, sort, vanished source, selected read, scratch write/read, staging,
+discovery (including real State-parent and higher-ancestor search-permission
+failures), sort, vanished source, selected read, scratch write/read, staging,
 admission, retained-copy, hash and publication-preparation faults: `error io`,
 no candidate records, independently admitted fixed safe responses. A partial
 or empty failed Bash line read must not masquerade as EOF: reconstruction

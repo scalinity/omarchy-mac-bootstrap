@@ -925,6 +925,9 @@ next, before changed or offset handling. No partial metadata/rows,
 truncation or enlarged window. Unrepresentable required location metadata
 instead returns `error representation`; operational discovery/read/capture
 failure returns `error io`.
+An absent Logs path is ordinary no-log success only when its nearest existing
+ancestor is a searchable directory; an inaccessible ancestor is discovery
+failure (`error io`), rather than evidence that no log exists.
 
 The S4 implementation uses fact labels `State`, `Logs`, `Source`, `Lines`,
 all with state `info`. Its matching row syntax is the complete UTC-shaped
