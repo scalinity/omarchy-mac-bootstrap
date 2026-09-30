@@ -450,8 +450,17 @@ of docs/TESTING.md.
   basis vs future Gate 3 save basis) are **CLOSED IN CANDIDATE — awaiting
   review confirmation**, in docs commit `ba0ed3b`.
 - **S4 Logs checkpoint:** the separately authorized ordinary fixture-only
-  Logs snapshot/detail producer is **IMPLEMENTED — LOCAL VALIDATION AND
-  EXACT-HEAD CI PENDING**. Text Logs and its writer are unchanged; no
+  Logs snapshot/detail producer is **IMPLEMENTED + CI GREEN — AWAITING
+  FOCUSED INDEPENDENT REVIEW**. Implementation head
+  `5643f98daa09f27af3d963a6028397c4450722a7` passed exact-head CI run
+  **36687859414**, all six jobs successful, logs inspected: 8,729 macOS
+  checks with no failures/test skips; Logs 557 and Logs proof 303 checks
+  passed under stock Bash 3.2. Both suites ran under Linux Bash 5 and pinned
+  target Bash 5.3.15, with only their macOS plist comparison skipped on
+  Linux. Candidate and published `0.1.0` native startup checks passed on
+  both arm64 targets. Full local stock-Bash validation also passed 8,729
+  checks with no failures/skips, plus ShellCheck 0.9.0. Text Logs and its
+  writer are unchanged; no
   frontend product request/screen/navigation, health producer, Validate or
   benchmark is implemented. Focused independent review follows CI; S4 is
   not accepted. Doctor, Validate, benchmarks, frontend product/UI slices,
