@@ -440,8 +440,13 @@ of docs/TESTING.md.
 - **CP1 checkpoint:** scope-extension compatibility is the only authorized
   implementation: synchronized admission of exactly `health|logs`, Protocol 1,
   with request-selected old-client compatibility and absent new producers.
-  CP1 is in progress; independent compatibility review is required before any
-  next slice. Doctor, Logs, Validate, benchmarks, frontend product/UI slices,
+  CP1 is **IMPLEMENTED + CI GREEN, AWAITING INDEPENDENT REVIEW**. The
+  implementation checkpoint `7cd7134698f10af881961953e3a819a6ec31d124`
+  passed CI run **36668971772**, all six jobs successful, logs inspected:
+  7,860 macOS checks with no failures/skips; actual published `0.1.0` and
+  candidate native startup checks passed on both arm64 targets. CP1 is not
+  accepted; independent compatibility review is required before any next
+  slice. Doctor, Logs, Validate, benchmarks, frontend product/UI slices,
   S4+, Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized.
 
 ### Gate 3 — The action contract under fixtures
