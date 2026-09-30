@@ -71,8 +71,8 @@ helper() {
       vanished) basename() { command basename "$@"; rm -f "$file"; } ;;
       selected-read) tail() { case "$1" in -n) [ "$2" != 40 ] || return 1 ;; esac; command tail "$@"; } ;;
       scratch-write) head() { case "$1:$2" in -c:655401) return 1 ;; esac; command head "$@"; } ;;
-      parse-read) read() { if [ "${FUNCNAME[1]:-}" = core_logs_capture ] && [ "${2:-}" = line ]; then return 1; fi; builtin read "$@"; } ;;
-      parse-partial) read() { if [ "${FUNCNAME[1]:-}" = core_logs_capture ] && [ "${2:-}" = line ]; then line=partial; return 1; fi; builtin read "$@"; } ;;
+      parse-read) read() { if [ "${FUNCNAME[1]:-}" = core_logs_capture ] && [ "${2:-}" = line ]; then return 1; fi; builtin read -r "$@"; } ;;
+      parse-partial) read() { if [ "${FUNCNAME[1]:-}" = core_logs_capture ] && [ "${2:-}" = line ]; then line=partial; return 1; fi; builtin read -r "$@"; } ;;
       stage-write) mkdir "$OMB_TMP/journey.response" ;;
       stage-read) cat() { case "$1" in */journey.prefix) return 1 ;; esac; command cat "$@"; } ;;
       retained-copy) cp() { case "$2" in */journey.admitted) return 2 ;; esac; command cp "$@"; } ;;
