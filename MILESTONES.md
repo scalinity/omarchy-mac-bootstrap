@@ -437,17 +437,25 @@ of docs/TESTING.md.
   MEASUREMENT**, with actual O1 signoff pending. The accepted ruling is
   **GATE 2 SEMANTIC DECISIONS RESOLVED WITH PROTOCOL PREREQUISITE — IMPLEMENT
   ONLY THE PREREQUISITE** (docs/DECISIONS.md → *Open review questions*).
-- **CP1 checkpoint:** scope-extension compatibility is the only authorized
-  implementation: synchronized admission of exactly `health|logs`, Protocol 1,
+- **CP1 checkpoint:** synchronized admission of exactly `health|logs`, Protocol 1,
   with request-selected old-client compatibility and absent new producers.
-  CP1 is **IMPLEMENTED + CI GREEN, AWAITING INDEPENDENT REVIEW**. The
+  CP1 at `7d3c4d1756c25d2acda9257c6d809107fd8171e6` is
+  **ACCEPTED WITH BOUNDED FOLLOW-UP**. The accepted model is
+  **PROTOCOL 1 REMAINS SUFFICIENT — REVIEWED ADDITIVE SCOPE EXTENSION**. The
   implementation checkpoint `7cd7134698f10af881961953e3a819a6ec31d124`
   passed CI run **36668971772**, all six jobs successful, logs inspected:
   7,860 macOS checks with no failures/skips; actual published `0.1.0` and
-  candidate native startup checks passed on both arm64 targets. CP1 is not
-  accepted; independent compatibility review is required before any next
-  slice. Doctor, Logs, Validate, benchmarks, frontend product/UI slices,
-  S4+, Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized.
+  candidate native startup checks passed on both arm64 targets.
+  CP1-L01 (unconditional Logs line count) and CP1-M01 (Gate 2 validation
+  basis vs future Gate 3 save basis) are **CLOSED IN CANDIDATE — awaiting
+  review confirmation**, in docs commit `ba0ed3b`.
+- **S4 Logs checkpoint:** the separately authorized ordinary fixture-only
+  Logs snapshot/detail producer is **IMPLEMENTED — LOCAL VALIDATION AND
+  EXACT-HEAD CI PENDING**. Text Logs and its writer are unchanged; no
+  frontend product request/screen/navigation, health producer, Validate or
+  benchmark is implemented. Focused independent review follows CI; S4 is
+  not accepted. Doctor, Validate, benchmarks, frontend product/UI slices,
+  S5+, Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized.
 
 ### Gate 3 — The action contract under fixtures
 

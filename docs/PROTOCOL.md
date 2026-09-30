@@ -827,7 +827,7 @@ separate deferred log rule `CP0-Q3b-overflow` is unchanged.
 | `machine` | the fact's key | `label value` |
 | `status` | the row's position | `section label value note`: the lines `status` prints, in its order, grouped by the section it prints them under |
 | `doctor` (future) | one-based position | `pass\|warn\|fail\|info`, baseline label, baseline detail |
-| `log` | the entry's position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
+| `log` | one-based position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
 
 The future `log` window is what `cmd_logs` selects: the last 40 lines of the
 last sorted matching `omarchy-bootstrap-*.log` path, in file order, not
@@ -925,6 +925,28 @@ next, before changed or offset handling. No partial metadata/rows,
 truncation or enlarged window. Unrepresentable required location metadata
 instead returns `error representation`; operational discovery/read/capture
 failure returns `error io`.
+
+The S4 implementation uses fact labels `State`, `Logs`, `Source`, `Lines`,
+all with state `info`. Its matching row syntax is the complete UTC-shaped
+timestamp, bracketed phase, lower-case level and exact `log_event` display
+padding (`%-6s` followed by one separator); the remaining message bytes are
+preserved. It performs one selected-file `tail -n 40` read, retaining at most
+655401 raw bytes (one beyond the maximum legal forty-row window), with NUL
+checked before Bash line parsing. A bounded excess proves overflow; it is
+never a truncated successful capture. Other line invalidity is established
+by canonical response admission. One-way drain and separate owner statuses
+preserve operational failure without relying on pipeline exit status alone.
+
+The chosen fixed metadata-error text is
+`The required logs metadata cannot be represented in Protocol 1.`;
+the fixed I/O-error text is `The logs response could not be prepared.`.
+Both have empty next and SHA256(empty bytes) generation with total 0.
+Safe responses are privately admitted when machinery remains available;
+if that machinery itself fails, fixed emergency records use the same safe
+shape without candidate data or a hash-tool dependency. Publication failure
+after an append begins leaves an incomplete transport, without a second result.
+Only ordinary fixture-mode Logs is implemented in S4: health, Validate and
+frontend Logs requests/navigation/screens remain unavailable or unimplemented.
 
 ### Future plan validation contract
 

@@ -1123,6 +1123,12 @@ core_read_op() {
           snapshot) core_journey_snapshot ;;
           detail) core_journey_detail ;;
         esac
+      elif [ "$CORE_REQ_SCOPE" = logs ] && [ -n "${OMB_FIXTURE:-}" ]; then
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        # shellcheck source=lib/logs.sh
+        . "$OMB_HOME/lib/logs.sh" || _omb_unloaded logs
+        core_logs_op "$1"
       else
         core_result refused unavailable "This read dataset is not available."
       fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CP1 changes admission only; drive the real ordinary/startup-check contracts.
+# CP1 compatibility, with S4's authorized fixture-only Logs producer.
 # shellcheck disable=SC2030,SC2031 # intentionally scoped core environments
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -20,6 +20,13 @@ core_action_info() { printf 'lookup\n' >>"$CP1_LOOKUPS"; cp1_original_action_inf
 cmd_doctor() { printf 'doctor\n' >>"$CP1_OWNERS"; return 99; }
 cmd_logs() { printf 'logs\n' >>"$CP1_OWNERS"; return 99; }
 TAPS
+cat >>"$T/tool/lib/logs.sh" <<'TAPS'
+eval "$(declare -f core_logs_capture | sed '1s/core_logs_capture/cp1_original_logs_capture/')"
+core_logs_capture() {
+  printf 'logs %s %s\n' "$OMB_INTENT" "$OMB_PERSIST" >>"$CP1_OWNERS"
+  cp1_original_logs_capture "$@"
+}
+TAPS
 C_HOME=$T/tool
 c_uname_arm "$T/native"
 C_PATH=$T/native:/usr/bin:/bin:/usr/sbin:/sbin
@@ -28,7 +35,7 @@ before=$(t_snapshot "$T/state")
 held() {
   # Match the existing identity/state/boot setup exactly, with no added probe.
   if cmp -s "$T/probes" "$T/hello.probes"; then ok; else fail "$1: probes differ from existing hello setup"; fi
-  assert_empty_file "$T/owners" "$1: no Doctor/Logs owner"
+  assert_eq "$(cat "$T/owners")" "${2:-}" "$1: only authorized producer, read intent, zero persistence"
   assert_empty_file "$T/lookups" "$1: no action lookup"
   assert_eq "$(t_snapshot "$T/state")" "$before" "$1: no state/log/lock/operation/effect"
   assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' "$1: no child residue"
@@ -54,14 +61,20 @@ for scope in health logs; do
       expected='refused unavailable'
       [ "$scopes" = journey ] && expected='refused scope'
       for op in snapshot detail; do
+        owner=''
+        if [ "$scope:$fixture" = logs:yes ] && [ "$scopes" != journey ]; then
+          owner='logs read 0'
+          expected='done ok'
+          [ "$op" != detail ] || expected='refused changed'
+        fi
         request_env="OMB_SESSION_SCOPES=$scopes $fixture_env G2_PROBES=$T/probes CP1_LOOKUPS=$T/lookups CP1_OWNERS=$T/owners"
         hello_probes "$request_env"
         record="scope	name=$scope"
         [ "$op" = detail ] && record="page	scope=$scope	kind=$kind	generation=$zero	offset=0	limit=1"
         C_ENV="$request_env" c_run "$op" "$record"
         assert_eq "$(c_result) $C_RC" "$expected 0" "$op/$scope/$scopes/$fixture"
-        assert_eq "$(c_admits "$op")" ok 'new-scope refusal canonically admitted'
-        held "$op/$scope/$scopes/$fixture"
+        assert_eq "$(c_admits "$op")" ok 'new-scope response canonically admitted'
+        held "$op/$scope/$scopes/$fixture" "$owner"
       done
     done
   done
@@ -78,6 +91,13 @@ for scope in health logs; do
     assert_eq "$(c_result) $C_RC" 'error type 2' 'new request against actual old core fails closed without fallback'
   done
 done
+
+# S4's kind check also precedes capture. Startup-check routing is unchanged.
+request_env="OMB_SESSION_SCOPES=logs G2_PROBES=$T/probes CP1_LOOKUPS=$T/lookups CP1_OWNERS=$T/owners"
+hello_probes "$request_env"
+C_ENV="$request_env" c_run detail "page	scope=logs	kind=future	generation=$zero	offset=0	limit=1"
+assert_eq "$(c_result) $C_RC" 'refused unavailable 0' 'S4 unsupported kind before capture'
+held unsupported-logs-kind
 
 # Even explicitly owned fake actions are journey-scoped, not new-scope actions.
 C_HOME=$REPO
