@@ -899,10 +899,12 @@ admission or hash failure is `error io`.
 **Logs.** `cmd_logs` selects the last sorted matching path. The authoritative
 dataset includes baseline state/location context, selected-file presence,
 selected-file identity, exact captured last-40-line window and file order.
-Snapshot facts use scope `logs`: `logs.state_dir`, `logs.directory`, and,
-when a file exists, `logs.source` (selected basename) and `logs.lines`
-(selected-window line count). Without a selected log, it supplies
-`message level=info text=No log yet.`. A selected empty file differs from no
+Snapshot facts use scope `logs`: `logs.state_dir` and `logs.directory` are
+always present, as is `logs.lines` (selected-window line count). Only
+`logs.source` (selected basename) is conditional on a selected file.
+Without a selected log, `logs.lines=0` and it supplies
+`message level=info text=No log yet.`. A selected empty file has
+`logs.source` and `logs.lines=0`, without that message; it differs from no
 file and must have a different generation. The full selected path binds
 identity even when only its basename is displayed.
 
@@ -1233,7 +1235,7 @@ Per family, the keys:
 
 | Family | `input` | `seen` (machine, then destination) | `version` |
 | --- | --- | --- | --- |
-| `plan.save` | the Shared and Linux sizes, each choice, the installer answers | `geometry` (the SHA-256 of an `omb-geometry 1` document: one `part` record per partition in offset order, `guid offset size type content`, and one `container` record, `size free floor`), `plan_record` (absent, or its SHA-256) | `storage_contract`, `template` |
+| `plan.save` (future Gate 3 execution basis) | the Shared and Linux sizes, each choice, the installer answers | `geometry` (the SHA-256 of an `omb-geometry 1` document: one `part` record per partition in offset order, `guid offset size type content`, and one `container` record, `size free floor`), `plan_record` (absent, or its SHA-256) | `storage_contract`, `template` |
 | `asahi.launch` | `script_url`, `script_sha256`, `answers` | `plan_record`, `geometry`, `asahi_state` (`none` or `resized-only`) | `installer` |
 | `omarchy.start`, `omarchy.resume` | `user`, `host`, `keymap`, `encrypt`, `script_url`, `script_sha256`, `branch` | `arch`, `euid`, `route`, `marker`, `setup_conf`, `unit_state`, `script_flags` | `omarchy` |
 | `shared.create` | `disk`, `start`, `size` | `part.<n>` for every partition in offset order (`guid:offset:size:type`), `internal_disk`, `plan_record`, `completion_code`, `power_class`, `region` (`start:size`), `creation_record` | — |
@@ -1252,10 +1254,22 @@ Per family, the keys:
 | `rescue.remove` | `removal` (the SHA-256 of the list shown) | `rescue_record`, `rescue_unit` (the rescue instance's state), `system_sshd` | — |
 | `qualify.step` | `step`, `round` | `shared` (GUID and mount identity), `active`, `step_files` (the SHA-256 of the round folder's listing) | `schema`, `frontend` |
 
-**Thresholds are not bases.** Free space, free memory and similar amounts
-change continuously; they are checked when the core decides what is
-available (step 5 below), never compared as part of a basis, so a basis
-changes only when something the person reviewed changes.
+The Gate 2 read-only plan validation basis is instead
+`Q4-plan-validation-basis-v1` above: effective normalized `shared_size` and
+`linux_size`, consumed geometry, APFS size/free space, resize-limit
+knownness/value, derived planning floor/availability, resulting
+mode/region/extents, exact installer answers and relevant version records.
+It fabricates no `plan_record`, undeclared future choices or future
+destination state. Gate 3 separately reviews the expanded plan-save
+execution basis; this distinction changes no implemented foundation/action
+basis.
+
+**Unrelated availability thresholds are not generally basis inputs.**
+Continuously changing free memory and unrelated availability thresholds are
+checked when the core decides what is available (step 5 below).
+APFS free space and resize-limit information consumed by Q4's actual
+planning computation are explicit validation-basis inputs, as
+`Q4-plan-validation-basis-v1` requires.
 
 ### Executing
 
