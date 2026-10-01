@@ -181,6 +181,87 @@ QUERY
     assert_eq "$(find "$T" -maxdepth 1 -name 'omarchy-bootstrap.*')" '' 'H02 private request scratch cleaned'
     assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' 'H02 no child identity residue'
     printf '  S4-H02 native APFS real-core snapshot/detail/repeat completed\n'
+
+    # H03: full original lookup and relocated components prove different
+    # properties. Native characterization is independent of the classifier.
+    l_native_errno() {
+      command osascript -l JavaScript -e 'ObjC.import("stdlib"); ObjC.bindFunction("faccessat", ["int", ["int", "char *", "int", "int"]]); ObjC.bindFunction("__error", ["int *", []]); function run(a) { var r=$.faccessat(-2,a[0],0,0x0020); return r===0 ? 0 : $.__error()[0]; }' "$1"
+    }
+    aggregate_path=$decomposed_path/$decomposed/$decomposed/$decomposed
+    (
+      t_load >/dev/null 2>&1
+      # shellcheck source=lib/records.sh
+      . "$REPO/lib/records.sh"
+      rec_enc "$aggregate_path/logs"
+      omb_cleanup
+    ) >"$T/h03-encoded-path"
+    encoded_bytes=$(wc -c <"$T/h03-encoded-path" | tr -d ' ')
+    if [ "$encoded_bytes" -lt 4096 ]; then ok; else fail 'H03 full Logs metadata must be representable'; fi
+    printf '  S4-H03 full Logs raw=%s encoded=%s bytes\n' "$(printf '%s' "$aggregate_path/logs" | wc -c | tr -d ' ')" "$encoded_bytes"
+    assert_eq "$(l_native_errno "$decomposed_path")" 2 'H03 relocated decomposed component native ENOENT'
+    assert_eq "$(l_native_errno "$T/path-parent/logs")" 2 'H03 relocated logs component native ENOENT'
+    full_errno=$(l_native_errno "$aggregate_path/logs") || exit 1
+    if [ "$full_errno" = 63 ]; then
+      h03_boundary=native
+      printf '  S4-H03 NATIVE full-path ENAMETOOLONG; all relocated components ENOENT\n'
+    else
+      assert_eq "$full_errno" 2 'H03 host without aggregate bound must report missing'
+      h03_boundary=full-invalid
+      printf '  S4-H03 INJECTED CLASSIFIER BOUNDARY (host full lookup errno=%s)\n' "$full_errno"
+    fi
+    # Inject only the full native call's outcome into the unchanged fixed
+    # classifier source; run its aggregation and all ordinary core machinery.
+    cat >>"$T/path-tool/lib/logs.sh" <<'H03_QUERY'
+osascript() {
+  local script=$4 needle='var full = $.faccessat(-2, a[0], 0, 0x0020);'
+  case "${H03_QUERY:-native}" in
+    full-success | full-invalid)
+      case "$script" in *"$needle"*) ;; *) return 127 ;; esac
+      case "$H03_QUERY" in
+        full-success) script=${script/"$needle"/'var full = 0;'} ;;
+        full-invalid)
+          script=${script/"$needle"/'var full = -1;'}
+          needle='var fullErr = full === 0 ? 0 : $.__error()[0];'
+          script=${script/"$needle"/'var fullErr = 63;'}
+          ;;
+      esac
+      shift 4
+      command osascript -l JavaScript -e "$script" "$@"
+      ;;
+    *) command osascript "$@" ;;
+  esac
+}
+H03_QUERY
+    : >"$T/path-effects"; : >"$T/path-authority"
+    for boundary in "$h03_boundary" full-success; do
+      if [ "$boundary" = full-success ]; then printf '  S4-H03 INJECTED CLASSIFIER BOUNDARY: full lookup success in missing branch\n'; fi
+      C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$aggregate_path H01_EFFECTS=$T/path-effects H01_AUTHORITY=$T/path-authority H03_QUERY=$boundary"
+      for request in snapshot stale legal-absence large-offset; do
+        case "$request" in
+          snapshot) l_snapshot; op=snapshot ;;
+          stale) l_page "$zero" 0 1; op=detail ;;
+          legal-absence) l_page "$legal_absent" 0 1; op=detail ;;
+          large-offset) l_page "$legal_absent" 999999999999999999 1; op=detail ;;
+        esac
+        l_fail "H03 $boundary/$request" error io "$op"
+        assert_contains "$C_OUT" "generation	id=$empty	total=0" 'H03 empty generation and total'
+        assert_contains "$C_OUT" 'result	status=error	code=io	text=The%20logs%20response%20could%20not%20be%20prepared.	next=' 'H03 exact safe result'
+        assert_eq "$C_ERR" '' 'H03 clean stderr'
+      done
+    done
+    hidden_invalid=$T/path-parent/missing/$legal_component/a$legal_component
+    assert_eq "$(l_native_errno "$hidden_invalid/logs")" 2 'H03 full ENOENT at early missing component'
+    assert_eq "$(l_native_errno "$T/path-parent/a$legal_component")" 63 'H03 later relocated ASCII component ENAMETOOLONG'
+    C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$hidden_invalid H01_EFFECTS=$T/path-effects H01_AUTHORITY=$T/path-authority"
+    l_snapshot; l_fail H03-hidden-invalid-component error io snapshot
+    l_page "$legal_absent" 0 1; l_fail H03-hidden-invalid-component-detail error io detail
+    assert_eq "$(grep -c '^read 0$' "$T/path-authority")" 10 'H03 ten requests read intent / zero persistence'
+    assert_eq "$(wc -l <"$T/path-authority" | tr -d ' ')" 10 'H03 no other authority'
+    assert_empty_file "$T/path-effects" 'H03 no action, lock, state, log, run, download or operation record'
+    assert_eq "$(ls -A "$T/path-parent")" '' 'H03 parent remains empty'
+    assert_eq "$(find "$T" -maxdepth 1 -name 'omarchy-bootstrap.*')" '' 'H03 scratch cleaned'
+    assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' 'H03 no child identity residue'
+    printf '  S4-H03 real-core snapshot/detail precedence and component control completed\n'
   else
     printf '  S4-H02 native APFS evidence not provided by filesystem %s\n' "$filesystem"
   fi

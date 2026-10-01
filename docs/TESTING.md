@@ -812,8 +812,20 @@ additional counted skip. Native-query execution and unusable-output faults
 also drive real core and must produce the admitted empty-generation I/O result.
 Production uses Darwin's read-only `faccessat(F_OK, AT_SYMLINK_NOFOLLOW)` through
 system JXA for missing Darwin paths, letting the actual filesystem resolve
-each unresolved component at the existing searchable ancestor. It selects no
-Unicode metric and normalizes no pathname. Linux retains its byte-limit guard.
+the original complete Logs pathname and each unresolved component at the
+existing searchable ancestor. Ordinary absence requires full-path ENOENT and
+success/ENOENT for every component; full-path success in the missing branch
+fails closed as inconsistent. It selects no Unicode metric and normalizes no
+pathname. Linux retains its byte-limit guard.
+S4-H03 characterizes a Protocol-representable path with four independently
+legal decomposed components. If full native lookup returns ENAMETOOLONG,
+the real-core failure is labeled NATIVE; a host without that boundary uses
+an explicitly labeled INJECTED CLASSIFIER BOUNDARY. Snapshot and stale,
+legal-absence and large-offset details must return the admitted empty-generation
+I/O result. A separate injected full-lookup success tests the inconsistent
+missing branch; a native early-missing/later-invalid component control proves
+component probes remain necessary. Read-effect taps and scratch cleanup apply
+to all these requests. The macOS job supplies this classification evidence.
 `test-gate2-logs-proof.sh` holds the unchanged text owner to BASE byte for byte,
 journey snapshot/details to accepted CP1 P (only hello commit/source differ),
 and proves one capture, exact original bytes, source/selection mutation
