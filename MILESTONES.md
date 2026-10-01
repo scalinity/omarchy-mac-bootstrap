@@ -466,9 +466,18 @@ of docs/TESTING.md.
   writer are unchanged; no frontend product request/screen/navigation is
   implemented.
 - **S4 Health checkpoint:** the separately authorized ordinary fixture-only
-  Health (Doctor) snapshot/detail producer is **IMPLEMENTED — AWAITING
-  EXACT-HEAD CI, THEN FOCUSED INDEPENDENT REVIEW**; it is not accepted. One
-  `cmd_doctor` invocation per request supplies its counts and rows;
+  Health (Doctor) snapshot/detail producer is **IMPLEMENTED + CI GREEN —
+  AWAITING FOCUSED INDEPENDENT REVIEW**; it is not accepted. Implementation
+  head `34f0c687cad40c82f8cc024b814dd778b9a7da70` passed exact-head CI run
+  **36923581109**, all six jobs successful, logs inspected: 11,139 macOS
+  checks with no failures/skips, among them Health 601 and Health proof
+  1,586 under stock Bash 3.2. Linux Bash 5 passed 7,825 checks under
+  ShellCheck 0.9.0, and pinned target Bash 5.3.15 ran the Gate 2 suites;
+  both ran Health (509) and Health proof (848), with only their `(no plutil)`
+  macOS sections skipped. Candidate and published `0.1.0` native startup
+  checks passed on both arm64 targets. Full local stock-Bash validation
+  also passed 11,139 checks with no failures/skips, plus ShellCheck 0.9.0.
+  One `cmd_doctor` invocation per request supplies its counts and rows;
   `lib/doctor.sh` is unchanged. Validate, benchmarks and O1 signoff, Rust
   Health requests, frontend Health/UI slices, S5+, Gate 3, frontend `0.2.0`
   release, M15, M16 and M17 remain unauthorized.
