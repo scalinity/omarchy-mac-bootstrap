@@ -74,6 +74,8 @@ helper() {
         OMB_STATE_DIR=$T/locked/state
         chmod 000 "$T/locked"
         ;;
+      name-limit-query) OMB_STATE_DIR=$T/missing/state; getconf() { return 1; } ;;
+      name-limit-invalid) OMB_STATE_DIR=$T/missing/state; getconf() { printf 'undefined\n'; } ;;
       sort) sort() { return 1; } ;;
       vanished) basename() { command basename "$@"; rm -f "$file"; } ;;
       selected-read) tail() { case "$1" in -n) [ "$2" != 40 ] || return 1 ;; esac; command tail "$@"; } ;;
@@ -115,7 +117,7 @@ for op in snapshot detail; do
   P_MUTATE=0 P_STAGE=0
   helper "$op" 3
   assert_eq "$(c_result) $C_RC $(c_admits "$op")" 'done ok 0 ok' 'offset total/preflight success'
-  for fault in discovery parent-search ancestor-search sort vanished selected-read scratch-write scratch-read parse-read parse-partial stage-write stage-read retained-copy admit-execute admit-read admit-awk hash publish-prep; do
+  for fault in discovery parent-search ancestor-search name-limit-query name-limit-invalid sort vanished selected-read scratch-write scratch-read parse-read parse-partial stage-write stage-read retained-copy admit-execute admit-read admit-awk hash publish-prep; do
     P_FAULT=$fault helper "$op"
     assert_eq "$(c_result) $C_RC" 'error io 0' "$op/$fault infrastructure is io"
     assert_eq "$(c_admits "$op")" ok "$op/$fault safe response admitted"

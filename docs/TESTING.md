@@ -794,6 +794,12 @@ S4's `test-gate2-logs.sh` covers baseline sorted-path selection despite mtime,
 absence/selected-empty, writer parsing and opaque rows, raw blank/unterminated
 windows, value/byte boundaries, whole-window off-page overflow precedence,
 generation changes and paging, metadata failures and read effects.
+S4-H01 derives `getconf NAME_MAX` from the real test filesystem: a missing
+NAME_MAX-byte component stays ordinary absence, while NAME_MAX+1 returns
+the canonically admitted empty-generation `error io` response for snapshot
+and detail, before stale-generation or empty-page handling. The complete
+ASCII path fits Protocol metadata; actual-core taps prove read intent, zero
+persistence and no action/lock/state/log/run/download/operation effect.
 `test-gate2-logs-proof.sh` holds the unchanged text owner to BASE byte for byte,
 journey snapshot/details to accepted CP1 P (only hello commit/source differ),
 and proves one capture, exact original bytes, source/selection mutation

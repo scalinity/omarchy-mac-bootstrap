@@ -55,6 +55,67 @@ C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$T/missing/parents/state" l_snapsho
 l_good nested-absence snapshot
 assert_contains "$C_OUT" 'message	level=info	text=No%20log%20yet.' 'missing ancestors retain normal absence'
 assert_eq "$(t_snapshot "$T/missing")" '(absent)' 'missing ancestors are not created'
+
+# S4-H01: false -e/-L is not proof of ENOENT. Derive the BYTE component
+# limit on this real filesystem, then drive admitted ordinary core requests.
+mkdir "$T/path-parent" "$T/path-tool"
+name_max=$(getconf NAME_MAX "$T/path-parent") || exit 1
+case "$name_max" in '' | *[!0-9]* | 0*) fail 'NAME_MAX must be a positive decimal limit'; exit 1 ;; esac
+if [ "${#name_max}" -gt 4 ] || [ "$name_max" -gt 2000 ]; then fail 'NAME_MAX control must fit Protocol metadata'; exit 1; fi
+legal_component=$(LC_ALL=C awk -v n="$name_max" 'BEGIN {for(i=0;i<n;i++)printf "a"}')
+legal_path=$T/path-parent/$legal_component
+invalid_path=${legal_path}a
+path_bytes=$(printf '%s' "$invalid_path/logs" | wc -c | tr -d ' ')
+[ "$path_bytes" -lt 4096 ] || { fail 'H01 path must be representable metadata'; exit 1; }
+printf '  S4-H01 NAME_MAX=%s over-limit=%s logs-path-bytes=%s\n' "$name_max" "$((name_max + 1))" "$path_bytes"
+cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$T/path-tool/"
+cat >>"$T/path-tool/lib/core.sh" <<'TAPS'
+core_action_info() { printf 'action\n' >>"$H01_EFFECTS"; return 99; }
+state_lock() { printf 'lock\n' >>"$H01_EFFECTS"; return 99; }
+state_set() { printf 'state\n' >>"$H01_EFFECTS"; return 99; }
+log_event() { printf 'log\n' >>"$H01_EFFECTS"; return 99; }
+run() { printf 'run\n' >>"$H01_EFFECTS"; return 99; }
+fetch_upstream() { printf 'download\n' >>"$H01_EFFECTS"; return 99; }
+core_op_write() { printf 'operation\n' >>"$H01_EFFECTS"; return 99; }
+TAPS
+cat >>"$T/path-tool/lib/logs.sh" <<'TAPS'
+eval "$(declare -f core_logs_capture | sed '1s/core_logs_capture/h01_original_capture/')"
+core_logs_capture() {
+  printf '%s %s\n' "$OMB_INTENT" "$OMB_PERSIST" >>"$H01_AUTHORITY"
+  h01_original_capture "$@"
+}
+TAPS
+C_HOME=$T/path-tool
+C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$legal_path H01_EFFECTS=$T/path-effects H01_AUTHORITY=$T/path-authority"
+: >"$T/path-effects"; : >"$T/path-authority"
+l_snapshot; l_good NAME_MAX-absence snapshot
+legal_absent=$(l_gen)
+assert_not_contains "$legal_absent" "$empty" 'NAME_MAX absence has normal generation'
+assert_contains "$C_OUT" 'key=logs.lines	label=Lines	value=0	state=info' 'NAME_MAX missing lines zero'
+assert_contains "$C_OUT" 'message	level=info	text=No%20log%20yet.' 'NAME_MAX missing absence message'
+assert_not_contains "$C_OUT" 'key=logs.source' 'NAME_MAX missing source omitted'
+l_page "$legal_absent" 0 1; l_good NAME_MAX-empty-page detail
+assert_eq "$(l_rows)" '' 'NAME_MAX offset zero equals empty total'
+C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$invalid_path H01_EFFECTS=$T/path-effects H01_AUTHORITY=$T/path-authority"
+for request in snapshot stale empty-page large-offset; do
+  case "$request" in
+    snapshot) l_snapshot; h01_snapshot_gen=$(l_gen); op=snapshot ;;
+    stale) l_page "$zero" 0 1; op=detail ;;
+    empty-page) l_page "$h01_snapshot_gen" 0 1; op=detail ;;
+    large-offset) l_page "$legal_absent" 999999999999999999 1; op=detail ;;
+  esac
+  l_fail "S4-H01 $request" error io "$op"
+  assert_contains "$C_OUT" "generation	id=$empty	total=0" "S4-H01 $request zero total"
+  assert_contains "$C_OUT" 'result	status=error	code=io	text=The%20logs%20response%20could%20not%20be%20prepared.	next=' "S4-H01 $request exact safe result"
+  assert_not_contains "$C_OUT" "$invalid_path" "S4-H01 $request no path echo"
+  assert_eq "$C_ERR" '' "S4-H01 $request clean stderr"
+done
+assert_eq "$(cat "$T/path-authority")" "$(printf 'read 0\nread 0\nread 0\nread 0\nread 0\nread 0')" 'H01 and legal control only read intent / zero persistence'
+assert_empty_file "$T/path-effects" 'H01 no action, lock, state, log, run, download or operation record'
+assert_eq "$(ls -A "$T/path-parent")" '' 'H01 and NAME_MAX control create no state/log/operation record'
+assert_eq "$(find "$T" -maxdepth 1 -name 'omarchy-bootstrap.*')" '' 'H01 private request scratch cleaned'
+assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' 'H01 no child identity residue'
+C_HOME='' C_ENV=OMB_SESSION_SCOPES=logs
 mkdir -p "$T/state/logs"
 file=$T/state/logs/omarchy-bootstrap-20260902.log
 : >"$file"

@@ -31,6 +31,7 @@ core_logs_window() {
 
 core_logs_capture() {
   local directory latest ancestor st source='' presence=absent line time level phase message expected
+  local unresolved_max=0 component_bytes name_max
   local pattern='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) (\[[^][]+\]) ([a-z]+)( +)(.*)$'
   CORE_LOGS_LINES=0
   omb_tmp_init || return 1
@@ -63,16 +64,34 @@ core_logs_capture() {
     [ "$st" -lt 16385 ] || return 2
     latest=$(cat "$OMB_TMP/logs.selected") || return 1
   else
-    # An existence test also fails when an ancestor cannot be searched. Only
-    # call this ordinary absence after finding a searchable directory above
-    # the missing path; otherwise discovery failed operationally.
+    # False -e/-L can mean resolution failure, not ENOENT. Establish a
+    # searchable ancestor and retain the largest unresolved component's BYTE
+    # count; wc -c is independent of the character-counting shell locale.
     ancestor=$directory
     while [ ! -e "$ancestor" ] && [ ! -L "$ancestor" ]; do
       [ "$ancestor" != / ] || return 1
+      component_bytes=$(printf '%s' "${ancestor##*/}" | wc -c) || return 1
+      if [ "$component_bytes" -gt "$unresolved_max" ]; then unresolved_max=$component_bytes; fi
       ancestor=${ancestor%/*}
       [ -n "$ancestor" ] || ancestor=/
     done
     [ -d "$ancestor" ] && [ -x "$ancestor" ] || return 1
+    name_max=$(getconf NAME_MAX "$ancestor" 2>/dev/null) || return 1
+    if ! _uint "$name_max" || [ "$name_max" = 0 ]; then return 1; fi
+    if [ "$unresolved_max" -gt "$name_max" ]; then
+      # Preserve established metadata invalidity even for a path which also
+      # cannot resolve. Canonical admission owns that distinction; these
+      # private facts are never published as an absence dataset.
+      core_read_prefix || return 1
+      {
+        rec_line fact scope logs key logs.state_dir label State value "$(tildify "$OMB_STATE_DIR")" state info &&
+          rec_line fact scope logs key logs.directory label Logs value "$(tildify "$directory")" state info
+      } >"$OMB_TMP/logs.path-metadata" || return 1
+      core_read_stage snapshot e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 "$OMB_TMP/logs.path-metadata"
+      st=$?
+      [ "$st" != 2 ] || return 2
+      return 1
+    fi
   fi
   : >"$OMB_TMP/logs.raw" || return 1
   if [ -n "$latest" ]; then
