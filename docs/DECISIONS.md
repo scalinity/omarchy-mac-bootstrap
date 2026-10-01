@@ -585,6 +585,13 @@ documents. This is a ruling for these two values, not a rule that arbitrary
 future enum additions are compatible. CP1 adds no producer, UI or action
 authority; Doctor, Logs, Validate, benchmarks and S4+ remain unauthorized.
 
+Current authorization after CP1: S4's ordinary fixture-only Logs producer
+was separately authorized and is accepted at `a0ba61c`; S4's ordinary
+fixture-only Health (Doctor) producer is separately authorized and
+implemented, awaiting review. Validate, benchmarks, frontend Health/Logs
+product slices and S5+ remain unauthorized
+(MILESTONES.md → *Gate 2 — Read-only equivalence*).
+
 ## Where each design question is answered
 
 | # | Question | Answer |

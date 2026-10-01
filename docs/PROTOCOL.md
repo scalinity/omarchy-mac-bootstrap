@@ -633,6 +633,11 @@ The closed startup-check contract remains journey-only and refuses either
 new scope with `refused scope`. No action, record or persistence authority
 comes from the scope addition.
 
+S4 later implements the ordinary fixture-only Logs and Health producers
+(*The Gate 2 read surface*). Outside fixtures their snapshot/detail remain
+`refused unavailable`, without the scope `refused scope`, and the startup
+check is unchanged.
+
 ### Operations
 
 | Operation | Intent | Answers | Results |
@@ -779,13 +784,15 @@ frontend compares two ids for equality and nothing else.
 | Scope | Snapshot data set | `detail` kinds sharing its generation |
 | --- | --- | --- |
 | `journey` | the reads `status` makes | `machine`, `status` |
-| `health` (future producer) | one authoritative `cmd_doctor` invocation | `doctor` |
-| `logs` (S4 ordinary fixture producer; candidate under remediation/re-review, not accepted) | baseline context, selected-file identity and exact last-40-line window | `log` |
+| `health` (S4 ordinary fixture producer; candidate awaiting focused independent review, not accepted) | one authoritative `cmd_doctor` invocation | `doctor` |
+| `logs` (S4 ordinary fixture producer; accepted at `a0ba61c`) | baseline context, selected-file identity and exact last-40-line window | `log` |
 
-Q2 and Q3a are resolved. Journey is implemented and previously accepted;
-S4's ordinary fixture-only Logs producer is implemented in the candidate and
-under remediation/re-review, not yet accepted. Health remains unimplemented.
-CP1 itself implemented only the health/logs admission prerequisite.
+Q2 and Q3a are resolved. Journey is implemented and accepted. S4's ordinary
+fixture-only Logs producer is accepted at
+`a0ba61c5b560bbbffd02dbb92cec7b4fdec34dc9`. S4's ordinary fixture-only Health
+(Doctor) producer is implemented in the candidate and awaits focused
+independent review; it is not accepted. Validate is unimplemented. CP1 itself
+implemented only the health/logs admission prerequisite.
 
 **Required journey representation (Gate2-read-representation-failure).**
 Ordinary journey `snapshot` and `detail kind=machine|status` use one authoritative
@@ -828,7 +835,7 @@ separate deferred log rule `CP0-Q3b-overflow` is unchanged.
 | --- | --- | --- |
 | `machine` | the fact's key | `label value` |
 | `status` | the row's position | `section label value note`: the lines `status` prints, in its order, grouped by the section it prints them under |
-| `doctor` (future) | one-based position | `pass\|warn\|fail\|info`, baseline label, baseline detail |
+| `doctor` | one-based position | `pass\|warn\|fail\|info`, baseline label, baseline detail |
 | `log` | one-based position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
 
 The S4 `log` window is what `cmd_logs` selects: the last 40 lines of the
@@ -872,8 +879,9 @@ at Gate 2 (D52).
 ### Future health and logs producers
 
 This historical CP1 contract heading is retained for existing references.
-Health remains future/unimplemented; S4's ordinary fixture-only Logs producer
-is implemented in the candidate under remediation/re-review, not yet accepted.
+S4 implements both ordinary fixture-only producers: Logs is accepted at
+`a0ba61c`; Health (Doctor) is implemented in the candidate and awaits focused
+independent review, not accepted.
 CP1 itself did not implement either producer. Each follows the same-capture,
 whole-dataset preflight and exact admitted-byte publication requirements of
 journey, under its own scope.
@@ -900,6 +908,26 @@ content returns truthful hello, SHA256(empty bytes) generation with total
 `The required health response cannot be represented in Protocol 1.`, and
 empty next, with no candidate counts/rows. Infrastructure, capture,
 admission or hash failure is `error io`.
+
+The S4 implementation runs `cmd_doctor` once per request, in a subshell
+with ASCII presentation (`OMB_ASCII=1`, no colour) and counters starting at
+zero. Only the presentation sink `ui_tag` is replaced: it receives each
+finding's exact status, label and detail in owner order, while `doc` still
+decides, counts and calls `log_event` (which keeps nothing at zero
+persistence); painted output is discarded, never parsed. A completed owner
+ends with `doc_summary`'s status, 0 exactly when no check failed and 1
+otherwise, and both are a completed report. Any other status, a status
+outside the four, a finding count that disagrees with the rows captured, or
+`pass`/`warn`/`fail` rows that disagree with `DOC_PASS`/`DOC_WARN`/`DOC_FAIL`
+means no dataset was established: `error io`. `info` rows count toward no
+fact. Every row and the three facts are canonically admitted before the
+generation, the SHA-256 of `scope name=health`, the facts and every ordered
+row, is computed. The chosen fixed I/O-error text is
+`The health response could not be prepared.`, with empty next and
+SHA256(empty bytes) generation with total 0. Publication, the safe-response
+preflight and an incomplete transport follow Logs exactly. The Doctor
+owner's own shell diagnostics, if any, stay on the core's diagnostics
+stream; they are never part of a response.
 
 **Logs.** `cmd_logs` selects the last sorted matching path. The authoritative
 dataset includes baseline state/location context, selected-file presence,
@@ -953,8 +981,9 @@ Safe responses are privately admitted when machinery remains available;
 if that machinery itself fails, fixed emergency records use the same safe
 shape without candidate data or a hash-tool dependency. Publication failure
 after an append begins leaves an incomplete transport, without a second result.
-Only ordinary fixture-mode Logs is implemented in S4: health, Validate and
-frontend Logs requests/navigation/screens remain unavailable or unimplemented.
+Only ordinary fixture-mode Logs and Health are implemented in S4: Validate
+and frontend Logs/Health requests/navigation/screens remain unavailable or
+unimplemented.
 
 ### Future plan validation contract
 

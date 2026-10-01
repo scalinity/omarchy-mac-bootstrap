@@ -450,8 +450,11 @@ of docs/TESTING.md.
   basis vs future Gate 3 save basis) are **CLOSED IN CANDIDATE — awaiting
   review confirmation**, in docs commit `ba0ed3b`.
 - **S4 Logs checkpoint:** the separately authorized ordinary fixture-only
-  Logs snapshot/detail producer is **IMPLEMENTED + CI GREEN — AWAITING
-  FOCUSED INDEPENDENT REVIEW**. Implementation head
+  Logs snapshot/detail producer is **ACCEPTED** at
+  `a0ba61c5b560bbbffd02dbb92cec7b4fdec34dc9` (G): **S4 LOGS H03 REMEDIATION
+  ACCEPTED — S4 LOGS ACCEPTED**. S4-H01, S4-L01, S4-H02 and S4-H03 are
+  **CLOSED**. G passed exact-head CI run **36829394506**, all six jobs
+  successful. The first implementation head
   `5643f98daa09f27af3d963a6028397c4450722a7` passed exact-head CI run
   **36687859414**, all six jobs successful, logs inspected: 8,729 macOS
   checks with no failures/test skips; Logs 557 and Logs proof 303 checks
@@ -460,11 +463,15 @@ of docs/TESTING.md.
   Linux. Candidate and published `0.1.0` native startup checks passed on
   both arm64 targets. Full local stock-Bash validation also passed 8,729
   checks with no failures/skips, plus ShellCheck 0.9.0. Text Logs and its
-  writer are unchanged; no
-  frontend product request/screen/navigation, health producer, Validate or
-  benchmark is implemented. Focused independent review follows CI; S4 is
-  not accepted. Doctor, Validate, benchmarks, frontend product/UI slices,
-  S5+, Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized.
+  writer are unchanged; no frontend product request/screen/navigation is
+  implemented.
+- **S4 Health checkpoint:** the separately authorized ordinary fixture-only
+  Health (Doctor) snapshot/detail producer is **IMPLEMENTED — AWAITING
+  EXACT-HEAD CI, THEN FOCUSED INDEPENDENT REVIEW**; it is not accepted. One
+  `cmd_doctor` invocation per request supplies its counts and rows;
+  `lib/doctor.sh` is unchanged. Validate, benchmarks and O1 signoff, Rust
+  Health requests, frontend Health/UI slices, S5+, Gate 3, frontend `0.2.0`
+  release, M15, M16 and M17 remain unauthorized.
 
 ### Gate 3 — The action contract under fixtures
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CP1 compatibility, with S4's authorized fixture-only Logs producer.
+# CP1 compatibility, with S4's authorized fixture-only Logs and Health producers.
 # shellcheck disable=SC2030,SC2031 # intentionally scoped core environments
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -17,7 +17,8 @@ printf '\n. %q\n' "$TESTS_DIR/gate2-probe-taps.sh" >>"$T/tool/lib/common.sh"
 cat >>"$T/tool/lib/core.sh" <<'TAPS'
 eval "$(declare -f core_action_info | sed '1s/core_action_info/cp1_original_action_info/')"
 core_action_info() { printf 'lookup\n' >>"$CP1_LOOKUPS"; cp1_original_action_info "$@"; }
-cmd_doctor() { printf 'doctor\n' >>"$CP1_OWNERS"; return 99; }
+eval "$(declare -f cmd_doctor | sed '1s/cmd_doctor/cp1_original_doctor/')"
+cmd_doctor() { printf 'doctor %s %s\n' "$OMB_INTENT" "$OMB_PERSIST" >>"$CP1_OWNERS"; cp1_original_doctor; }
 cmd_logs() { printf 'logs\n' >>"$CP1_OWNERS"; return 99; }
 TAPS
 cat >>"$T/tool/lib/logs.sh" <<'TAPS'
@@ -34,7 +35,17 @@ before=$(t_snapshot "$T/state")
 
 held() {
   # Match the existing identity/state/boot setup exactly, with no added probe.
-  if cmp -s "$T/probes" "$T/hello.probes"; then ok; else fail "$1: probes differ from existing hello setup"; fi
+  # An authorized Doctor capture adds only its own reads after that setup;
+  # tests/test-gate2-health-proof.sh holds them to one BASE Doctor's sequence.
+  local n
+  n=$(wc -l <"$T/hello.probes" | tr -d ' ')
+  if [ "${2:-}" = 'doctor read 0' ]; then
+    if head -n "$n" "$T/probes" | cmp -s - "$T/hello.probes" && [ "$(wc -l <"$T/probes" | tr -d ' ')" -gt "$n" ]; then
+      ok
+    else
+      fail "$1: probes are not the existing hello setup followed by Doctor's reads"
+    fi
+  elif cmp -s "$T/probes" "$T/hello.probes"; then ok; else fail "$1: probes differ from existing hello setup"; fi
   assert_eq "$(cat "$T/owners")" "${2:-}" "$1: only authorized producer, read intent, zero persistence"
   assert_empty_file "$T/lookups" "$1: no action lookup"
   assert_eq "$(t_snapshot "$T/state")" "$before" "$1: no state/log/lock/operation/effect"
@@ -62,8 +73,9 @@ for scope in health logs; do
       [ "$scopes" = journey ] && expected='refused scope'
       for op in snapshot detail; do
         owner=''
-        if [ "$scope:$fixture" = logs:yes ] && [ "$scopes" != journey ]; then
+        if [ "$fixture" = yes ] && [ "$scopes" != journey ]; then
           owner='logs read 0'
+          [ "$scope" = logs ] || owner='doctor read 0'
           expected='done ok'
           [ "$op" != detail ] || expected='refused changed'
         fi
@@ -92,12 +104,14 @@ for scope in health logs; do
   done
 done
 
-# S4's kind check also precedes capture. Startup-check routing is unchanged.
-request_env="OMB_SESSION_SCOPES=logs G2_PROBES=$T/probes CP1_LOOKUPS=$T/lookups CP1_OWNERS=$T/owners"
-hello_probes "$request_env"
-C_ENV="$request_env" c_run detail "page	scope=logs	kind=future	generation=$zero	offset=0	limit=1"
-assert_eq "$(c_result) $C_RC" 'refused unavailable 0' 'S4 unsupported kind before capture'
-held unsupported-logs-kind
+# S4's kind checks also precede capture. Startup-check routing is unchanged.
+for scope in logs health; do
+  request_env="OMB_SESSION_SCOPES=$scope G2_PROBES=$T/probes CP1_LOOKUPS=$T/lookups CP1_OWNERS=$T/owners"
+  hello_probes "$request_env"
+  C_ENV="$request_env" c_run detail "page	scope=$scope	kind=future	generation=$zero	offset=0	limit=1"
+  assert_eq "$(c_result) $C_RC" 'refused unavailable 0' "S4 unsupported $scope kind before capture"
+  held "unsupported-$scope-kind"
+done
 
 # Even explicitly owned fake actions are journey-scoped, not new-scope actions.
 C_HOME=$REPO

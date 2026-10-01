@@ -1129,6 +1129,12 @@ core_read_op() {
         # shellcheck source=lib/logs.sh
         . "$OMB_HOME/lib/logs.sh" || _omb_unloaded logs
         core_logs_op "$1"
+      elif [ "$CORE_REQ_SCOPE" = health ] && [ -n "${OMB_FIXTURE:-}" ]; then
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        # shellcheck source=lib/health.sh
+        . "$OMB_HOME/lib/health.sh" || _omb_unloaded health
+        core_health_op "$1"
       else
         core_result refused unavailable "This read dataset is not available."
       fi
