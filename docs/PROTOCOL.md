@@ -780,10 +780,12 @@ frontend compares two ids for equality and nothing else.
 | --- | --- | --- |
 | `journey` | the reads `status` makes | `machine`, `status` |
 | `health` (future producer) | one authoritative `cmd_doctor` invocation | `doctor` |
-| `logs` (future producer) | baseline context, selected-file identity and exact last-40-line window | `log` |
+| `logs` (S4 ordinary fixture producer; candidate under remediation/re-review, not accepted) | baseline context, selected-file identity and exact last-40-line window | `log` |
 
-Q2 and Q3a are resolved. Only their CP1 admission prerequisite is authorized;
-the producers described below remain unimplemented.
+Q2 and Q3a are resolved. Journey is implemented and previously accepted;
+S4's ordinary fixture-only Logs producer is implemented in the candidate and
+under remediation/re-review, not yet accepted. Health remains unimplemented.
+CP1 itself implemented only the health/logs admission prerequisite.
 
 **Required journey representation (Gate2-read-representation-failure).**
 Ordinary journey `snapshot` and `detail kind=machine|status` use one authoritative
@@ -829,7 +831,7 @@ separate deferred log rule `CP0-Q3b-overflow` is unchanged.
 | `doctor` (future) | one-based position | `pass\|warn\|fail\|info`, baseline label, baseline detail |
 | `log` | one-based position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
 
-The future `log` window is what `cmd_logs` selects: the last 40 lines of the
+The S4 `log` window is what `cmd_logs` selects: the last 40 lines of the
 last sorted matching `omarchy-bootstrap-*.log` path, in file order, not
 mtime-newest. Its exact capture and `CP0-Q3b-overflow` precedence are defined
 under *Future health and logs producers*. The resume token `status` prints
@@ -869,9 +871,12 @@ at Gate 2 (D52).
 
 ### Future health and logs producers
 
-These are accepted Q2/Q3a contracts for later authorized slices, not CP1
-implementations. Each follows the same-capture, whole-dataset preflight and
-exact admitted-byte publication requirements of journey, under its own scope.
+This historical CP1 contract heading is retained for existing references.
+Health remains future/unimplemented; S4's ordinary fixture-only Logs producer
+is implemented in the candidate under remediation/re-review, not yet accepted.
+CP1 itself did not implement either producer. Each follows the same-capture,
+whole-dataset preflight and exact admitted-byte publication requirements of
+journey, under its own scope.
 
 **Health.** One authoritative invocation of `cmd_doctor`, dispatching to
 `mac_doctor` or `lx_doctor`, supplies counts and ordered rows. Its snapshot
