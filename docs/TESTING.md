@@ -811,7 +811,7 @@ continue the ASCII H01 and generic Logs tests without an APFS emulation or
 additional counted skip. Native-query execution and unusable-output faults
 also drive real core and must produce the admitted empty-generation I/O result.
 Production uses Darwin's read-only `faccessat(F_OK, AT_SYMLINK_NOFOLLOW)` through
-system JXA when raw bytes exceed NAME_MAX, letting the actual filesystem resolve
+system JXA for missing Darwin paths, letting the actual filesystem resolve
 each unresolved component at the existing searchable ancestor. It selects no
 Unicode metric and normalizes no pathname. Linux retains its byte-limit guard.
 `test-gate2-logs-proof.sh` holds the unchanged text owner to BASE byte for byte,

@@ -31,7 +31,7 @@ core_logs_window() {
 
 core_logs_capture() {
   local directory latest ancestor st source='' presence=absent line time level phase message expected
-  local unresolved_max=0 component_bytes name_max
+  local unresolved_max=0 component_bytes name_max path_invalid=0
   local -a unresolved=()
   local pattern='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) (\[[^][]+\]) ([a-z]+)( +)(.*)$'
   CORE_LOGS_LINES=0
@@ -80,8 +80,8 @@ core_logs_capture() {
     [ -d "$ancestor" ] && [ -x "$ancestor" ] || return 1
     name_max=$(getconf NAME_MAX "$ancestor" 2>/dev/null) || return 1
     if ! _uint "$name_max" || [ "$name_max" = 0 ]; then return 1; fi
-    if [ "$unresolved_max" -gt "$name_max" ]; then
-      case "$(uname -s)" in
+    if [ "$unresolved_max" -gt "$name_max" ]; then path_invalid=1; fi
+    case "$(uname -s)" in
         Darwin)
           # Ask the actual mounted filesystem, rather than guessing a Unicode
           # length/normalization rule from NAME_MAX. Read-only F_OK with
@@ -102,11 +102,12 @@ function run(a) {
     }
     return "valid";
 }' "$ancestor" "${unresolved[@]}" 2>/dev/null) || return 1
-          case "$st" in valid) unresolved_max=0 ;; invalid) ;; *) return 1 ;; esac
+          case "$st" in valid) path_invalid=0 ;; invalid) path_invalid=1 ;; *) return 1 ;; esac
           ;;
-      esac
-    fi
-    if [ "$unresolved_max" -gt "$name_max" ]; then
+        Linux) ;;
+        *) return 1 ;;
+    esac
+    if [ "$path_invalid" = 1 ]; then
       # Preserve established metadata invalidity even for a path which also
       # cannot resolve. Canonical admission owns that distinction; these
       # private facts are never published as an absence dataset.
