@@ -115,6 +115,76 @@ assert_empty_file "$T/path-effects" 'H01 no action, lock, state, log, run, downl
 assert_eq "$(ls -A "$T/path-parent")" '' 'H01 and NAME_MAX control create no state/log/operation record'
 assert_eq "$(find "$T" -maxdepth 1 -name 'omarchy-bootstrap.*')" '' 'H01 private request scratch cleaned'
 assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' 'H01 no child identity residue'
+
+# S4-H02: the filesystem, not the production classifier, proves legality.
+# This native block deliberately has no Linux emulation or counted skip.
+if [ "$(uname -s)" = Darwin ]; then
+  device=$(df -P "$T/path-parent" | awk 'NR==2 {print $1}')
+  /usr/sbin/diskutil info -plist "$device" >"$T/path-volume.plist" || exit 1
+  filesystem=$(plutil -extract FilesystemType raw -o - "$T/path-volume.plist") || exit 1
+  if [ "$filesystem" = apfs ]; then
+    decomposed=''; encoded=''; unit=$(printf 'e\314\201'); i=0
+    while [ "$i" -lt 100 ]; do decomposed=$decomposed$unit; encoded=${encoded}e%CC%81; i=$((i + 1)); done
+    decomposed_path=$T/path-parent/$decomposed
+    assert_eq "$(printf '%s' "$decomposed" | wc -c | tr -d ' ')" 300 'H02 exact decomposed UTF-8 bytes'
+    mkdir "$decomposed_path" || exit 1
+    assert_eq "$(test -d "$decomposed_path" && printf observable)" observable 'H02 native APFS positive creation witness'
+    rmdir "$decomposed_path" || exit 1
+    assert_eq "$(t_snapshot "$decomposed_path")" '(absent)' 'H02 exact decomposed spelling removed'
+    # Supplementary-plane boundary: 127 emoji + ASCII = 255 UTF-16 units;
+    # 128 emoji = 256. Raw bytes and scalar count would choose wrong limits.
+    emoji=''; unit=$(printf '\360\237\230\200'); i=0
+    while [ "$i" -lt 127 ]; do emoji=$emoji$unit; i=$((i + 1)); done
+    mkdir "$T/path-parent/${emoji}a" || exit 1
+    assert_eq "$(test -d "$T/path-parent/${emoji}a" && printf observable)" observable 'H02 supplementary-plane legal boundary witness'
+    rmdir "$T/path-parent/${emoji}a" || exit 1
+    if mkdir "$T/path-parent/$emoji$unit" 2>/dev/null; then
+      rmdir "$T/path-parent/$emoji$unit"; fail 'H02 supplementary-plane over-limit unexpectedly created'
+    else ok; fi
+    printf '  S4-H02 native APFS witness: NAME_MAX=%s raw=300; supplementary boundary created/removed\n' "$name_max"
+    : >"$T/path-effects"; : >"$T/path-authority"
+    C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$decomposed_path H01_EFFECTS=$T/path-effects H01_AUTHORITY=$T/path-authority"
+    l_snapshot; l_good APFS-decomposed-absence snapshot
+    decomposed_gen=$(l_gen)
+    assert_not_contains "$decomposed_gen" "$empty" 'H02 absence has usable generation'
+    assert_eq "$(cut -f1 "$C_EV" | tr '\n' ' ')" 'omb-res 1 hello generation fact fact fact message result ' 'H02 snapshot exact record sequence'
+    assert_contains "$C_OUT" "key=logs.state_dir	label=State	value=$T/path-parent/$encoded	state=info" 'H02 State retains exact decomposed bytes'
+    assert_contains "$C_OUT" "key=logs.directory	label=Logs	value=$T/path-parent/$encoded/logs	state=info" 'H02 Logs retains exact decomposed bytes'
+    assert_contains "$C_OUT" 'key=logs.lines	label=Lines	value=0	state=info' 'H02 lines zero'
+    assert_contains "$C_OUT" 'message	level=info	text=No%20log%20yet.' 'H02 absence message'
+    assert_not_contains "$C_OUT" 'key=logs.source' 'H02 no selected source'
+    l_page "$decomposed_gen" 0 1; l_good APFS-decomposed-empty-page detail
+    assert_eq "$(l_gen)" "$decomposed_gen" 'H02 detail same raw-location generation'
+    assert_contains "$C_OUT" "generation	id=$decomposed_gen	total=0" 'H02 detail empty total'
+    assert_eq "$(l_rows)" '' 'H02 detail no rows'
+    l_snapshot; l_good APFS-decomposed-repeat snapshot
+    assert_eq "$(l_gen)" "$decomposed_gen" 'H02 exact raw spelling stable generation'
+    # Actual core must fail closed if the native classifier cannot execute or
+    # emits an unusable answer. The shim changes machinery, never FS semantics.
+    cat >>"$T/path-tool/lib/logs.sh" <<'QUERY'
+osascript() {
+  case "${H02_QUERY:-}" in
+    fail) return 127 ;;
+    unusable) printf 'unexpected\n' ;;
+    *) command osascript "$@" ;;
+  esac
+}
+QUERY
+    for query in fail unusable; do
+      C_ENV="OMB_SESSION_SCOPES=logs OMB_STATE_DIR=$invalid_path H01_EFFECTS=$T/path-effects H01_AUTHORITY=$T/path-authority H02_QUERY=$query"
+      l_snapshot; l_fail "H02 native query $query snapshot" error io snapshot
+      l_page "$legal_absent" 0 1; l_fail "H02 native query $query detail" error io detail
+    done
+    assert_eq "$(cat "$T/path-authority")" "$(printf 'read 0\nread 0\nread 0\nread 0\nread 0\nread 0\nread 0')" 'H02 read intent / zero persistence'
+    assert_empty_file "$T/path-effects" 'H02 no action, lock, state, log, run, download or operation record'
+    assert_eq "$(ls -A "$T/path-parent")" '' 'H02 parent empty after setup and requests'
+    assert_eq "$(find "$T" -maxdepth 1 -name 'omarchy-bootstrap.*')" '' 'H02 private request scratch cleaned'
+    assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' 'H02 no child identity residue'
+    printf '  S4-H02 native APFS real-core snapshot/detail/repeat completed\n'
+  else
+    printf '  S4-H02 native APFS evidence not provided by filesystem %s\n' "$filesystem"
+  fi
+fi
 C_HOME='' C_ENV=OMB_SESSION_SCOPES=logs
 mkdir -p "$T/state/logs"
 file=$T/state/logs/omarchy-bootstrap-20260902.log

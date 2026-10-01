@@ -32,6 +32,7 @@ core_logs_window() {
 core_logs_capture() {
   local directory latest ancestor st source='' presence=absent line time level phase message expected
   local unresolved_max=0 component_bytes name_max
+  local -a unresolved=()
   local pattern='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) (\[[^][]+\]) ([a-z]+)( +)(.*)$'
   CORE_LOGS_LINES=0
   omb_tmp_init || return 1
@@ -65,12 +66,13 @@ core_logs_capture() {
     latest=$(cat "$OMB_TMP/logs.selected") || return 1
   else
     # False -e/-L can mean resolution failure, not ENOENT. Establish a
-    # searchable ancestor and retain the largest unresolved component's BYTE
-    # count; wc -c is independent of the character-counting shell locale.
+    # searchable ancestor and retain unresolved components without rewriting
+    # their bytes. NAME_MAX is a byte limit on Linux, but not on every Mac FS.
     ancestor=$directory
     while [ ! -e "$ancestor" ] && [ ! -L "$ancestor" ]; do
       [ "$ancestor" != / ] || return 1
       component_bytes=$(printf '%s' "${ancestor##*/}" | wc -c) || return 1
+      unresolved+=("${ancestor##*/}")
       if [ "$component_bytes" -gt "$unresolved_max" ]; then unresolved_max=$component_bytes; fi
       ancestor=${ancestor%/*}
       [ -n "$ancestor" ] || ancestor=/
@@ -78,6 +80,32 @@ core_logs_capture() {
     [ -d "$ancestor" ] && [ -x "$ancestor" ] || return 1
     name_max=$(getconf NAME_MAX "$ancestor" 2>/dev/null) || return 1
     if ! _uint "$name_max" || [ "$name_max" = 0 ]; then return 1; fi
+    if [ "$unresolved_max" -gt "$name_max" ]; then
+      case "$(uname -s)" in
+        Darwin)
+          # Ask the actual mounted filesystem, rather than guessing a Unicode
+          # length/normalization rule from NAME_MAX. Read-only F_OK with
+          # AT_SYMLINK_NOFOLLOW tests each component at the searchable ancestor;
+          # a missing intermediate component cannot mask ENAMETOOLONG. Darwin
+          # fcntl.h defines AT_FDCWD=-2 and AT_SYMLINK_NOFOLLOW=0x0020; errno 2
+          # is ENOENT. Existing entries (including symlinks) also prove that the
+          # component resolves. JXA has shipped since OS X 10.10; argv is data.
+          st=$(osascript -l JavaScript -e '
+ObjC.import("stdlib");
+ObjC.bindFunction("faccessat", ["int", ["int", "char *", "int", "int"]]);
+ObjC.bindFunction("__error", ["int *", []]);
+function run(a) {
+    for (var i = 1; i < a.length; i++) {
+        var r = $.faccessat(-2, a[0] + "/" + a[i], 0, 0x0020);
+        var e = r === 0 ? 0 : $.__error()[0];
+        if (e !== 0 && e !== 2) return "invalid";
+    }
+    return "valid";
+}' "$ancestor" "${unresolved[@]}" 2>/dev/null) || return 1
+          case "$st" in valid) unresolved_max=0 ;; invalid) ;; *) return 1 ;; esac
+          ;;
+      esac
+    fi
     if [ "$unresolved_max" -gt "$name_max" ]; then
       # Preserve established metadata invalidity even for a path which also
       # cannot resolve. Canonical admission owns that distinction; these

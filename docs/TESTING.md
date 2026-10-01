@@ -795,11 +795,25 @@ absence/selected-empty, writer parsing and opaque rows, raw blank/unterminated
 windows, value/byte boundaries, whole-window off-page overflow precedence,
 generation changes and paging, metadata failures and read effects.
 S4-H01 derives `getconf NAME_MAX` from the real test filesystem: a missing
-NAME_MAX-byte component stays ordinary absence, while NAME_MAX+1 returns
+NAME_MAX-byte ASCII component stays ordinary absence, while NAME_MAX+1 returns
 the canonically admitted empty-generation `error io` response for snapshot
 and detail, before stale-generation or empty-page handling. The complete
 ASCII path fits Protocol metadata; actual-core taps prove read intent, zero
 persistence and no action/lock/state/log/run/download/operation effect.
+S4-H02's native macOS block independently identifies the scratch volume using
+`df` and `diskutil` and runs only on verified APFS. It creates, observes and
+removes the exact `e` + U+0301 component repeated 100 times (300 UTF-8 bytes),
+then drives ordinary core snapshot, matching empty detail and repeat snapshot
+against that now-missing raw spelling. A supplementary-plane create/remove
+boundary witness distinguishes UTF-16 units from byte/scalar approximations.
+The stock macOS CI job supplies this APFS evidence; Linux and target Bash
+continue the ASCII H01 and generic Logs tests without an APFS emulation or
+additional counted skip. Native-query execution and unusable-output faults
+also drive real core and must produce the admitted empty-generation I/O result.
+Production uses Darwin's read-only `faccessat(F_OK, AT_SYMLINK_NOFOLLOW)` through
+system JXA when raw bytes exceed NAME_MAX, letting the actual filesystem resolve
+each unresolved component at the existing searchable ancestor. It selects no
+Unicode metric and normalizes no pathname. Linux retains its byte-limit guard.
 `test-gate2-logs-proof.sh` holds the unchanged text owner to BASE byte for byte,
 journey snapshot/details to accepted CP1 P (only hello commit/source differ),
 and proves one capture, exact original bytes, source/selection mutation
