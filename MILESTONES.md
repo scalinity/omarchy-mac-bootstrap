@@ -466,16 +466,26 @@ of docs/TESTING.md.
   writer are unchanged; no frontend product request/screen/navigation is
   implemented.
 - **S4 Health checkpoint:** the separately authorized ordinary fixture-only
-  Health (Doctor) snapshot/detail producer is **REMEDIATED IN CANDIDATE —
-  AWAITING EXACT-HEAD CI, THEN FOCUSED HEALTH-H01 RE-REVIEW**; it is not
-  accepted. The focused independent review of
+  Health (Doctor) snapshot/detail producer is **REMEDIATED + CI GREEN —
+  AWAITING FOCUSED HEALTH-H01 RE-REVIEW**; it is not accepted. The focused
+  independent review of
   `71b6c6ea18a51c7f536895ea2fca3e4388b0002b` (D) returned **DOCTOR / HEALTH
   PRODUCER REMEDIATION REQUIRED — DO NOT PROCEED** with one finding,
   **HEALTH-H01** (HIGH): a failed read inside the shared row preflight
   `core_read_rows` could pass for complete consumption of the retained rows.
   Every other reviewed Health area was accepted. The remediation makes the
   helper succeed only when every counted row was read (docs/TESTING.md →
-  *Gate 2 read tests*). The first implementation
+  *Gate 2 read tests*). HEALTH-H01 is **CLOSED IN CANDIDATE — awaiting
+  independent confirmation**. Remediation head
+  `7ef8097aaed315cac7416cc1e26beb8820802878` passed exact-head CI run
+  **36958090215**, all six jobs successful, logs inspected: 11,315 macOS
+  checks with no failures/skips, among them read 55, Health 737 and Health
+  proof 1,604 under stock Bash 3.2; Linux Bash 5 (ShellCheck 0.9.0) and
+  pinned target Bash 5.3.15 each ran read 55, Health 645 and Health proof
+  866, with only their `(no plutil)` macOS sections skipped. Candidate and
+  published `0.1.0` native startup checks passed on both arm64 targets.
+  Full local stock-Bash validation also passed 11,315 checks with no
+  failures/skips, plus ShellCheck 0.9.0. The first implementation
   head `34f0c687cad40c82f8cc024b814dd778b9a7da70` passed exact-head CI run
   **36923581109**, all six jobs successful, logs inspected: 11,139 macOS
   checks with no failures/skips, among them Health 601 and Health proof
