@@ -34,10 +34,29 @@ run() { printf 'run\n' >>"$H_EFFECTS"; return 99; }
 fetch_upstream() { printf 'download\n' >>"$H_EFFECTS"; return 99; }
 core_op_write() { printf 'operation\n' >>"$H_EFFECTS"; return 99; }
 TAPS
+# HEALTH-H01 seam: with H01_FAIL_AT=N, read call N of core_read_rows over
+# health.rows meets a closed stdin (a real builtin read failure). Every other
+# read, before and after it, is the builtin's own.
+cat >>"$T/tool/lib/read.sh" <<'TAPS'
+read() {
+  if [ -n "${H01_FAIL_AT:-}" ] && [ "${FUNCNAME[1]:-}" = core_read_rows ]; then
+    case "$file" in
+      */health.rows)
+        H01_READS=$((${H01_READS:-0} + 1))
+        if [ "$H01_READS" = "$H01_FAIL_AT" ]; then
+          printf 'hit %s\n' "$H01_READS" >>"$H01_HIT"
+          exec 0<&-
+        fi
+        ;;
+    esac
+  fi
+  builtin read "$@"
+}
+TAPS
 shims=$(t_shims "$T")
 C_HOME=$T/tool C_PATH="$shims:/usr/bin:/bin:/usr/sbin:/sbin"
-H_TAPS="H_DOCTOR=$T/doctor H_STATUS=$T/status H_LOG=$T/log H_EFFECTS=$T/effects SHIM_LOG=$T/shims.log"
-h_reset() { : >"$T/doctor"; : >"$T/status"; : >"$T/log"; : >"$T/effects"; : >"$T/shims.log"; }
+H_TAPS="H_DOCTOR=$T/doctor H_STATUS=$T/status H_LOG=$T/log H_EFFECTS=$T/effects H01_HIT=$T/h01 SHIM_LOG=$T/shims.log"
+h_reset() { : >"$T/doctor"; : >"$T/status"; : >"$T/log"; : >"$T/effects"; : >"$T/h01"; : >"$T/shims.log"; }
 h_env() { printf 'OMB_SESSION_SCOPES=%s %s %s' "${H_SCOPES:-health}" "$H_TAPS" "${H_EXTRA:-}"; }
 h_snapshot() { C_ENV=$(h_env) c_run snapshot "scope	name=health"; }
 h_page() { C_ENV=$(h_env) c_run detail "page	scope=health	kind=${4:-doctor}	generation=$1	offset=${2:-0}	limit=${3:-500}"; }
@@ -258,6 +277,52 @@ done
 cp "$FIX/linux-alarm-fresh/root/etc/os-release" "$R/root/etc/os-release"
 h_snapshot
 assert_eq "$(h_gen)" "$rg" 'representable again: its generation'
+
+# HEALTH-H01: a non-EOF read failure inside core_read_rows over health.rows
+# leaves the retained dataset unproven. Through the actual core it is error
+# io, ahead of changed, offset and page selection, with one Doctor capture;
+# before the owner's unrepresentable row is read, it is io, not representation.
+h_h01() {
+  local name=$1 at=$2 request=$3 total=$4 op=detail
+  h_reset
+  H_EXTRA="H01_FAIL_AT=$at"
+  case "$request" in
+    snapshot) h_snapshot; op=snapshot ;;
+    stale) h_page "$zero" 0 1 ;;
+    early-page) h_page "$5" 0 1 ;;
+    offset-total) h_page "$5" "$total" 1 ;;
+    beyond) h_page "$5" $((total + 1)) 1 ;;
+  esac
+  H_EXTRA=''
+  h_fail "$name $request" io "$op"
+  assert_eq "$(sed -n '$p' "$C_EV")" 'result	status=error	code=io	text=The%20health%20response%20could%20not%20be%20prepared.	next=' "$name $request exact response"
+  assert_eq "$(cat "$T/h01")" "hit $at" "$name $request the failing read is core_read_rows over health.rows"
+  assert_contains "$C_ERR" 'Bad file descriptor' "$name $request a real non-EOF read failure"
+  assert_eq "$(cat "$T/doctor")" 'read 0' "$name $request one Doctor capture, none after the failure"
+}
+C_FIX=$FIX/linux-alarm-fresh
+h_snapshot
+h_good 'H01 control' snapshot
+hg=$(h_gen)
+for at in 1 2; do
+  for request in snapshot stale early-page offset-total beyond; do
+    h_h01 "H01 read $at fails" "$at" "$request" 16 "$hg"
+  done
+done
+C_FIX=$R
+h_name "$R" "$long"
+for request in snapshot stale early-page offset-total beyond; do
+  h_h01 'H01 before the invalid row 4' 4 "$request" 16 "$rg"
+  assert_not_contains "$C_OUT" AAAAAAAA "H01 before the invalid row 4 $request echoes nothing"
+done
+h_reset
+h_snapshot
+h_fail 'H01 control: the same owner data read completely' representation snapshot
+cp "$FIX/linux-alarm-fresh/root/etc/os-release" "$R/root/etc/os-release"
+C_FIX=$FIX/linux-alarm-fresh
+h_snapshot
+h_good 'H01 a later request captures again' snapshot
+assert_eq "$(h_gen)" "$hg" 'H01 a later request: the same generation'
 
 # Routing: only an ordinary fixture session holding `health` captures Doctor.
 C_FIX=$FIX/linux-alarm-fresh

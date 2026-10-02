@@ -159,11 +159,12 @@ core_read_stage() {
 # pageable rows to fit one response. Snapshot's complete envelope is admitted
 # separately, including all required non-row records and the conditional code.
 core_read_rows() {
-  local file=$1 line batch='' n=0 st total
+  local file=$1 line batch='' n=0 st total consumed=0
   total=$(wc -l <"$file") || return 1
   _whole "$total" '^ *[0-9]+$' || return 1
   total=$((total + 0))
   while IFS= read -r line; do
+    consumed=$((consumed + 1))
     batch="$batch$line
 "
     n=$((n + 1))
@@ -175,6 +176,11 @@ core_read_rows() {
       batch='' n=0
     fi
   done <"$file" || return 1
+  # `read` ends the loop on EOF and on a read error alike, and the loop's own
+  # status is 0 either way. Every caller's file is whole LF-terminated rows
+  # (rec_line output, or awk records), so preflight is complete only when
+  # every counted row was read and no unterminated bytes remain.
+  if [ "$consumed" != "$total" ] || [ -n "$line" ]; then return 1; fi
   printf '%s' "$batch" >"$OMB_TMP/journey.batch" || return 1
   core_read_stage detail "$2" "$total" "$OMB_TMP/journey.batch"
 }

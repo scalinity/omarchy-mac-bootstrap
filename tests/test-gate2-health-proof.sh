@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # S4 Health evidence: BASE Doctor equivalence (findings, counters, status,
 # probes, rendered text) and one capture with exact admitted-byte publication.
-# shellcheck disable=SC2030,SC2031,SC2317,SC2329 # scoped environments and callbacks
+# shellcheck disable=SC2030,SC2031,SC2162,SC2317,SC2329 # scoped environments and callbacks; read taps forward the caller's own flags
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 # shellcheck source=tests/core-harness.sh
@@ -217,6 +217,8 @@ helper() {
         sha256sum() { case "$*" in */health.identity) return 1 ;; esac; command sha256sum "$@"; }
         ;;
       publish-prep) tail() { case "$1:$2" in -n:+3) return 1 ;; esac; command tail "$@"; } ;;
+      # HEALTH-H01: the row preflight's first read meets a closed stdin.
+      rows-read) read() { if [ "${FUNCNAME[1]:-}" = core_read_rows ]; then exec 0<&-; fi; builtin read "$@"; } ;;
       transport) cat() { case "$1" in */health.suffix) head -n 1 "$1"; return 1 ;; esac; command cat "$@"; } ;;
     esac
     core_health_op "$op"
@@ -250,7 +252,7 @@ for op in snapshot detail; do
   helper "$op" 16
   assert_eq "$(c_result) $C_RC $(c_admits "$op")" 'done ok 0 ok' "$op offset total after preflight"
   for fault in rows-write counts-write fifth-status inner-subshell status-one status-other counter-drift owner-abort platform \
-    tally stage-write stage-read retained-copy admit-execute admit-read admit-awk hash publish-prep; do
+    tally rows-read stage-write stage-read retained-copy admit-execute admit-read admit-awk hash publish-prep; do
     P_FAULT=$fault helper "$op"
     assert_eq "$(c_result) $C_RC" 'error io 0' "$op/$fault is io"
     assert_eq "$(c_admits "$op")" ok "$op/$fault safe response admitted"
@@ -261,7 +263,7 @@ for op in snapshot detail; do
   done
   # Unusable current data is io, never changed or invalid: it precedes a
   # stale generation and an offset beyond the otherwise current total.
-  for fault in rows-write owner-abort hash; do
+  for fault in rows-write rows-read owner-abort hash; do
     P_GEN=$(printf '%064d' 0) P_FAULT=$fault helper "$op" 99
     assert_eq "$(c_result) $C_RC $(c_admits "$op") $(p_gen)" 'error io 0 ok e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' "$op/$fault io before stale generation and offset"
   done

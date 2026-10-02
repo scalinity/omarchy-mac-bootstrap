@@ -883,6 +883,26 @@ neither reach a capture nor are changed by one. Synthetic `doc` sequences
 prove the generation binds finding order and label. Both suites match
 `gate2-*`; macOS fixture sections are the existing `t_plutil` skips on Linux.
 
+HEALTH-H01: `core_read_rows`, which preflights Journey's machine and status
+rows and Health's rows (Logs stages its window directly), succeeds only when
+every retained row was read. A `while read` loop ends on EOF and on a read
+error alike with status 0, so the helper counts the rows it read and
+requires that count to equal the file's `wc -l` count, with no unterminated
+bytes left. Every caller's file is whole LF-terminated canonical rows
+(`rec_line` output or `awk` records), so equal counts prove every byte was
+read. `test-gate2-read.sh` drives the real helper loop into a real builtin
+read failure (stdin closed at read N): 0, 2, 500 and 501 rows succeed with
+every row staged for admission; a failure before row 1, after row 1 or
+after one complete 500-row batch, and an unterminated tail, return 1.
+`test-gate2-health.sh` injects that failure only at `core_read_rows` over
+`health.rows` in the actual core, with a hit witness: before any row, after
+one row, and before the owner's unrepresentable row 4, the snapshot, a
+stale generation, the last valid generation's first page and `offset` at
+and beyond the otherwise current total are each `error io` with one Doctor
+capture; the same owner data read completely remains `error
+representation`. The proof suite adds the failure to its in-process fault
+table and its stale-generation and offset precedence loop.
+
 | Id | Case | Expected |
 | --- | --- | --- |
 | `read-effect-*` | every gate 2 read — `hello`, `snapshot`, each `detail` kind and page, `validate` — over every baseline fixture, under the purity checks of `tests/test-routing.sh` (`expect_pure`, `t_snapshot`) | nothing recorded but read probes; no state, log, plan or record file; nothing outside the session scratch; no `sudo`, installer or forbidden command; nothing left in `TMPDIR` |

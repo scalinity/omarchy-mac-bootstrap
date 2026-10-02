@@ -466,8 +466,16 @@ of docs/TESTING.md.
   writer are unchanged; no frontend product request/screen/navigation is
   implemented.
 - **S4 Health checkpoint:** the separately authorized ordinary fixture-only
-  Health (Doctor) snapshot/detail producer is **IMPLEMENTED + CI GREEN —
-  AWAITING FOCUSED INDEPENDENT REVIEW**; it is not accepted. Implementation
+  Health (Doctor) snapshot/detail producer is **REMEDIATED IN CANDIDATE —
+  AWAITING EXACT-HEAD CI, THEN FOCUSED HEALTH-H01 RE-REVIEW**; it is not
+  accepted. The focused independent review of
+  `71b6c6ea18a51c7f536895ea2fca3e4388b0002b` (D) returned **DOCTOR / HEALTH
+  PRODUCER REMEDIATION REQUIRED — DO NOT PROCEED** with one finding,
+  **HEALTH-H01** (HIGH): a failed read inside the shared row preflight
+  `core_read_rows` could pass for complete consumption of the retained rows.
+  Every other reviewed Health area was accepted. The remediation makes the
+  helper succeed only when every counted row was read (docs/TESTING.md →
+  *Gate 2 read tests*). The first implementation
   head `34f0c687cad40c82f8cc024b814dd778b9a7da70` passed exact-head CI run
   **36923581109**, all six jobs successful, logs inspected: 11,139 macOS
   checks with no failures/skips, among them Health 601 and Health proof
