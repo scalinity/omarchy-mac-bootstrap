@@ -501,8 +501,17 @@ of docs/TESTING.md.
   Validate (plan validation) producer, `validate select action=plan.save`
   with `linux_size` and `shared_size` under the `plan` scope, implements
   *Future plan validation contract* and `Q4-plan-validation-basis-v1` as a
-  delta on R. It is **IMPLEMENTED — AWAITING EXACT-HEAD CI, THEN FOCUSED
-  INDEPENDENT REVIEW**; it is not accepted. `lib/validate.sh` adapts the
+  delta on R. It is **IMPLEMENTED + CI GREEN — AWAITING FOCUSED INDEPENDENT
+  REVIEW**; it is not accepted. Implementation head
+  `69da12b93cc7bcb0801f8e6e5cffedaba1b3722f` passed exact-head CI run
+  **37003457163** (attempt 1), all six jobs successful, logs inspected:
+  13,121 macOS checks with no failures/skips, among them Validate 1,349 and
+  Validate proof 457 under stock Bash 3.2; Linux Bash 5 (ShellCheck 0.9.0)
+  and pinned target Bash 5.3.15 each ran Validate 145 and Validate proof 1,
+  with only their `(no plutil)` macOS sections skipped. Candidate and
+  published `0.1.0` native startup checks passed on both arm64 targets. Full
+  local stock-Bash validation also passed 13,121 checks with no
+  failures/skips, plus ShellCheck 0.9.0 and 0.11.0. `lib/validate.sh` adapts the
   baseline's planning owners; `lib/storage.sh` and `lib/macos.sh` stay
   byte-identical to the accepted baseline, and only `lib/core.sh` routes it
   (docs/PROTOCOL.md → *Future plan validation contract*, its implementation
