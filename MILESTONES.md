@@ -466,17 +466,17 @@ of docs/TESTING.md.
   writer are unchanged; no frontend product request/screen/navigation is
   implemented.
 - **S4 Health checkpoint:** the separately authorized ordinary fixture-only
-  Health (Doctor) snapshot/detail producer is **REMEDIATED + CI GREEN —
-  AWAITING FOCUSED HEALTH-H01 RE-REVIEW**; it is not accepted. The focused
-  independent review of
-  `71b6c6ea18a51c7f536895ea2fca3e4388b0002b` (D) returned **DOCTOR / HEALTH
-  PRODUCER REMEDIATION REQUIRED — DO NOT PROCEED** with one finding,
+  Health (Doctor) snapshot/detail producer is **ACCEPTED** at
+  `27f79d6b03a6639eab9205723e9fe5c43377c8bf` (R): **HEALTH-H01 REMEDIATION
+  ACCEPTED — DOCTOR / HEALTH PRODUCER ACCEPTED**, with no new material
+  findings. Acceptance attaches to R, not to the first reviewed head
+  `71b6c6ea18a51c7f536895ea2fca3e4388b0002b` (D), whose focused review found
   **HEALTH-H01** (HIGH): a failed read inside the shared row preflight
   `core_read_rows` could pass for complete consumption of the retained rows.
-  Every other reviewed Health area was accepted. The remediation makes the
-  helper succeed only when every counted row was read (docs/TESTING.md →
-  *Gate 2 read tests*). HEALTH-H01 is **CLOSED IN CANDIDATE — awaiting
-  independent confirmation**. Remediation head
+  The remediation makes the helper succeed only when every counted row was
+  read (docs/TESTING.md → *Gate 2 read tests*); HEALTH-H01 is **CLOSED**. R
+  passed exact-head CI run **36963798514** (attempt 1), all six jobs
+  successful, their logs inspected by the reviewer. Remediation head
   `7ef8097aaed315cac7416cc1e26beb8820802878` passed exact-head CI run
   **36958090215**, all six jobs successful, logs inspected: 11,315 macOS
   checks with no failures/skips, among them read 55, Health 737 and Health
@@ -496,9 +496,29 @@ of docs/TESTING.md.
   checks passed on both arm64 targets. Full local stock-Bash validation
   also passed 11,139 checks with no failures/skips, plus ShellCheck 0.9.0.
   One `cmd_doctor` invocation per request supplies its counts and rows;
-  `lib/doctor.sh` is unchanged. Validate, benchmarks and O1 signoff, Rust
-  Health requests, frontend Health/UI slices, S5+, Gate 3, frontend `0.2.0`
-  release, M15, M16 and M17 remain unauthorized.
+  `lib/doctor.sh` is unchanged.
+- **Validate checkpoint:** the separately authorized ordinary fixture-only
+  Validate (plan validation) producer, `validate select action=plan.save`
+  with `linux_size` and `shared_size` under the `plan` scope, implements
+  *Future plan validation contract* and `Q4-plan-validation-basis-v1` as a
+  delta on R. It is **IMPLEMENTED — AWAITING EXACT-HEAD CI, THEN FOCUSED
+  INDEPENDENT REVIEW**; it is not accepted. `lib/validate.sh` adapts the
+  baseline's planning owners; `lib/storage.sh` and `lib/macos.sh` stay
+  byte-identical to the accepted baseline, and only `lib/core.sh` routes it
+  (docs/PROTOCOL.md → *Future plan validation contract*, its implementation
+  paragraphs). Two points are named
+  for the review there: `parse_size` runs in the C locale, so a non-ASCII
+  byte is `syntax` rather than cut off by a multibyte `tr`; and requests
+  inside the baseline `plan_verify` band on `mac-m1-free-space` are `error
+  invariant`. Permanent evidence: `tests/test-gate2-validate.sh` and
+  `tests/test-gate2-validate-proof.sh` (docs/TESTING.md → *Gate 2 read
+  tests*). No action is advertised, `execute plan.save` stays unavailable,
+  and nothing is persisted.
+- **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
+  measurement; benchmarks and O1 signoff are not implemented or authorized.
+  Rust Health/Logs/Validate requests, frontend Health/Logs/Validate screens
+  and navigation, S5+, Gate 3, frontend `0.2.0` release, M15, M16 and M17
+  remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
 
 ### Gate 3 — The action contract under fixtures
 

@@ -1048,9 +1048,12 @@ core_main() {
   # Every value the request carries, taken now: reading any other document
   # (the lock, the registry, an operation record) admits it into the same
   # REC_* arrays.
-  local i=0
-  CORE_REQ_SCOPE="" CORE_REQ_ACTION="" CORE_REQ_BASIS="" CORE_REQ_CONFIRM="" CORE_REQ_ARGS=0
+  local i=0 __arg
+  CORE_REQ_SCOPE="" CORE_REQ_ACTION="" CORE_REQ_BASIS="" CORE_REQ_CONFIRM="" CORE_REQ_ARGS=0 CORE_REQ_SELECT=""
+  CORE_REQ_ARG_NAME=() CORE_REQ_ARG_VALUE=()
   if rec_find scope; then rec_get_into CORE_REQ_SCOPE "$REC_AT_I" name; fi
+  # The family a validate request names; never the execute request's action.
+  if rec_find select; then rec_get_into CORE_REQ_SELECT "$REC_AT_I" action; fi
   CORE_REQ_KIND="" CORE_REQ_GENERATION="" CORE_REQ_OFFSET="" CORE_REQ_LIMIT=""
   if rec_find page; then
     rec_get_into CORE_REQ_SCOPE "$REC_AT_I" scope
@@ -1065,7 +1068,13 @@ core_main() {
     rec_get_into CORE_REQ_CONFIRM "$REC_AT_I" confirm
   fi
   while [ "$i" -lt "$REC_N" ]; do
-    [ "${REC_T[i]}" = arg ] && CORE_REQ_ARGS=$((CORE_REQ_ARGS + 1))
+    if [ "${REC_T[i]}" = arg ]; then
+      rec_get_into __arg "$i" name
+      CORE_REQ_ARG_NAME[CORE_REQ_ARGS]=$__arg
+      rec_get_into __arg "$i" value
+      CORE_REQ_ARG_VALUE[CORE_REQ_ARGS]=$__arg
+      CORE_REQ_ARGS=$((CORE_REQ_ARGS + 1))
+    fi
     i=$((i + 1))
   done
   rec_get_into rop 0 op
@@ -1137,6 +1146,22 @@ core_read_op() {
         core_health_op "$1"
       else
         core_result refused unavailable "This read dataset is not available."
+      fi
+      ;;
+    validate)
+      # Family, platform, fixture, then scope (docs/PROTOCOL.md → *Future plan
+      # validation contract*). Naming plan.save confers no action authority:
+      # no action lookup, lock or operation record is reached from here.
+      if [ "$CORE_REQ_SELECT" != plan.save ] || [ "$OMB_PLATFORM" != macos ] || [ -z "${OMB_FIXTURE:-}" ]; then
+        core_result refused unavailable "Plan validation answers only plan.save, in macOS fixtures."
+      elif ! core_in_scopes plan; then
+        core_result refused scope "This session does not include the plan scope."
+      else
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        # shellcheck source=lib/validate.sh
+        . "$OMB_HOME/lib/validate.sh" || _omb_unloaded validate
+        core_validate_op
       fi
       ;;
     *) core_result refused unavailable "This operation is not available on the read surface." ;;

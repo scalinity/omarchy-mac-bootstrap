@@ -903,6 +903,53 @@ capture; the same owner data read completely remains `error
 representation`. The proof suite adds the failure to its in-process fault
 table and its stale-generation and offset precedence loop.
 
+Validate's `test-gate2-validate.sh` drives the actual core through a copied
+tool whose taps count `mac_detect` captures with their intent and refuse
+every effect a read must not reach. Routing: another `select` family, a
+Linux fixture and a non-fixture macOS session are `refused unavailable`
+before the scope, a session without `plan` is `refused scope`, all with no
+capture; malformed requests stay admission failures; `execute plan.save`
+stays unavailable; no journey or logs snapshot lists an action, and the
+foundation harness and the startup check keep their own refusals. Unknown
+names are reported first in byte order (`a-c` before `a_c` and `ab`) with no
+capture, even on a machine nothing can be planned on. Every finite code is
+driven with its fixed text, Shared first (Linux never evaluated after a
+Shared refusal, Shared's normal kept when Linux fails), including the bare-0
+sentinel under every surrounding blank, `0GB`/`0%`/`00`, invalid bytes and
+whitespace-only values. Spellings that floor to one whole-GB size bind one
+basis, with the baseline's notices; `max` is the Shared-adjusted maximum.
+Answers, warnings and blocker/install/`PLAN_ERR` explanations are compared
+with the planner's own output over the same fixture: free space, resizes,
+Shared lowering Linux's maximum, minimum and maximum boundaries, the
+below-recommendation warning, two separate gaps, 512-byte sectors, every
+blocker fixture, every install fixture, and the unknown resize limit split
+(a copied `mac-m1-free-space` without its limits answer). The owner's
+`plan_verify` band on `mac-m1-free-space` is `error invariant`. Geometry,
+input and answer changes change the basis; restoring a fixture restores it.
+At every ceiling, with saved choices present (which never reach a
+validation), nothing is written and no generation appears.
+`test-gate2-validate-proof.sh` holds the planning owners to BASE byte for
+byte, the probes to hello's then BASE's planning entry's (the Asahi state
+only where an install is on the disk; none for an unknown name), and the
+answers to BASE's planner over a request matrix. It rebuilds the
+`omb-validate-geometry 1`, `omb-validate-plan 1` and `omb-basis 1` preimages
+independently and holds the core's to them byte for byte and the review
+basis to their SHA-256. A machine changing right after the capture changes
+neither response nor basis while a later request sees it; a capture that
+went wrong is not re-read. The spool is the admitted document byte for byte,
+also when the staging file changes after admission, with only header and
+hello live meanwhile. Answer and extent seams change the basis alone. Hash,
+scratch, staging, prefix, admission, retained-copy and publication faults
+are `error io`; a `plan_verify` violation, an unknown `parse_size` refusal
+and a contradictory `plan_validate` verdict are `error invariant`; an
+over-long or control-byte explanation is `error representation`, and `error
+io` when admission itself fails first. Each has its hit witness, one
+capture, the fixed result after hello alone and no effect; a failed append
+leaves an incomplete transport. Success, invalid, unplannable, io,
+invariant and representation each leave state, fixture, home and scratch
+untouched at every ceiling. Both suites match `gate2-*`; their macOS
+planning sections are `t_plutil` skips on Linux.
+
 | Id | Case | Expected |
 | --- | --- | --- |
 | `read-effect-*` | every gate 2 read — `hello`, `snapshot`, each `detail` kind and page, `validate` — over every baseline fixture, under the purity checks of `tests/test-routing.sh` (`expect_pure`, `t_snapshot`) | nothing recorded but read probes; no state, log, plan or record file; nothing outside the session scratch; no `sudo`, installer or forbidden command; nothing left in `TMPDIR` |

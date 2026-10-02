@@ -784,15 +784,17 @@ frontend compares two ids for equality and nothing else.
 | Scope | Snapshot data set | `detail` kinds sharing its generation |
 | --- | --- | --- |
 | `journey` | the reads `status` makes | `machine`, `status` |
-| `health` (S4 ordinary fixture producer; candidate awaiting focused independent review, not accepted) | one authoritative `cmd_doctor` invocation | `doctor` |
+| `health` (S4 ordinary fixture producer; accepted at `27f79d6`) | one authoritative `cmd_doctor` invocation | `doctor` |
 | `logs` (S4 ordinary fixture producer; accepted at `a0ba61c`) | baseline context, selected-file identity and exact last-40-line window | `log` |
 
 Q2 and Q3a are resolved. Journey is implemented and accepted. S4's ordinary
 fixture-only Logs producer is accepted at
-`a0ba61c5b560bbbffd02dbb92cec7b4fdec34dc9`. S4's ordinary fixture-only Health
-(Doctor) producer is implemented in the candidate and awaits focused
-independent review; it is not accepted. Validate is unimplemented. CP1 itself
-implemented only the health/logs admission prerequisite.
+`a0ba61c5b560bbbffd02dbb92cec7b4fdec34dc9`, and its ordinary fixture-only
+Health (Doctor) producer at `27f79d6b03a6639eab9205723e9fe5c43377c8bf`. The
+ordinary fixture-only Validate producer (*Future plan validation contract*)
+is implemented in the candidate and awaits focused independent review; it
+is not accepted. CP1 itself implemented only the health/logs admission
+prerequisite.
 
 **Required journey representation (Gate2-read-representation-failure).**
 Ordinary journey `snapshot` and `detail kind=machine|status` use one authoritative
@@ -872,16 +874,16 @@ Gate 2 emits no `stage` record, by the review's ruling (docs/DECISIONS.md →
 *later* (docs/UX.md → *The rail*), and no stage completion, progress or
 provenance is inferred before the milestone that owns its derivation.
 
-**Plan validation.** Q4 is resolved by *Future plan validation contract*.
-Validate remains unimplemented in CP1. The frontend presents no validation
+**Plan validation.** Q4 is resolved by *Future plan validation contract*,
+which the ordinary fixture-only Validate producer implements (candidate,
+awaiting focused independent review). The frontend presents no validation
 at Gate 2 (D52).
 
 ### Future health and logs producers
 
 This historical CP1 contract heading is retained for existing references.
 S4 implements both ordinary fixture-only producers: Logs is accepted at
-`a0ba61c`; Health (Doctor) is implemented in the candidate and awaits focused
-independent review, not accepted.
+`a0ba61c`; Health (Doctor) is accepted at `27f79d6`.
 CP1 itself did not implement either producer. Each follows the same-capture,
 whole-dataset preflight and exact admitted-byte publication requirements of
 journey, under its own scope.
@@ -981,14 +983,17 @@ Safe responses are privately admitted when machinery remains available;
 if that machinery itself fails, fixed emergency records use the same safe
 shape without candidate data or a hash-tool dependency. Publication failure
 after an append begins leaves an incomplete transport, without a second result.
-Only ordinary fixture-mode Logs and Health are implemented in S4: Validate
-and frontend Logs/Health requests/navigation/screens remain unavailable or
-unimplemented.
+S4 implemented only ordinary fixture-mode Logs and Health. Validate is
+implemented separately (*Future plan validation contract*); frontend
+Logs/Health/Validate requests, navigation and screens remain unimplemented.
 
 ### Future plan validation contract
 
-Q4 is resolved; this contract and `Q4-plan-validation-basis-v1` are
-documentation only in CP1. `validate select action=plan.save` belongs to
+Q4 is resolved. CP1 recorded this contract and
+`Q4-plan-validation-basis-v1` as documentation only; the ordinary
+fixture-only Validate producer (`lib/validate.sh`) implements them
+(candidate, awaiting focused independent review; its implementation is
+described below). `validate select action=plan.save` belongs to
 scope `plan`, with arguments `linux_size` and `shared_size`. It answers only
 in ordinary macOS fixtures. Wrong platform/family/non-fixture is
 `refused unavailable`; a session without plan scope is `refused scope`.
@@ -1073,6 +1078,77 @@ effective input and answer changes invalidate it; spellings normalizing to
 identical effective sizes do not. Bind no future undeclared choices,
 fabricate no plan_record and grant no execute authority. Gate 3 separately
 reviews any expanded save basis.
+
+**The Validate implementation.** `core_read_op` answers `validate` in this
+order: a `select` naming anything but `plan.save`, a platform other than
+macOS, or a session outside fixture mode is `refused unavailable` (`Plan
+validation answers only plan.save, in macOS fixtures.`); then a session
+without `plan` is `refused scope` (`This session does not include the plan
+scope.`). The `select` value is kept apart from `execute`'s action. No action
+lookup, run lock, operation record or execute path is reached, and no
+snapshot lists `plan.save`. The startup-check session and the foundation
+harness keep their own refusals.
+
+`lib/validate.sh` adapts the planning owners and changes none:
+`lib/storage.sh` and `lib/macos.sh`, which the Shared creation calls, stay
+byte-identical to the accepted baseline. One `mac_detect` capture is the
+fresh planning context, under `OMB_INTENT=read` and `OMB_PERSIST=0`, with no
+reachability probe, saved choice, state or log. The machine is plannable
+exactly where the baseline asks its storage questions (`mac_main`):
+`mac_blockers` prints nothing, and no Asahi stub, EFI or Linux partition is
+on the disk. Otherwise the answer is `refused unplannable` with one
+`message level=warn` per blocker line, or with `asahi_classify`'s reason for
+the install already there (the baseline starts no second one), and no
+parameter is judged. Past that gate, an allocation beyond the established
+maximum while diskutil did not report the resize limits is the machine's:
+`refused unplannable` with `plan_layout`'s own `PLAN_ERR` (for Shared, laid
+out beside the least Linux), never `above-maximum`. With the limits known,
+the maximum is trustworthy, also when macOS has nothing to give up.
+
+`parse_size` runs in the C locale. For every ASCII value that is the
+baseline's reading. A non-ASCII byte is `syntax`, where the multibyte
+locale's `tr` cuts the value at an invalid byte (`25<FF>0GB` read as 25 GB)
+and the trim takes non-ASCII blanks; this is a named delta from the text
+flow, bound to this review. The code comes from `parse_size`'s own fixed
+refusals, matched once exactly the echoed value is removed, so the value's
+bytes never select a code; any other refusal is `error invariant`. Shared's
+notice (`Shared sizes are whole GB: using N GB.`) follows its range checks
+and Linux's (`Linux sizes are whole GB: using N GB.`) precedes
+`plan_validate`, as in the baseline; both are `message level=info`. A
+`plan_layout` that fails after every refusal was settled is `error
+invariant`: on `mac-m1-free-space`, Linux 250 to 259 GB beside 50 GB of
+Shared, and 300 to 309 GB without Shared, lie within `plan_validate`'s range,
+but the baseline's own `plan_verify` refuses the resize just past the gap
+(`the resize would free too little for the installer to accept`).
+
+The answers are `New size for macOS` with `PLAN_ANSWER_RESIZE` for a resize,
+then `New OS size` with `PLAN_ANSWER_OS`; `bytes` is a MiB answer's exact
+value and empty for `max`. The review basis is the SHA-256 of these unsealed
+records, built with `rec_line` and never sent (fields separated by one TAB):
+
+```text
+omb-basis 1
+basis	action=plan.save	proto=<proto>	actor_uid=<uid>	home=<OMB_HOME>	source=<executed source>
+input	name=shared_size	value=<effective bytes>
+input	name=linux_size	value=<effective bytes>
+seen	key=geometry	state=value	value=	sha256=<geometry digest>	mode=	link=
+seen	key=plan	state=value	value=	sha256=<plan digest>	mode=	link=
+version	key=storage_contract	value=<STORAGE_CONTRACT>
+version	key=template	value=<ASAHI_ALARM_OS_CHOICE>
+version	key=rule	value=Q4-plan-validation-basis-v1
+```
+
+The geometry digest is the SHA-256 of `omb-validate-geometry 1`, then `disk
+size block start end` (the usable bounds), one `part guid offset size content
+role` per partition in offset order, `store guid`, `container size free
+floor`, `limits known value`, `resize available end`, and one `gap start
+size` per free region the installer lists. The plan digest is the SHA-256 of
+`omb-validate-plan 1`, then `mode value`, `region start end pred succ`,
+`macos size`, `linux start end root`, `shared start end` and the exact
+`answer` records. Device identifiers are not bound: macOS may renumber them.
+An error response is the truthful hello and the fixed result alone. Staging,
+canonical admission of the whole response, retained-copy publication and an
+incomplete transport follow Health.
 
 ### Request schemas
 
