@@ -425,3 +425,7 @@ fn the_rust_client_against_the_real_core() {
 
     let _ = std::fs::remove_dir_all(&t);
 }
+
+// Benchmark correctness only; measurement is ignored and explicitly gated.
+#[path = "benchmark/mod.rs"]
+mod benchmark;

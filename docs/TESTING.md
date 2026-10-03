@@ -706,14 +706,24 @@ death left.
 
 ### `bench-*`: the O1 benchmark (M14 gate 2)
 
+The benchmark-only candidate is documented in `bench/README.md`. Its explicit
+runner separates list mode, three-repetition NON-AUTHORITATIVE smoke and future
+200-repetition capability. Ordinary Bash tests and the existing frontend
+`contract` integration target discover deterministic methodology/work tests;
+the timing entry is ignored and never runs beside those suites. Harness tests
+and smoke do not establish budget satisfaction or O1 signoff.
+
 Run on macOS arm64 and Linux aarch64, cold (first request after start) and
 warm, with a small inventory (50 items) and a representative one (2 000
 items, 400 profile entries), 200 repetitions each; the time is split into
 core start-up, admission, and probes.
 
-Two families are reported apart. The core's are measured over the read
-operations gate 2 implements (`snapshot`, `detail` and its paging,
-`validate`). The frontend's — navigation, search, and render — run over
+Two families are reported apart. The core's are measured over the ordinary
+fixture-backed read operations gate 2 implements (`snapshot`, `detail` and its
+paging, `validate`), with one review-resolved exception at accepted V
+`b01610e69a2eef6e5a52f5ede18236210699704e`: `bench-snapshot` measures the
+already accepted fixture-free `frontend-check` startup-check snapshot.
+The frontend's — navigation, search, and render — run over
 fixed synthetic loaded data of both sizes wherever the real dataset does
 not exist yet; neither family is measured over a smaller workload for want
 of a later feature. A workload proves its work before it is timed (the rows
@@ -734,6 +744,44 @@ timeouts.
 | `bench-journey-linux` | Linux journey snapshot and machine/status detail | p95 < 500 ms |
 | `bench-health` | future health snapshot/detail, full Doctor owner including fixture-backed network checks | investigate p95 > 2 s |
 | `bench-logs` | future logs snapshot/detail, real source selection plus bounded 40-line window | p95 < 500 ms |
+
+**Review-resolved `bench-snapshot` target at V.** This is the core-only complete
+`omarchy-bootstrap core snapshot` request, dispatched through `core_main` →
+`core_check_op` → `core_check_snapshot` / `_core_check_body`. The session has
+purpose `frontend-check`, intent `read`, scopes `journey`, and dry-run `0`.
+`OMB_FIXTURE` and `OMB_FRONTEND_DEV` are unset or empty, and no nonempty exported
+`OMB_TEST_*` variable is present. Protocol is 1; the request frontend version
+is the unchanged production lock's `0.1.0`. No frontend executable runs.
+
+The monotonic interval starts immediately before launching the fresh Bash core
+process and ends immediately after observing and reaping its exit. It includes
+startup, library loading, request copying/admission, session/identity/source
+and lock checks, hello, snapshot/generation construction, spool publication,
+result, and request-private cleanup before exit. Controller session/request/
+header-spool preparation and finished-response verification are outside it;
+so are statistics, frontend cache/acquisition/startup, terminal setup and render.
+The existing p95 < 500 ms budget applies to this whole interval. "No disk"
+means no storage/disk survey, not zero filesystem I/O.
+
+Each cold repetition starts a fresh controller/session whose first core
+request is this snapshot; no standalone hello precedes it. A warm group starts
+a fresh controller/session, verifies one untimed snapshot, then measures later
+snapshots in that same session, each in a fresh Bash process. No OS caches are
+flushed and no response/admission is bypassed. Future full mode uses 200 cold
+repetitions in fresh sessions and 200 warm repetitions after that one warm-up
+on each required arm64 platform.
+
+After reaping, canonical admission and an exact semantic witness are required:
+truthful hello (source/commit, native platform/architecture, protocol 1,
+read ceiling, dry-run 0, fixture 0); one generation with total 0 and the SHA-256
+of the four canonical fact lines joined by LF without a trailing LF; exactly
+the accepted `check`, `interface`, `session`, `actions` facts in that order;
+and one final `done ok` result with empty text/next. No other records qualify.
+The four facts prove work even though total is 0; refusals do not. This one
+exception changes neither ordinary producer fixture rules nor D53's separate
+50/2,000-item and 400-profile-entry frontend obligations. The foundation's
+`core_op_snapshot` is not this target. The mapping was clarified by independent
+review after the pre-implementation semantic STOP; it was not previously explicit.
 
 Q5 is **RESOLVED FOR MEASUREMENT**; actual O1 signoff is pending. These are
 normative future measurement contracts only: CP1 implements no benchmark

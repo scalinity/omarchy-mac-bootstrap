@@ -341,6 +341,18 @@ and each one proves its work before it is timed. Timing is never taken
 beside the test suite. *Set aside:* deferring the 400-entry workload until
 profiles exist; a 2 000-line production log to reach 2 000 items.
 
+**Review-resolved benchmark-target clarification at accepted V
+`b01610e69a2eef6e5a52f5ede18236210699704e`:** `bench-snapshot` measures the
+already accepted fixture-free `frontend-check` journey snapshot, as a core-only
+complete request. This narrow exception to ordinary fixture-backed core
+benchmark workloads resolves the pre-implementation semantic STOP; the mapping
+was not previously explicit. It changes no production session or Protocol
+semantics, and runs no frontend executable. The startup-check's four facts are
+not padded or substituted for D53's separate loaded-model obligations. Every
+other workload, platform, repetition, meaningful-work and timing obligation
+above remains binding. Exact timing and work-witness rules are in
+docs/TESTING.md → *`bench-*`: the O1 benchmark*.
+
 ## Migration
 
 **D19. The scanner runs no inventoried tool.** It reads the package

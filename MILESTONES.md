@@ -501,8 +501,11 @@ of docs/TESTING.md.
   Validate (plan validation) producer, `validate select action=plan.save`
   with `linux_size` and `shared_size` under the `plan` scope, implements
   *Future plan validation contract* and `Q4-plan-validation-basis-v1` as a
-  delta on R. It is **IMPLEMENTED + CI GREEN — AWAITING FOCUSED INDEPENDENT
-  REVIEW**; it is not accepted. Implementation head
+  delta on R. Independent verdict: **VALIDATE / PLAN-VALIDATION PRODUCER
+  ACCEPTED** at `b01610e69a2eef6e5a52f5ede18236210699704e`, with no new
+  findings. Its exact-head CI run **37011572618** (attempt 1) had all six
+  jobs successful; the independent review inspected the logs. Historical
+  implementation head
   `69da12b93cc7bcb0801f8e6e5cffedaba1b3722f` passed exact-head CI run
   **37003457163** (attempt 1), all six jobs successful, logs inspected:
   13,121 macOS checks with no failures/skips, among them Validate 1,349 and
@@ -515,16 +518,23 @@ of docs/TESTING.md.
   baseline's planning owners; `lib/storage.sh` and `lib/macos.sh` stay
   byte-identical to the accepted baseline, and only `lib/core.sh` routes it
   (docs/PROTOCOL.md → *Future plan validation contract*, its implementation
-  paragraphs). Two points are named
-  for the review there: `parse_size` runs in the C locale, so a non-ASCII
-  byte is `syntax` rather than cut off by a multibyte `tr`; and requests
+  paragraphs). The review accepted the C-locale adapter delta and the
+  machine-context gate: `parse_size` runs in the C locale, so a non-ASCII
+  byte is `syntax` rather than cut off by a multibyte `tr`; requests
   inside the baseline `plan_verify` band on `mac-m1-free-space` are `error
-  invariant`. Permanent evidence: `tests/test-gate2-validate.sh` and
+  invariant`, the accepted `plan_validate` -> `plan_verify` invariant band.
+  Successful basis/response construction uses one `mac_detect` capture;
+  the existing-install unplannable path may make additional read-only
+  `asahi_classify` observations. Permanent evidence: `tests/test-gate2-validate.sh` and
   `tests/test-gate2-validate-proof.sh` (docs/TESTING.md → *Gate 2 read
   tests*). No action is advertised, `execute plan.save` stays unavailable,
   and nothing is persisted.
 - **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
-  measurement; benchmarks and O1 signoff are not implemented or authorized.
+  measurement. Only benchmark harness / measurement preparation is newly
+  authorized. The harness candidate and its non-authoritative smoke await
+  focused independent review; **O1 SIGNOFF = PENDING**. No authoritative
+  O1 run was accepted or claimed. The exact future matrix can be listed;
+  no budget satisfaction or Gate 2 completion follows from harness tests.
   Rust Health/Logs/Validate requests, frontend Health/Logs/Validate screens
   and navigation, S5+, Gate 3, frontend `0.2.0` release, M15, M16 and M17
   remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
