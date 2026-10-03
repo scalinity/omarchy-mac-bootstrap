@@ -350,8 +350,8 @@ was not previously explicit. It changes no production session or Protocol
 semantics, and runs no frontend executable. The startup-check's four facts are
 not padded or substituted for D53's separate loaded-model obligations. Every
 other workload, platform, repetition, meaningful-work and timing obligation
-above remains binding. Exact timing and work-witness rules are in
-docs/TESTING.md → *`bench-*`: the O1 benchmark*.
+above remains binding. Exact timing and work-witness rules are in the
+benchmark section of docs/TESTING.md.
 
 ## Migration
 
