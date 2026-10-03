@@ -313,6 +313,7 @@ struct Samples {
     component_launches: usize,
     setup_requests: usize,
     warm_up_outcome: String,
+    profile: Option<Box<PhaseProfile>>,
 }
 impl Samples {
     fn record(&mut self, outcome: Fallible<u64>) {
@@ -364,6 +365,332 @@ impl Samples {
     }
 }
 
+// BENCH-M01: supplementary companion observations, never total arithmetic.
+const PHASE_NAMES: [&str; 4] = ["startup", "admission", "probes", "validation_computation"];
+const PHASE_METHOD: &str = "exact-anchor-copy / acknowledged-boundary-receipt / Rust-Instant";
+fn phase_applicable(c: &Case) -> [bool; 4] {
+    let complete = c.items == 0 && c.id != "bench-validate";
+    [
+        complete,
+        complete,
+        complete && c.id != "bench-snapshot",
+        complete && c.op() == Op::Validate,
+    ]
+}
+fn phase_markers(c: &Case) -> Vec<&'static str> {
+    let mut markers = vec!["launch", "admission_start", "admission_end"];
+    if phase_applicable(c)[2] {
+        markers.extend(["probes_start", "probes_end"]);
+    }
+    if phase_applicable(c)[3] {
+        markers.extend(["computation_start", "computation_end"]);
+    }
+    markers.push("complete");
+    markers
+}
+#[derive(Clone, Debug)]
+struct Boundary {
+    name: String,
+    ns: Option<u64>,
+}
+fn phase_durations(c: &Case, boundaries: &[Boundary]) -> Fallible<Option<[u64; 4]>> {
+    let expected = phase_markers(c);
+    if boundaries.len() != expected.len()
+        || boundaries
+            .iter()
+            .zip(&expected)
+            .any(|(b, name)| b.name != *name)
+    {
+        return Err("missing/duplicate/out-of-order phase boundary".into());
+    }
+    if boundaries.iter().any(|b| b.ns.is_some()) && boundaries.iter().any(|b| b.ns.is_none()) {
+        return Err("mixed phase clocks".into());
+    }
+    if boundaries.iter().all(|b| b.ns.is_none()) {
+        return Ok(None);
+    }
+    let ns = boundaries.iter().map(|b| b.ns.unwrap()).collect::<Vec<_>>();
+    if ns.windows(2).any(|pair| pair[1] < pair[0]) {
+        return Err("phase end before start / nonmonotonic observations".into());
+    }
+    let mut durations = [ns[1] - ns[0], ns[2] - ns[1], 0, 0];
+    if phase_applicable(c)[2] {
+        durations[2] = ns[4] - ns[3];
+    }
+    if phase_applicable(c)[3] {
+        durations[3] = ns[6] - ns[5];
+    }
+    Ok(Some(durations))
+}
+fn replace_anchor(
+    source: &mut String,
+    anchor: &str,
+    replacement: &str,
+    count: usize,
+) -> Fallible<()> {
+    if source.matches(anchor).count() != count {
+        return Err(format!(
+            "instrumentation anchor absent/duplicated: {anchor:?}"
+        ));
+    }
+    *source = source.replace(anchor, replacement);
+    Ok(())
+}
+// Exact base bytes; only observations and source-path shims change. OMB_HOME
+// remains the real checkout so identity, lock, fixtures and basis stay real.
+fn phase_sources() -> Fallible<Vec<(String, String)>> {
+    let mut sources = Vec::new();
+    for (path, name) in [
+        ("omarchy-bootstrap", "entry"),
+        ("lib/core.sh", "core.sh"),
+        ("lib/read.sh", "read.sh"),
+        ("lib/health.sh", "health.sh"),
+        ("lib/logs.sh", "logs.sh"),
+        ("lib/validate.sh", "validate.sh"),
+    ] {
+        let mut source = fs::read_to_string(root().join(path)).map_err(|e| e.to_string())?;
+        let changes: Vec<(&str, &str, usize)> = match name {
+            "entry" => vec![
+                ("set -u\n", "set -u\n. \"$OMB_BENCH_DRIVER\"\n", 1),
+                (
+                    "_self=${BASH_SOURCE[0]}\n",
+                    "_self=${BASH_SOURCE[0]}\n_self=$OMB_BENCH_BASE/omarchy-bootstrap\n",
+                    1,
+                ),
+                (
+                    ". \"$OMB_HOME/lib/core.sh\"",
+                    ". \"$OMB_BENCH_COPY/core.sh\"",
+                    3,
+                ),
+                (
+                    "\nmain \"$@\"\n",
+                    "\nmain \"$@\"\nBENCH_PHASE_EXIT=$?\nbench_phase_mark complete\nexit \"$BENCH_PHASE_EXIT\"\n",
+                    1,
+                ),
+            ],
+            "core.sh" => vec![
+                (
+                    "  # 1. Admission, byte by byte, before anything splits the request.\n",
+                    "  # 1. Admission, byte by byte, before anything splits the request.\n  bench_phase_mark admission_start\n",
+                    1,
+                ),
+                (
+                    ". \"$OMB_HOME/lib/read.sh\"",
+                    ". \"$OMB_BENCH_COPY/read.sh\"",
+                    4,
+                ),
+                (
+                    ". \"$OMB_HOME/lib/health.sh\"",
+                    ". \"$OMB_BENCH_COPY/health.sh\"",
+                    1,
+                ),
+                (
+                    ". \"$OMB_HOME/lib/logs.sh\"",
+                    ". \"$OMB_BENCH_COPY/logs.sh\"",
+                    1,
+                ),
+                (
+                    ". \"$OMB_HOME/lib/validate.sh\"",
+                    ". \"$OMB_BENCH_COPY/validate.sh\"",
+                    1,
+                ),
+                (
+                    "        case \"$1\" in\n          snapshot) core_journey_snapshot",
+                    "        bench_phase_mark admission_end\n        case \"$1\" in\n          snapshot) core_journey_snapshot",
+                    1,
+                ),
+                (
+                    "        core_logs_op \"$1\"\n",
+                    "        bench_phase_mark admission_end\n        core_logs_op \"$1\"\n",
+                    1,
+                ),
+                (
+                    "        core_health_op \"$1\"\n",
+                    "        bench_phase_mark admission_end\n        core_health_op \"$1\"\n",
+                    1,
+                ),
+                (
+                    "        core_validate_op\n",
+                    "        bench_phase_mark admission_end\n        core_validate_op\n        BENCH_PHASE_STATUS=$?\n        bench_phase_mark computation_end\n        (exit \"$BENCH_PHASE_STATUS\")\n",
+                    1,
+                ),
+                (
+                    "        core_check_snapshot \"$2\" \"$3\"\n",
+                    "        bench_phase_mark admission_end\n        core_check_snapshot \"$2\" \"$3\"\n",
+                    1,
+                ),
+            ],
+            "read.sh" => vec![(
+                "  cmd_status >/dev/null || return 1\n",
+                "  bench_phase_mark probes_start\n  cmd_status >/dev/null || return 1\n  bench_phase_mark probes_end\n",
+                1,
+            )],
+            "health.sh" => vec![(
+                "  cmd_doctor >/dev/null\n  __st=$?\n",
+                "  bench_phase_mark probes_start\n  cmd_doctor >/dev/null\n  __st=$?\n  bench_phase_mark probes_end\n",
+                1,
+            )],
+            "logs.sh" => vec![
+                (
+                    "  directory=$(log_dir) || return 1\n",
+                    "  bench_phase_mark probes_start\n  directory=$(log_dir) || return 1\n",
+                    1,
+                ),
+                (
+                    "  : >\"$OMB_TMP/logs.rows\" || return 1\n",
+                    "  bench_phase_mark probes_end\n  : >\"$OMB_TMP/logs.rows\" || return 1\n",
+                    1,
+                ),
+            ],
+            "validate.sh" => vec![(
+                "  mac_detect\n  mac_plan_compute 0\n",
+                "  bench_phase_mark probes_start\n  mac_detect\n  bench_phase_mark probes_end\n  bench_phase_mark computation_start\n  mac_plan_compute 0\n",
+                1,
+            )],
+            _ => unreachable!(),
+        };
+        for (anchor, replacement, count) in &changes {
+            replace_anchor(&mut source, anchor, replacement, *count)?;
+        }
+        // Permanent transformation invariant: reverse ONLY the declared edits.
+        let mut reversed = source.clone();
+        for (anchor, replacement, count) in changes.iter().rev() {
+            replace_anchor(&mut reversed, replacement, anchor, *count)?;
+        }
+        if reversed != fs::read_to_string(root().join(path)).map_err(|e| e.to_string())? {
+            return Err("instrumentation changed production semantics".into());
+        }
+        sources.push((name.into(), source));
+    }
+    Ok(sources)
+}
+fn phase_copy_digest(sources: &[(String, String)]) -> String {
+    let mut manifest = String::from("omb-phase-copy 1\n");
+    for (name, source) in sources {
+        manifest.push_str(&format!(
+            "{name}\t{}\n",
+            record::sha256_hex(source.as_bytes())
+        ));
+    }
+    record::sha256_hex(manifest.as_bytes())
+}
+fn same_response(ordinary: &Document, observed: &Document) -> Fallible<()> {
+    if ordinary.records != observed.records {
+        return Err("companion semantic equivalence failed".into());
+    }
+    Ok(())
+}
+#[derive(Debug)]
+struct PhaseObservation {
+    boundaries: Vec<Boundary>,
+    binding: String,
+    response_digest: String,
+    copy_digest: String,
+    driver_digest: String,
+    request_identity: String,
+    request_digest: String,
+}
+#[derive(Default, Debug)]
+struct PhaseProfile {
+    phases: [Samples; 4],
+    observations: Vec<String>,
+    core_requests: usize,
+    warm_up_requests: usize,
+    copy_digest: String,
+    driver_digest: String,
+}
+impl PhaseProfile {
+    fn record(&mut self, c: &Case, observation: Fallible<PhaseObservation>) {
+        match observation {
+            Ok(o) => match phase_durations(c, &o.boundaries) {
+                Ok(Some(ns)) => {
+                    for (i, applicable) in phase_applicable(c).iter().enumerate() {
+                        if *applicable {
+                            self.phases[i].record(Ok(ns[i]));
+                        }
+                    }
+                    self.copy_digest = o.copy_digest;
+                    self.driver_digest = o.driver_digest;
+                    self.observations.push(format!(
+                        "{{\"binding\":{},\"request_identity\":{},\"request_sha256\":{},\"response_sha256\":{},\"boundaries\":[{}]}}",
+                        json(&o.binding),
+                        json(&o.request_identity),
+                        json(&o.request_digest),
+                        json(&o.response_digest),
+                        o.boundaries
+                            .iter()
+                            .map(|b| format!(
+                                "{{\"name\":{},\"observed_ns_from_launch\":{}}}",
+                                json(&b.name),
+                                b.ns.unwrap()
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ));
+                }
+                Ok(None) => self.failure(c, "no latency clock in deterministic proof".into()),
+                Err(e) => self.failure(c, e),
+            },
+            Err(e) => self.failure(c, e),
+        }
+    }
+    fn failure(&mut self, c: &Case, error: String) {
+        for (i, applicable) in phase_applicable(c).iter().enumerate() {
+            if *applicable {
+                self.phases[i].record(Err(error.clone()));
+            }
+        }
+    }
+    fn fields(&self, c: &Case, requested: usize) -> String {
+        let applicable = phase_applicable(c);
+        let complete = (0..4).all(|i| {
+            !applicable[i]
+                || (self.phases[i].raw.len() == requested
+                    && self.phases[i].failed == 0
+                    && self.phases[i].timeouts == 0)
+        });
+        let phases = (0..4)
+            .map(|i| {
+                let state = if !applicable[i] {
+                    "not_applicable"
+                } else if self.phases[i].raw.is_empty() {
+                    if self.phases[i].failed + self.phases[i].timeouts > 0 {
+                        "failed"
+                    } else {
+                        "unavailable"
+                    }
+                } else {
+                    "measured"
+                };
+                format!(
+                    "{}:{{\"applicability\":{},\"state\":{},\"budget_verdict\":\"not_graded\",{}}}",
+                    json(PHASE_NAMES[i]),
+                    json(if applicable[i] {
+                        "required"
+                    } else {
+                        "not_applicable"
+                    }),
+                    json(state),
+                    self.phases[i].fields()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "\"diagnostic_phase_profile\":{{\"record_class\":\"companion-instrumentation\",\"observation_mode\":\"separate-companion\",\"instrumentation_method\":{},\"correlation\":\"same-case-and-exact-response; independent executions; no additive or sample-index decomposition\",\"overhead\":\"raw controller receipt times include hook/pipe/ack/scheduling overhead; no correction or subtraction; gaps and cleanup excluded\",\"required_evidence_complete\":{},\"requested_observations\":{},\"instrumented_copy_digest\":{},\"phase_driver_digest\":{},\"companion_core_request_count\":{},\"companion_warm_up_request_count\":{},\"observations\":[{}],\"phases\":{{{}}}}}",
+            json(PHASE_METHOD),
+            complete,
+            if applicable[0] { requested } else { 0 },
+            json(&self.copy_digest),
+            json(&self.driver_digest),
+            self.core_requests,
+            self.warm_up_requests,
+            self.observations.join(","),
+            phases
+        )
+    }
+}
+
 // Temporary controller storage is owned by this process and removed on Drop.
 // No user/home contents are read. Every session and file is private.
 struct Context {
@@ -377,6 +704,9 @@ struct Context {
     setup_requests: usize,
     core_requests: usize,
     component_launches: usize,
+    proof_trace: bool,
+    phase_launches: usize,
+    phase_timeout: Duration,
 }
 fn tree_digest(path: &Path) -> String {
     fn walk(p: &Path, base: &Path, buf: &mut Vec<u8>) {
@@ -447,6 +777,9 @@ impl Context {
             setup_requests: 0,
             core_requests: 0,
             component_launches: 0,
+            proof_trace: false,
+            phase_launches: 0,
+            phase_timeout: TIMEOUT,
         };
         if !case.kind.is_empty() {
             let snapshot_case = Case {
@@ -537,6 +870,9 @@ impl Context {
                 root().join("tests/fixtures").join(c.fixture()),
             )
             .env("OMB_FRONTEND_DEV", "1");
+        }
+        if self.proof_trace {
+            cmd.arg("-x");
         }
         if component {
             cmd.arg(root().join("bench/component.sh"))
@@ -663,7 +999,7 @@ impl Context {
                 return Err("core process failed".into());
             }
         }
-        if !fs::read(self.dir.join("stderr")).unwrap().is_empty() {
+        if !self.proof_trace && !fs::read(self.dir.join("stderr")).unwrap().is_empty() {
             return Err("nonempty core stderr".into());
         }
         if tree_digest(&self.dir.join("state")) != self.before {
@@ -711,6 +1047,218 @@ impl Context {
         }
         Ok((elapsed, doc))
     }
+    fn phase_request(
+        &mut self,
+        c: &Case,
+        ordinary: &Document,
+        timed: bool,
+    ) -> Fallible<PhaseObservation> {
+        self.phase_request_using(c, ordinary, timed, phase_sources()?)
+    }
+    fn phase_request_using(
+        &mut self,
+        c: &Case,
+        ordinary: &Document,
+        timed: bool,
+        sources: Vec<(String, String)>,
+    ) -> Fallible<PhaseObservation> {
+        let copy_digest = phase_copy_digest(&sources);
+        let copy = self.dir.join("phase-copy");
+        fs::create_dir_all(&copy).map_err(|e| e.to_string())?;
+        for (name, source) in &sources {
+            private(&copy.join(name), source.as_bytes());
+        }
+        let driver_digest = digest_file(&root().join("bench/phases.sh"));
+        let (req, spool) = self.prepare(c, c.kind, c.offset, c.limit);
+        if !c.kind.is_empty() {
+            private(
+                &req,
+                fs::read_to_string(&req)
+                    .unwrap()
+                    .replace(&"0".repeat(64), &self.generation)
+                    .as_bytes(),
+            );
+        }
+        let base_sha = git(&["rev-parse", "HEAD"]);
+        let base_source = executed_source_digest();
+        let fixture_digest = tree_digest(&root().join("tests/fixtures").join(c.fixture()));
+        let request_digest = digest_file(&req);
+        let binding = record::sha256_hex(
+            format!(
+                "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+                base_sha,
+                base_source,
+                c.plan(),
+                fixture_digest,
+                copy_digest,
+                driver_digest,
+                req.display(),
+                request_digest
+            )
+            .as_bytes(),
+        );
+        let cmd = self.command(c, &req, &spool, false);
+        // Preserve the ordinary environment/fd-3 setup, changing only script
+        // path and benchmark-private observation transport/identity.
+        let args = cmd.get_args().map(|a| a.to_os_string()).collect::<Vec<_>>();
+        let env = cmd
+            .get_envs()
+            .map(|(k, v)| (k.to_os_string(), v.map(|v| v.to_os_string())))
+            .collect::<Vec<_>>();
+        let mut observed = Command::new(bash());
+        observed.env_clear().process_group(0);
+        for (k, v) in env {
+            if let Some(v) = v {
+                observed.env(k, v);
+            }
+        }
+        if self.proof_trace {
+            observed.arg("-x");
+        }
+        observed
+            .arg(copy.join("entry"))
+            .args(&args[if self.proof_trace { 2 } else { 1 }..]);
+        observed
+            .env("OMB_BENCH_BASE", root())
+            .env("OMB_BENCH_COPY", &copy)
+            .env("OMB_BENCH_DRIVER", root().join("bench/phases.sh"))
+            .env("OMB_BENCH_BINDING", &binding)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(
+                File::create(self.dir.join("phase-stderr")).unwrap(),
+            ));
+        let f = File::open(&req).map_err(|e| e.to_string())?;
+        unsafe {
+            observed.pre_exec(move || {
+                let status = if f.as_raw_fd() == 3 {
+                    super::fcntl(3, 2, 0)
+                } else {
+                    super::dup2(f.as_raw_fd(), 3)
+                };
+                if status == -1 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
+        }
+        // This clock is disabled for ordinary deterministic tests. The other
+        // Instant below enforces liveness only and supplies no phase samples.
+        let launch = timed.then(Instant::now);
+        let mut child = observed.spawn().map_err(|e| e.to_string())?;
+        self.phase_launches += 1;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let stdout = child.stdout.take().unwrap();
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let deadline = Instant::now() + self.phase_timeout;
+        let mut boundaries = vec![Boundary {
+            name: "launch".into(),
+            ns: timed.then_some(0),
+        }];
+        let collect = (|| {
+            for expected in phase_markers(c).iter().skip(1) {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let line = rx
+                    .recv_timeout(remaining)
+                    .map_err(|e| match e {
+                        std::sync::mpsc::RecvTimeoutError::Timeout => String::from("timeout"),
+                        _ => String::from("companion exited before complete boundary evidence"),
+                    })?
+                    .map_err(|e| e.to_string())?;
+                let ns = launch.map(|t| t.elapsed().as_nanos() as u64);
+                if line != format!("{binding}\t{expected}") {
+                    return Err(
+                        "wrong binding / malformed / duplicate / out-of-order marker".into(),
+                    );
+                }
+                boundaries.push(Boundary {
+                    name: (*expected).into(),
+                    ns,
+                });
+                child
+                    .stdin
+                    .as_mut()
+                    .unwrap()
+                    .write_all(b"observed\n")
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        })();
+        child.stdin.take();
+        let completed = collect.and_then(|()| {
+            wait_phase(&mut child, deadline).and_then(|ok| {
+                if ok {
+                    Ok(())
+                } else {
+                    Err("companion process failed".into())
+                }
+            })
+        });
+        if completed.is_err() {
+            terminate(&mut child);
+        }
+        reader.join().map_err(|_| "phase reader failed")?;
+        completed?;
+        if rx.try_recv().is_ok() {
+            return Err("extra phase boundary".into());
+        }
+        phase_durations(c, &boundaries)?;
+        if !self.proof_trace && !fs::read(self.dir.join("phase-stderr")).unwrap().is_empty() {
+            return Err("nonempty companion stderr".into());
+        }
+        if tree_digest(&self.dir.join("state")) != self.before
+            || fs::read_dir(self.dir.join("home"))
+                .unwrap()
+                .next()
+                .is_some()
+            || fs::read_dir(self.dir.join("tmp")).unwrap().next().is_some()
+        {
+            return Err("companion persistent effect or scratch leak".into());
+        }
+        let bytes = fs::read(&spool).map_err(|e| e.to_string())?;
+        let doc = record::admit(Family::Res, Some(c.op()), &bytes)
+            .map_err(|e| format!("companion admission {e:?}"))?;
+        witness(c, &doc, &bytes)?;
+        if !c.kind.is_empty() {
+            page_witness(
+                c,
+                &doc,
+                &self.generation,
+                self.projection.as_ref().ok_or("missing page projection")?,
+            )?;
+        }
+        same_response(ordinary, &doc)?;
+        // The retained copy, driver, fixture and ordinary source must still be
+        // the ones bound before launch; tampering is not valid phase evidence.
+        if git(&["rev-parse", "HEAD"]) != base_sha
+            || executed_source_digest() != base_source
+            || tree_digest(&root().join("tests/fixtures").join(c.fixture())) != fixture_digest
+            || digest_file(&req) != request_digest
+            || phase_sources()? != sources
+            || digest_file(&root().join("bench/phases.sh")) != driver_digest
+            || sources
+                .iter()
+                .any(|(n, s)| fs::read(copy.join(n)).unwrap() != s.as_bytes())
+        {
+            return Err("phase instrumentation identity changed".into());
+        }
+        Ok(PhaseObservation {
+            boundaries,
+            binding,
+            response_digest: record::sha256_hex(&bytes),
+            copy_digest,
+            driver_digest,
+            request_identity: req.display().to_string(),
+            request_digest,
+        })
+    }
 }
 impl Drop for Context {
     fn drop(&mut self) {
@@ -743,6 +1291,15 @@ fn wait(child: &mut Child) -> Fallible<bool> {
         std::thread::sleep(Duration::from_millis(1));
     }
     terminate(child);
+    Err("timeout".into())
+}
+fn wait_phase(child: &mut Child, deadline: Instant) -> Fallible<bool> {
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            return Ok(status.success());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
     Err("timeout".into())
 }
 fn txt<'a>(r: &'a Record, k: &str) -> &'a str {
@@ -1398,6 +1955,7 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
         }
         return (samples, loaded.digest());
     }
+    let mut ordinary = Vec::new();
     let mut context = Context::new(c);
     samples.setup_requests += context.setup_requests;
     samples.core_requests += context.setup_requests;
@@ -1452,10 +2010,49 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
                     d.records.len(),
                     source
                 ));
+                ordinary.push(Some(d));
                 samples.record(Ok(n));
             }
-            Err(e) => samples.record(Err(e)),
+            Err(e) => {
+                ordinary.push(None);
+                samples.record(Err(e));
+            }
         }
+    }
+    if timed && phase_applicable(c)[0] {
+        let mut profile = PhaseProfile {
+            copy_digest: phase_sources()
+                .map(|s| phase_copy_digest(&s))
+                .unwrap_or_default(),
+            driver_digest: digest_file(&root().join("bench/phases.sh")),
+            ..PhaseProfile::default()
+        };
+        let create_session = |ctx: &mut Context, index| {
+            ctx.session = ctx.dir.join(format!("omb-session.phase-{index}"));
+            fs::create_dir(&ctx.session).unwrap();
+            fs::set_permissions(&ctx.session, fs::Permissions::from_mode(0o700)).unwrap();
+            ctx.n = 0;
+        };
+        create_session(&mut context, 0);
+        let warm = if !c.cold {
+            profile.warm_up_requests = 1;
+            context.request(c, false).map(|_| ())
+        } else {
+            Ok(())
+        };
+        for (index, reference) in ordinary.iter().enumerate() {
+            if c.cold && index > 0 {
+                create_session(&mut context, index);
+            }
+            let observation = match (&warm, reference) {
+                (Ok(()), Some(doc)) => context.phase_request(c, doc, true),
+                (Err(e), _) => Err(format!("companion warm-up failed: {e}")),
+                _ => Err("ordinary semantic witness unavailable".into()),
+            };
+            profile.record(c, observation);
+        }
+        profile.core_requests = context.phase_launches;
+        samples.profile = Some(Box::new(profile));
     }
     (samples, source)
 }
@@ -1479,8 +2076,12 @@ fn result(
         tree_digest(&root().join("tests/fixtures").join(c.fixture()))
     };
     let native_probe = false;
+    let profile = samples.profile.as_deref().map_or_else(
+        || PhaseProfile::default().fields(c, repetitions),
+        |profile| profile.fields(c, repetitions),
+    );
     format!(
-        "{{\"schema\":{},\"benchmark_id\":{},\"operation_label\":{},\"mode\":{},\"smoke\":{},\"o1_signoff\":false,\"classification\":\"NON-AUTHORITATIVE\",{},\"executed_source_identity\":{},\"fixture\":{},\"fixture_digest\":{},\"workload_digest\":{},\"input_class\":{},\"native_probe\":{},\"frontend_request_version\":{},\"frontend_executable_run\":false,\"core_request_count\":{},\"items\":{},\"profile_entries\":{},\"phase\":{},\"lifecycle_definition\":{},\"warm_up_count\":{},\"requested_repetitions\":{}, {},\"work_witness\":{},\"budget_ms\":{},\"budget_type\":{},\"budget_verdict\":\"not_graded\",\"initiation_feedback\":\"not_applicable\",\"timeout_ms\":30000,\"notes\":{}}}",
+        "{{\"schema\":{},\"benchmark_id\":{},\"operation_label\":{},\"mode\":{},\"smoke\":{},\"o1_signoff\":false,\"classification\":\"NON-AUTHORITATIVE\",{},\"executed_source_identity\":{},\"fixture\":{},\"fixture_digest\":{},\"workload_digest\":{},\"input_class\":{},\"native_probe\":{},\"frontend_request_version\":{},\"frontend_executable_run\":false,\"core_request_count\":{},\"items\":{},\"profile_entries\":{},\"phase\":{},\"lifecycle_definition\":{},\"warm_up_count\":{},\"requested_repetitions\":{}, {},\"work_witness\":{},\"budget_ms\":{},\"budget_type\":{},\"budget_verdict\":\"not_graded\",\"initiation_feedback\":\"not_applicable\",\"timeout_ms\":30000,{},\"notes\":{}}}",
         json(SCHEMA),
         json(c.id),
         json(&c.label),
@@ -1530,6 +2131,7 @@ fn result(
         json(c.witness_name()),
         c.budget_ms,
         json(c.budget_type),
+        profile,
         json(
             "Fixtures describe machines; only startup-check hello is native. Frontend render uses a fixed 120x40 TestBackend, including draw/diff/flush, not a physical terminal. Controller poll/IPC overhead is retained. No budgets graded; no physical qualification."
         )
@@ -2292,4 +2894,278 @@ fn changed_source_commit_refused() {
     assert!(!p.matches_sources(&current, false));
     p.sha = "0".repeat(40);
     assert!(!p.matches_sources(&current, true));
+}
+
+// Fixed synthetic clock values below are not product latency.
+fn synthetic_boundaries(c: &Case) -> Vec<Boundary> {
+    phase_markers(c)
+        .iter()
+        .enumerate()
+        .map(|(n, name)| Boundary {
+            name: (*name).into(),
+            ns: Some((n * 10) as u64),
+        })
+        .collect()
+}
+#[test]
+fn phase_family_applicability() {
+    let all = cases();
+    for c in &all {
+        let a = phase_applicable(c);
+        assert_eq!(a[0], c.items == 0 && c.id != "bench-validate");
+        assert_eq!(a[1], a[0]);
+        assert_eq!(a[2], a[0] && c.id != "bench-snapshot");
+        assert_eq!(a[3], c.id == "bench-disk" && c.label == "validate");
+    }
+    assert_eq!(all.len(), 102);
+    assert_eq!(all.iter().filter(|c| c.platform == "macos").count(), 52);
+    assert_eq!(all.iter().filter(|c| c.platform == "linux").count(), 50);
+    assert_eq!(all.iter().filter(|c| c.cold).count(), 51);
+}
+#[test]
+fn phase_boundaries_reject_missing_duplicate_reordered_and_backward() {
+    for c in cases().into_iter().filter(|c| phase_applicable(c)[0]) {
+        let good = synthetic_boundaries(&c);
+        assert!(phase_durations(&c, &good).is_ok());
+        for index in 0..good.len() {
+            let mut bad = good.clone();
+            bad.remove(index);
+            assert!(phase_durations(&c, &bad).is_err());
+            let mut bad = good.clone();
+            bad.insert(index, good[index].clone());
+            assert!(phase_durations(&c, &bad).is_err());
+        }
+        let mut bad = good.clone();
+        bad.swap(1, 2);
+        assert!(phase_durations(&c, &bad).is_err());
+        let mut bad = good.clone();
+        bad[2].ns = Some(1);
+        assert!(phase_durations(&c, &bad).is_err());
+        let mut bad = good.clone();
+        bad[2].ns = None;
+        assert!(phase_durations(&c, &bad).is_err());
+    }
+}
+#[test]
+fn phase_zero_na_empty_failure_timeout_and_statistics() {
+    let c = cases()
+        .into_iter()
+        .find(|c| c.id == "bench-snapshot")
+        .unwrap();
+    let mut p = PhaseProfile::default();
+    let empty = p.fields(&c, 3);
+    assert!(empty.contains("\"state\":\"unavailable\""));
+    assert!(empty.contains("\"state\":\"not_applicable\""));
+    assert!(!empty.contains("\"p50\":0"));
+    for duration in [200, 0, 1, 10] {
+        let mut b = synthetic_boundaries(&c);
+        b[1].ns = Some(duration);
+        b[2].ns = Some(duration * 2);
+        b[3].ns = Some(duration * 3);
+        p.record(
+            &c,
+            Ok(PhaseObservation {
+                boundaries: b,
+                binding: format!("case-{duration}"),
+                response_digest: "response".into(),
+                copy_digest: "copy".into(),
+                driver_digest: "driver".into(),
+                request_identity: "synthetic-request".into(),
+                request_digest: "synthetic-digest".into(),
+            }),
+        );
+    }
+    assert_eq!(p.phases[0].raw, vec![200, 0, 1, 10]);
+    assert_eq!(nearest(&p.phases[0].raw, 50), Some(1));
+    assert_eq!(nearest(&p.phases[0].raw, 95), Some(200));
+    assert_eq!(nearest(&p.phases[0].raw, 99), Some(200));
+    assert!(p.fields(&c, 4).contains("\"maximum\":200"));
+    p.failure(&c, "invalid".into());
+    p.failure(&c, "timeout".into());
+    assert_eq!((p.phases[0].failed, p.phases[0].timeouts), (1, 1));
+    assert!(p.phases[2].raw.is_empty());
+    assert!(
+        !p.fields(&c, 6)
+            .contains("\"required_evidence_complete\":true")
+    );
+    let mut zero = synthetic_boundaries(&c);
+    for b in &mut zero {
+        b.ns = Some(0);
+    }
+    assert_eq!(phase_durations(&c, &zero).unwrap(), Some([0; 4]));
+}
+#[test]
+fn phase_anchor_integrity_and_identity() {
+    let mut missing = "".into();
+    assert!(replace_anchor(&mut missing, "anchor", "hook", 1).is_err());
+    let mut duplicate = "anchor anchor".into();
+    assert!(replace_anchor(&mut duplicate, "anchor", "hook", 1).is_err());
+    let sources = phase_sources().unwrap();
+    let digest = phase_copy_digest(&sources);
+    assert_eq!(sources.len(), 6);
+    assert_eq!(digest.len(), 64);
+    let mut changed = sources.clone();
+    changed[0].1.push_str("\n# changed\n");
+    assert_ne!(phase_copy_digest(&changed), digest);
+    for (name, source) in sources {
+        let child = Command::new(bash())
+            .arg("-n")
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut child = child;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(source.as_bytes())
+            .unwrap();
+        let result = child.wait_with_output().unwrap();
+        assert!(result.status.success(), "{name}: {:?}", result.stderr);
+    }
+}
+fn selected_probes(path: &Path) -> Vec<String> {
+    String::from_utf8_lossy(&fs::read(path).unwrap())
+        .lines()
+        .filter_map(|line| {
+            let call = line.trim_start_matches('+').trim_start();
+            [
+                "sys_cmd ",
+                "sys_path ",
+                "sys_has ",
+                "sys_net ",
+                "sys_reachable ",
+            ]
+            .iter()
+            .any(|prefix| call.starts_with(prefix))
+            .then(|| call.to_string())
+        })
+        .collect()
+}
+#[test]
+fn phase_production_equivalence_boundaries_probes_and_no_latency() {
+    // Native-family coverage includes every page/cold/warm workload. Linux
+    // CI additionally drives loaded Validate separately through existing tests.
+    for c in cases()
+        .into_iter()
+        .filter(|c| native_case(c) && phase_applicable(c)[0])
+    {
+        let mut ctx = Context::new(&c);
+        ctx.proof_trace = true;
+        let (_, ordinary) = ctx.request(&c, false).unwrap();
+        let probes = selected_probes(&ctx.dir.join("stderr"));
+        assert!(!probes.is_empty()); // startup identity reads also count
+        let o = ctx
+            .phase_request(&c, &ordinary, false)
+            .unwrap_or_else(|e| panic!("{}: {e}", c.label));
+        assert_eq!(
+            selected_probes(&ctx.dir.join("phase-stderr")),
+            probes,
+            "{}",
+            c.label
+        );
+        assert_eq!(phase_durations(&c, &o.boundaries).unwrap(), None);
+        assert!(o.boundaries.iter().all(|b| b.ns.is_none()));
+        assert_eq!(
+            o.boundaries
+                .iter()
+                .map(|b| b.name.as_str())
+                .collect::<Vec<_>>(),
+            phase_markers(&c)
+        );
+        assert_eq!(o.copy_digest, phase_copy_digest(&phase_sources().unwrap()));
+        assert_eq!(
+            o.driver_digest,
+            digest_file(&root().join("bench/phases.sh"))
+        );
+        assert_eq!(tree_digest(&ctx.dir.join("state")), ctx.before);
+    }
+}
+#[test]
+fn phase_live_negative_controls() {
+    let c = cases()
+        .into_iter()
+        .find(|c| native_case(c) && c.id == "bench-snapshot")
+        .unwrap();
+    let base = phase_sources().unwrap();
+    for replacement in [
+        "",
+        "bench_phase_mark admission_start\n",
+        "OMB_BENCH_BINDING=wrong\nbench_phase_mark admission_end\n",
+        "exit 0\n",
+    ] {
+        let mut ctx = Context::new(&c);
+        let (_, ordinary) = ctx.request(&c, false).unwrap();
+        let mut bad = base.clone();
+        let core = bad.iter_mut().find(|(n, _)| n == "core.sh").unwrap();
+        core.1 = core
+            .1
+            .replace("        bench_phase_mark admission_end\n", replacement);
+        assert!(ctx.phase_request_using(&c, &ordinary, false, bad).is_err());
+    }
+    let mut ctx = Context::new(&c);
+    let (_, ordinary) = ctx.request(&c, false).unwrap();
+    let mut wrong = ordinary.clone();
+    wrong.records.last_mut().unwrap().fields[0].1 = b"refused".to_vec();
+    assert!(same_response(&wrong, &ordinary).is_err());
+    assert!(
+        ctx.phase_request(&c, &wrong, false)
+            .unwrap_err()
+            .contains("equivalence")
+    );
+    // A copy mutation after the observed work cannot pass identity admission.
+    let mut ctx = Context::new(&c);
+    let (_, ordinary) = ctx.request(&c, false).unwrap();
+    let mut bad = base.clone();
+    bad[0].1 = bad[0].1.replace(
+        "bench_phase_mark complete\n",
+        "printf '# tampered\\n' >>\"$OMB_BENCH_COPY/core.sh\"\nbench_phase_mark complete\n",
+    );
+    assert!(
+        ctx.phase_request_using(&c, &ordinary, false, bad)
+            .unwrap_err()
+            .contains("identity")
+    );
+}
+#[test]
+fn phase_total_population_stays_separate() {
+    let c = cases()
+        .into_iter()
+        .find(|c| c.id == "bench-disk" && c.label == "validate")
+        .unwrap();
+    let mut total = Samples::default();
+    total.record(Ok(999));
+    let mut profile = PhaseProfile::default();
+    profile.failure(&c, "timeout".into());
+    total.profile = Some(Box::new(profile));
+    assert_eq!(total.raw, vec![999]);
+    assert_eq!(total.timeouts, 0);
+    assert_eq!(total.profile.as_ref().unwrap().phases[3].timeouts, 1);
+    assert_eq!(
+        phase_durations(&c, &synthetic_boundaries(&c)).unwrap(),
+        Some([10, 10, 10, 10])
+    );
+}
+
+#[test]
+fn phase_live_timeout_is_accounted_and_reaped() {
+    let c = cases()
+        .into_iter()
+        .find(|c| native_case(c) && c.id == "bench-snapshot")
+        .unwrap();
+    let mut ctx = Context::new(&c);
+    let (_, ordinary) = ctx.request(&c, false).unwrap();
+    ctx.phase_timeout = Duration::from_millis(20);
+    let mut sources = phase_sources().unwrap();
+    sources[0].1 = sources[0].1.replace("set -u\n", "set -u\nsleep 60\n");
+    let e = ctx
+        .phase_request_using(&c, &ordinary, false, sources)
+        .unwrap_err();
+    assert_eq!(e, "timeout");
+    assert_eq!(ctx.phase_launches, 1);
+    let mut profile = PhaseProfile::default();
+    profile.failure(&c, e);
+    assert_eq!(profile.phases[0].timeouts, 1);
+    assert!(profile.phases[0].raw.is_empty());
 }

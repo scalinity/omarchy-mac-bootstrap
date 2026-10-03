@@ -386,7 +386,7 @@ remain frozen. PLIST-M01 remains REMEDIATED IN CANDIDATE — AWAITING INDEPENDEN
 CONFIRMATION. Benchmark is FROZEN/UNACCEPTED, Q5 RESOLVED FOR MEASUREMENT,
 O1 PENDING and Gate 2 IN PROGRESS.
 
-**Current prerequisite acceptance and benchmark resume authorization.**
+**Prerequisite acceptance and benchmark resume authorization (before B review).**
 Independent review returned **PLIST-M01 PRODUCTION PREREQUISITE ACCEPTED**:
 **PLIST-M01 CLOSED** at P2 `f91c19574cb8b0c8d3d0e1a16181c374476d7dd3`,
 prerequisite-only. The accepted H-to-P2 carve-out includes the Class A helper,
@@ -401,6 +401,26 @@ P2 delta is insufficient. Q5 remains RESOLVED FOR MEASUREMENT, O1 PENDING,
 Gate 2 IN PROGRESS and frontend 0.2.0 UNRELEASED. Accepted prerequisite files
 remain frozen; no authoritative O1 campaign, optimization or product work is
 authorized by this preparation slice.
+
+**BENCH-M01 bounded remediation authorization.** Independent review at B
+`6129d07bd6cf04a4fd9a98773231677fb1473375` returned **BENCHMARK HARNESS
+REMEDIATION REQUIRED** for the single blocker **BENCH-M01 — Required core
+timing decomposition is absent**; other V-to-B methodology was credited.
+This candidate adds benchmark-private acknowledged-boundary companions with
+explicit startup/admission/owner-probe observations and separate complete
+Validate acquisition/computation. The real complete-request stopwatch/budgets
+and loaded bench-validate stay unchanged. Exact definitions, applicability,
+non-additive populations, transformation identities, equivalence proofs and
+overhead limitations are in bench/README.md. PLIST-M01 remains CLOSED at P2;
+accepted proofs/product files stay frozen. BENCH-M01 is **REMEDIATED IN
+CANDIDATE — AWAITING INDEPENDENT CONFIRMATION**, harness UNACCEPTED, O1 PENDING.
+The next checkpoint is **BENCH-M01 CLOSURE / FINAL BENCHMARK-INSTRUMENT
+ACCEPTANCE REVIEW** of B through the final remediation candidate, using the
+completed V-to-B assessment as integration base. If closed with no new concrete
+blocker, proceed directly to **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN /
+SIGNOFF-EVIDENCE COLLECTION ONLY**, under that separate authorization. No
+generic preparation milestone, optimization, frontend source, product UI or
+release is authorized.
 
 ## Migration
 

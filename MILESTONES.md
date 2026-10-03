@@ -564,14 +564,33 @@ of docs/TESTING.md.
   files remain frozen absent a concrete regression.
 - **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
   measurement. The seven V-to-H benchmark commits remain **UNACCEPTED**;
-  **BENCHMARK HARNESS / GATE 2 MEASUREMENT PREPARATION ONLY MAY RESUME**.
-  The harness remains a candidate awaiting focused independent review;
+  The completed V-to-B independent review credited other methodology and
+  identified BENCH-M01 as the single blocker. The harness remains a candidate
+  awaiting BENCH-M01 closure/final instrument acceptance review;
   **O1 SIGNOFF = PENDING**. No authoritative
   O1 run was accepted or claimed. The exact future matrix can be listed;
   no budget satisfaction or Gate 2 completion follows from harness tests.
   Rust Health/Logs/Validate requests, frontend Health/Logs/Validate screens
   and navigation, S5+, Gate 3, frontend `0.2.0` release, M15, M16 and M17
   remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
+
+- **BENCH-M01 candidate remediation:** independent review of B
+  `6129d07bd6cf04a4fd9a98773231677fb1473375` credited other benchmark methodology
+  and required the single MEDIUM blocker **BENCH-M01 — Required core timing
+  decomposition is absent**. The bounded forward candidate provides actual
+  supplementary startup/admission/owner-probe populations and complete macOS
+  Validate probe/computation observations through benchmark-only companions.
+  Complete totals, loaded Validate and the 102-case matrix remain unchanged;
+  permanent equivalence/boundary/accounting proofs and fresh committed-candidate
+  NON-AUTHORITATIVE smoke validate instrumentation, without grading. See
+  bench/README.md for the exact contract. Disposition is **REMEDIATED IN
+  CANDIDATE — AWAITING INDEPENDENT CONFIRMATION**; harness **UNACCEPTED**, O1
+  **PENDING**, Gate 2 **IN PROGRESS**, frontend 0.2.0 **UNRELEASED**. Stop at
+  **BENCH-M01 CLOSURE / FINAL BENCHMARK-INSTRUMENT ACCEPTANCE REVIEW** of B
+  through the final candidate, using completed V-to-B review as integration
+  base. If independently closed without a new concrete blocker, next is
+  directly **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN / SIGNOFF-EVIDENCE COLLECTION
+  ONLY** under its own authorization. PLIST-M01 remains CLOSED at P2.
 
 ### Gate 3 — The action contract under fixtures
 

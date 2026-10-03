@@ -143,3 +143,111 @@ Fail-first at accepted V: its Git tree had no benchmark artifacts; the new
 artifact test reported 0 passed, 4 failed, 0 skipped, exit 1. This missing-harness
 evidence is distinct from the earlier semantic STOP and independent resolution.
 Neither was a product regression.
+
+## BENCH-M01 diagnostic internal observations
+
+Independent review of B `6129d07bd6cf04a4fd9a98773231677fb1473375`
+returned **BENCHMARK HARNESS REMEDIATION REQUIRED** for exactly one blocker:
+**BENCH-M01 — Required core timing decomposition is absent**. Its other
+methodology was credited. This forward remediation is a candidate awaiting
+**BENCH-M01 CLOSURE / FINAL BENCHMARK-INSTRUMENT ACCEPTANCE REVIEW** of B through
+the final candidate, using the completed V-to-B assessment as integration base.
+BENCH-M01 is not self-closed; the harness remains UNACCEPTED and O1 PENDING.
+If independently closed with no new concrete blocker, the expected next action
+is directly **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN / SIGNOFF-EVIDENCE COLLECTION
+ONLY**, under its own authorization. This slice runs only a fresh bounded,
+NON-AUTHORITATIVE smoke after commit/clean tree and final validation.
+
+The whole-request stopwatch and all existing budgets are unchanged: ordinary
+requests execute the real checkout, from immediately before fresh Bash spawn
+through observed exit/reap. Only after that case's entire ordinary population
+is collected does a separate companion population run. It shares fixture,
+inputs and prepared projection, with its own fresh cold session or warm session
+following one verified untimed ordinary request. Each observed response must
+be exactly equal to its ordinary reference, including hello/source, generation,
+rows, result, Validate answers and Q4 basis. These are independent executions;
+phase values cannot be added to reconstruct an ordinary total or correlated as
+the same execution. No total/component subtraction, overhead correction or
+phase budget exists.
+
+Rust generates six temporary files in controller-owned external scratch from
+exact candidate entry/core/read/health/logs/validate bytes. Each declared anchor
+must occur its exact expected number of times; missing/duplicated anchors fail.
+Reversing only the declared replacements must reproduce the complete original
+bytes. Path shims keep OMB_HOME pointing at the real checkout and redirect only
+the copied libraries; all other libraries/data/lock/fixtures remain ordinary.
+The copy manifest hashes relative names and full copied bytes. The driver
+`bench/phases.sh` has a separate SHA-256. No product file or Protocol schema is
+edited. The companion hello names the base executed-source identity, while the
+benchmark record separately identifies the transformation and copy digest.
+
+The driver sends `<request-binding> TAB <boundary> LF` on private fd 4 and waits
+for an `observed` acknowledgement on fd 5. Rust records monotonic **receipt**
+timestamps before acknowledging. This synchronizes each boundary; it is not a
+Bash timestamp or an estimated residual. Ordinary stdout stays discarded,
+observation output never enters the response spool, and fd 3 still carries the
+production request and closes through the ordinary entrypoint. Required marker
+order, binding and completeness are checked before response/effect admission.
+Extra, missing, reordered, wrong-case/request, nonmonotonic, incomplete or
+semantically unequal observations fail. Only the owned process group is killed
+on a deadline, then reaped and its reader joined. The companion has a 30-second
+boundary/reap deadline; setup and post-reap verification are outside it.
+
+| Component | Start observation | End observation | Included work and applicability |
+| --- | --- | --- | --- |
+| startup | Rust immediately before companion Bash spawn | hook immediately after core_main's exact `# 1. Admission, byte by byte...` comment, before the hst/copy check | All complete core families: Bash/entry request copying, library loading, platform/session/environment/identity/source setup and hello; excludes controller preparation. |
+| admission | same admission-start receipt | hook immediately before the selected producer: core_check_snapshot, Journey snapshot/detail dispatch, core_health_op, core_logs_op or core_validate_op | All complete core families: rec_admit_copied, field extraction, protocol/frontend checks, ordinary-session dispatch, selected family/platform/fixture/scope gates and needed read-library loading. Excludes operation-specific owner work and Rust response admission. |
+| probes (Journey) | immediately before cmd_status in core_journey_dataset | immediately after its successful return | Complete Journey snapshot and machine/status pages: one authoritative status-owner call, including its detector, saved-state reads, calculations and presentation callbacks. This is an inclusive owner acquisition interval, not just subprocess time. Dataset projection/admission/hash/publication follows outside it. |
+| probes (Health) | immediately before cmd_doctor in core_health_doctor | immediately after capturing its status in __st | Complete Health snapshot/Doctor pages: one authoritative Doctor-owner call, including detector, network checks, owner calculations and finding callbacks; excludes later tally/admission/hash/page work. |
+| probes (Logs) | immediately before directory=log_dir in core_logs_capture | immediately before initializing logs.rows after source selection and core_logs_window | Complete Logs snapshot/pages: authoritative directory/path classification, find/sort/selection and selected bounded tail window, including window byte checks; excludes row parsing, response admission/hash/page/publication. |
+| probes (Validate) | immediately before mac_detect in core_validate_context | immediately after its return | Complete macOS bench-disk/validate: actual survey owner, its accepted plist helper and geometry acquisition; excludes all following planning/computation. |
+| validation_computation | next hook after Validate probe-end, before mac_plan_compute 0 | hook after core_validate_op returns, preserving that return status | Complete macOS Validate only: context/planning gates, parse_size/normalization, plan_init/compute/validate/layout/verify, answers, Q4 basis, response preparation/admission/publication. Cleanup follows outside it. |
+
+startup/admission apply to all complete core cases. probes is explicitly
+not_applicable for the four-fact bench-snapshot; its identity reads stay in
+startup. validation_computation is not_applicable for other families: their
+remaining projection/encoding work stays in the complete total. All four are
+not_applicable for loaded bench-validate and frontend loaded-model cases; the
+existing loaded Validate component is retained separately and unchanged.
+
+These intervals are ordered and non-overlapping. Gaps (dispatch/preamble,
+separate hook receipts and later producer/cleanup work) are not assigned to a
+component. Every interval uses actual endpoint observations. Startup includes
+driver/load-path overhead; owner intervals include start-ack, hook/pipe/receipt
+and scheduling overhead and, for Journey/Health, real owner computations.
+Sequential companion collection may change cache state. There is no measured
+calibration or overhead bound and no correction; raw observations stay raw.
+
+`omb-benchmark-1` gains a backward-compatible `diagnostic_phase_profile` object
+on the existing workload record, never additional workload cases. The existing
+top-level `phase` still means cold/warm lifecycle; internal components exist
+only in `diagnostic_phase_profile.phases`. It records
+method, separate-companion mode, non-additive relationship, copy/driver digests,
+requested observations, actual companion launches and warm-up count, raw ordered
+boundary evidence, unique request identity/hash/binding and admitted response
+hash. The binding hashes base SHA, ordinary source digest, exact case-plan JSON,
+fixture digest, copy/driver digests and unique request identity/hash in that
+order with LF separators. Top-level source/shell/OS/arch/workload provenance
+applies to both populations; request/copy/driver identities distinguish them.
+
+Each of startup/admission/probes/validation_computation has applicability
+required or not_applicable, state measured/unavailable/failed/not_applicable,
+raw integer nanoseconds in collection order, success/failure/timeout counts,
+outcomes and nearest-rank p50/p95/p99/maximum using the existing Samples rule.
+N/A and missing/failed populations have empty samples and null statistics.
+Measured zero is a successful raw 0 with numeric 0 statistics. Partial failures
+retain successful raw samples and all failure outcomes;
+required_evidence_complete is false unless every required population supplies
+all requested observations without failure/timeout. A valid total cannot fill
+missing phase evidence: full-mode evidence with false completeness is incomplete.
+Values are always diagnostic and budget_verdict=not_graded.
+
+Permanent deterministic tests cover every family/applicability, exact anchors
+and copied-shell syntax, boundary omission/duplication/reordering/backward time,
+zero/N/A/empty statistics, raw-order nearest ranks, independent total/failure/
+timeout accounting, live malformed/wrong-bound/incomplete/tampered companions,
+semantic/effect equivalence and identical ordered sys_* probe selection for all
+applicable native cases. Correctness executions disable phase timestamps
+entirely; synthetic clock fixtures test arithmetic, liveness clocks enforce
+transport deadlines only. Existing exact-page, production attachment, loaded
+Validate, CP1 and prerequisite proofs remain unchanged.
