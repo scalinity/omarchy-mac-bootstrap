@@ -731,10 +731,14 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
     if results.len() != 1 || txt(results[0], "status") != "done" || txt(results[0], "code") != "ok"
     {
         return bad(&format!(
-            "not done ok: {:?}",
+            "not done ok: {:?}; messages: {:?}",
             results
                 .iter()
                 .map(|r| (txt(r, "status"), txt(r, "code"), txt(r, "text")))
+                .collect::<Vec<_>>(),
+            records(d, "message")
+                .iter()
+                .map(|r| (txt(r, "level"), txt(r, "text")))
                 .collect::<Vec<_>>()
         ));
     }
