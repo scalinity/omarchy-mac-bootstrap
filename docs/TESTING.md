@@ -716,6 +716,9 @@ separate companions provide startup/admission/owner-probe populations and
 complete macOS Validate probe/computation populations. No subtraction, additive
 claim, phase budget, product timing in normal tests or full O1 campaign is
 authorized. The matrix remains 102 workload cases across cold/warm lifecycles.
+Multi-sample cold collector regression tests keep each ordinary sample's exact
+private state/log paths and prepared projection for its own companion, using
+separate fresh sessions and no product latency clock. Equality remains exact.
 
 The benchmark-only candidate is documented in `bench/README.md`. Its explicit
 runner separates list mode, three-repetition NON-AUTHORITATIVE smoke and future

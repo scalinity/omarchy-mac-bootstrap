@@ -1883,6 +1883,14 @@ fn frontend_worker() {
     }
 }
 fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
+    run_case_observed(c, repetitions, timed, timed)
+}
+fn run_case_observed(
+    c: &Case,
+    repetitions: usize,
+    timed: bool,
+    observe_phases: bool,
+) -> (Samples, String) {
     let mut samples = Samples::default();
     let mut source = String::new();
     if c.items > 0 {
@@ -1956,6 +1964,7 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
         return (samples, loaded.digest());
     }
     let mut ordinary = Vec::new();
+    let mut cold_contexts = Vec::new();
     let mut context = Context::new(c);
     samples.setup_requests += context.setup_requests;
     samples.core_requests += context.setup_requests;
@@ -1980,7 +1989,13 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
     }
     for index in 0..repetitions {
         if c.cold && index > 0 {
-            context = Context::new(c);
+            // Returned records include private state/log paths. Keep each
+            // sample's exact inputs alive for its later diagnostic companion.
+            if observe_phases {
+                cold_contexts.push(std::mem::replace(&mut context, Context::new(c)));
+            } else {
+                context = Context::new(c);
+            }
             samples.setup_requests += context.setup_requests;
             samples.core_requests += context.setup_requests;
         }
@@ -2019,7 +2034,7 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
             }
         }
     }
-    if timed && phase_applicable(c)[0] {
+    if observe_phases && phase_applicable(c)[0] {
         let mut profile = PhaseProfile {
             copy_digest: phase_sources()
                 .map(|s| phase_copy_digest(&s))
@@ -2033,7 +2048,9 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
             fs::set_permissions(&ctx.session, fs::Permissions::from_mode(0o700)).unwrap();
             ctx.n = 0;
         };
-        create_session(&mut context, 0);
+        if !c.cold {
+            create_session(&mut context, 0);
+        }
         let warm = if !c.cold {
             profile.warm_up_requests = 1;
             context.request(c, false).map(|_| ())
@@ -2041,17 +2058,23 @@ fn run_case(c: &Case, repetitions: usize, timed: bool) -> (Samples, String) {
             Ok(())
         };
         for (index, reference) in ordinary.iter().enumerate() {
-            if c.cold && index > 0 {
-                create_session(&mut context, index);
+            let ctx = if index < cold_contexts.len() {
+                &mut cold_contexts[index]
+            } else {
+                &mut context
+            };
+            if c.cold {
+                create_session(ctx, index);
             }
+            let before = ctx.phase_launches;
             let observation = match (&warm, reference) {
-                (Ok(()), Some(doc)) => context.phase_request(c, doc, true),
+                (Ok(()), Some(doc)) => ctx.phase_request(c, doc, timed),
                 (Err(e), _) => Err(format!("companion warm-up failed: {e}")),
                 _ => Err("ordinary semantic witness unavailable".into()),
             };
+            profile.core_requests += ctx.phase_launches - before;
             profile.record(c, observation);
         }
-        profile.core_requests = context.phase_launches;
         samples.profile = Some(Box::new(profile));
     }
     (samples, source)
@@ -3152,6 +3175,48 @@ fn phase_total_population_stays_separate() {
         phase_durations(&c, &synthetic_boundaries(&c)).unwrap(),
         Some([10, 10, 10, 10])
     );
+}
+
+#[test]
+fn phase_cold_companions_keep_matching_private_contexts() {
+    let selected = cases()
+        .into_iter()
+        .filter(|c| {
+            c.platform == host().0
+                && c.cold
+                && phase_applicable(c)[2]
+                && (c.scope == "journey" || c.scope == "logs")
+                && (c.kind.is_empty() || (c.offset == 0 && c.limit == 1))
+        })
+        .collect::<Vec<_>>();
+    assert!(!selected.is_empty());
+    for c in selected {
+        // Exercise the actual multi-sample collector with all product clocks
+        // disabled. Successful companions reach the explicit no-clock outcome;
+        // an incorrect private input context instead fails semantic equality.
+        let (samples, _) = run_case_observed(&c, 3, false, true);
+        assert_eq!(samples.raw, vec![0; 3], "{}", c.label);
+        assert_eq!((samples.failed, samples.timeouts), (0, 0));
+        let profile = samples.profile.unwrap();
+        assert_eq!(profile.core_requests, 3);
+        assert_eq!(profile.warm_up_requests, 0);
+        assert!(profile.observations.is_empty());
+        for (phase, applicable) in profile.phases.iter().zip(phase_applicable(&c)) {
+            assert!(phase.raw.is_empty());
+            if applicable {
+                assert_eq!(phase.failed, 3);
+                assert_eq!(phase.timeouts, 0);
+                assert_eq!(
+                    phase.outcomes,
+                    vec!["no latency clock in deterministic proof"; 3],
+                    "{}",
+                    c.label
+                );
+            } else {
+                assert!(phase.outcomes.is_empty());
+            }
+        }
+    }
 }
 
 #[test]

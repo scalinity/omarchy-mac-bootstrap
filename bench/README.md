@@ -163,7 +163,12 @@ requests execute the real checkout, from immediately before fresh Bash spawn
 through observed exit/reap. Only after that case's entire ordinary population
 is collected does a separate companion population run. It shares fixture,
 inputs and prepared projection, with its own fresh cold session or warm session
-following one verified untimed ordinary request. Each observed response must
+following one verified untimed ordinary request. Each companion uses its
+matching ordinary sample's private input context: cold contexts remain
+owned until observation finishes, preserving state/log paths and prepared page
+generation while giving the companion a separate fresh session. Warm shares
+one private input context and uses its own separately warmed session. No
+response field is normalized away to manufacture equivalence. Each response must
 be exactly equal to its ordinary reference, including hello/source, generation,
 rows, result, Validate answers and Q4 basis. These are independent executions;
 phase values cannot be added to reconstruct an ordinary total or correlated as
@@ -247,8 +252,10 @@ and copied-shell syntax, boundary omission/duplication/reordering/backward time,
 zero/N/A/empty statistics, raw-order nearest ranks, independent total/failure/
 timeout accounting, live malformed/wrong-bound/incomplete/tampered companions,
 semantic/effect equivalence and identical ordered sys_* probe selection for all
-applicable native cases and host-platform fixture families on x86_64. Live
-negative controls use the host-platform Journey fixture, with no native-arm64
+applicable native cases and host-platform fixture families on x86_64. The
+multi-sample cold Journey/Logs collector checks retain exact matching private
+contexts and exercise snapshot/page references with all product clocks disabled.
+Live negative controls use the host-platform Journey fixture, with no native-arm64
 selection prerequisite. Fixture correctness on x86_64 is not native latency.
 Correctness executions disable phase timestamps
 entirely; synthetic clock fixtures test arithmetic, liveness clocks enforce
