@@ -145,6 +145,23 @@ fn exec(s: &mut Session, action: &str, word: &str, handoff: bool) -> Outcome {
 
 #[test]
 fn the_rust_client_against_the_real_core() {
+    // Benchmark tests share this target so the existing workflows discover
+    // them. Preserve this contract's single-test process: it changes the
+    // process environment and seals every inherited descriptor below.
+    if std::env::var_os("OMB_BENCH_CONTRACT_CHILD").is_none() {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "the_rust_client_against_the_real_core",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("OMB_BENCH_CONTRACT_CHILD", "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "isolated existing contract: {status}");
+        return;
+    }
     // Nothing this test process inherited reaches the core, however high the
     // descriptor: every one the kernel lists is sealed.
     let seeds = seed_high_descriptors();

@@ -730,7 +730,13 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
     let results = records(d, "result");
     if results.len() != 1 || txt(results[0], "status") != "done" || txt(results[0], "code") != "ok"
     {
-        return bad("not done ok");
+        return bad(&format!(
+            "not done ok: {:?}",
+            results
+                .iter()
+                .map(|r| (txt(r, "status"), txt(r, "code"), txt(r, "text")))
+                .collect::<Vec<_>>()
+        ));
     }
     let hellos = records(d, "hello");
     if hellos.len() != 1
@@ -1037,9 +1043,13 @@ struct Provenance {
     runner: String,
 }
 impl Provenance {
+    fn matches_sources(&self, current_sha: &str, clean: bool) -> bool {
+        self.sha == current_sha && clean
+    }
     fn source_unchanged(&self) -> bool {
-        self.sha == git(&["rev-parse", "HEAD"])
-            && git(&[
+        self.matches_sources(
+            &git(&["rev-parse", "HEAD"]),
+            git(&[
                 "status",
                 "--porcelain",
                 "--",
@@ -1052,7 +1062,8 @@ impl Provenance {
                 "tests/fixtures",
                 "tests/frontend-inputs.sh",
             ])
-            .is_empty()
+            .is_empty(),
+        )
     }
     fn validate(&self) -> Fallible<()> {
         if [
@@ -2173,7 +2184,7 @@ fn owned_child_group_is_reaped() {
 #[test]
 fn changed_source_commit_refused() {
     let mut p = Provenance {
-        sha: git(&["rev-parse", "HEAD"]),
+        sha: "1".repeat(40),
         lock: "l".into(),
         frontend: "f".into(),
         harness: "h".into(),
@@ -2182,7 +2193,9 @@ fn changed_source_commit_refused() {
         system: "o".into(),
         runner: "r".into(),
     };
-    assert!(p.source_unchanged());
+    let current = "1".repeat(40);
+    assert!(p.matches_sources(&current, true));
+    assert!(!p.matches_sources(&current, false));
     p.sha = "0".repeat(40);
-    assert!(!p.source_unchanged());
+    assert!(!p.matches_sources(&current, true));
 }

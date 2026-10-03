@@ -129,6 +129,11 @@ Normal CI discovers Bash contracts and non-ignored benchmark::* tests through
 the existing frontend contract target. measurement and frontend_worker are
 ignored explicit entry points. Normal tests collect no latency samples;
 monotonic deadlines in transport tests enforce liveness only.
+The pre-existing contract runs in its own single-test child process because
+it mutates process-wide environment variables and descriptor flags. This
+preserves its original isolation while benchmark tests run concurrently.
+Invalid completed results retain status/code/text in the failure diagnostic;
+refusals remain excluded from successful samples.
 
 Fail-first at accepted V: its Git tree had no benchmark artifacts; the new
 artifact test reported 0 passed, 4 failed, 0 skipped, exit 1. This missing-harness
