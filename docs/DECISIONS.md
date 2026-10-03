@@ -370,6 +370,22 @@ remain UNACCEPTED; the harness is FROZEN pending prerequisite review.
 Benchmark completion has not resumed, Q5 is RESOLVED FOR MEASUREMENT, O1 is
 PENDING, and Gate 2 remains IN PROGRESS.
 
+**CP1-PLIST-M01 preservation ruling (Class D).** Independent review selected
+"CP1 PRESERVATION EXCEPTION REQUIRED — BOUNDED TEST/DOC REMEDIATION AUTHORIZED"
+on PLIST candidate P `86b8c02aff9938bace32d05a464e2086d6ee3465`.
+The Class A production helper correction alone was insufficient to reconcile
+the frozen response oracle: removing its known-false blocker also corrects the
+owner-derived next guide and changes the whole-Journey generation. Class D
+permits only the exact witnessed blocker/derived-guide/generation exception,
+with independent dataset hashes, own-generation complete details and explicit
+cross-generation changed refusals. The known-false C observation is not desired
+truth. Default byte preservation, language/parser and runtime authority remain
+unchanged; this grants no general owner-delta permission. Only the CP1 test and
+three status/contract docs may change on P; production, Rust and benchmark bytes
+remain frozen. PLIST-M01 remains REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
+CONFIRMATION. Benchmark is FROZEN/UNACCEPTED, Q5 RESOLVED FOR MEASUREMENT,
+O1 PENDING and Gate 2 IN PROGRESS.
+
 ## Migration
 
 **D19. The scanner runs no inventoried tool.** It reads the package

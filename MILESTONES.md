@@ -542,6 +542,18 @@ of docs/TESTING.md.
   only that exact helper replacement; all other production owners remain
   unchanged. **PLIST-M01 REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
   CONFIRMATION**; this checkpoint is not closed.
+- **CP1-PLIST-M01 preservation checkpoint:** P
+  `86b8c02aff9938bace32d05a464e2086d6ee3465` passed the unchanged native
+  macOS-15 Validate attachment (55/0, two ignored), then exact-P CI
+  **37102168035** / job **111143698200** failed the frozen CP1 oracle (350/5/0).
+  Independent review selected Class D: one proven false-blocker and derived-
+  guide correction, independently rebuilt whole-Journey generations, complete
+  own-generation details and cross-generation changed refusals. Only
+  `tests/test-cp1.sh`, TESTING/DECISIONS and this milestone document are
+  authorized on P; its production helper remains frozen. The exception is a
+  candidate awaiting focused prerequisite remediation review, not PLIST-M01
+  closure or benchmark acceptance. Historical language/parser, runtime
+  authority and default exact response preservation remain unchanged.
 - **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
   measurement. The benchmark endpoint H remains **UNACCEPTED**, and the harness
   is **FROZEN** pending prerequisite review. Benchmark completion has **NOT
