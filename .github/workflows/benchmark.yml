@@ -1,0 +1,238 @@
+name: Gate 2 full performance benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      workflow_sha:
+        description: Exact workflow-only commit on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omb-gate2-full-performance-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Full benchmark · ${{ matrix.platform }} · native ARM64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15
+            system: Darwin
+            architecture: arm64
+            bash: /bin/bash
+            rust_host: aarch64-apple-darwin
+          - platform: linux
+            runner: ubuntu-24.04-arm
+            system: Linux
+            architecture: aarch64
+            bash: /usr/bin/bash
+            rust_host: aarch64-unknown-linux-gnu
+    defaults:
+      run:
+        shell: bash
+    env:
+      SOURCE_SHA: c4a418af468de01882a9d0ef82b737dd90abcab3
+      EXPECTED_WORKFLOW_SHA: ${{ inputs.workflow_sha }}
+      ACTUAL_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      EVENT_NAME: ${{ github.event_name }}
+      DISPATCH_REF: ${{ github.ref }}
+      CAMPAIGN_REPOSITORY: ${{ github.repository }}
+      CAMPAIGN_RUN_ID: ${{ github.run_id }}
+      CAMPAIGN_ATTEMPT: ${{ github.run_attempt }}
+      HOST_ARCH: ${{ runner.arch }}
+      HOST_NAME: ${{ runner.name }}
+      HOST_OS: ${{ runner.os }}
+      PLATFORM: ${{ matrix.platform }}
+      RUNNER_LABEL: ${{ matrix.runner }}
+      EXPECTED_SYSTEM: ${{ matrix.system }}
+      EXPECTED_ARCH: ${{ matrix.architecture }}
+      EXPECTED_RUST_HOST: ${{ matrix.rust_host }}
+      OMB_BENCH_BASH: ${{ matrix.bash }}
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+    steps:
+      - name: Bind campaign identity before checkout or measurement
+        run: |
+          evidence="$RUNNER_TEMP/omb-full-benchmark-evidence"
+          mkdir -p "$evidence"
+          printf '%s\n' "EVIDENCE=$evidence" "OUTPUT=$evidence/raw.jsonl" \
+            "CARGO_TARGET_DIR=$RUNNER_TEMP/omb-benchmark-target" \
+            "OMB_BENCH_MACHINE_LABEL=github-$PLATFORM-$RUNNER_LABEL-run-$CAMPAIGN_RUN_ID-attempt-$CAMPAIGN_ATTEMPT" >> "$GITHUB_ENV"
+          {
+            date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            printf '%s\n' "supplied_workflow_sha=$EXPECTED_WORKFLOW_SHA" \
+              "github.workflow_sha=$ACTUAL_WORKFLOW_SHA" "github.workflow_ref=$WORKFLOW_REF" \
+              "github.run_id=$CAMPAIGN_RUN_ID" "github.run_attempt=$CAMPAIGN_ATTEMPT" \
+              "github.ref=$DISPATCH_REF" "github.repository=$CAMPAIGN_REPOSITORY" \
+              "github.event_name=$EVENT_NAME" "source_sha=$SOURCE_SHA" \
+              "checkout_action=3d3c42e5aac5ba805825da76410c181273ba90b1" \
+              "upload_action=ea165f8d65b6e75b540449e92b4886f43607fa02"
+          } > "$evidence/provenance.txt"
+          [ "$EVENT_NAME" = workflow_dispatch ]
+          [ "$CAMPAIGN_REPOSITORY" = scalinity/omarchy-mac-bootstrap ]
+          [ "$DISPATCH_REF" = refs/heads/main ]
+          [[ "$EXPECTED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$ACTUAL_WORKFLOW_SHA" = "$EXPECTED_WORKFLOW_SHA" ]
+
+      - name: Check out only the immutable accepted benchmark source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: scalinity/omarchy-mac-bootstrap
+          ref: c4a418af468de01882a9d0ef82b737dd90abcab3
+          path: benchmark-source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source and retain separate workflow bytes
+        working-directory: benchmark-source
+        run: |
+          git rev-parse HEAD > "$EVIDENCE/source-head-before.txt"
+          git rev-parse 'HEAD^{tree}' > "$EVIDENCE/source-tree-before.txt"
+          git status --porcelain=v1 --untracked-files=all > "$EVIDENCE/source-status-before.txt"
+          git diff --stat HEAD > "$EVIDENCE/source-diff-before.txt"
+          [ "$(cat "$EVIDENCE/source-head-before.txt")" = "$SOURCE_SHA" ]
+          [ ! -s "$EVIDENCE/source-status-before.txt" ]
+          git diff --quiet HEAD
+          git rev-parse HEAD:release/frontend.lock > "$EVIDENCE/production-lock-blob.txt"
+          [ "$(cat "$EVIDENCE/production-lock-blob.txt")" = 20bd3d1f27243e7b64f6a4f62d2b2be956d36c5b ]
+          tests/frontend-inputs.sh digest > "$EVIDENCE/candidate-frontend-input-digest.txt"
+          git fetch --no-tags origin "$EXPECTED_WORKFLOW_SHA"
+          git show "$EXPECTED_WORKFLOW_SHA:.github/workflows/benchmark.yml" > "$EVIDENCE/benchmark.yml"
+          git rev-parse "$EXPECTED_WORKFLOW_SHA:.github/workflows/benchmark.yml" > "$EVIDENCE/workflow-blob.txt"
+          shasum -a 256 "$EVIDENCE/benchmark.yml" > "$EVIDENCE/workflow-sha256.txt"
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+
+      - name: Verify native host and prepare the accepted Rust toolchain
+        working-directory: benchmark-source/frontend
+        run: |
+          {
+            date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            printf '%s\n' "uname_s=$(uname -s)" "uname_m=$(uname -m)" \
+              "runner.arch=$HOST_ARCH" "runner.name=$HOST_NAME" "runner.os=$HOST_OS" \
+              "runner.label=$RUNNER_LABEL" "platform=$PLATFORM" \
+              "ImageOS=${ImageOS:-unavailable}" "ImageVersion=${ImageVersion:-unavailable}" \
+              "bash_path=$OMB_BENCH_BASH" "CARGO_TARGET_DIR=$CARGO_TARGET_DIR" \
+              "OMB_BENCH_MACHINE_LABEL=$OMB_BENCH_MACHINE_LABEL"
+            env | LC_ALL=C sort | grep -E '^(Image|IMAGE_|RUNNER_(ARCH|OS|NAME))' || true
+            "$OMB_BENCH_BASH" --version
+            git --version
+            if [ "$PLATFORM" = macos ]; then
+              sw_vers
+              sysctl hw.model hw.machine hw.ncpu hw.memsize
+              system_profiler SPHardwareDataType
+            else
+              cat /etc/os-release
+              lscpu
+              cat /proc/meminfo
+            fi
+          } > "$EVIDENCE/environment.txt" 2>&1
+          [ "$(uname -s)" = "$EXPECTED_SYSTEM" ]
+          [ "$(uname -m)" = "$EXPECTED_ARCH" ]
+          [ "$HOST_ARCH" = ARM64 ]
+          # The selected child Bash, rather than this workflow shell, expands its version.
+          # shellcheck disable=SC2016
+          bash_version=$("$OMB_BENCH_BASH" -c 'printf "%s" "$BASH_VERSION"')
+          case "$PLATFORM:$bash_version" in
+            macos:3.2.* | linux:5.*) ;;
+            *) echo "Unexpected benchmark Bash: $bash_version" >&2; exit 1 ;;
+          esac
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [ -n "$channel" ]
+          rustup toolchain install "$channel" --profile minimal --component rustfmt,clippy > "$EVIDENCE/toolchain-install.txt" 2>&1
+          rustc --version --verbose > "$EVIDENCE/rustc.txt"
+          cargo --version > "$EVIDENCE/cargo.txt"
+          rustup show active-toolchain > "$EVIDENCE/active-toolchain.txt"
+          [ "$(sed -n 's/^host: //p' "$EVIDENCE/rustc.txt")" = "$EXPECTED_RUST_HOST" ]
+          cargo fetch --locked > "$EVIDENCE/dependency-fetch.txt" 2>&1
+          git diff --quiet HEAD
+
+      - name: Run the full accepted benchmark once
+        id: measurement
+        timeout-minutes: 330
+        working-directory: benchmark-source
+        run: |
+          [ ! -e "$OUTPUT" ]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          [ -z "$(git status --porcelain=v1 --untracked-files=all)" ]
+          printf './bench/run --full --ack-o1-preparation "%s"\n' "$OUTPUT" > "$EVIDENCE/command.txt"
+          printf '%s\n' "OMB_BENCH_BASH=$OMB_BENCH_BASH" \
+            "OMB_BENCH_MACHINE_LABEL=$OMB_BENCH_MACHINE_LABEL" \
+            "CARGO_TARGET_DIR=$CARGO_TARGET_DIR" "source_sha=$SOURCE_SHA" \
+            "workflow_sha=$ACTUAL_WORKFLOW_SHA" >> "$EVIDENCE/command.txt"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' > "$EVIDENCE/measurement-started.txt"
+          set +e
+          ./bench/run --full --ack-o1-preparation "$OUTPUT" > "$EVIDENCE/stdout.txt" 2> "$EVIDENCE/stderr.txt"
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$EVIDENCE/benchmark-exit-status.txt"
+          date -u '+%Y-%m-%dT%H:%M:%SZ' > "$EVIDENCE/measurement-finished.txt"
+          exit "$status"
+
+      - name: Record and verify post-measurement source integrity
+        id: integrity
+        if: always()
+        working-directory: benchmark-source
+        run: |
+          git rev-parse HEAD > "$EVIDENCE/source-head-after.txt"
+          git rev-parse 'HEAD^{tree}' > "$EVIDENCE/source-tree-after.txt"
+          git status --porcelain=v1 --untracked-files=all > "$EVIDENCE/source-status-after.txt"
+          git diff --stat HEAD > "$EVIDENCE/source-diff-after.txt"
+          [ "$(cat "$EVIDENCE/source-head-after.txt")" = "$SOURCE_SHA" ]
+          cmp "$EVIDENCE/source-tree-before.txt" "$EVIDENCE/source-tree-after.txt"
+          [ ! -s "$EVIDENCE/source-status-after.txt" ]
+          git diff --quiet HEAD
+
+      - name: Preserve available evidence and checksum every retained file
+        if: always()
+        env:
+          MEASUREMENT_OUTCOME: ${{ steps.measurement.outcome }}
+          INTEGRITY_OUTCOME: ${{ steps.integrity.outcome }}
+        run: |
+          evidence="$RUNNER_TEMP/omb-full-benchmark-evidence"
+          mkdir -p "$evidence"
+          cd "$evidence" || exit 1
+          printf '%s\n' "measurement_step_outcome=$MEASUREMENT_OUTCOME" \
+            "integrity_step_outcome=$INTEGRITY_OUTCOME" > step-outcomes.txt
+          : > absent-files.txt
+          for file in raw.jsonl stdout.txt stderr.txt provenance.txt environment.txt command.txt benchmark-exit-status.txt benchmark.yml source-head-after.txt; do
+            if [ ! -f "$file" ]; then printf '%s\n' "$file" >> absent-files.txt; fi
+          done
+          : > SHA256SUMS
+          for file in *; do
+            if [ -f "$file" ] && [ "$file" != SHA256SUMS ]; then
+              shasum -a 256 "$file" >> SHA256SUMS
+            fi
+          done
+
+      - name: Upload the entire platform evidence folder
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: omb-gate2-full-benchmark-${{ matrix.platform }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/omb-full-benchmark-evidence/
+          if-no-files-found: error
+
+      - name: Enforce completion after evidence preservation
+        if: always()
+        env:
+          MEASUREMENT_OUTCOME: ${{ steps.measurement.outcome }}
+          INTEGRITY_OUTCOME: ${{ steps.integrity.outcome }}
+        run: |
+          evidence="$RUNNER_TEMP/omb-full-benchmark-evidence"
+          [ "$MEASUREMENT_OUTCOME" = success ]
+          [ "$INTEGRITY_OUTCOME" = success ]
+          [ -f "$evidence/benchmark-exit-status.txt" ]
+          [ "$(cat "$evidence/benchmark-exit-status.txt")" = 0 ]
+          [ -s "$evidence/raw.jsonl" ]
+          [ "$(cat "$evidence/source-head-after.txt")" = "$SOURCE_SHA" ]
