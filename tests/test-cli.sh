@@ -129,6 +129,19 @@ if t_plutil "doctor on a Mac"; then
   assert_contains "$T_OUT" "[WARN] APFS resize overhead" "snapshot overhead warns"
   t_cli mac-asahi-installed "" doctor
   assert_contains "$T_OUT" "[INFO] Asahi install" "an existing install is reported with its state"
+  assert_contains "$T_OUT" 'SSD health (SMART)' 'PLIST-M01 Doctor retains SMART owner'
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's#<key>SMARTStatus</key><string>Verified</string>##' "$fx/cmd/diskutil_info_disk0"
+  rm -f "$fx/cmd/diskutil_info_disk0.bak"
+  t_cli "$fx" '' doctor
+  assert_contains "$(t_flat "$T_OUT")" '[INFO] SSD health (SMART)' 'PLIST-M01 missing SMART is informational'
+  assert_contains "$T_OUT" 'not reported' 'PLIST-M01 missing SMART keeps existing wording'
+  fx=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's#<string>Verified</string>#<string>Failing</string>#' "$fx/cmd/diskutil_info_disk0"
+  rm -f "$fx/cmd/diskutil_info_disk0.bak"
+  t_cli "$fx" '' doctor
+  assert_contains "$(t_flat "$T_OUT")" '[FAIL] SSD health (SMART)' 'PLIST-M01 adverse SMART remains failure'
+  assert_contains "$T_OUT" Failing 'PLIST-M01 adverse SMART value preserved'
 fi
 t_cli linux-omarchy-installed "" doctor
 assert_rc "$T_RC" 0 "doctor passes on an installed machine"
@@ -315,6 +328,42 @@ if t_plutil "sources --check reads the OS template"; then
   assert_rc "$T_RC" 1 "sources --check fails when the storage contract drifts"
   assert_contains "$(t_flat "$T_OUT")" "[FAIL] OS template \"Asahi Alarm Minimal (BTRFS)\" no longer has a 524288000-byte EFI partition" "EFI drift is a failure, not a warning"
   assert_contains "$T_OUT" "[PASS] Asahi installer" "the version still matches in that case"
+  # Real helper and owners, with failures selected by status rather than
+  # diagnostic text. The wrapper delegates every other native extraction.
+  plist_cli_dir=$(t_tmp)
+  mkdir "$plist_cli_dir/bin"
+  export PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE
+  PLIST_NATIVE=$(command -v plutil)
+  cat >"$plist_cli_dir/bin/plutil" <<'PLUTIL'
+#!/bin/sh
+if [ "$2" = "$PLIST_FAIL_KEY" ]; then
+  cat >/dev/null
+  printf '%s' "$PLIST_FAIL_VALUE"
+  exit 31
+fi
+exec "$PLIST_NATIVE" "$@"
+PLUTIL
+  chmod +x "$plist_cli_dir/bin/plutil"
+  t_load
+  OMB_FIXTURE=$FIX/mac-m1pro-1tb-roomy OMB_INTENT=read OMB_PERSIST=0
+  PLIST_FAIL_KEY=SMARTStatus PLIST_FAIL_VALUE='fake reported SMART'
+  doctor_output=$(PATH="$plist_cli_dir/bin:$PATH" mac_doctor)
+  assert_contains "$(t_flat "$doctor_output")" '[INFO] SSD health (SMART)' 'PLIST-M01 failed SMART extraction is not reported'
+  assert_not_contains "$doctor_output" 'fake reported SMART' 'PLIST-M01 no diagnostic-derived SMART value'
+  template=$(cat "$FIX/mac-m1pro-1tb-roomy/net/asahi_data")
+  PLIST_FAIL_KEY=os_list.1.partitions.0.expand PLIST_FAIL_VALUE=false
+  PATH="$plist_cli_dir/bin:$PATH" storage_contract_ok "$ASAHI_INSTALLER_VERIFIED" "$template"
+  assert_rc "$?" 0 'PLIST-M01 failed EFI expand presence probe remains absent'
+  expanded=$(printf '%s' "$template" | sed 's/"format"/"expand": false, "format"/g')
+  storage_contract_ok "$ASAHI_INSTALLER_VERIFIED" "$expanded"
+  assert_rc "$?" 1 'PLIST-M01 successful EFI expand=false still counts as present'
+  assert_contains "$CONTRACT_PROBLEMS" 'marks its EFI partition expand' 'PLIST-M01 EFI presence policy unchanged'
+  for key in os_list.1.partitions.0.type os_list.1.partitions.0.size os_list.1.partitions.1.expand; do
+    PLIST_FAIL_KEY=$key PLIST_FAIL_VALUE=12345
+    PATH="$plist_cli_dir/bin:$PATH" storage_contract_ok "$ASAHI_INSTALLER_VERIFIED" "$template"
+    assert_rc "$?" 1 "PLIST-M01 required template $key failure remains refused"
+  done
+  unset OMB_FIXTURE PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE
 fi
 if ! command -v plutil >/dev/null 2>&1; then
   assert_contains "$(t_flat "$T_OUT")" "[WARN] OS template not checked here" "without plutil the template is reported unchecked, never passed"

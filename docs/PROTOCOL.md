@@ -1090,8 +1090,11 @@ snapshot lists `plan.save`. The startup-check session and the foundation
 harness keep their own refusals.
 
 `lib/validate.sh` adapts the planning owners and changes none:
-`lib/storage.sh` and `lib/macos.sh`, which the Shared creation calls, stay
-byte-identical to the accepted baseline. One `mac_detect` capture is the
+`lib/storage.sh`, which the Shared creation calls, stays byte-identical to the
+accepted baseline. `lib/macos.sh` is pinned to that BASE with only the bounded
+PLIST-M01 `plist_get` helper/comment correction: failed extraction publishes no
+stdout and retains its nonzero status. Every other byte remains pinned; this
+changes no wire, schema, session, authority or validation policy. One `mac_detect` capture is the
 fresh planning context, under `OMB_INTENT=read` and `OMB_PERSIST=0`, with no
 reachability probe, saved choice, state or log. The machine is plannable
 exactly where the baseline asks its storage questions (`mac_main`):

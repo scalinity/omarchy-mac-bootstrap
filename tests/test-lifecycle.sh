@@ -41,6 +41,53 @@ if t_plutil "Asahi interruption classification"; then
     asahi_classify
     assert_eq "$ASAHI_STATE" none "with no recorded launch, $fx is ordinary free space"
   done
+  # PLIST-M01: exercise real container/volume loops with selected native
+  # extraction failures emitting plausible data on stdout.
+  plist_asahi_dir=$(t_tmp)
+  mkdir "$plist_asahi_dir/bin"
+  export PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE PLIST_ASAHI_HITS
+  PLIST_NATIVE=$(command -v plutil)
+  PLIST_ASAHI_HITS=$plist_asahi_dir/hits
+  cat >"$plist_asahi_dir/bin/plutil" <<'PLUTIL'
+#!/bin/sh
+printf '%s\n' "$2" >>"$PLIST_ASAHI_HITS"
+if [ "$2" = "$PLIST_FAIL_KEY" ]; then
+  cat >/dev/null
+  printf '%s' "$PLIST_FAIL_VALUE"
+  exit 31
+fi
+exec "$PLIST_NATIVE" "$@"
+PLUTIL
+  chmod +x "$plist_asahi_dir/bin/plutil"
+  OMB_FIXTURE=$FIX/mac-asahi-complete
+  mac_detect
+  ASAHI_STUB_ID=disk0s4
+  PLIST_FAIL_KEY=Containers.1.Volumes.4.DeviceIdentifier PLIST_FAIL_VALUE=disk4s9
+  : >"$PLIST_ASAHI_HITS"
+  PATH="$plist_asahi_dir/bin:$PATH" asahi_stub_evidence
+  assert_eq "$ASAHI_STATE" installed 'PLIST-M01 four real volumes and System role remain installed'
+  assert_contains "$(cat "$PLIST_ASAHI_HITS")" 'Containers.1.Volumes.3.DeviceIdentifier' 'PLIST-M01 fourth successful volume is visited'
+  assert_not_contains "$(cat "$PLIST_ASAHI_HITS")" 'Containers.1.Volumes.5.DeviceIdentifier' 'PLIST-M01 failed volume extraction terminates without a phantom'
+  PLIST_FAIL_KEY=Containers.1.Volumes.1.DeviceIdentifier
+  PATH="$plist_asahi_dir/bin:$PATH" asahi_stub_evidence
+  assert_eq "$ASAHI_STATE" first-stage-incomplete 'PLIST-M01 missing interior volume retains incomplete classification'
+  PLIST_FAIL_KEY=Containers.1.Volumes.0.Roles.0 PLIST_FAIL_VALUE=System
+  PATH="$plist_asahi_dir/bin:$PATH" asahi_stub_evidence
+  assert_eq "$ASAHI_STATE" installed-unverified 'PLIST-M01 failed role cannot fabricate System'
+  PLIST_FAIL_KEY=MountPoint PLIST_FAIL_VALUE=/Volumes/diagnostic
+  PATH="$plist_asahi_dir/bin:$PATH" asahi_stub_evidence
+  assert_eq "$ASAHI_STATE" installed-unverified 'PLIST-M01 failed MountPoint remains unmounted evidence'
+  PATH="$plist_asahi_dir/bin:$PATH" plist_get '<plist/>' MountPoint >"$plist_asahi_dir/out"
+  assert_rc "$?" 31 'PLIST-M01 missing MountPoint retains extraction status'
+  assert_empty_file "$plist_asahi_dir/out" 'PLIST-M01 missing MountPoint exposes no diagnostic-derived path'
+  ASAHI_STUB_ID=disk99s1
+  PLIST_FAIL_KEY=Containers.2.DesignatedPhysicalStore PLIST_FAIL_VALUE=disk99s1
+  : >"$PLIST_ASAHI_HITS"
+  PATH="$plist_asahi_dir/bin:$PATH" asahi_stub_evidence
+  assert_eq "$ASAHI_STATE" installed-unverified 'PLIST-M01 absent matching container remains unreadable'
+  assert_contains "$(cat "$PLIST_ASAHI_HITS")" 'Containers.1.DesignatedPhysicalStore' 'PLIST-M01 successful container entries remain visible'
+  assert_not_contains "$(cat "$PLIST_ASAHI_HITS")" 'Containers.3.DesignatedPhysicalStore' 'PLIST-M01 failed container extraction terminates enumeration'
+  unset PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE PLIST_ASAHI_HITS
   unset OMB_FIXTURE
 fi
 

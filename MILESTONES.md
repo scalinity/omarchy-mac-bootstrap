@@ -515,8 +515,8 @@ of docs/TESTING.md.
   published `0.1.0` native startup checks passed on both arm64 targets. Full
   local stock-Bash validation also passed 13,121 checks with no
   failures/skips, plus ShellCheck 0.9.0 and 0.11.0. `lib/validate.sh` adapts the
-  baseline's planning owners; `lib/storage.sh` and `lib/macos.sh` stay
-  byte-identical to the accepted baseline, and only `lib/core.sh` routes it
+  baseline's planning owners; at accepted V, `lib/storage.sh` and `lib/macos.sh`
+  remained byte-identical to the accepted baseline, and only `lib/core.sh` routed it
   (docs/PROTOCOL.md → *Future plan validation contract*, its implementation
   paragraphs). The review accepted the C-locale adapter delta and the
   machine-context gate: `parse_size` runs in the C locale, so a non-ASCII
@@ -529,10 +529,23 @@ of docs/TESTING.md.
   `tests/test-gate2-validate-proof.sh` (docs/TESTING.md → *Gate 2 read
   tests*). No action is advertised, `execute plan.save` stays unavailable,
   and nothing is persisted.
+- **PLIST-M01 prerequisite checkpoint:** independent review confirmed
+  **MEDIUM, prerequisite-blocking** failed plist-extraction stdout consumed as
+  data on supported macOS 15. Exact-H CI **37095456840**, attempt 1, finished
+  with five successful jobs and native macOS job **111124336601** failing the
+  unchanged complete Validate attachment: 54 passed, 1 failed, 2 ignored.
+  The single-store fixture was falsely refused as multi-store. This is a latent
+  compatibility defect exposed by legitimate new coverage; V's macOS 26 full
+  detection/Validate/proof evidence remains valid. Only a Class A `plist_get`
+  correction/comment and bounded tests/docs are authorized on H
+  `6a191f46ece7d9fceeb2b8538b0cb05b0599d154`. The fixed BASE safety pin permits
+  only that exact helper replacement; all other production owners remain
+  unchanged. **PLIST-M01 REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
+  CONFIRMATION**; this checkpoint is not closed.
 - **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
-  measurement. Only benchmark harness / measurement preparation is newly
-  authorized. The harness candidate and its non-authoritative smoke await
-  focused independent review; **O1 SIGNOFF = PENDING**. No authoritative
+  measurement. The benchmark endpoint H remains **UNACCEPTED**, and the harness
+  is **FROZEN** pending prerequisite review. Benchmark completion has **NOT
+  resumed**; **O1 SIGNOFF = PENDING**. No authoritative
   O1 run was accepted or claimed. The exact future matrix can be listed;
   no budget satisfaction or Gate 2 completion follows from harness tests.
   Rust Health/Logs/Validate requests, frontend Health/Logs/Validate screens

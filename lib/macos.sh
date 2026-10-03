@@ -3,9 +3,18 @@
 # provenance-first handoff to the Asahi Alarm installer.
 
 # plist_get PLIST_TEXT KEYPATH — structured extraction via plutil.
+# Publish only successful stdout; a sentinel preserves trailing newlines
+# while buffering, and failure retains plutil's status without its output.
 plist_get() {
+  local __value __status
   [ -n "$1" ] || return 1
-  printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
+  __value=$(printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
+    __status=$?
+    printf '.'
+    exit "$__status")
+  __status=$?
+  [ "$__status" = 0 ] || return "$__status"
+  printf '%s' "${__value%.}"
 }
 
 # The only resizeContainer invocation in this repository: the read-only

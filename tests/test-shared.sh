@@ -376,6 +376,53 @@ sudo -n diskutil addPartition disk0s6 ExFAT Shared $(( (150000000000 + 1048575) 
     ) >/dev/null 2>&1
     printf '%s' "$r"
   }
+  # PLIST-M01: the transaction and existing-volume owners still demand
+  # positive exFAT evidence; failed MountPoint extraction has no path value.
+  plist_shared_dir=$(t_tmp)
+  mkdir "$plist_shared_dir/bin"
+  export PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE
+  PLIST_NATIVE=$(command -v plutil)
+  cat >"$plist_shared_dir/bin/plutil" <<'PLUTIL'
+#!/bin/sh
+if [ "$2" = "$PLIST_FAIL_KEY" ]; then
+  cat >/dev/null
+  printf '%s' "$PLIST_FAIL_VALUE"
+  exit 31
+fi
+exec "$PLIST_NATIVE" "$@"
+PLUTIL
+  chmod +x "$plist_shared_dir/bin/plutil"
+  plist_shared_state=$(txn_state)
+  plist_shared_before=$(t_snapshot "$plist_shared_state")
+  shared_plist_result() {
+    (
+      OMB_FIXTURE=$FIX/mac-shared-created OMB_STATE_DIR=$plist_shared_state
+      OMB_INTENT=read OMB_PERSIST=0
+      state_init
+      mac_detect
+      shared_intent_load || exit 1
+      shared_txn_load || exit 1
+      shared_txn_check
+      printf 'txn_rc=%s result=%s uuid=%s mount=%s\n' "$?" "$TXN_RESULT" "$TXN_NEW_UUID" "$TXN_NEW_MOUNT"
+      shared_mac_state
+      printf 'state=%s mount=%s why=%s\n' "$SHARED_STATE" "${SHARED_MOUNT:-}" "$SHARED_WHY"
+    )
+  }
+  PLIST_FAIL_KEY=none PLIST_FAIL_VALUE=''
+  out=$(PATH="$plist_shared_dir/bin:$PATH" shared_plist_result)
+  assert_contains "$out" "txn_rc=0 result=done uuid=$U_SHARED mount=/Volumes/Shared" 'PLIST-M01 positive exFAT keeps transaction GUID and mount'
+  assert_contains "$out" 'state=created mount=/Volumes/Shared' 'PLIST-M01 existing Shared still recognized'
+  PLIST_FAIL_KEY=FilesystemType PLIST_FAIL_VALUE=exfat
+  out=$(PATH="$plist_shared_dir/bin:$PATH" shared_plist_result)
+  assert_contains "$out" 'txn_rc=1 result=broken uuid= mount=' 'PLIST-M01 failed exfat-looking extraction cannot satisfy postcondition'
+  assert_contains "$out" 'state=blocked' 'PLIST-M01 failed filesystem keeps existing Shared blocked'
+  assert_contains "$out" 'filesystem: none' 'PLIST-M01 filesystem error text never becomes a value'
+  PLIST_FAIL_KEY=MountPoint PLIST_FAIL_VALUE=/Volumes/diagnostic
+  out=$(PATH="$plist_shared_dir/bin:$PATH" shared_plist_result)
+  assert_contains "$out" "txn_rc=0 result=done uuid=$U_SHARED mount=" 'PLIST-M01 optional absent mount keeps verified transaction identity'
+  assert_not_contains "$out" /Volumes/diagnostic 'PLIST-M01 failed optional mount fabricates no path'
+  assert_eq "$(t_snapshot "$plist_shared_state")" "$plist_shared_before" 'PLIST-M01 postcondition/recognition reads persist nothing'
+  unset PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE
   # Created, and the run stopped before recording it: the record's own check
   # passes, so it is recorded; nothing is created again.
   d=$(txn_state)

@@ -1013,6 +1013,48 @@ planning sections are `t_plutil` skips on Linux.
 | `gen-between-pages` | the machine changes between two pages of one traversal | the second page is `changed` with no `row`; no page mixes two data sets |
 | `gen-traversal` | every page of a generation that does not change | each row once, none missing, in the producer's order |
 
+### PLIST-M01 production prerequisite tests
+
+Independent review confirmed MEDIUM, prerequisite-blocking failed-extraction
+stdout consumed as data on supported macOS 15. The Class A candidate changes
+only `lib/macos.sh::plist_get` and its comment. It remains awaiting independent
+confirmation. Diagnostic H's benchmark harness is UNACCEPTED and FROZEN;
+benchmark completion has not resumed. Q5 is RESOLVED FOR MEASUREMENT; O1 is
+PENDING; Gate 2 is IN PROGRESS. No timing smoke belongs to this remediation.
+
+`tests/test-detection.sh --plist-helper-only` enters the real helper through an
+isolated PATH stand-in on every platform, without the native-plutil gate. It
+checks one invocation, exact arguments/input/status and stdout bytes: failed
+diagnostic/device/integer/filesystem output, success ordinary/false/zero/empty,
+spaces/quotes/backslashes/Unicode/multiline/trailing whitespace, success then
+failure, and empty input without an invocation. The pre-fix run against H
+reported 63 passed, 5 failed, 0 skipped: failed stdout leaked while statuses and
+hit witnesses were intact. Remediation buffers once, observes status and
+publishes only success; a sentinel preserves trailing newlines.
+
+Detection also pins the absent second physical store and true second-store
+identity directly; required size/block/partition/offset/GUID data fail closed,
+enumeration end/interior gaps retain count checks, and unknown resize limits
+remain distinct from usable existing gaps. Lifecycle holds Asahi container and
+volume enumeration, roles, mounted evidence and first-boot classifications.
+CLI holds Doctor SMART unavailable/good/adverse outcomes and Sources' required
+template fields and status-sensitive EFI expand presence (including false).
+Shared holds its positive exFAT postcondition, optional mount path and unchanged
+identity/extent/receipt/internal-disk gates. Retained Validate, Health, Journey,
+Logs and their proof suites remain the owners of their existing contracts.
+
+`tests/test-static.sh` keeps BASE
+`2edb76a7de3f78ec90927ac93d5eec3a84636253`, the other whole-file pins and the
+Shared critical interval fixed. It reconstructs the entire expected `macos.sh`
+from BASE with exactly one historical helper/comment replaced by an explicit
+fixed candidate literal; it never takes that literal from current production.
+The entire candidate file must match, with its tracked mode/type preserved.
+Temporary negative controls reject outside/neighboring changes, alternative,
+duplicate, deleted or byte-different helpers, a changed BASE, missing/duplicate
+historical anchors and ambiguous replacements. Static also invokes the helper
+contract cases, so the unchanged pinned Bash 5.3.15 CI job executes them.
+Native-only plist/owner cases retain the existing no-plutil gate on Linux.
+
 ## Equivalence with the accepted baseline
 
 The focused Gate 2 remediation also tests the accepted decision

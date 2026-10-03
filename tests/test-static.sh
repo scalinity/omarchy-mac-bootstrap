@@ -6,6 +6,7 @@
 # and sup-shared-critical's static half (the Shared creation's code, byte for
 # byte the accepted baseline's).
 # shellcheck disable=SC2015,SC2016 # ok/fail always return 0; literal $ in patterns
+# shellcheck disable=SC2030,SC2031 # BASELINE change is an isolated negative control
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo "test-static"
@@ -180,9 +181,97 @@ if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
   [ -n "$a" ] && [ "$a" = "$b" ] && ok || fail "sup-shared-critical: from sudo -v through the final read to addPartition, the code is the baseline's"
   assert_eq "$(printf '%s\n' "$b" | grep -cE 'core_|rec_|OMB_EVENTS|_core_ps|ps -|spool')" 0 \
     "sup-shared-critical: no record, process-table reading or spool write inside the interval"
-  for f in macos.sh storage.sh asahi.sh state.sh common.sh; do
+  for f in storage.sh asahi.sh state.sh common.sh; do
     git -C "$REPO" diff --quiet "$BASELINE" -- "lib/$f" && ok || fail "lib/$f, which the Shared creation calls, is the accepted baseline's"
   done
+  # PLIST-M01 Class A exception: fixed BASE bytes plus one fixed helper
+  # replacement. Neither literal is extracted from the current production file.
+  cat >"$OMB_TMP_REG.plist.old" <<'OLD_PLIST'
+# plist_get PLIST_TEXT KEYPATH — structured extraction via plutil.
+plist_get() {
+  [ -n "$1" ] || return 1
+  printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
+}
+OLD_PLIST
+  cat >"$OMB_TMP_REG.plist.new" <<'NEW_PLIST'
+# plist_get PLIST_TEXT KEYPATH — structured extraction via plutil.
+# Publish only successful stdout; a sentinel preserves trailing newlines
+# while buffering, and failure retains plutil's status without its output.
+plist_get() {
+  local __value __status
+  [ -n "$1" ] || return 1
+  __value=$(printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
+    __status=$?
+    printf '.'
+    exit "$__status")
+  __status=$?
+  [ "$__status" = 0 ] || return "$__status"
+  printf '%s' "${__value%.}"
+}
+NEW_PLIST
+  git -C "$REPO" show "$BASELINE:lib/macos.sh" >"$OMB_TMP_REG.macos.base"
+  plist_expected() {
+    awk -v oldfile="$OMB_TMP_REG.plist.old" -v newfile="$OMB_TMP_REG.plist.new" '
+      BEGIN {
+        while ((getline line < oldfile) > 0) old = old line "\n"
+        while ((getline line < newfile) > 0) replacement = replacement line "\n"
+        close(oldfile); close(newfile)
+      }
+      { body = body $0 "\n"; if ($0 == "plist_get() {") definitions++ }
+      END {
+        at = index(body, old)
+        if (!at || definitions != 1 || old == "" || replacement == "") exit 1
+        tail = substr(body, at + length(old))
+        if (index(tail, old)) exit 1
+        printf "%s%s%s", substr(body, 1, at - 1), replacement, tail
+      }' "$1"
+  }
+  plist_pin() {
+    [ "$BASELINE" = 2edb76a7de3f78ec90927ac93d5eec3a84636253 ] || return 1
+    [ "$(grep -c '^plist_get() {' "$OMB_TMP_REG.plist.new")" = 1 ] || return 1
+    plist_expected "$1" >"$OMB_TMP_REG.macos.expected" || return 1
+    cmp -s "$OMB_TMP_REG.macos.expected" "$2"
+  }
+  plist_pin "$OMB_TMP_REG.macos.base" "$REPO/lib/macos.sh"
+  assert_rc "$?" 0 'PLIST-M01: whole macos.sh is BASE plus exactly the fixed helper/comment'
+  assert_eq "$(git -C "$REPO" ls-files -s lib/macos.sh | cut -d' ' -f1)" \
+    "$(git -C "$REPO" ls-tree "$BASELINE" lib/macos.sh | cut -d' ' -f1)" 'PLIST-M01: tracked file mode/type preserved'
+  if [ -f "$REPO/lib/macos.sh" ] && [ ! -L "$REPO/lib/macos.sh" ] && [ ! -x "$REPO/lib/macos.sh" ]; then ok; else fail 'PLIST-M01: regular non-executable file'; fi
+  # Construct variants; never edit or execute production to test this pin.
+  cp "$REPO/lib/macos.sh" "$OMB_TMP_REG.macos.bad"
+  printf '\n# unauthorized outside-helper change\n' >>"$OMB_TMP_REG.macos.bad"
+  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects arbitrary outside-helper bytes'
+  sed 's/__status=$?/__status=0/' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
+  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects an unpinned alternative helper'
+  cat "$REPO/lib/macos.sh" "$OMB_TMP_REG.plist.new" >"$OMB_TMP_REG.macos.bad"
+  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects duplicate helper'
+  awk '/^plist_get\(\) \{/ { omit = 1 } !omit { print } omit && /^}/ { omit = 0 }' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
+  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects deleted helper'
+  sed 's/local hw lim/local hw lim unauthorized/' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
+  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects neighboring production change'
+  (BASELINE=$(git -C "$REPO" rev-parse HEAD); plist_pin "$OMB_TMP_REG.macos.base" "$REPO/lib/macos.sh")
+  assert_rc "$?" 1 'PLIST-M01 pin rejects replacing fixed BASE with current head'
+  sed "s/printf '\.'/printf '!'/" "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
+  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects any differing pinned helper byte'
+  # Anchor failure/duplication are errors, not an empty expected-file match.
+  cat "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.plist.old" >"$OMB_TMP_REG.macos.badbase"
+  plist_pin "$OMB_TMP_REG.macos.badbase" "$REPO/lib/macos.sh"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects duplicate historical anchor'
+  plist_pin "$OMB_TMP_REG.macos.bad" "$REPO/lib/macos.sh"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects missing historical anchor'
+  cp "$OMB_TMP_REG.plist.new" "$OMB_TMP_REG.plist.saved"
+  cat "$OMB_TMP_REG.plist.saved" >>"$OMB_TMP_REG.plist.new"
+  plist_pin "$OMB_TMP_REG.macos.base" "$REPO/lib/macos.sh"
+  assert_rc "$?" 1 'PLIST-M01 pin rejects ambiguous candidate replacement'
+  mv "$OMB_TMP_REG.plist.saved" "$OMB_TMP_REG.plist.new"
+  "$T_BASH" "$REPO/tests/test-detection.sh" --plist-helper-only
+  assert_rc "$?" 0 'PLIST-M01 helper contracts also execute in every static job, including pinned Bash'
 else
   fail "the accepted baseline $BASELINE is not in this clone (CI checks out with fetch-depth: 0)"
 fi

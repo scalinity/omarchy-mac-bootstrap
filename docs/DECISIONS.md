@@ -353,6 +353,23 @@ other workload, platform, repetition, meaningful-work and timing obligation
 above remains binding. Exact timing and work-witness rules are in the
 benchmark section of docs/TESTING.md.
 
+**PLIST-M01 production prerequisite (Class A helper correction).** Independent
+review confirmed a MEDIUM, prerequisite-blocking compatibility defect: failed
+Apple plist extraction can emit stdout that callers consume as structured data.
+The bounded remediation on diagnostic head
+`6a191f46ece7d9fceeb2b8538b0cb05b0599d154` changes only `plist_get` in
+`lib/macos.sh` and its contract comment. Success publishes the extracted bytes;
+failure publishes nothing and retains the extraction's nonzero status. Empty,
+false, zero and multiline successful values retain their semantics. This is a
+candidate awaiting independent confirmation, not finding closure.
+Historical BASE remains `2edb76a7de3f78ec90927ac93d5eec3a84636253`.
+The static Shared safety pin permits only the explicit candidate helper/comment
+replacement in the whole BASE `macos.sh`; other pinned files and the critical
+interval remain unchanged. The seven benchmark commits through diagnostic H
+remain UNACCEPTED; the harness is FROZEN pending prerequisite review.
+Benchmark completion has not resumed, Q5 is RESOLVED FOR MEASUREMENT, O1 is
+PENDING, and Gate 2 remains IN PROGRESS.
+
 ## Migration
 
 **D19. The scanner runs no inventoried tool.** It reads the package
