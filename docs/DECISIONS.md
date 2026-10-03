@@ -353,7 +353,7 @@ other workload, platform, repetition, meaningful-work and timing obligation
 above remains binding. Exact timing and work-witness rules are in the
 benchmark section of docs/TESTING.md.
 
-**PLIST-M01 production prerequisite (Class A helper correction).** Independent
+**PLIST-M01 production prerequisite (historical Class A candidate record).** Independent
 review confirmed a MEDIUM, prerequisite-blocking compatibility defect: failed
 Apple plist extraction can emit stdout that callers consume as structured data.
 The bounded remediation on diagnostic head
@@ -370,7 +370,7 @@ remain UNACCEPTED; the harness is FROZEN pending prerequisite review.
 Benchmark completion has not resumed, Q5 is RESOLVED FOR MEASUREMENT, O1 is
 PENDING, and Gate 2 remains IN PROGRESS.
 
-**CP1-PLIST-M01 preservation ruling (Class D).** Independent review selected
+**CP1-PLIST-M01 preservation ruling (historical Class D candidate record).** Independent review selected
 "CP1 PRESERVATION EXCEPTION REQUIRED — BOUNDED TEST/DOC REMEDIATION AUTHORIZED"
 on PLIST candidate P `86b8c02aff9938bace32d05a464e2086d6ee3465`.
 The Class A production helper correction alone was insufficient to reconcile
@@ -385,6 +385,22 @@ three status/contract docs may change on P; production, Rust and benchmark bytes
 remain frozen. PLIST-M01 remains REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
 CONFIRMATION. Benchmark is FROZEN/UNACCEPTED, Q5 RESOLVED FOR MEASUREMENT,
 O1 PENDING and Gate 2 IN PROGRESS.
+
+**Current prerequisite acceptance and benchmark resume authorization.**
+Independent review returned **PLIST-M01 PRODUCTION PREREQUISITE ACCEPTED**:
+**PLIST-M01 CLOSED** at P2 `f91c19574cb8b0c8d3d0e1a16181c374476d7dd3`,
+prerequisite-only. The accepted H-to-P2 carve-out includes the Class A helper,
+historical Shared safety pin and CP1-PLIST-M01 Class D exception, exact-P2 CI
+and release/Protocol integrity. The preceding candidate records remain
+historical facts. The prerequisite freeze is lifted:
+**BENCHMARK HARNESS / GATE 2 MEASUREMENT PREPARATION ONLY MAY RESUME**.
+The seven V-to-H benchmark commits remain UNACCEPTED; the harness is a candidate
+awaiting focused independent review of V through the final benchmark candidate,
+with H-to-P2 carved out as the accepted prerequisite. Reviewing only the resumed
+P2 delta is insufficient. Q5 remains RESOLVED FOR MEASUREMENT, O1 PENDING,
+Gate 2 IN PROGRESS and frontend 0.2.0 UNRELEASED. Accepted prerequisite files
+remain frozen; no authoritative O1 campaign, optimization or product work is
+authorized by this preparation slice.
 
 ## Migration
 

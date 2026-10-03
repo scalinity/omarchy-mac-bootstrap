@@ -372,6 +372,7 @@ struct Context {
     n: usize,
     before: String,
     generation: String,
+    projection: Option<Vec<Record>>,
     setup_error: Option<String>,
     setup_requests: usize,
     core_requests: usize,
@@ -441,6 +442,7 @@ impl Context {
             n: 0,
             before,
             generation: String::new(),
+            projection: None,
             setup_error: None,
             setup_requests: 0,
             core_requests: 0,
@@ -456,6 +458,20 @@ impl Context {
                     context.generation = txt(records(&snapshot, "generation")[0], "id").into()
                 }
                 Err(e) => context.setup_error = Some(e),
+            }
+            if context.setup_error.is_none() {
+                let full_page = Case {
+                    offset: 0,
+                    limit: 500,
+                    ..case.clone()
+                };
+                match context.request(&full_page, false) {
+                    Ok((_, page)) => {
+                        context.projection =
+                            Some(records(&page, "row").into_iter().cloned().collect())
+                    }
+                    Err(e) => context.setup_error = Some(e),
+                }
             }
             context.setup_requests = context.core_requests;
             context.session = context.dir.join("omb-session.benchmark");
@@ -683,6 +699,16 @@ impl Context {
         let doc = record::admit(Family::Res, Some(c.op()), &bytes)
             .map_err(|e| format!("admission {e:?}"))?;
         witness(c, &doc, &bytes)?;
+        if !c.kind.is_empty() {
+            if txt(records(&doc, "generation")[0], "id") != self.generation {
+                return Err("invalid-work: requested page generation".into());
+            }
+            if let Some(projection) = &self.projection {
+                page_witness(c, &doc, &self.generation, projection)?;
+            } else if self.session != self.dir.join("omb-session.preparation") {
+                return Err("invalid-work: missing prepared projection".into());
+            }
+        }
         Ok((elapsed, doc))
     }
 }
@@ -724,6 +750,20 @@ fn txt<'a>(r: &'a Record, k: &str) -> &'a str {
 }
 fn records<'a>(d: &'a Document, ty: &str) -> Vec<&'a Record> {
     d.records.iter().filter(|r| r.ty == ty).collect()
+}
+fn page_witness(c: &Case, d: &Document, generation: &str, projection: &[Record]) -> Fallible<()> {
+    if txt(records(d, "generation")[0], "id") != generation {
+        return Err("invalid-work: requested page generation".into());
+    }
+    let expected = projection
+        .iter()
+        .skip(c.offset)
+        .take(c.limit)
+        .collect::<Vec<_>>();
+    if records(d, "row") != expected {
+        return Err("invalid-work: exact prepared page".into());
+    }
+    Ok(())
 }
 fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
     let bad = |s: &str| Err(format!("invalid-work: {s}"));
@@ -2082,9 +2122,59 @@ fn page_cold_session_has_no_prior_request() {
         .unwrap();
     let ctx = Context::new(&c);
     assert_eq!(ctx.n, 0);
-    assert_eq!(ctx.setup_requests, 1);
+    assert_eq!(ctx.setup_requests, 2);
     assert!(fs::read_dir(&ctx.session).unwrap().next().is_none());
     assert_eq!(ctx.generation.len(), 64);
+    assert_eq!(ctx.projection.as_ref().unwrap().len(), 6);
+}
+
+#[test]
+fn exact_pages_reject_changed_rows_and_generation() {
+    for kind in ["machine", "status", "doctor", "log"] {
+        let c = cases()
+            .into_iter()
+            .find(|c| native_case(c) && c.kind == kind && c.cold && c.offset == 1 && c.limit == 500)
+            .unwrap();
+        let mut ctx = Context::new(&c);
+        let (_, page) = ctx.request(&c, false).unwrap();
+        let projection = ctx.projection.as_ref().unwrap();
+        assert!(page_witness(&c, &page, &ctx.generation, projection).is_ok());
+        let mut changed = page.clone();
+        let row = changed.records.iter_mut().find(|r| r.ty == "row").unwrap();
+        row.fields.iter_mut().find(|(k, _)| k == "key").unwrap().1 = b"wrong-row".to_vec();
+        assert!(page_witness(&c, &changed, &ctx.generation, projection).is_err());
+        let mut changed = page.clone();
+        let row = changed.records.iter_mut().find(|r| r.ty == "row").unwrap();
+        row.fields.iter_mut().find(|(k, _)| k == "col").unwrap().1 = b"wrong-value".to_vec();
+        assert!(page_witness(&c, &changed, &ctx.generation, projection).is_err());
+        let mut changed = page.clone();
+        let rows = changed
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.ty == "row")
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        changed.records.swap(rows[0], rows[1]);
+        assert!(page_witness(&c, &changed, &ctx.generation, projection).is_err());
+        let mut changed = page.clone();
+        changed
+            .records
+            .iter_mut()
+            .find(|r| r.ty == "generation")
+            .unwrap()
+            .fields
+            .iter_mut()
+            .find(|(k, _)| k == "id")
+            .unwrap()
+            .1 = b"0".repeat(64);
+        assert!(page_witness(&c, &changed, &ctx.generation, projection).is_err());
+        let wrong_offset = Case {
+            offset: 0,
+            ..c.clone()
+        };
+        assert!(page_witness(&wrong_offset, &page, &ctx.generation, projection).is_err());
+    }
 }
 #[test]
 fn persistent_effect_is_detectable() {

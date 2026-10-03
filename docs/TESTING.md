@@ -713,6 +713,14 @@ runner separates list mode, three-repetition NON-AUTHORITATIVE smoke and future
 the timing entry is ignored and never runs beside those suites. Harness tests
 and smoke do not establish budget satisfaction or O1 signoff.
 
+The resumed candidate strengthens detail-page witnesses: an untimed snapshot
+and full projection are acquired in a separate preparation session. Each
+measured Journey, Doctor or Logs page must match the requested generation and
+the exact ordered slice of every prepared row field. Both preparation requests
+are counted outside timing; the cold benchmark session remains unused until
+its measured detail request. This reference proves paging equivalence against
+the real producer, rather than serving as an independent product oracle.
+
 Run on macOS arm64 and Linux aarch64, cold (first request after start) and
 warm, with a small inventory (50 items) and a representative one (2 000
 items, 400 profile entries), 200 repetitions each; the time is split into
@@ -1048,6 +1056,17 @@ planning sections are `t_plutil` skips on Linux.
 
 ### PLIST-M01 production prerequisite tests
 
+**Current independent result:** **PLIST-M01 PRODUCTION PREREQUISITE ACCEPTED**,
+**PLIST-M01 CLOSED** at P2 `f91c19574cb8b0c8d3d0e1a16181c374476d7dd3`.
+This is prerequisite-only acceptance of the Class A correction, historical
+Shared safety-pin exception, CP1-PLIST-M01 Class D exception, exact-P2 six-job
+CI and release/Protocol integrity. Those implementation/proof files are frozen
+and may run as regressions. The benchmark prerequisite freeze is lifted;
+benchmark preparation may resume, while the harness remains a candidate
+awaiting focused independent review and O1 remains PENDING. Q5 is RESOLVED FOR
+MEASUREMENT, Gate 2 IN PROGRESS and frontend 0.2.0 UNRELEASED.
+
+**Historical remediation record, before P2 acceptance:**
 Independent review confirmed MEDIUM, prerequisite-blocking failed-extraction
 stdout consumed as data on supported macOS 15. The Class A candidate changes
 only `lib/macos.sh::plist_get` and its comment. It remains awaiting independent

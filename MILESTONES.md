@@ -529,7 +529,7 @@ of docs/TESTING.md.
   `tests/test-gate2-validate-proof.sh` (docs/TESTING.md → *Gate 2 read
   tests*). No action is advertised, `execute plan.save` stays unavailable,
   and nothing is persisted.
-- **PLIST-M01 prerequisite checkpoint:** independent review confirmed
+- **PLIST-M01 prerequisite checkpoint (historical candidate record):** independent review confirmed
   **MEDIUM, prerequisite-blocking** failed plist-extraction stdout consumed as
   data on supported macOS 15. Exact-H CI **37095456840**, attempt 1, finished
   with five successful jobs and native macOS job **111124336601** failing the
@@ -542,7 +542,7 @@ of docs/TESTING.md.
   only that exact helper replacement; all other production owners remain
   unchanged. **PLIST-M01 REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
   CONFIRMATION**; this checkpoint is not closed.
-- **CP1-PLIST-M01 preservation checkpoint:** P
+- **CP1-PLIST-M01 preservation checkpoint (historical candidate record):** P
   `86b8c02aff9938bace32d05a464e2086d6ee3465` passed the unchanged native
   macOS-15 Validate attachment (55/0, two ignored), then exact-P CI
   **37102168035** / job **111143698200** failed the frozen CP1 oracle (350/5/0).
@@ -554,10 +554,19 @@ of docs/TESTING.md.
   candidate awaiting focused prerequisite remediation review, not PLIST-M01
   closure or benchmark acceptance. Historical language/parser, runtime
   authority and default exact response preservation remain unchanged.
+- **Accepted prerequisite at P2:** independent verdict **PLIST-M01 PRODUCTION
+  PREREQUISITE ACCEPTED**, **PLIST-M01 CLOSED** at
+  `f91c19574cb8b0c8d3d0e1a16181c374476d7dd3`. Acceptance is prerequisite-only:
+  the Class A helper correction, historical Shared safety-pin exception,
+  CP1-PLIST-M01 Class D preservation exception, exact-P2 six-job CI
+  **37107501150** (attempt 1), and release/Protocol integrity are accepted.
+  The benchmark prerequisite freeze is lifted; accepted implementation/proof
+  files remain frozen absent a concrete regression.
 - **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
-  measurement. The benchmark endpoint H remains **UNACCEPTED**, and the harness
-  is **FROZEN** pending prerequisite review. Benchmark completion has **NOT
-  resumed**; **O1 SIGNOFF = PENDING**. No authoritative
+  measurement. The seven V-to-H benchmark commits remain **UNACCEPTED**;
+  **BENCHMARK HARNESS / GATE 2 MEASUREMENT PREPARATION ONLY MAY RESUME**.
+  The harness remains a candidate awaiting focused independent review;
+  **O1 SIGNOFF = PENDING**. No authoritative
   O1 run was accepted or claimed. The exact future matrix can be listed;
   no budget satisfaction or Gate 2 completion follows from harness tests.
   Rust Health/Logs/Validate requests, frontend Health/Logs/Validate screens

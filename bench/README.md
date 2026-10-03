@@ -67,9 +67,13 @@ canonical fact lines joined with LF without trailing LF, and final done/ok.
 Filesystem/source-hash/lock I/O remains included; no storage survey is requested.
 
 Ordinary families use mac-m1pro-1tb-roomy or linux-alarm-fresh in read-only
-development fixture sessions. Paging obtains generation in a separate
-preparation session, then creates a fresh measured session whose first request
-is detail. These setup requests are counted and excluded. Warm uses one
+development fixture sessions. Paging obtains a snapshot generation and full
+projection in a separate preparation session, then creates a fresh measured
+session whose first request is detail. Both setup requests are counted and
+excluded. Each page must match the requested generation and the exact ordered
+slice of all prepared row fields, including keys and column values. The
+reference is an untimed real-producer projection, not an independent product
+oracle. Warm uses one
 verified untimed equivalent request. Machine/status totals are 6/9 on macOS,
 6/5 on Linux; Doctor totals are 14/16. Pages must have exact nonzero counts.
 Health uses the real Doctor owner including fixture network checks. Logs uses
