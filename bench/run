@@ -20,6 +20,10 @@ if [ "$mode" != list ] && [ -d tests/.tmp ]; then
   echo 'refusing timing while tests/.tmp exists; finish the suite and its cleanup first' >&2
   exit 2
 fi
+if [ "$mode" != list ] && [ -n "$(git status --porcelain -- bench frontend lib data release omarchy-bootstrap tests/fixtures tests/frontend-inputs.sh)" ]; then
+  echo 'refusing timing with uncommitted benchmark/source inputs' >&2
+  exit 2
+fi
 : "${CARGO_TARGET_DIR:=${TMPDIR:-/tmp}/omb-benchmark-target}"
 export CARGO_TARGET_DIR
 # Keep benchmark test symbols: stripping the release proc-macro dylib makes

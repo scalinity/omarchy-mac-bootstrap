@@ -16,8 +16,11 @@ Finish all tests before smoke. Timing refuses existing tests/.tmp; this is a
 conservative scratch interlock, not general process discovery. No other jobs
 are inspected or killed. `OMB_BENCH_BASH` selects the controller's interpreter;
 `OMB_BENCH_MACHINE_LABEL` supplies a machine label. Core children receive a
-cleared environment, including no inherited OMB_TEST_* variables. Cargo target
-output defaults outside the repository. Release-profile test compilation is
+cleared environment, including no inherited OMB_TEST_* variables.
+Timing requires committed, clean benchmark/source inputs; unrelated reference
+images remain outside that check. A Git-head change during a case stops output
+publication for that case, preserving earlier records without misattribution.
+Cargo target output defaults outside the repository. Release-profile test compilation is
 excluded from measured intervals. Benchmark release tests use the explicit
 `CARGO_PROFILE_RELEASE_STRIP=none` override and retain symbols: stock stripped
 proc-macro compilation returned E0463 on this Mac, including in a fresh target;

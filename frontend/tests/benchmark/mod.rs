@@ -1034,6 +1034,9 @@ struct Provenance {
     runner: String,
 }
 impl Provenance {
+    fn source_unchanged(&self) -> bool {
+        self.sha == git(&["rev-parse", "HEAD"])
+    }
     fn validate(&self) -> Fallible<()> {
         if [
             &self.sha,
@@ -1503,7 +1506,9 @@ fn measurement() {
     p.validate().expect("required provenance");
     let reps = if mode == "smoke" { 3 } else { 200 };
     for c in cases().iter().filter(|c| native_case(c)) {
+        assert!(p.source_unchanged(), "source commit changed before case");
         let (samples, identity) = run_case(c, reps, true);
+        assert!(p.source_unchanged(), "source commit changed during case");
         writeln!(file, "{}", result(c, &samples, &identity, &p, &mode, reps)).unwrap();
         file.flush().unwrap();
         println!(
@@ -2141,4 +2146,21 @@ fn owned_child_group_is_reaped() {
         .unwrap();
     terminate(&mut child);
     assert!(!child.try_wait().unwrap().unwrap().success());
+}
+
+#[test]
+fn changed_source_commit_refused() {
+    let mut p = Provenance {
+        sha: git(&["rev-parse", "HEAD"]),
+        lock: "l".into(),
+        frontend: "f".into(),
+        harness: "h".into(),
+        bash: "b".into(),
+        machine: "m".into(),
+        system: "o".into(),
+        runner: "r".into(),
+    };
+    assert!(p.source_unchanged());
+    p.sha = "0".repeat(40);
+    assert!(!p.source_unchanged());
 }
