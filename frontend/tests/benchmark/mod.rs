@@ -156,6 +156,9 @@ impl Case {
             "bench-validate" => {
                 "real-validator; normals; installer-answers; Q4-review-basis; canonical-admission; no-probes"
             }
+            "bench-disk" if self.label == "validate" => {
+                "complete-request-validator; macOS-fixture-capture; normals; installer-answers; Q4-review-basis; canonical-admission"
+            }
             "bench-logs" => "selected-last-log; lines=40; exact-tail-rows/page; unchanged-source",
             "bench-health" => {
                 "real-Doctor-counts; nonempty-findings; fixture-network-checks; exact-page"
@@ -1697,6 +1700,11 @@ fn validate_classification() {
         all.iter().any(|c| c.id == "bench-disk"
             && c.label == "validate"
             && c.budget_type == "investigate")
+    );
+    assert!(
+        all.iter()
+            .filter(|c| c.id == "bench-disk" && c.label == "validate")
+            .all(|c| c.witness_name().starts_with("complete-request-validator"))
     );
     assert!(
         all.iter()
