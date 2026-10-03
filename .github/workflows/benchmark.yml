@@ -49,9 +49,6 @@ jobs:
       CAMPAIGN_REPOSITORY: ${{ github.repository }}
       CAMPAIGN_RUN_ID: ${{ github.run_id }}
       CAMPAIGN_ATTEMPT: ${{ github.run_attempt }}
-      HOST_ARCH: ${{ runner.arch }}
-      HOST_NAME: ${{ runner.name }}
-      HOST_OS: ${{ runner.os }}
       PLATFORM: ${{ matrix.platform }}
       RUNNER_LABEL: ${{ matrix.runner }}
       EXPECTED_SYSTEM: ${{ matrix.system }}
@@ -114,6 +111,10 @@ jobs:
 
       - name: Verify native host and prepare the accepted Rust toolchain
         working-directory: benchmark-source/frontend
+        env:
+          HOST_ARCH: ${{ runner.arch }}
+          HOST_NAME: ${{ runner.name }}
+          HOST_OS: ${{ runner.os }}
         run: |
           {
             date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
