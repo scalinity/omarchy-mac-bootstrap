@@ -3045,12 +3045,12 @@ fn selected_probes(path: &Path) -> Vec<String> {
 }
 #[test]
 fn phase_production_equivalence_boundaries_probes_and_no_latency() {
-    // Native-family coverage includes every page/cold/warm workload. Linux
-    // CI additionally drives loaded Validate separately through existing tests.
-    for c in cases()
-        .into_iter()
-        .filter(|c| native_case(c) && phase_applicable(c)[0])
-    {
+    // Native hosts cover every complete-core case. Other host architectures
+    // execute their platform fixtures as correctness proof, never native latency.
+    for c in cases().into_iter().filter(|c| {
+        phase_applicable(c)[0]
+            && (native_case(c) || (c.platform == host().0 && c.id != "bench-snapshot"))
+    }) {
         let mut ctx = Context::new(&c);
         ctx.proof_trace = true;
         let (_, ordinary) = ctx.request(&c, false).unwrap();
@@ -3086,7 +3086,13 @@ fn phase_production_equivalence_boundaries_probes_and_no_latency() {
 fn phase_live_negative_controls() {
     let c = cases()
         .into_iter()
-        .find(|c| native_case(c) && c.id == "bench-snapshot")
+        .find(|c| {
+            c.platform == host().0
+                && phase_applicable(c)[2]
+                && c.scope == "journey"
+                && c.kind.is_empty()
+                && c.id != "bench-snapshot"
+        })
         .unwrap();
     let base = phase_sources().unwrap();
     for replacement in [
@@ -3152,7 +3158,13 @@ fn phase_total_population_stays_separate() {
 fn phase_live_timeout_is_accounted_and_reaped() {
     let c = cases()
         .into_iter()
-        .find(|c| native_case(c) && c.id == "bench-snapshot")
+        .find(|c| {
+            c.platform == host().0
+                && phase_applicable(c)[2]
+                && c.scope == "journey"
+                && c.kind.is_empty()
+                && c.id != "bench-snapshot"
+        })
         .unwrap();
     let mut ctx = Context::new(&c);
     let (_, ordinary) = ctx.request(&c, false).unwrap();

@@ -247,7 +247,10 @@ and copied-shell syntax, boundary omission/duplication/reordering/backward time,
 zero/N/A/empty statistics, raw-order nearest ranks, independent total/failure/
 timeout accounting, live malformed/wrong-bound/incomplete/tampered companions,
 semantic/effect equivalence and identical ordered sys_* probe selection for all
-applicable native cases. Correctness executions disable phase timestamps
+applicable native cases and host-platform fixture families on x86_64. Live
+negative controls use the host-platform Journey fixture, with no native-arm64
+selection prerequisite. Fixture correctness on x86_64 is not native latency.
+Correctness executions disable phase timestamps
 entirely; synthetic clock fixtures test arithmetic, liveness clocks enforce
 transport deadlines only. Existing exact-page, production attachment, loaded
 Validate, CP1 and prerequisite proofs remain unchanged.
