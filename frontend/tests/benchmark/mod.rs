@@ -1036,6 +1036,20 @@ struct Provenance {
 impl Provenance {
     fn source_unchanged(&self) -> bool {
         self.sha == git(&["rev-parse", "HEAD"])
+            && git(&[
+                "status",
+                "--porcelain",
+                "--",
+                "bench",
+                "frontend",
+                "lib",
+                "data",
+                "release",
+                "omarchy-bootstrap",
+                "tests/fixtures",
+                "tests/frontend-inputs.sh",
+            ])
+            .is_empty()
     }
     fn validate(&self) -> Fallible<()> {
         if [

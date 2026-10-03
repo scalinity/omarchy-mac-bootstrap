@@ -18,7 +18,7 @@ are inspected or killed. `OMB_BENCH_BASH` selects the controller's interpreter;
 `OMB_BENCH_MACHINE_LABEL` supplies a machine label. Core children receive a
 cleared environment, including no inherited OMB_TEST_* variables.
 Timing requires committed, clean benchmark/source inputs; unrelated reference
-images remain outside that check. A Git-head change during a case stops output
+images remain outside that check. A Git-head or input change during a case stops output
 publication for that case, preserving earlier records without misattribution.
 Cargo target output defaults outside the repository. Release-profile test compilation is
 excluded from measured intervals. Benchmark release tests use the explicit
