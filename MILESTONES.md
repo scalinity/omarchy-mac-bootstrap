@@ -562,17 +562,16 @@ of docs/TESTING.md.
   **37107501150** (attempt 1), and release/Protocol integrity are accepted.
   The benchmark prerequisite freeze is lifted; accepted implementation/proof
   files remain frozen absent a concrete regression.
-- **Still open in Gate 2:** Gate 2 is **IN PROGRESS**. Q5 is resolved for
-  measurement. The seven V-to-H benchmark commits remain **UNACCEPTED**;
-  The completed V-to-B independent review credited other methodology and
-  identified BENCH-M01 as the single blocker. The harness remains a candidate
-  awaiting BENCH-M01 closure/final instrument acceptance review;
-  **O1 SIGNOFF = PENDING**. No authoritative
-  O1 run was accepted or claimed. The exact future matrix can be listed;
-  no budget satisfaction or Gate 2 completion follows from harness tests.
-  Rust Health/Logs/Validate requests, frontend Health/Logs/Validate screens
-  and navigation, S5+, Gate 3, frontend `0.2.0` release, M15, M16 and M17
-  remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
+- **Still open in Gate 2:** Gate 2 is **IN PROGRESS** until the frontend's
+  read-only integration and its equivalence are independently accepted. O1
+  performance signoff is **ACCEPTED**, with finding O1-LOGS-P01 recorded and
+  open (*O1 performance signoff* below). The production frontend read-surface
+  integration — the Welcome screen, the Journey dashboard, machine and status
+  details, Health, Logs, and a read-only presentation of
+  `validate select action=plan.save` — is authorized; its candidate awaits
+  **M14 GATE 2 — FRONTEND READ-ONLY INTEGRATION / EQUIVALENCE REVIEW**. S5+,
+  Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized;
+  frontend `0.2.0` is **UNRELEASED**.
 
 - **BENCH-M01 candidate remediation:** independent review of B
   `6129d07bd6cf04a4fd9a98773231677fb1473375` credited other benchmark methodology
@@ -591,6 +590,27 @@ of docs/TESTING.md.
   base. If independently closed without a new concrete blocker, next is
   directly **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN / SIGNOFF-EVIDENCE COLLECTION
   ONLY** under its own authorization. PLIST-M01 remains CLOSED at P2.
+- **O1 performance signoff:** the measurement campaign is complete and the
+  independent verdict is **GATE 2 PERFORMANCE SIGNOFF ACCEPTED — LOGS FINDING
+  RECORDED**. The official populations are the final physical M1 Pro macOS
+  population, 52 of 52 cases and 10,400 of 10,400 ordinary repetitions, and
+  the retained complete Linux ARM64 population, 50 of 50 cases and 10,000 of
+  10,000 ordinary repetitions: 102 of 102 cases and 20,400 successful ordinary
+  repetitions together, with no ordinary failure, timeout or missing sample.
+  The historical hosted-Mac population and the interrupted first physical-Mac
+  attempt are excluded from the official macOS population. The physical-Mac
+  results were supplied to the review as measurement evidence; the retained
+  Linux raw evidence was inspected independently. Raw benchmark artifacts and
+  result bytes stay outside the repository, unchanged.
+  **O1-LOGS-P01** stays open: the physical-macOS full-window Logs detail
+  exceeds its target, p95 < 500 ms, in four cases — cold offset-0 limit-500
+  p95 544.667 ms; cold offset-1 limit-500 p95 541.182 ms; warm offset-0
+  limit-500 p95 540.411 ms; warm offset-1 limit-500 p95 543.766 ms. All four
+  remain **MISS** results and the target is unchanged. Disposition: **ACCEPTED
+  LIMITATION — NON-BLOCKING FOR GATE 2 PERFORMANCE SIGNOFF**. No Logs
+  optimization was performed, and none is authorized; the finding stays
+  recorded until a later measurement establishes compliance. Gate 2 as a
+  whole remains **IN PROGRESS**.
 
 ### Gate 3 — The action contract under fixtures
 

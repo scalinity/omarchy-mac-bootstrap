@@ -298,11 +298,14 @@ tested on its own. **`CP0-Q3b-overflow`** settles the deferred log producer: whe
 any selected line cannot be represented within the canonical record and value
 limits, measured after encoding, the whole answer is `refused` with code
 `overflow` and presents no row — never a partial or truncated success, never
-a larger window. The plan is validated, not presented: Gate 2 has the
-operation, its contract, its equivalence, its read-effect proof and its
-benchmark, and no screen for it; the Storage Planner and the Safety Gate
-belong to the gate that exposes their actions. *Set aside:* a 2 000-line log
-window; a validation screen in this gate.
+a larger window. The plan is validated and its answer shown, never saved:
+Gate 2 has the operation, its contract, its equivalence, its read-effect
+proof and its benchmark, and a read-only presentation that collects the two
+sizes, sends `validate select action=plan.save`, and shows the core's
+normalised sizes, installer answers, warnings, refusals and review basis —
+no save, no action and no execute. The Storage Planner, its scale bar and
+the Safety Gate belong to the gate that exposes their actions. *Set aside:*
+a 2 000-line log window; an executable planner in this gate.
 
 **Gate2-read-representation-failure (accepted independent ruling).** For
 ordinary journey `snapshot` and `detail kind=machine|status`, required
@@ -421,6 +424,34 @@ blocker, proceed directly to **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN /
 SIGNOFF-EVIDENCE COLLECTION ONLY**, under that separate authorization. No
 generic preparation milestone, optimization, frontend source, product UI or
 release is authorized.
+
+**O1 performance signoff and O1-LOGS-P01.** The independent review returned
+**GATE 2 PERFORMANCE SIGNOFF ACCEPTED — LOGS FINDING RECORDED**. Official
+populations: the final physical M1 Pro macOS population, 52 of 52 cases and
+10,400 of 10,400 ordinary repetitions, and the retained complete Linux ARM64
+population, 50 of 50 cases and 10,000 of 10,000 ordinary repetitions — 102 of
+102 cases and 20,400 successful ordinary repetitions, with zero ordinary
+failures, timeouts and missing samples. The historical hosted-Mac population
+and the interrupted first physical-Mac attempt are excluded from the official
+macOS population. The physical-Mac results were supplied measurement
+evidence; the retained Linux raw evidence was inspected independently. Raw
+artifacts and historical result bytes stay outside the repository and are
+not modified. **O1-LOGS-P01** — physical-macOS full-window Logs detail
+exceeds the strict target p95 < 500 ms: cold offset-0 limit-500 p95
+544.667 ms, cold offset-1 limit-500 p95 541.182 ms, warm offset-0 limit-500
+p95 540.411 ms, warm offset-1 limit-500 p95 543.766 ms. The four stay true
+**MISS** results; the target is not raised and they are not relabelled.
+Disposition: **ACCEPTED LIMITATION — NON-BLOCKING FOR GATE 2 PERFORMANCE
+SIGNOFF**. No optimization was performed and none is authorized; the finding
+stays visible until a later measurement establishes compliance. The
+frontend's own pending feedback while Logs is read is presentation, never a
+workaround for this finding or evidence about the core's target. Gate 2 as a
+whole remains IN PROGRESS until the frontend's read-only integration and
+equivalence are accepted. The same authorization admits that integration:
+the Welcome screen, the Journey dashboard, machine and status details,
+Health, Logs, and a read-only presentation of plan validation, over the
+accepted core reads and Protocol 1, with no action, save or execute
+authority.
 
 ## Migration
 
@@ -649,7 +680,7 @@ beside it, and no code depends on another question's answer.
 | Q3a | Which scope owns the log's data set? | `debug` is the scope of the M15 report; `journey` would couple the log's changes to the journey's generation. | **RESOLVED: `logs` / `log`.** The baseline's last sorted matching path and exact last-40-line window own the dataset; full path, context, presence and exact window bytes/order bind its generation (docs/PROTOCOL.md → *Future health and logs producers*). | CP1 scope compatibility is the prerequisite. Producer, client, screen, equivalence and benchmark implementation remain unauthorized. |
 | Q3b | How is a line the record format cannot carry answered? | `logs` prints a whole line, the record format bounds a value (4 KiB), and `log_event` does not bound a line. | **Resolved, named `CP0-Q3b-overflow` (D52).** Any unrepresentable line in the complete selected 40-line window makes snapshot/detail `refused overflow` with empty generation and fixed safe text before changed/offset handling. No partial metadata/rows, truncation or larger window. Required location metadata instead uses `error representation`; operational discovery/read/capture failure uses `error io` (docs/PROTOCOL.md → *Future health and logs producers*). | No semantic question remains; the future log producer implements it. |
 | Q4 | How is a plan the disk cannot support answered, and what are `invalid`'s codes? | `blocker` is forbidden in `validate`'s answer; `parse_size` and `plan_validate` return prose, not codes; the baseline's planner file is a safety-reviewed file. | **RESOLVED.** Shared-first validation, effective whole-decimal-GB sizes, deterministic first parameter error, finite invalid vocabulary, `refused unplannable`, distinct infrastructure/invariant/representation errors and `Q4-plan-validation-basis-v1` are accepted (docs/PROTOCOL.md → *Future plan validation contract*). | Nothing further: the separately authorized ordinary fixture-only Validate producer implements it (candidate, awaiting focused independent review), and no planner/parser owner changed. |
-| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | **RESOLVED FOR MEASUREMENT.** macOS journey/detail are `bench-disk`; Linux journey/detail are `bench-journey-linux`; future health/logs/validation classifications, component boundaries and local initiation feedback are recorded in the benchmark section of docs/TESTING.md. D53 remains binding. | Actual O1 signoff is pending; no benchmark harness is authorized in CP1. |
+| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | **RESOLVED FOR MEASUREMENT.** macOS journey/detail are `bench-disk`; Linux journey/detail are `bench-journey-linux`; future health/logs/validation classifications, component boundaries and local initiation feedback are recorded in the benchmark section of docs/TESTING.md. D53 remains binding. | O1 signoff is accepted, with O1-LOGS-P01 recorded and open (the O1 performance signoff record above). |
 | Q6 | May `validate` name `plan.save`, which `execute` refuses? | The golden and the basis family name `plan.save`; the action is not exposed until Gate 3. | **Accepted (Q6-A).** `validate` may name `plan.save` as the validation and basis family while `execute plan.save` stays unavailable and no Gate 2 snapshot lists it as an action. Naming it confers no authority, and validation saves nothing. | Nothing. |
 
 **PROTOCOL 1 REMAINS SUFFICIENT — REVIEWED ADDITIVE SCOPE EXTENSION.**
@@ -670,8 +701,9 @@ Current authorization after CP1: S4's ordinary fixture-only Logs producer
 was separately authorized and is accepted at `a0ba61c`; S4's ordinary
 fixture-only Health (Doctor) producer is accepted at `27f79d6`. The ordinary
 fixture-only Validate producer is separately authorized and implemented,
-awaiting focused independent review. Benchmarks and O1 signoff, frontend
-Health/Logs/Validate product slices and S5+ remain unauthorized
+awaiting focused independent review. O1 signoff is accepted with
+O1-LOGS-P01 recorded; the frontend read-surface integration is authorized
+(the O1 performance signoff record above); S5+ remain unauthorized
 (MILESTONES.md → *Gate 2 — Read-only equivalence*).
 
 ## Where each design question is answered
