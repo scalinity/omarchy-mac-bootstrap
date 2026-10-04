@@ -1,28 +1,29 @@
 ---
 source: tests/frames.rs
+assertion_line: 221
 expression: text(&b)
 ---
- ◒ omarchy mac bootstrap             macOS · user · fixture
- journey not derived in this build
-────────────────────────────────────────────────────────────
- ▍Foundation
-
-   Interface · the foundation: test actions over fixtures
-   Fixture   · mac-m1pro-1tb-roomy
-   Operation ✓ none
-
- ▍Actions
-
- ❯ Read the fixture (test)         read
-   Change the fixture (test)       act
-   Hand over the terminal (test)   act · handoff
-
-   Runs the fake read child: its output is shown, its
-   diagnostics kept within their limits.
-
-
-
-
-
-────────────────────────────────────────────────────────────
- ⏎ run   ↑↓ move   r refresh   ? help
+ ◒ Journey ───────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan
+┌ Journey ─────────────────────────────────────────────────┐
+│ · · · · · · · · · ·                                      │
+│ No stage is derived yet: every station is later.         │
+│                                                          │
+│ ▍Where it stands                                         │
+│   The core gave no next step for this session.           │
+│                                                          │
+│ ▍Facts                                                   │
+│   Interface  the foundation: test actions over fixtures  │
+│   Fixture    mac-m1pro-1tb-roomy                         │
+│   Operation  ✓ none                                      │
+│                                                          │
+│ ▍Actions                                                 │
+│ ❯ Read the fixture (test)         read                   │
+│   Change the fixture (test)       act                    │
+│   Hand over the terminal (test)   act · handoff          │
+│   Runs the fake read child: its output is shown, its     │
+│   diagnostics kept within their limits.                  │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture

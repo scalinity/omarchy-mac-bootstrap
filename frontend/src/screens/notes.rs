@@ -1,8 +1,8 @@
-//! The plain screens: connecting, the core's failure, help (generated from
-//! the keymap), and the session's logs and diagnostics.
+//! The plain screens: connecting, the core's failure, and help (generated
+//! from the keymap).
 
-use crate::app::{Model, Screen};
-use crate::keys::{self, Place};
+use crate::app::Model;
+use crate::keys;
 use crate::theme::{Theme, Token};
 use crate::widgets;
 use ratatui::Frame;
@@ -10,7 +10,8 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-pub fn connecting(f: &mut Frame, area: Rect, _m: &Model, t: &Theme) {
+pub fn connecting(f: &mut Frame, area: Rect, t: &Theme) {
+    let inner = widgets::panel(f, area, "Connecting", t);
     let lines = vec![
         Line::raw(""),
         Line::styled(
@@ -18,41 +19,44 @@ pub fn connecting(f: &mut Frame, area: Rect, _m: &Model, t: &Theme) {
             t.style(Token::Muted),
         ),
     ];
-    f.render_widget(Paragraph::new(lines), area);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 pub fn fatal(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
-    let lines = vec![
-        widgets::heading(t, "No answer"),
-        Line::raw(""),
-        Line::from(vec![
-            Span::raw("   "),
-            Span::styled(format!("{} ", t.g.fail), t.style(Token::Danger)),
-            Span::styled(m.fatal.clone(), t.style(Token::Text)),
-        ]),
-        Line::raw(""),
-        Line::styled(
-            "   r try again   q continue in the text interface",
-            t.style(Token::Muted),
-        ),
-        Line::styled(
-            "   ./omarchy-bootstrap status shows where the machine is.",
-            t.style(Token::Muted),
-        ),
-    ];
-    f.render_widget(Paragraph::new(lines), area);
+    let inner = widgets::panel(f, area, "No answer", t);
+    let width = (inner.width as usize).saturating_sub(6).max(12);
+    let mut lines = vec![Line::raw("")];
+    for (i, l) in widgets::wrap(&t.say(&m.fatal), width)
+        .into_iter()
+        .enumerate()
+    {
+        let g = if i == 0 { t.g.fail } else { " " };
+        lines.push(Line::from(vec![
+            Span::styled(format!("   {g} "), t.style(Token::Danger)),
+            Span::styled(l, t.style(Token::Text)),
+        ]));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        "   r try again   q continue in the text interface",
+        t.style(Token::Muted),
+    ));
+    lines.push(Line::styled(
+        "   ./omarchy-bootstrap status shows where the machine is.",
+        t.style(Token::Muted),
+    ));
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 pub fn help(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
-    let place = match m.back {
-        Screen::Gate => Place::Gate,
-        Screen::Logs => Place::Logs,
-        _ => Place::Dashboard,
-    };
-    let mut lines = vec![widgets::heading(t, "Keys"), Line::raw("")];
-    for (k, d) in keys::help(place, t.caps.unicode) {
+    let inner = widgets::panel(f, area, "Keys", t);
+    let mut lines = Vec::new();
+    for (k, d) in keys::help_for(m.back, m.region, m.logs_tab, t.caps.unicode)
+        .into_iter()
+        .skip(m.help_scroll)
+    {
         lines.push(Line::from(vec![
-            Span::styled(format!("   {k:<10}"), t.style(Token::Accent)),
+            Span::styled(format!("   {k:<12}"), t.style(Token::Accent)),
             Span::styled(d, t.style(Token::Text)),
         ]));
     }
@@ -61,20 +65,12 @@ pub fn help(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         "   The mouse is not captured: select text as usual.",
         t.style(Token::Muted),
     ));
-    f.render_widget(Paragraph::new(lines), area);
-}
-
-pub fn logs(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
-    let mut lines = vec![widgets::heading(t, "Logs and diagnostics"), Line::raw("")];
-    if m.logs.is_empty() {
-        lines.push(Line::styled(
-            "   No diagnostics were kept in this session.",
-            t.style(Token::Muted),
-        ));
+    // The mouse line stays on the screen however far the list scrolls.
+    let room = inner.height as usize;
+    if lines.len() > room && room >= 2 {
+        let tail: Vec<Line> = lines.split_off(lines.len() - 2);
+        lines.truncate(room - 2);
+        lines.extend(tail);
     }
-    let room = (area.height as usize).saturating_sub(2);
-    for l in m.logs.iter().skip(m.scroll).take(room) {
-        lines.push(Line::styled(format!("   {l}"), t.style(Token::Text)));
-    }
-    f.render_widget(Paragraph::new(lines), area);
+    f.render_widget(Paragraph::new(lines), inner);
 }

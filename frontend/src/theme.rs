@@ -2,11 +2,12 @@
 //! *Glyphs*).
 //!
 //! The frontend styles by meaning, never by literal colour. Each token maps
-//! to the baseline's palette (`lib/ui.sh`) in 256 colours, to the sixteen
-//! named colours, and to plain attributes. Emphasis is reverse or underline,
+//! to its 256-colour value, to one of the sixteen named colours, and to plain
+//! attributes (docs/UX.md → *Tokens*). Emphasis is reverse or underline,
 //! never bold with a colour (the Linux console cancels bold when a
 //! normal-intensity colour follows it). `NO_COLOR` is handled here: colours
-//! are dropped and attributes kept, so the focus highlight survives.
+//! are dropped and attributes kept, so the focus highlight survives. The
+//! navy backdrop is painted only at 256 colours, and no state depends on it.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -95,6 +96,12 @@ pub enum Token {
     Boot,
     Shared,
     Free,
+    /// Panel outlines and the title rule.
+    Frame,
+    /// Panel titles and section headings.
+    Heading,
+    /// The page behind everything: a dark navy, at 256 colours only.
+    Backdrop,
 }
 
 /// A theme: the capabilities and the glyph set that follows from them.
@@ -123,8 +130,9 @@ impl Theme {
                     Text => c(253),
                     Muted | Pending => c(245),
                     Rule | Free => c(239),
-                    Accent | Linux => c(209),
-                    Focus => s.fg(Color::Indexed(209)).add_modifier(Modifier::REVERSED),
+                    Accent => c(78),
+                    Linux => c(209),
+                    Focus => c(78).add_modifier(Modifier::REVERSED),
                     Selected | Ok => c(115),
                     Info | Macos => c(110),
                     Warn => c(222),
@@ -133,22 +141,25 @@ impl Theme {
                     Gate => c(209).add_modifier(Modifier::UNDERLINED),
                     Boot => c(141),
                     Shared => c(114),
+                    Frame => c(44),
+                    Heading => c(39),
+                    Backdrop => s.bg(Color::Indexed(17)),
                 }
             }
             Depth::Sixteen => {
                 let c = |col: Color| s.fg(col);
                 match t {
-                    Text => s,
+                    Text | Backdrop => s,
                     Muted | Rule | Pending | Free => c(Color::DarkGray),
-                    Accent | Linux => c(Color::LightRed),
+                    Accent | Selected | Ok | Shared => c(Color::Green),
+                    Linux => c(Color::LightRed),
                     Focus => s.add_modifier(Modifier::REVERSED),
-                    Selected | Ok | Shared => c(Color::Green),
-                    Info => c(Color::Cyan),
+                    Info | Frame => c(Color::Cyan),
                     Warn => c(Color::Yellow),
                     Danger => c(Color::Red),
                     Blocked => c(Color::Red).add_modifier(Modifier::REVERSED),
                     Gate => s.add_modifier(Modifier::UNDERLINED),
-                    Macos => c(Color::Blue),
+                    Macos | Heading => c(Color::Blue),
                     Boot => c(Color::Magenta),
                 }
             }
@@ -156,10 +167,38 @@ impl Theme {
             // attributes (docs/UX.md: accent underline, focus reverse,
             // blocked reversed, gate underline).
             Depth::None => match t {
-                Accent | Gate => s.add_modifier(Modifier::UNDERLINED),
+                Accent | Gate | Heading => s.add_modifier(Modifier::UNDERLINED),
                 Focus | Blocked => s.add_modifier(Modifier::REVERSED),
                 _ => s,
             },
+        }
+    }
+
+    /// Text for the screen: as it is in Unicode; in ASCII, with the
+    /// punctuation the baseline's `_p` rewrites for the Linux console
+    /// (`lib/ui.sh`) rewritten the same way. Presentation only: the model
+    /// keeps the core's bytes.
+    pub fn say(&self, s: &str) -> String {
+        if self.caps.unicode {
+            return s.to_string();
+        }
+        s.replace(['—', '–'], "-")
+            .replace('→', "->")
+            .replace('≥', ">=")
+            .replace('≈', "~")
+            .replace('…', "...")
+            .replace('·', "-")
+            .replace('⏎', ">")
+            .replace("↑↓", "up/down")
+    }
+
+    /// The wordmark's Ith letter: a green-to-cyan gradient at 256 colours,
+    /// the accent otherwise (docs/UX.md → *Degraded and accessible*).
+    pub fn wordmark(&self, i: usize) -> Style {
+        const RAMP: [u8; 7] = [78, 78, 79, 79, 80, 44, 45];
+        match self.caps.depth {
+            Depth::Full => Style::new().fg(Color::Indexed(RAMP[i % RAMP.len()])),
+            _ => self.style(Token::Accent),
         }
     }
 }
@@ -173,6 +212,8 @@ pub struct Glyphs {
     pub todo: &'static str,
     pub skipped: &'static str,
     pub blocked: &'static str,
+    /// A station the core has not derived.
+    pub later: &'static str,
     pub rule: &'static str,
     pub pointer: &'static str,
     pub ok: &'static str,
@@ -181,6 +222,8 @@ pub struct Glyphs {
     pub info: &'static str,
     pub arrow: &'static str,
     pub bar: &'static str,
+    /// The current screen in the navigation.
+    pub here: &'static str,
     pub dot: &'static str,
     pub spin: &'static [&'static str],
 }
@@ -192,6 +235,7 @@ pub static UNICODE: Glyphs = Glyphs {
     todo: "○",
     skipped: "◌",
     blocked: "✗",
+    later: "·",
     rule: "─",
     pointer: "❯",
     ok: "✓",
@@ -200,6 +244,7 @@ pub static UNICODE: Glyphs = Glyphs {
     info: "·",
     arrow: "→",
     bar: "▍",
+    here: "▍",
     dot: "·",
     spin: &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
 };
@@ -211,6 +256,7 @@ pub static ASCII: Glyphs = Glyphs {
     todo: ".",
     skipped: "~",
     blocked: "x",
+    later: "_",
     rule: "-",
     pointer: ">",
     ok: "+",
@@ -219,6 +265,7 @@ pub static ASCII: Glyphs = Glyphs {
     info: "-",
     arrow: "->",
     bar: "|",
+    here: "*",
     dot: "-",
     spin: &["|", "/", "-", "\\"],
 };
@@ -329,22 +376,44 @@ mod tests {
             use Token::*;
             for tok in [
                 Text, Muted, Rule, Accent, Focus, Selected, Ok, Info, Warn, Danger, Blocked,
-                Pending, Gate, Macos, Linux, Boot, Shared, Free,
+                Pending, Gate, Macos, Linux, Boot, Shared, Free, Frame, Heading, Backdrop,
             ] {
                 assert!(
                     !t.style(tok).add_modifier.contains(Modifier::BOLD),
                     "{tok:?} at {depth:?}"
                 );
             }
+            for i in 0..7 {
+                assert!(!t.wordmark(i).add_modifier.contains(Modifier::BOLD));
+            }
         }
+    }
+
+    #[test]
+    fn ascii_text_follows_the_baseline() {
+        let ascii = Theme::new(Caps {
+            depth: Depth::Sixteen,
+            unicode: false,
+            console: true,
+        });
+        assert_eq!(
+            ascii.say("on — the installer asks · 1 → 2 … ⏎ ↑↓ ≥ ≈ –"),
+            "on - the installer asks - 1 -> 2 ... > up/down >= ~ -"
+        );
+        let uni = Theme::new(Caps {
+            depth: Depth::Full,
+            unicode: true,
+            console: false,
+        });
+        assert_eq!(uni.say("on — it"), "on — it");
     }
 
     #[test]
     fn every_glyph_is_one_cell() {
         for g in [&UNICODE, &ASCII] {
             for s in [
-                g.done, g.current, g.todo, g.skipped, g.blocked, g.rule, g.pointer, g.ok, g.warn,
-                g.fail, g.info, g.bar, g.dot,
+                g.done, g.current, g.todo, g.skipped, g.blocked, g.later, g.rule, g.pointer, g.ok,
+                g.warn, g.fail, g.info, g.bar, g.here, g.dot,
             ] {
                 assert_eq!(s.chars().count(), 1, "{s}");
             }

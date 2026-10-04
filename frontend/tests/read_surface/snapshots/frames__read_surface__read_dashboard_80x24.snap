@@ -1,7 +1,7 @@
 ---
-source: tests/frames.rs
-assertion_line: 221
-expression: text(&b)
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
 ---
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
@@ -12,18 +12,18 @@ expression: text(&b)
 │  Status      ││ No stage is derived yet: every station is later.             │
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
-│  Plan        ││   The core gave no next step for this session.               │
+│  Plan        ││   Run ./omarchy-bootstrap to survey this Mac and plan        │
+│              ││   storage.                                                   │
 │              ││                                                              │
 │              ││ ▍Facts                                                       │
-│              ││   Interface  the foundation: test actions over fixtures      │
-│              ││   Fixture    mac-m1pro-1tb-roomy                             │
-│              ││   Operation  ✓ none                                          │
-│              ││                                                              │
-│              ││ ▍Actions                                                     │
-│              ││ ❯ Read the fixture (test)         read                       │
-│              ││   Change the fixture (test)       act · type test            │
-│              ││   Hand over the terminal (test)   act · handoff · type test  │
-│              ││   Runs the fake read child: its output is shown, its         │
-│              ││   diagnostics kept within their limits.                      │
+│              ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)       ↓│
+│              │└──────────────────────────────────────────────────────────────┘
+│              │┌ This machine ────────────────────────────────────────────────┐
+│              ││ Platform      macos                                          │
+│              ││ Architecture  arm64                                          │
+│              ││ Model         MacBookPro18,1                                 │
+│              ││ Chip          Apple M1 Pro                                   │
+│              ││ Memory        17179869184                                    │
+│              ││ macOS         14.6                                           │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help     may act · 3 actions · fixture
+ ⏎ select  ↑↓ move  r refresh  ? help   read-only · no system changes · fixture

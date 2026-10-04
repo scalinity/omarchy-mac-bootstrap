@@ -1,29 +1,25 @@
 ---
-source: tests/frames.rs
-assertion_line: 229
-expression: "text(&render(&m, &profile(\"color\"), w, h))"
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
 ---
  ◒ Journey ───────────────────────────────────────── v0.2.0
- ◒ OMARCHY  mac bootstrap
   Welcome ▍Journey  Machine  Status  Health  Logs  Plan
 ┌ Journey ─────────────────────────────────────────────────┐
 │ · · · · · · · · · ·                                      │
 │ No stage is derived yet: every station is later.         │
 │                                                          │
 │ ▍Where it stands                                         │
-│   The core gave no next step for this session.           │
-│   ✗ blocked  The outcome of test.mutate is unknown and   │
-│              a process it started may still be running.  │
-│              Restart this Mac (or this Linux system),    │
-│              then run the tool again.                    │
+│   Run ./omarchy-bootstrap to survey this Mac and plan    │
+│   storage.                                               │
 │                                                          │
 │ ▍Facts                                                   │
-│   Interface  the foundation: test actions over fixtures  │
-│   Fixture    mac-m1pro-1tb-roomy                         │
-│   Operation  ✗ test.mutate unsupervised                  │
+│   Machine         MacBook Pro (16-inch, M1 Pro, 2021)    │
+│   Asahi install   none                                   │
+│   Safe Linux max  654 GB                                 │
+│   Surveyed        not yet · recorded                     │
+│   Plan            not yet · recorded                     │
 │                                                          │
-│ ▍Actions                                                 │
-│ ❯ Read the fixture (test)   read                         │
-│   Runs the fake read child.                              │
+│ ▍Actions                                                ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture
+ ⏎ select  ↑↓ move  r refresh  ? help   read-only · fixture

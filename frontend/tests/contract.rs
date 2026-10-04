@@ -446,3 +446,6 @@ fn the_rust_client_against_the_real_core() {
 // Benchmark correctness only; measurement is ignored and explicitly gated.
 #[path = "benchmark/mod.rs"]
 mod benchmark;
+
+/// Layer H for the Gate 2 read surface, in a process of its own.
+mod gate2_read;

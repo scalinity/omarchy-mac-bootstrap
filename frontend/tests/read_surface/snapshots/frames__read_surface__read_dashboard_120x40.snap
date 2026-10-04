@@ -1,7 +1,7 @@
 ---
-source: tests/frames.rs
-assertion_line: 221
-expression: text(&b)
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
 ---
  ◒ Journey ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
 ┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -13,25 +13,25 @@ expression: text(&b)
 │                                     M A C   B O O T S T R A P                /______________\                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ This machine ────────────────┐
-│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ This session's snapshot      │
-│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ holds no machine facts.      │
-│  Machine             ││       profile     plan        omarchy     restore     done   │└──────────────────────────────┘
-│  Status              ││ No stage is derived yet: every station is later.             │
-│  Health              ││                                                              │
-│  Logs                ││ ▍Where it stands                                             │
-│  Plan check          ││   The core gave no next step for this session.               │
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ Platform      macos          │
+│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ Architecture  arm64          │
+│  Machine             ││       profile     plan        omarchy     restore     done   ││ Model         MacBookPro18,1 │
+│  Status              ││ No stage is derived yet: every station is later.             ││ Chip          Apple M1 Pro   │
+│  Health              ││                                                              ││ Memory        17179869184    │
+│  Logs                ││ ▍Where it stands                                             ││ macOS         14.6           │
+│  Plan check          ││   Run ./omarchy-bootstrap to survey this Mac and plan        │└──────────────────────────────┘
+│                      ││   storage.                                                   │
 │                      ││                                                              │
 │                      ││ ▍Facts                                                       │
-│                      ││   Interface  the foundation: test actions over fixtures      │
-│                      ││   Fixture    mac-m1pro-1tb-roomy                             │
-│                      ││   Operation  ✓ none                                          │
+│                      ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
+│                      ││   Asahi install   none                                       │
+│                      ││   Safe Linux max  654 GB                                     │
+│                      ││   Surveyed        not yet · recorded                         │
+│                      ││   Plan            not yet · recorded                         │
 │                      ││                                                              │
 │                      ││ ▍Actions                                                     │
-│                      ││ ❯ Read the fixture (test)         read                       │
-│                      ││   Change the fixture (test)       act · type test            │
-│                      ││   Hand over the terminal (test)   act · handoff · type test  │
-│                      ││   Runs the fake read child: its output is shown, its         │
-│                      ││   diagnostics kept within their limits.                      │
+│                      ││   Nothing is available now.                                  │
+│                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │
@@ -42,4 +42,4 @@ expression: text(&b)
 │                      ││                                                              │
 │                      ││                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                                     may act · 3 actions · fixture
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                           read-only · no system changes · fixture

@@ -94,6 +94,35 @@ impl Session {
         match req {
             Req::Hello => {}
             Req::Snapshot => out.push_str(&record::line("scope", &[("name", b"journey")])),
+            Req::Read(scope) => {
+                out.push_str(&record::line("scope", &[("name", scope.name().as_bytes())]))
+            }
+            Req::Detail(p) => out.push_str(&record::line(
+                "page",
+                &[
+                    ("scope", p.kind.scope().name().as_bytes()),
+                    ("kind", p.kind.name().as_bytes()),
+                    ("generation", p.generation.as_bytes()),
+                    ("offset", p.offset.to_string().as_bytes()),
+                    ("limit", p.limit.to_string().as_bytes()),
+                ],
+            )),
+            // The validation family alone: naming plan.save asks for no
+            // action, and the sizes go as they were typed.
+            Req::Validate {
+                linux_size,
+                shared_size,
+            } => {
+                out.push_str(&record::line("select", &[("action", b"plan.save")]));
+                for (name, value) in [("linux_size", linux_size), ("shared_size", shared_size)] {
+                    if !value.is_empty() {
+                        out.push_str(&record::line(
+                            "arg",
+                            &[("name", name.as_bytes()), ("value", value.as_bytes())],
+                        ));
+                    }
+                }
+            }
             Req::Execute {
                 action,
                 basis,
@@ -247,7 +276,9 @@ fn read_bounded(p: &Path, max: u64) -> Option<Vec<u8>> {
 pub fn op_of(req: &Req) -> Op {
     match req {
         Req::Hello => Op::Hello,
-        Req::Snapshot => Op::Snapshot,
+        Req::Snapshot | Req::Read(_) => Op::Snapshot,
+        Req::Detail(_) => Op::Detail,
+        Req::Validate { .. } => Op::Validate,
         Req::Execute { .. } => Op::Execute,
     }
 }

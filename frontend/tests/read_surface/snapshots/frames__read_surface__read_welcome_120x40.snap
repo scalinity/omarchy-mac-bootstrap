@@ -1,0 +1,45 @@
+---
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
+---
+ ◒ Welcome ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Welcome ─────────────────────────────────────────────────────────────────────────────────────┐
+│▍ Welcome             ││ ▍This machine                                                                                │
+│  Journey             ││   Platform      macos                                                                        │
+│  Machine             ││   Architecture  arm64                                                                        │
+│  Status              ││   Model         MacBookPro18,1                                                               │
+│  Health              ││   Chip          Apple M1 Pro                                                                 │
+│  Logs                ││   Memory        17179869184                                                                  │
+│  Plan check          ││   macOS         14.6                                                                         │
+│                      ││                                                                                              │
+│                      ││ ▍The tool and the core                                                                       │
+│                      ││   Interface     frontend 0.2.0, protocol 1                                                   │
+│                      ││   Core          core 0.2.0, commit 0123456789ab                                              │
+│                      ││   System        macos, arm64, user                                                           │
+│                      ││   Session       read ceiling, fixture                                                        │
+│                      ││   Read          journey generation 78b203ec6845                                              │
+│                      ││                                                                                              │
+│                      ││ ▍Where the journey stands                                                                    │
+│                      ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·                    │
+│                      ││ survey  profile resolve plan    asahi   omarchy shared  restore verify  done                 │
+│                      ││ No stage is derived yet: every station is later.                                             │
+│                      ││   Next          Run ./omarchy-bootstrap to survey this Mac and plan storage.                 │
+│                      ││                                                                                              │
+│                      ││ ▍Recorded                                                                                    │
+│                      ││   Surveyed      not yet · recorded                                                           │
+│                      ││   Plan          not yet · recorded                                                           │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────┘
+ ⏎ the journey  ↑↓ scroll  r refresh  L logs  ? help  q quit                    read-only · no system changes · fixture

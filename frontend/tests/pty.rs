@@ -63,6 +63,8 @@ struct Opts<'a> {
     dev: bool,
     /// Keep the scratch folder of an earlier start with the same name.
     keep: bool,
+    /// The fixture the session reads.
+    fixture: &'a str,
 }
 
 impl Default for Opts<'_> {
@@ -75,16 +77,17 @@ impl Default for Opts<'_> {
             home: None,
             dev: true,
             keep: false,
+            fixture: "mac-m1pro-1tb-roomy",
         }
     }
 }
 
-fn fixture(dir: &Path) -> PathBuf {
+fn fixture(dir: &Path, name: &str) -> PathBuf {
     let fix = dir.join("fixture");
     assert!(
         Command::new("cp")
             .arg("-R")
-            .arg(repo().join("tests/fixtures/mac-m1pro-1tb-roomy"))
+            .arg(repo().join("tests/fixtures").join(name))
             .arg(&fix)
             .status()
             .unwrap()
@@ -114,7 +117,7 @@ impl Pty {
         let fix = if o.keep && dir.join("fixture").exists() {
             dir.join("fixture")
         } else {
-            fixture(&dir)
+            fixture(&dir, o.fixture)
         };
         let home = o.home.clone().unwrap_or_else(repo);
         let pair = native_pty_system()
@@ -1393,4 +1396,88 @@ fn the_launcher_starts_the_verified_artifact() {
     assert!(p.sessions().is_empty(), "the frontend was never started");
     p.send(b"q\r");
     p.wait_exit();
+}
+
+// --- pty-gate2-read: the read surface through the launcher ----------------------
+
+/// The ordinary fixture session the launcher starts (no foundation authority):
+/// the Journey dashboard over the real journey read; a refresh whose running
+/// state reaches the terminal before its answer replaces it; a detail opened
+/// from the snapshot's generation; Logs as the core answers this session,
+/// whose scopes (the launcher's `FE_ALL_SCOPES`) do not include `logs`; the
+/// plan check; and no execute anywhere. On Linux, which has no `plutil` for
+/// the macOS fixtures, the same over a Linux fixture.
+#[test]
+fn pty_gate2_reads_through_the_launcher() {
+    let mac = Path::new("/usr/bin/plutil").exists();
+    let mut p = Pty::start(
+        "gate2-read",
+        Opts {
+            rows: 40,
+            cols: 120,
+            env: vec![("OMB_TEST_FOUNDATION", String::new())],
+            fixture: if mac {
+                "mac-m1pro-1tb-roomy"
+            } else {
+                "linux-omarchy-installed"
+            },
+            ..Opts::default()
+        },
+    );
+    p.wait_for("Nothing is available now.");
+    p.wait_for("every station is later");
+    p.idle();
+    // r: drawn running before the answer, then answered.
+    let before = p.raw.lock().unwrap().len();
+    p.keys("r");
+    p.wait_until("the refresh drawn running, then answered", |p| {
+        let raw = String::from_utf8_lossy(&p.raw.lock().unwrap()[before..]).to_string();
+        raw.contains("reading the journey") && !p.contents().contains("reading the journey")
+    });
+    // The machine detail, from the rail.
+    p.send(b"\x1b[D");
+    for _ in 0..8 {
+        p.send(b"\x1b[A");
+    }
+    p.send(b"\x1b[B\x1b[B");
+    p.send(b"\r");
+    p.wait_for("rows 1–");
+    p.wait_for("Architecture");
+    p.idle();
+    // Logs: the core refuses the scope this session does not hold.
+    p.keys("L");
+    p.wait_for("refused · scope");
+    p.idle();
+    // The plan check.
+    p.send(b"\x1b[D");
+    for _ in 0..8 {
+        p.send(b"\x1b[A");
+    }
+    for _ in 0..6 {
+        p.send(b"\x1b[B");
+    }
+    p.send(b"\r");
+    p.wait_for("Linux size");
+    p.keys("250GB");
+    p.send(b"\t");
+    p.keys("100GB");
+    p.send(b"\r");
+    if mac {
+        p.wait_for("you type 614730MiB");
+    } else {
+        p.wait_for("refused · unavailable");
+    }
+    p.idle();
+    p.send(b"\x1b");
+    p.wait_for("Nothing is available now.");
+    p.keys("q");
+    assert_eq!(p.wait_exit(), 0);
+    assert!(p.restored(), "the terminal came back");
+    let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+    assert!(
+        trace.contains("send Detail(Page { kind: Machine"),
+        "{trace}"
+    );
+    assert!(trace.contains("send Validate {"), "{trace}");
+    assert!(!trace.contains("send Execute"), "no execute: {trace}");
 }

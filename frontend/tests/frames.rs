@@ -342,8 +342,26 @@ fn the_foundations_states() {
         Msg::Done(Req::Hello, Outcome::NotSent("no such file".into())),
     );
     insta::assert_snapshot!("fatal_80x24", text(&render(&m, &t, 80, 24)));
-    // Logs and help.
+    // Logs: L opens the screen and reads the tool's log (this core does not
+    // answer it); Tab shows the diagnostics this session kept, read locally.
     let mut m = dashboard(false);
+    let c = update(&mut m, key(KeyCode::Char('L')));
+    assert_eq!(c[0], Cmd::ReadLogs);
+    let Some(Cmd::Send(req)) = c.get(1).cloned() else {
+        panic!("the log is read: {c:?}")
+    };
+    update(
+        &mut m,
+        Msg::Done(
+            req,
+            Outcome::Answer(vec![result(
+                "refused",
+                "unavailable",
+                "This read dataset is not available.",
+            )]),
+        ),
+    );
+    assert_eq!(update(&mut m, key(KeyCode::Tab)), vec![Cmd::ReadLogs]);
     update(
         &mut m,
         Msg::Logs(vec![
@@ -358,20 +376,42 @@ fn the_foundations_states() {
     insta::assert_snapshot!("help_80x24", text(&render(&m, &t, 80, 24)));
 }
 
-/// Heights 20 to 23 merge the header into the rail line.
+/// The banner's three heights (docs/UX.md → *Layout*): the block wordmark
+/// from 120×36 in Unicode, one line from 24 rows, none below 24 — where the
+/// title rule still carries the screen's name.
 #[test]
-fn short_terminals_merge_the_header() {
+fn the_banner_follows_the_height() {
     let m = dashboard(false);
-    let full = text(&render(&m, &profile("color"), 80, 24));
-    let short = text(&render(&m, &profile("color"), 80, 22));
+    let c = profile("color");
+    let full = text(&render(&m, &c, 80, 24));
+    let mut lines = full.lines();
+    assert!(lines.next().unwrap().starts_with(" ◒ Journey "), "{full}");
     assert!(
-        full.lines()
-            .next()
-            .unwrap()
-            .contains("omarchy mac bootstrap")
+        lines.next().unwrap().contains("OMARCHY  mac bootstrap"),
+        "{full}"
     );
-    assert!(!short.contains("omarchy mac bootstrap"), "{short}");
-    assert!(short.lines().next().unwrap().starts_with(" ◒ "), "{short}");
+    let short = text(&render(&m, &c, 80, 22));
+    assert!(
+        short.lines().next().unwrap().starts_with(" ◒ Journey "),
+        "{short}"
+    );
+    assert!(!short.contains("OMARCHY"), "{short}");
+    let big = text(&render(&m, &c, 120, 40));
+    assert!(big.contains("M A C   B O O T S T R A P"), "{big}");
+    let tall_enough = text(&render(&m, &c, 120, 35));
+    assert!(
+        !tall_enough.contains("M A C   B O O T S T R A P"),
+        "{tall_enough}"
+    );
+    assert!(
+        tall_enough.contains("OMARCHY  mac bootstrap"),
+        "{tall_enough}"
+    );
+    let ascii = text(&render(&m, &profile("ascii"), 120, 40));
+    assert!(
+        ascii.contains("(o) O M A R C H Y  mac bootstrap"),
+        "{ascii}"
+    );
 }
 
 /// Layer D: focus is reversed; the barrier is `blocked` (reversed) as well as
@@ -400,7 +440,7 @@ fn emphasis_by_token() {
             "{p}: the focused row is reversed"
         );
         let fg = match p {
-            "color" => Color::Indexed(209),
+            "color" => Color::Indexed(78),
             _ => Color::Reset,
         };
         assert_eq!(cell.fg, fg, "{p}: the focus colour");
@@ -409,7 +449,13 @@ fn emphasis_by_token() {
             fg,
             "{p}: the token's"
         );
-        assert_eq!(cell.bg, Color::Reset, "{p}: no background of its own");
+        // No background of its own: the navy backdrop at 256 colours, the
+        // terminal's own otherwise.
+        let bg = match p {
+            "color" => Color::Indexed(17),
+            _ => Color::Reset,
+        };
+        assert_eq!(cell.bg, bg, "{p}: no background of its own");
         assert!(!cell.modifier.contains(Modifier::BOLD), "{p}: never bold");
         let markers = (0..24)
             .flat_map(|y| (0..80).map(move |x| (x, y)))
@@ -498,3 +544,6 @@ fn degraded_profiles() {
     );
     insta::assert_snapshot!("dashboard_ascii_80x24", a);
 }
+
+/// The Gate 2 read surface: its screens, states, sizes and profiles.
+mod read_surface;

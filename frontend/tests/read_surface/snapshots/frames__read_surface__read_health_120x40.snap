@@ -1,0 +1,45 @@
+---
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
+---
+ ◒ Health ────────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Health ──────────────────────────────────────────────────────┐┌ This machine ────────────────┐
+│  Welcome             ││   Passed 10    Warnings 1    Failures 0                      ││ Platform      macos          │
+│  Journey             ││ ❯ ✓ pass   Apple Silicon     arm64                           ││ Architecture  arm64          │
+│  Machine             ││   ✓ pass   Supported model   MacBook Pro (16-inch, M1 Pro,…  ││ Model         MacBookPro18,1 │
+│  Status              ││   · info   FileVault         on — the installer asks for y…  ││ Chip          Apple M1 Pro   │
+│▍ Health              ││   ! warn   Backup confirmed  not yet; asked before the ins…  ││ Memory        17179869184    │
+│  Logs                ││                                                              ││ macOS         14.6           │
+│  Plan check          ││                                                              │└──────────────────────────────┘
+│                      ││                                                              │┌ Next ────────────────────────┐
+│                      ││                                                              ││ Run ./omarchy-bootstrap to   │
+│                      ││                                                              ││ survey this Mac and plan     │
+│                      ││                                                              ││ storage.                     │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││ rows 1–4 of 4 · generation 2620e0230283                      ││                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
+ ↑↓ move  / filter  r refresh  L logs  ? help  q quit                           read-only · no system changes · fixture

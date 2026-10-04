@@ -34,10 +34,10 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {}", t.g.bar), t.style(Token::Accent)),
-            Span::styled(a.label.clone(), t.style(Token::Text)),
+            Span::styled(t.say(&a.label), t.style(Token::Text)),
         ]),
         Line::raw(""),
-        row("Does", a.explain.clone()),
+        row("Does", t.say(&a.explain)),
         row("Touches", "the fixture's test state folder only".into()),
         row(
             "Terminal",
@@ -77,16 +77,18 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
             ASCII_BORDER
         };
         f.render_widget(Clear, r);
+        widgets::backdrop(f, r, t);
         f.render_widget(
             Paragraph::new(lines).block(
                 Block::bordered()
                     .border_set(set)
-                    .border_style(t.style(Token::Rule)),
+                    .border_style(t.style(Token::Frame)),
             ),
             r,
         );
     } else {
         f.render_widget(Clear, area);
+        widgets::backdrop(f, area, t);
         f.render_widget(Paragraph::new(lines), area);
     }
 }

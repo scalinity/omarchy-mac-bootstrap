@@ -1,10 +1,11 @@
 ---
 source: tests/frames.rs
+assertion_line: 247
 expression: "text(&render(&m, &profile(\"color\"), w, h))"
 ---
- ◒ omarchy mac bootstrap             macOS · user · fixture
- journey not derived in this build
-────────────────────────────────────────────────────────────
+ ◒ Journey · Gate ────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan
  ▍Change the fixture (test)
 
    Does      Runs the fake mutating child under supervision.
@@ -24,5 +25,5 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 
 
 
-────────────────────────────────────────────────────────────
- ⏎ continue (only the exact word)   esc cancel
+
+ ⏎ continue (exact word)  esc cancel      may act · fixture

@@ -8,6 +8,7 @@
 pub mod app;
 pub mod core;
 pub mod keys;
+pub mod read;
 pub mod record;
 pub mod screens;
 pub mod terminal;
@@ -110,10 +111,18 @@ pub fn run(args: &[String]) -> i32 {
     };
     terminal::watch_reads();
     let mut trace = Trace::open();
-    let mut model = Model::default();
+    let mut model = Model {
+        // Read, never set: the launcher's purpose selects the startup check's
+        // closed contract, which answers hello and the journey snapshot only.
+        check: std::env::var("OMB_SESSION_PURPOSE").as_deref() == Ok("frontend-check"),
+        ..Model::default()
+    };
     let mut cmds = model.start();
     let mut running: Option<(core::Running, Req, Instant)> = None;
     let mut dirty = true;
+    // A request was just started: its running state is drawn before anything
+    // of its answer is read (docs/UX.md → *States every screen has*).
+    let mut started = false;
     loop {
         for c in std::mem::take(&mut cmds) {
             match c {
@@ -138,7 +147,10 @@ pub fn run(args: &[String]) -> i32 {
                         continue;
                     }
                     match session.start(&req) {
-                        Ok(r) => running = Some((r, req, Instant::now())),
+                        Ok(r) => {
+                            running = Some((r, req, Instant::now()));
+                            started = true;
+                        }
                         Err(e) => cmds.extend(update(
                             &mut model,
                             Msg::Done(req, Outcome::NotSent(e.to_string())),
@@ -194,8 +206,15 @@ pub fn run(args: &[String]) -> i32 {
             let _ = term.reenter();
             dirty = true;
         }
-        if let Some((r, req, started)) = running.as_mut() {
-            let hold = test_hook_hold(*started);
+        if std::mem::take(&mut started) && dirty {
+            if !paint(&mut term, &model, &theme) {
+                term.restore();
+                return 1;
+            }
+            dirty = false;
+        }
+        if let Some((r, req, since)) = running.as_mut() {
+            let hold = test_hook_hold(*since);
             let mut live = Vec::new();
             let end = r.poll(&mut |rec| live.push(rec), hold);
             for rec in live {
@@ -214,11 +233,7 @@ pub fn run(args: &[String]) -> i32 {
             continue;
         }
         if dirty {
-            if term
-                .terminal
-                .draw(|f| screens::draw(f, &model, &theme, TICK_MS))
-                .is_err()
-            {
+            if !paint(&mut term, &model, &theme) {
                 term.restore();
                 return 1;
             }
@@ -262,6 +277,13 @@ pub fn run(args: &[String]) -> i32 {
             }
         }
     }
+}
+
+/// Draw the whole frame; false when the terminal could not be written.
+fn paint(term: &mut terminal::Term, model: &Model, theme: &theme::Theme) -> bool {
+    term.terminal
+        .draw(|f| screens::draw(f, model, theme, TICK_MS))
+        .is_ok()
 }
 
 fn refresh_key() -> event::KeyEvent {
