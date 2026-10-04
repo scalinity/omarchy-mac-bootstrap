@@ -24,6 +24,7 @@ use omb_tui::theme::{Caps, Depth, Theme};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -201,6 +202,10 @@ fn page(kind: Kind, generation: &str, offset: u64) -> Req {
 #[test]
 fn the_read_surface_against_the_real_core() {
     if std::env::var_os("OMB_GATE2_READ_CHILD").is_none() {
+        // In a process group of its own, as the benchmark's cores are: the
+        // contract test beside it supervises its own group during its
+        // executes, where a core of this test would be a process it does not
+        // know (`stopped unsupervised`).
         let status = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -209,6 +214,7 @@ fn the_read_surface_against_the_real_core() {
                 "--test-threads=1",
             ])
             .env("OMB_GATE2_READ_CHILD", "1")
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "the read surface's own process: {status}");
