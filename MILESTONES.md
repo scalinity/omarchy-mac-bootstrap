@@ -569,8 +569,8 @@ of docs/TESTING.md.
   integration — the Welcome screen, the Journey dashboard, machine and status
   details, Health, Logs, and a read-only presentation of
   `validate select action=plan.save` — is authorized and implemented; its
-  remediation candidate awaits focused re-review (*Frontend integration
-  checkpoint* below). S5+, Gate 3, frontend `0.2.0` release, M15, M16 and
+  remediation candidate awaits a final focused G2-FE-003 re-review
+  (*Frontend integration checkpoint* below). S5+, Gate 3, frontend `0.2.0` release, M15, M16 and
   M17 remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
 - **Frontend integration checkpoint:** the first production UI candidate
   (`7b30143`, `0e67c09` and `1e6eac54c552f50dc46aeb41a6828ba579e93f05` from
@@ -583,10 +583,14 @@ of docs/TESTING.md.
   documents contradicted authorized and accepted work). G2-FE-005 (filter-mode
   hints) and G2-FE-006 (an Enter hint with no action) are recorded,
   non-blocking observations, not remediated. That first candidate remains
-  **UNACCEPTED**. The remediation candidate, forward from `1e6eac5`, awaits
-  **M14 GATE 2 — FOCUSED FRONTEND INTEGRATION REMEDIATION RE-REVIEW**; each of
-  the four findings is **REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
-  CONFIRMATION**. Gate 2 stays **IN PROGRESS**; the O1 performance signoff
+  **UNACCEPTED**. The focused re-review of the remediation forward from
+  `1e6eac5` (through `04132b4`) closed G2-FE-001, G2-FE-002 and G2-FE-004 and
+  accepted the expanded-value scrolling; G2-FE-003 stayed open for one case:
+  at the 60×20 floor, an open value of rows retained from an earlier read had
+  no line to be drawn in while that read's facts and the newer read's notices
+  and refusal filled the panel. Its remediation, forward from `04132b4`,
+  awaits **M14 GATE 2 — FINAL FOCUSED G2-FE-003 RE-REVIEW**; G2-FE-003 is
+  **REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT CONFIRMATION**. Gate 2 stays **IN PROGRESS**; the O1 performance signoff
   stays **ACCEPTED** and O1-LOGS-P01 unchanged; frontend `0.2.0` stays
   **UNRELEASED**.
 
