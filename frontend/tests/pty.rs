@@ -1403,8 +1403,9 @@ fn the_launcher_starts_the_verified_artifact() {
 /// The ordinary fixture session the launcher starts (no foundation authority):
 /// the Journey dashboard over the real journey read; a refresh whose running
 /// state reaches the terminal before its answer replaces it; a detail opened
-/// from the snapshot's generation; Logs as the core answers this session,
-/// whose scopes (the launcher's `FE_ALL_SCOPES`) do not include `logs`; the
+/// from the snapshot's generation; Health's counts and the doctor's findings,
+/// and Logs' selected source and its lines, which this session's scopes (the
+/// launcher's `FE_ALL_SCOPES`, `health` and `logs` among them) admit; the
 /// plan check; and no execute anywhere. On Linux, which has no `plutil` for
 /// the macOS fixtures, the same over a Linux fixture.
 #[test]
@@ -1444,10 +1445,46 @@ fn pty_gate2_reads_through_the_launcher() {
     p.wait_for("rows 1–");
     p.wait_for("Architecture");
     p.idle();
-    // Logs: the core refuses the scope this session does not hold.
-    p.keys("L");
-    p.wait_for("refused · scope");
+    // Health, from the rail: the doctor's counts, then its findings.
+    p.send(b"\x1b[D");
+    for _ in 0..8 {
+        p.send(b"\x1b[A");
+    }
+    p.send(b"\x1b[B\x1b[B\x1b[B\x1b[B");
+    p.send(b"\r");
+    p.wait_for("Supported model");
     p.idle();
+    let f = p.contents();
+    for want in [
+        "Passed ",
+        "Warnings ",
+        "Failures ",
+        "Apple Silicon",
+        "rows 1–",
+    ] {
+        assert!(f.contains(want), "{want:?} on Health:\n{f}");
+    }
+    assert!(!f.contains("refused"), "Health is answered:\n{f}");
+    // Logs: the selected source and its lines.
+    let logs = p.dir.join("state").join("logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    std::fs::write(
+        logs.join("omarchy-bootstrap-29991231.log"),
+        "2999-12-31T10:00:00Z [SURVEY] info   PTY_LOG_FIRST reading the disk\n2999-12-31T10:00:01Z [PLAN] warn   PTY_LOG_LAST below recommended\n",
+    )
+    .unwrap();
+    p.keys("L");
+    p.wait_for("PTY_LOG_LAST");
+    p.idle();
+    let f = p.contents();
+    for want in [
+        "omarchy-bootstrap-29991231.log",
+        "PTY_LOG_FIRST reading the disk",
+        "rows 1–2 of 2",
+    ] {
+        assert!(f.contains(want), "{want:?} on Logs:\n{f}");
+    }
+    assert!(!f.contains("refused"), "Logs is answered:\n{f}");
     // The plan check.
     p.send(b"\x1b[D");
     for _ in 0..8 {
@@ -1474,10 +1511,22 @@ fn pty_gate2_reads_through_the_launcher() {
     assert_eq!(p.wait_exit(), 0);
     assert!(p.restored(), "the terminal came back");
     let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
-    assert!(
-        trace.contains("send Detail(Page { kind: Machine"),
-        "{trace}"
-    );
-    assert!(trace.contains("send Validate {"), "{trace}");
+    // The ordinary session's scopes: every earlier one, in its order, then
+    // the two accepted read scopes. frontend-check keeps `journey` alone
+    // (tests/test-frontend-check.sh, frontend-check-read-session).
+    let launcher = std::fs::read_to_string(repo().join("lib/frontend.sh")).unwrap();
+    assert!(launcher.contains(
+        "\nFE_ALL_SCOPES=\"journey,disk,plan,profile,resolve,asahi,network,omarchy,shared,export,restore,rescue,qualify,debug,health,logs\"\n"
+    ));
+    for want in [
+        "send Detail(Page { kind: Machine",
+        "send Read(Health)",
+        "send Detail(Page { kind: Doctor",
+        "send Read(Logs)",
+        "send Detail(Page { kind: Log",
+        "send Validate {",
+    ] {
+        assert!(trace.contains(want), "{want:?}: {trace}");
+    }
     assert!(!trace.contains("send Execute"), "no execute: {trace}");
 }

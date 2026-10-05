@@ -526,18 +526,25 @@ fn the_read_surface_against_the_real_core() {
         assert!(f.contains("The internal disk's partition"), "{f}");
     }
 
-    // --- A session without the scope: the core refuses, the screen says so -
+    // --- A session without the scopes: the core refuses, the screen says so
+    // (the ordinary launcher's sessions hold both; this one is restricted).
     let mut s = w.session(name, "journey,plan");
     let mut m = started(&mut s);
-    let c = go(&mut m, 4);
-    let reqs = drive(&mut m, &mut s, c);
-    assert_eq!(reqs.len(), 1, "no detail without a data set: {reqs:?}");
-    let f = frame(&m, 120, 40);
-    assert!(f.contains("refused · scope"), "{f}");
-    assert!(
-        f.contains("This session does not include the requested scope."),
-        "{f}"
-    );
+    for open in [4, 5] {
+        let c = go(&mut m, open);
+        let reqs = drive(&mut m, &mut s, c);
+        assert!(
+            matches!(&reqs[..], [Req::Read(_)]),
+            "no detail without a data set: {reqs:?}"
+        );
+        let f = frame(&m, 120, 40);
+        assert!(f.contains("refused · scope"), "{f}");
+        assert!(
+            f.contains("This session does not include the requested scope."),
+            "{f}"
+        );
+    }
+    assert_eq!(m.screen, Screen::Logs);
 
     // --- Every fixture: what the core says reaches the screen ---------------
     let mut fixtures: Vec<String> = std::fs::read_dir(repo().join("tests/fixtures"))

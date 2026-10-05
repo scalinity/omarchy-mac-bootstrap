@@ -24,7 +24,7 @@ FE_ST="" FE_CORE="" FE_LEFT=""
 FE_WAIT_LIMIT=3600
 
 # The scopes a default-command session carries (SPEC.md → Commands).
-FE_ALL_SCOPES="journey,disk,plan,profile,resolve,asahi,network,omarchy,shared,export,restore,rescue,qualify,debug"
+FE_ALL_SCOPES="journey,disk,plan,profile,resolve,asahi,network,omarchy,shared,export,restore,rescue,qualify,debug,health,logs"
 
 # fe_target — FE_TARGET: this host's frontend build. The binary runs here,
 # whatever machine a fixture describes, so the host itself is asked.
