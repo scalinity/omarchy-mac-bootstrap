@@ -403,7 +403,17 @@ of docs/TESTING.md.
   representative, with its numbers recorded here, and either within its
   budgets or with the finding and its decision recorded in
   docs/DECISIONS.md.
-- **Status:** in progress, begun 2026-09-28 on branch
+- **Status:** accepted and closed, **M14 GATE 2 — ACCEPTED / CLOSED**, by
+  the independent review of `c855f6197be86e90f5fb833f7faec0d0f6372794`
+  (recorded 2026-10-05). The frontend's read-only integration is accepted at
+  that commit, and G2-FE-001 through G2-FE-004 are closed. Frontend `0.2.0`
+  stays **UNRELEASED**: no release, tag or lock change comes with the
+  closure. The O1 signoff stays accepted, with O1-LOGS-P01 open. Gate 3 may
+  take only its documented prerequisite contract (*Gate 3 — The action
+  contract under fixtures*, below); M17 is not started. The records below are
+  kept as written, each as of its own checkpoint; where one says that Gate 2
+  is in progress or that its work awaits review, this closure supersedes it.
+- **History:** begun 2026-09-28 on branch
   `m14-gate2-readonly-equivalence` from the Gate 1 closeout commit
   `07b57583ec85ca7a606c1db0c1afe9857490463d`. The contract is written in
   docs/PROTOCOL.md → *The Gate 2 read surface*, docs/UX.md's amended
@@ -562,16 +572,15 @@ of docs/TESTING.md.
   **37107501150** (attempt 1), and release/Protocol integrity are accepted.
   The benchmark prerequisite freeze is lifted; accepted implementation/proof
   files remain frozen absent a concrete regression.
-- **Still open in Gate 2:** Gate 2 is **IN PROGRESS** until the frontend's
-  read-only integration and its equivalence are independently accepted. O1
-  performance signoff is **ACCEPTED**, with finding O1-LOGS-P01 recorded and
-  open (*O1 performance signoff* below). The production frontend read-surface
-  integration — the Welcome screen, the Journey dashboard, machine and status
-  details, Health, Logs, and a read-only presentation of
-  `validate select action=plan.save` — is authorized and implemented; its
-  remediation candidate awaits a final focused G2-FE-003 re-review
-  (*Frontend integration checkpoint* below). S5+, Gate 3, frontend `0.2.0` release, M15, M16 and
-  M17 remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
+- **Closed in Gate 2:** the production frontend read-surface integration —
+  the Welcome screen, the Journey dashboard, machine and status details,
+  Health, Logs, and a read-only presentation of
+  `validate select action=plan.save` — is accepted at `c855f61`
+  (*Frontend integration checkpoint* below). O1 performance signoff is
+  **ACCEPTED**, with finding O1-LOGS-P01 recorded and open (*O1 performance
+  signoff* below). S5+, Gate 3's implementation, the frontend `0.2.0`
+  release, M15, M16 and M17 remain unauthorized; frontend `0.2.0` is
+  **UNRELEASED**.
 - **Frontend integration checkpoint:** the first production UI candidate
   (`7b30143`, `0e67c09` and `1e6eac54c552f50dc46aeb41a6828ba579e93f05` from
   `c4a418a`) was independently reviewed: **GATE 2 FRONTEND REMEDIATION
@@ -588,11 +597,32 @@ of docs/TESTING.md.
   accepted the expanded-value scrolling; G2-FE-003 stayed open for one case:
   at the 60×20 floor, an open value of rows retained from an earlier read had
   no line to be drawn in while that read's facts and the newer read's notices
-  and refusal filled the panel. Its remediation, forward from `04132b4`,
-  awaits **M14 GATE 2 — FINAL FOCUSED G2-FE-003 RE-REVIEW**; G2-FE-003 is
-  **REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT CONFIRMATION**. Gate 2 stays **IN PROGRESS**; the O1 performance signoff
-  stays **ACCEPTED** and O1-LOGS-P01 unchanged; frontend `0.2.0` stays
-  **UNRELEASED**.
+  and refusal filled the panel. Its remediation, forward from `04132b4`
+  through `c855f61`, was confirmed by the independent review that accepted
+  Gate 2 at `c855f61`, which closes G2-FE-003: G2-FE-001 through G2-FE-004
+  are all **CLOSED**, and the read-only integration is **ACCEPTED** at that
+  commit. G2-FE-005 and
+  G2-FE-006 stay recorded, non-blocking and unremediated. The O1 performance
+  signoff stays **ACCEPTED** and O1-LOGS-P01 unchanged; frontend `0.2.0`
+  stays **UNRELEASED**.
+- **Visual backlog, carried forward.** The live visual review of the Gate 2
+  frontend is complete. Its findings pass, with the dispositions the review
+  gave them, to the next separately authorized UI-capable slice, whichever
+  gate carries it; the closure remediates none of them.
+  - **Follow-up:** F1 — wide wordmark/banner composition; F2 — sparse wide
+    navigation/workspace/sidebar balance; F3 — raw memory quantity /
+    human-readable units; F5 — Journey initial information allocation;
+    F6 — saturated blue background versus reference; F11 — clipped narrow
+    pagination hint; F13 — quantity presentation, where D52 still defers the
+    Storage Planner and its partition bar to the gate that owns the relevant
+    actions.
+  - **Deferred / acceptable:** F4 — Journey label arrangement / narrow dots
+    with truthful explanation; F7 — header/footer differences from comps;
+    F10 — one-row closed Logs view at 60×20; F12 — compact footer omits
+    Home/End while help retains them.
+  - Every future UI-capable implementation slice brings deterministic frame
+    or snapshot proof and actual live-terminal visual QA before its
+    independent review.
 
 - **BENCH-M01 candidate remediation:** independent review of B
   `6129d07bd6cf04a4fd9a98773231677fb1473375` credited other benchmark methodology
@@ -655,7 +685,16 @@ of docs/TESTING.md.
   "the record cannot be decoded" apart from "no worker and no unexpected
   effect remains", and how the record is cleared: never automatically,
   never by a reboot alone, never by treating corruption as no operation.
-- **Status:** not started.
+  That contract is written in docs/PROTOCOL.md → *An operation record that
+  cannot be read* and D54, with its acceptance cases U1 to U24 and its open
+  questions UR-Q1 to UR-Q9 (docs/DECISIONS.md → *Open review questions*). It
+  is documentation only and implements none of it.
+- **Status:** not started. The prerequisite contract is **CONTRACT
+  DOCUMENTED — AWAITING INDEPENDENT GATE 3 PREREQUISITE CONTRACT REVIEW**
+  (**M14 GATE 3 PREREQUISITE — UNREADABLE-OPERATION-RECORD CONTRACT
+  REVIEW**), on branch `m14-gate3-prereq-unreadable-record` from the Gate 2
+  endpoint `c855f61`. No recovery, diagnostic, clear, reconciliation,
+  execute or action exposure is implemented or authorized.
 
 ### Gate 4 — Scanner and profile
 

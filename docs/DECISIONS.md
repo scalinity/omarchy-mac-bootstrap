@@ -183,6 +183,38 @@ hold nothing. *Set aside:* treating an empty-looking process group as
 proof (the controllers are always in it, and a daemonised descendant never
 is); a general process tracker.
 
+**D54. An operation record that cannot be read stays a barrier until an
+explicit, evidenced clear** (the Gate 3 prerequisite; a contract awaiting
+its independent review, not implemented: docs/PROTOCOL.md → *An operation
+record that cannot be read*). Failing to decode a record is never evidence
+that nothing runs, that the operation ended or that it left no effect,
+because every judgement of D47 starts from the record's fields and none is
+available. Looking and reading are judged apart, so an inspection that
+failed is told from bytes that were read and refused, and neither becomes
+no record; and no record itself means only that nothing is recorded as
+begun and unsettled, since each act's fresh read and rebuilt basis, not the
+record's absence, make it safe. Read commands keep working, and a read-only
+diagnostic reports what can be established without trusting the bytes —
+the entry's kind, owner, size and fingerprint, admission's reason code,
+worker evidence and effect certainty — and nothing taken from them. No
+boot, age, count, read or reconciliation clears the record: a reboot ends
+the old boot's processes but cannot say the record came from that boot,
+because its boot session is part of what cannot be read. A clear is an
+action the core lists, with a typed word, bound by its basis to the
+inspected bytes, recorded before it changes anything, and taken by rename
+and confirmed as an abandoned run lock is cleared; it is offered only when
+no recorded process is alive or unknown, the processes that could have
+written those bytes are proven gone, and the scope's reconciliation finds
+nothing unexpected; it proves nothing about the past and resumes nothing. The
+frontend presents and never decides (D5). The mechanisms this leaves open
+are UR-Q1 to UR-Q9 (*Open review questions*). *Set aside:* treating
+corruption as no record; clearing on a reboot; file times as proof of which
+boot wrote the bytes (a process of the person can set them, and the clock
+can move); the person's word in place of the boot-change proof; showing an
+unadmitted record's fields, even marked as unverified; a frontend that
+reads `ops/`; an automatic clear after reconciliation, which a readable
+record gets only because its action and basis are known.
+
 **D43. The frontend's own persistence follows intent, with one named
 exception.** For every ordinary command, only an act session downloads and
 caches the frontend, moves aside a bad cached binary, or writes a trace
@@ -703,9 +735,27 @@ fixture-only Health (Doctor) producer is accepted at `27f79d6`. The ordinary
 fixture-only Validate producer is accepted at
 `b01610e69a2eef6e5a52f5ede18236210699704e`. O1 signoff is accepted with
 O1-LOGS-P01 recorded; the frontend read-surface integration is authorized
-(the O1 performance signoff record above) and implemented in the unreleased
-0.2.0 candidate, its integration not yet accepted; S5+ remain unauthorized
-(MILESTONES.md → *Gate 2 — Read-only equivalence*).
+(the O1 performance signoff record above), implemented in the unreleased
+0.2.0 candidate, and accepted at `c855f6197be86e90f5fb833f7faec0d0f6372794`,
+which closes Gate 2; S5+ remain unauthorized (MILESTONES.md → *Gate 2 —
+Read-only equivalence*).
+
+Raised by the Gate 3 prerequisite contract (D54; docs/PROTOCOL.md → *An
+operation record that cannot be read*), for its independent review. None is
+settled by the contract; each blocks only the work named beside it, and no
+code exists that depends on one.
+
+| # | Question | Why it matters, and the evidence | Options | Recommendation | What it blocks |
+| --- | --- | --- | --- | --- | --- |
+| UR-Q1 | Does a clear delete the entry, or keep it aside? | Deleting destroys the only trace of an unknown operation; keeping it needs a place no reader takes for a record (the launcher lists `ops/*.omb`) and a rule for how long. The precedents differ: an abandoned run lock is moved aside, confirmed and deleted (`lib/state.sh`); a mismatching frontend binary is moved aside and kept (D43). | (a) delete once renamed and confirmed; (b) keep aside, private, under a name no reader takes for a record; (c) keep aside, then delete by a later explicit step | (b): an entry a clear may take is at most 64 KiB (UR-Q2) and is the evidence of what could not be read, and a kept copy changes no barrier | the clear's last step; not the barrier or the diagnostic |
+| UR-Q2 | Exactly what must hold before a clear is offered? | D54 fixes P1 to P5. Not settled: an entry that is not a plain file (a link is never followed), a plain file over the 64 KiB limit (no fingerprint without an unbounded read, which §2 forbids), and D (nothing to bind a clear to). | (a) P1 to P5, plain files within the limit only, every other entry left to the person; (b) also other entries, bound by kind and a link's own text, never followed; (c) over-limit files bound by size and a bounded prefix | (a) first, (b) as a reviewed extension; never (c), since a prefix is not the file | the clear |
+| UR-Q3 | Who reconciles a scope when the record's action is unknown? | Only the fixture's `core_reconcile` exists; it chooses by `CO_ACTION` and needs `CO_BASIS`. The scope's own records stay the authority for what happened (docs/PROTOCOL.md → *Operations and exclusion*). Gate 3 brings the real actions, and the way out of *something unexpected* is defined nowhere, readable record or not. | (a) each scope's owner judges every action of the scope against the machine, an action it cannot judge without a basis counting as unexpected; (b) one generic judgement in the core; (c) no reconciliation, the clear after the person acknowledges it | (a), owned per scope as Gate 3 exposes each action; reject (c), which puts the clear in reconciliation's place | P5, and so the clear |
+| UR-Q4 | How does the tool know that the processes that wrote unreadable bytes are gone, and which identities may a diagnosis read? | D47 makes a new boot session the one proof, taken from the record's `boot` field, which C cannot read. Session scratches can show a live process but cannot tie it to the record, a later session reads them today only to decide removal (docs/PROTOCOL.md → *The session scratch*), and a handoff program may detach. | (a) the tool records a sighting of the unreadable entry — its fingerprint and the boot session — when an act session first meets it, and a later boot with the same fingerprint discharges P4; (b) file times against the boot time; (c) the person's word; (d) none: never clear | (a), written only by an act request with the checked writer, as a record of its own: one restart, the same as for an unsupervised record; reject (b) and (c) (D54); reading scratches for P3 reviewed with it as a new use of an existing record | P3 and P4, and so the clear; not the barrier or the rest of the diagnostic |
+| UR-Q5 | What can reconciliation prove without the record? | A readable record's reconciliation knows the action and basis: `completed` compares the effect with the basis (the fixture's effect file holds the basis prefix). Without them, a completed effect cannot be told from an unexpected one wherever its content depends on the basis. | (a) per action: *no effect* where it can be shown, *completed* only where the scope's own records prove it (a creation record, a journal, a classification), otherwise unexpected; (b) an effect consistent with some basis counts as completed; (c) the person decides | (a) | P5 |
+| UR-Q6 | Which wire vocabulary? | C is refused `unsupervised` and shown as `blocker id=unsupervised` (Gate 1), whose documented meaning includes clearing by a new boot, which does not hold for C. D has no answer of its own (it falls into no record or C). The clear's action id, word and answer texts, and the diagnostic's texts, do not exist. §4 lists the refusal codes, and the CP1 ruling covers only its own two additions. | (a) keep `unsupervised` with distinct texts and fix; (b) a refusal code and blocker id of C's own, and `unavailable` for D (its existing use when supervision cannot be established: an unidentified boot, an unwritable record); (c) a new protocol version | (b), reviewed as a vocabulary addition to protocol 1 with the released client's handling of an unknown code checked, as CP1 was; until then (a) | the implementation's answers; not the contract |
+| UR-Q7 | Is a separate diagnostic operation or scope needed? | §4 answers per scope with `snapshot` and `detail`, whose kinds are added by review (`doctor`, `log`); D50 set aside a new purpose for reads; the text interface must say the same (D3); the documentation checks fix the command names, and the contract names none. | (a) facts and the barrier in the scope's snapshot, the whole finding as a `detail` kind; (b) a new operation; (c) a new scope; (d) a text-only command | (a), under the record's own scope, with the text interface's form decided with UR-Q8 | the diagnostic's implementation |
+| UR-Q8 | Can the existing surfaces carry it safely? | The foundation's journey snapshot shows C today, fixture only. The ordinary Gate 2 reads, `status` and `doctor` read no operation record and are held to the baseline (D52); the startup check must not read one; the debug report's fields are allowlisted (docs/RESCUE.md → *Safe fields*) and include no operation; the launcher reads records only to keep a scratch. Today's fix text advises removal by hand once the operation is known to have ended, which no one can learn from the record. | (a) each surface gains fixed facts, as its own reviewed change; (b) only the scope's snapshot and the diagnostic carry it | (a): the scope's snapshot and a journey summary of barriers; the text interface in the reviewed baseline change Gate 3 already names; the debug report an operation-state enum and admission's reason code per scope; the startup check unchanged; the fix text naming the diagnostic instead of removal | each surface's change, separately |
+| UR-Q9 | Is admission enough to call a record readable? | `core_op_read` reads no `scope` field, so a record whose scope differs from its path is read as the path's; one naming an action this core does not have is read, and reconciles to `unexpected`. | (a) as today; (b) a record whose scope differs from its path, or whose action is not one of its scope's, is C | (b): it is not this scope's record, and C keeps it blocked with the same diagnostic | the classification's implementation |
 
 ## Where each design question is answered
 
@@ -749,5 +799,6 @@ O1-LOGS-P01 recorded; the frontend read-surface integration is authorized
 | — | The frontend: distribution, start-up, the split, the protocol, handoff, lifecycle, the boundary, working without it | docs/FRONTEND.md, docs/PROTOCOL.md; D5–D16, D38, D43 |
 | — | Gate 1's production start, and its authority | docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The startup-check session*; D10, D18, D43, D48 |
 | — | Gate 2's read surface, generations and paging | docs/PROTOCOL.md → *The Gate 2 read surface*; D50, D52, D53, and *Open review questions* |
+| — | An operation record that cannot be read | docs/PROTOCOL.md → *An operation record that cannot be read*; D47, D54, and *Open review questions* (UR-Q1 to UR-Q9) |
 | — | An unreleased frontend candidate | D49; docs/FRONTEND.md |
 | — | The interface | docs/UX.md; D51 |
