@@ -1618,3 +1618,141 @@ fn every_detail_kinds_open_value_reaches_its_end() {
         }
     }
 }
+
+/// The core's refusal of a log window it cannot represent (docs/PROTOCOL.md
+/// → *CP0-Q3b-overflow*): empty generation, fixed words.
+const OVERFLOW: &str = "generation\tid=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\ttotal=0\nresult\tstatus=refused\tcode=overflow\ttext=The%20selected%20log%20window%20cannot%20be%20represented%20in%20Protocol%201.\tnext=\n";
+
+/// G2-FE-003 at the floor: a long line of A.log (g1) is shown; a refresh
+/// admits B.log's snapshot (g2) and its lines are refused as overflow. At
+/// 60×20 the frame keeps A's line under A's facts and names both reads and
+/// the refusal, which leaves the rows one line. Opened, the value is still
+/// read to its last character from the keyboard while the frame says it is
+/// g1's and that g2's lines were refused; closed, the detail is drawn as it
+/// was, its rows move again, and nothing was asked of the core or changed.
+#[test]
+fn a_retained_value_is_read_to_its_end_beside_a_newer_reads_refusal() {
+    let (w, h) = (60, 20);
+    let (ga, gb) = (id_of("a1"), id_of("b2"));
+    let mut m = ready();
+    // A page of two lines of a three-line window, so one more is A's to read.
+    m.limit = 2;
+    let req = sent(&press(&mut m, KeyCode::Char('L')));
+    let det = sent(&answer(&mut m, req, &logs_snap(&ga, "A.log")));
+    assert!(bytes(&det).contains(&format!("generation={ga}\toffset=0\tlimit=2")));
+    answer(
+        &mut m,
+        det,
+        &format!(
+            "generation\tid={ga}\ttotal=3\nrow\tkind=log\tkey=1\tcol=2026-10-04T10:00:00Z\tcol=info\tcol=%5BPLAN%5D\tcol={}\nrow\tkind=log\tkey=2\tcol=\tcol=\tcol=\tcol=SECOND_ROW\n{DONE}",
+            encoded(&long_value())
+        ),
+    );
+    let req = sent(&press(&mut m, KeyCode::Char('r')));
+    assert_eq!(req, Req::Read(Scope::Logs));
+    let page = sent(&answer(&mut m, req, &logs_snap(&gb, "B.log")));
+    assert!(bytes(&page).contains(&format!("kind=log\tgeneration={gb}\toffset=0")));
+    assert_eq!(requests(&answer(&mut m, page, OVERFLOW)), 0);
+    // Whose lines these are, and what became of the newer read's.
+    let truthful = |f: &str, what: &str| {
+        assert!(
+            !f.contains("B.log"),
+            "{what}: B.log never heads A's line:\n{f}"
+        );
+        assert!(
+            line_with(f, "shown:").contains(&ga[..12]) && f.contains(&gb[..12]),
+            "{what}: the read shown and the newest:\n{f}"
+        );
+        assert!(f.contains("refused · overflow"), "{what}:\n{f}");
+    };
+    let closed = frame(&m, w, h);
+    truthful(&closed, "closed");
+    assert!(line_with(&closed, "Source ").contains("A.log"), "{closed}");
+    assert!(
+        closed.contains("The selected log window cannot be"),
+        "{closed}"
+    );
+    assert!(
+        line_with(&closed, "rows 1–2 of 3").contains(&ga[..12]),
+        "{closed}"
+    );
+    let before = m.detail(Kind::Log).unwrap().clone();
+    let read = m.logread.clone();
+    // Opened: the start, then Down until the suffix is drawn.
+    let mut cmds = keys_drawn(&mut m, &[KeyCode::Enter], w, h);
+    let f = frame(&m, w, h);
+    assert!(!f.contains(MARK), "opened at its start:\n{f}");
+    insta::assert_snapshot!("read_logs_value_held_60x20", f);
+    let mut presses = 0;
+    while !frame(&m, w, h).contains(MARK) {
+        presses += 1;
+        assert!(
+            presses <= 200,
+            "the suffix is never reached at {w}x{h}:\n{}",
+            frame(&m, w, h)
+        );
+        cmds.extend(keys_drawn(&mut m, &[KeyCode::Down], w, h));
+    }
+    let f = frame(&m, w, h);
+    assert!(presses > 1, "the value overflowed the view: {presses}");
+    truthful(&f, "open");
+    assert!(
+        line_with(&f, "value lines").contains(&ga[..12])
+            && !line_with(&f, "value lines").contains(&gb[..12]),
+        "the value is g1's:\n{f}"
+    );
+    // Either end, and no key that does nothing short of one.
+    for (k, start, end) in [
+        (KeyCode::Down, false, true),
+        (KeyCode::PageDown, false, true),
+        (KeyCode::Home, true, false),
+        (KeyCode::Up, true, false),
+        (KeyCode::End, false, true),
+        (KeyCode::Up, false, false),
+        (KeyCode::Char('g'), true, false),
+        (KeyCode::Char('G'), false, true),
+    ] {
+        cmds.extend(keys_drawn(&mut m, &[k], w, h));
+        let f = frame(&m, w, h);
+        assert_eq!(
+            (f.contains(START), f.contains(MARK)),
+            (start, end),
+            "{k:?}:\n{f}"
+        );
+        truthful(&f, &format!("{k:?}"));
+    }
+    assert_eq!(
+        requests(&cmds),
+        0,
+        "reading the value asks nothing: {cmds:?}"
+    );
+    // Closed: the detail as it was, nothing loaded or read changed.
+    assert_eq!(requests(&press(&mut m, KeyCode::Esc)), 0);
+    assert_eq!(frame(&m, w, h), closed);
+    assert_eq!(m.detail(Kind::Log).unwrap(), &before);
+    assert_eq!(m.logread, read);
+    assert!(m.pending.is_none());
+    // The rows' keys are back; past the loaded page nothing is asked, as a
+    // changed view is reopened with r, and A's next page is still g1's.
+    assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
+    assert_eq!(
+        m.detail(Kind::Log).unwrap().cursor,
+        1,
+        "the arrows move rows"
+    );
+    assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
+    let d = m.detail(Kind::Log).unwrap();
+    assert_eq!(
+        d.next(m.limit).map(|p| (p.generation, p.offset)),
+        Some((ga.clone(), 2))
+    );
+    // Enter closes it too.
+    press(&mut m, KeyCode::Up);
+    keys_drawn(
+        &mut m,
+        &[KeyCode::Enter, KeyCode::End, KeyCode::Enter],
+        w,
+        h,
+    );
+    assert_eq!(frame(&m, w, h), closed);
+}

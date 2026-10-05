@@ -15,6 +15,10 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+/// The fewest lines an open value is read in under its row; given fewer, it
+/// takes the panel (see `draw`).
+const VALUE_ROOM: usize = 3;
+
 /// The lines a fault is shown as: the core's own words for a refusal or an
 /// error, and "no answer" kept apart from both.
 pub fn fault_lines<'a>(f: &Fault, t: &Theme, width: usize) -> Vec<Line<'a>> {
@@ -76,6 +80,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     let inner = widgets::panel(f, area, &title, t);
     let width = inner.width as usize;
     let mut head: Vec<Line> = Vec::new();
+    // What the head must still say while an open value takes the panel:
+    // which read is shown and what failed, each fault by its first line.
+    let mut notes: Vec<Line> = Vec::new();
     if m.screen == Screen::Logs {
         head.push(tabs(m, t));
         if m.logs_tab == LogsTab::Diagnostics {
@@ -118,7 +125,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             head.extend(scope_head(scope, s, t, width));
         }
         if let Some(fault) = &m.scope(scope).fault {
-            head.extend(fault_lines(fault, t, width));
+            let lines = fault_lines(fault, t, width);
+            notes.extend(lines.first().cloned());
+            head.extend(lines);
         }
     }
     match d {
@@ -151,21 +160,27 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                 );
                 for (i, l) in wrap(&shown, width.saturating_sub(4)).iter().enumerate() {
                     let pad = if i == 0 { " " } else { "   " };
-                    head.push(Line::styled(format!("{pad}{l}"), t.style(Token::Warn)));
+                    let line = Line::styled(format!("{pad}{l}"), t.style(Token::Warn));
+                    notes.push(line.clone());
+                    head.push(line);
                 }
             }
             if d.changed && !reading {
-                head.push(Line::styled(
+                let line = Line::styled(
                     format!(
                         " {} changed since you looked {} r",
                         t.g.warn,
                         if t.caps.unicode { "—" } else { "-" }
                     ),
                     t.style(Token::Warn),
-                ));
+                );
+                notes.push(line.clone());
+                head.push(line);
             }
             if let Some(fault) = &d.fault {
-                head.extend(fault_lines(fault, t, width));
+                let lines = fault_lines(fault, t, width);
+                notes.extend(lines.first().cloned());
+                head.extend(lines);
             }
             if !d.loaded && reading {
                 head.push(Line::styled(
@@ -201,8 +216,15 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             Span::styled(if t.caps.unicode { "▏" } else { "_" }, t.style(Token::Gate)),
         ])
     });
-    let head_h = (head.len() as u16).min(inner.height);
     let tail_h = u16::from(footed.is_some()) + u16::from(edit.is_some());
+    // An open value the head would leave fewer than VALUE_ROOM lines under
+    // its row takes the panel: only the notes stay above it, and closing it
+    // brings back the rest — the scope's facts and each fault's words.
+    let room = (inner.height as usize).saturating_sub(head.len() + usize::from(tail_h) + 1);
+    if d.is_some_and(|d| d.loaded && d.open) && room < VALUE_ROOM {
+        head = notes;
+    }
+    let head_h = (head.len() as u16).min(inner.height);
     let [h, body, tail] = Layout::vertical([
         Constraint::Length(head_h),
         Constraint::Min(0),
