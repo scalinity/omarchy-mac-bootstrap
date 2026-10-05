@@ -568,10 +568,27 @@ of docs/TESTING.md.
   open (*O1 performance signoff* below). The production frontend read-surface
   integration — the Welcome screen, the Journey dashboard, machine and status
   details, Health, Logs, and a read-only presentation of
-  `validate select action=plan.save` — is authorized; its candidate awaits
-  **M14 GATE 2 — FRONTEND READ-ONLY INTEGRATION / EQUIVALENCE REVIEW**. S5+,
-  Gate 3, frontend `0.2.0` release, M15, M16 and M17 remain unauthorized;
-  frontend `0.2.0` is **UNRELEASED**.
+  `validate select action=plan.save` — is authorized and implemented; its
+  remediation candidate awaits focused re-review (*Frontend integration
+  checkpoint* below). S5+, Gate 3, frontend `0.2.0` release, M15, M16 and
+  M17 remain unauthorized; frontend `0.2.0` is **UNRELEASED**.
+- **Frontend integration checkpoint:** the first production UI candidate
+  (`7b30143`, `0e67c09` and `1e6eac54c552f50dc46aeb41a6828ba579e93f05` from
+  `c4a418a`) was independently reviewed: **GATE 2 FRONTEND REMEDIATION
+  REQUIRED**. Its architecture was credited; four findings block acceptance:
+  **G2-FE-001** (the ordinary launcher omitted the accepted `health` and
+  `logs` read scopes), **G2-FE-002** (refreshed metadata could describe
+  retained rows of another generation), **G2-FE-003** (an expanded value's
+  suffix could not be reached) and **G2-FE-004** (contract and status
+  documents contradicted authorized and accepted work). G2-FE-005 (filter-mode
+  hints) and G2-FE-006 (an Enter hint with no action) are recorded,
+  non-blocking observations, not remediated. That first candidate remains
+  **UNACCEPTED**. The remediation candidate, forward from `1e6eac5`, awaits
+  **M14 GATE 2 — FOCUSED FRONTEND INTEGRATION REMEDIATION RE-REVIEW**; each of
+  the four findings is **REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
+  CONFIRMATION**. Gate 2 stays **IN PROGRESS**; the O1 performance signoff
+  stays **ACCEPTED** and O1-LOGS-P01 unchanged; frontend `0.2.0` stays
+  **UNRELEASED**.
 
 - **BENCH-M01 candidate remediation:** independent review of B
   `6129d07bd6cf04a4fd9a98773231677fb1473375` credited other benchmark methodology

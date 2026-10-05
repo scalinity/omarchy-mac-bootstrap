@@ -2,10 +2,13 @@
 
 **Status: the implementation contract for M14 gate 1 (framing, admission,
 processes, diagnostics; implemented and accepted), gate 2 (the read surface,
-*The Gate 2 read surface*; only ordinary journey snapshot and machine/status
-detail implemented and independently accepted at
-`f35be42e90bfb8fc29e61557f0a126a74cb6460b` (S1–S3); gate 2 as a whole is not
-complete) and gate 3
+*The Gate 2 read surface*: its ordinary fixture-only producers are
+independently accepted — journey snapshot and machine/status detail at
+`f35be42e90bfb8fc29e61557f0a126a74cb6460b` (S1–S3), Logs at `a0ba61c`,
+Health (Doctor) at `27f79d6` and Validate at
+`b01610e69a2eef6e5a52f5ede18236210699704e`; the frontend's presentation of
+them is implemented in the unreleased 0.2.0 candidate, and its integration
+awaits independent acceptance; gate 2 as a whole is not complete) and gate 3
 (actions and bases; not implemented).**
 Local experiments that ground it are recorded in docs/UPSTREAM.md →
 *Experiments*.
@@ -625,18 +628,21 @@ requests; there is no fallback, retry under journey, alias or substitution.
 The actual released parser rejects documents containing new scope values.
 This ruling covers these two additions, not arbitrary future enum changes.
 
-Admission is not availability: CP1 implements no health/logs producer or
-product request/UI behavior. With the requested scope in an ordinary
-session, their snapshot/detail are `refused unavailable`, in and outside
-fixtures. Without it they are `refused scope`, before any producer probe.
-The closed startup-check contract remains journey-only and refuses either
-new scope with `refused scope`. No action, record or persistence authority
-comes from the scope addition.
+Admission is not availability. At the CP1 checkpoint (historical context)
+no health/logs producer or product request/UI behavior existed, so with the
+requested scope in an ordinary session their snapshot/detail were `refused
+unavailable`, in and outside fixtures. Without the scope they are `refused
+scope`, before any producer probe. The closed startup-check contract remains
+journey-only and refuses either new scope with `refused scope`. No action,
+record or persistence authority comes from the scope addition.
 
-S4 later implements the ordinary fixture-only Logs and Health producers
-(*The Gate 2 read surface*). Outside fixtures their snapshot/detail remain
-`refused unavailable`, without the scope `refused scope`, and the startup
-check is unchanged.
+S4 later implemented the ordinary fixture-only Logs and Health producers
+(*The Gate 2 read surface*), both accepted. In fixture mode they answer an
+ordinary session that holds their scope; outside fixtures their
+snapshot/detail remain `refused unavailable`, without the scope `refused
+scope`. The launcher's ordinary (default-command) session carries every
+scope, `health` and `logs` among them (SPEC.md → *Commands*); the startup
+check is unchanged and keeps `journey` alone.
 
 ### Operations
 
@@ -792,9 +798,11 @@ fixture-only Logs producer is accepted at
 `a0ba61c5b560bbbffd02dbb92cec7b4fdec34dc9`, and its ordinary fixture-only
 Health (Doctor) producer at `27f79d6b03a6639eab9205723e9fe5c43377c8bf`. The
 ordinary fixture-only Validate producer (*Future plan validation contract*)
-is implemented in the candidate and awaits focused independent review; it
-is not accepted. CP1 itself implemented only the health/logs admission
-prerequisite.
+is accepted at `b01610e69a2eef6e5a52f5ede18236210699704e`. CP1 itself
+implemented only the health/logs admission prerequisite. The frontend's
+presentation of these reads — the journey with its machine and status
+details, Health, Logs and the plan check — is implemented in the unreleased
+0.2.0 candidate; its integration awaits independent acceptance.
 
 **Required journey representation (Gate2-read-representation-failure).**
 Ordinary journey `snapshot` and `detail kind=machine|status` use one authoritative
@@ -875,9 +883,14 @@ Gate 2 emits no `stage` record, by the review's ruling (docs/DECISIONS.md →
 provenance is inferred before the milestone that owns its derivation.
 
 **Plan validation.** Q4 is resolved by *Future plan validation contract*,
-which the ordinary fixture-only Validate producer implements (candidate,
-awaiting focused independent review). The frontend presents no validation
-at Gate 2 (D52).
+which the ordinary fixture-only Validate producer implements (accepted at
+`b01610e69a2eef6e5a52f5ede18236210699704e`). The frontend presents it
+read-only (D52): it collects the two sizes, `linux_size` and `shared_size`,
+sends `validate select action=plan.save`, and shows the core's normalized
+values, installer answers, warnings, refusals and review basis. It never
+saves, never executes and exposes no action authority. This presentation is
+implemented in the unreleased candidate; its integration awaits independent
+acceptance.
 
 ### Future health and logs producers
 
@@ -984,16 +997,18 @@ if that machinery itself fails, fixed emergency records use the same safe
 shape without candidate data or a hash-tool dependency. Publication failure
 after an append begins leaves an incomplete transport, without a second result.
 S4 implemented only ordinary fixture-mode Logs and Health. Validate is
-implemented separately (*Future plan validation contract*); frontend
-Logs/Health/Validate requests, navigation and screens remain unimplemented.
+implemented separately (*Future plan validation contract*). The frontend's
+Logs, Health and plan-check requests, navigation and screens are
+implemented in the unreleased candidate; their integration awaits
+independent acceptance.
 
 ### Future plan validation contract
 
 Q4 is resolved. CP1 recorded this contract and
 `Q4-plan-validation-basis-v1` as documentation only; the ordinary
 fixture-only Validate producer (`lib/validate.sh`) implements them
-(candidate, awaiting focused independent review; its implementation is
-described below). `validate select action=plan.save` belongs to
+(accepted at `b01610e69a2eef6e5a52f5ede18236210699704e`; its implementation
+is described below). `validate select action=plan.save` belongs to
 scope `plan`, with arguments `linux_size` and `shared_size`. It answers only
 in ordinary macOS fixtures. Wrong platform/family/non-fixture is
 `refused unavailable`; a session without plan scope is `refused scope`.

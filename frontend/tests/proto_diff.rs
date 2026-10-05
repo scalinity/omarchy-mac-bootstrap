@@ -569,3 +569,39 @@ fn tables_match_lib_records_sh() {
         );
     }
 }
+
+/// The current status in the protocol documents says what review settled
+/// (G2-FE-004): the Validate producer accepted at `b01610e`, and the
+/// frontend's Health, Logs and plan-check screens implemented in the
+/// unreleased candidate, their integration not yet accepted. A paragraph or
+/// table row naming the Validate producer never says it still awaits review,
+/// and none says the frontend presents no validation, that its read screens
+/// are unimplemented, or (as CP1 did before the producers existed) that
+/// Health and Logs are refused in fixtures.
+#[test]
+fn the_protocol_status_names_the_accepted_work() {
+    let accepted = "b01610e69a2eef6e5a52f5ede18236210699704e";
+    for doc in ["docs/PROTOCOL.md", "docs/DECISIONS.md"] {
+        let text = fs::read_to_string(repo().join(doc)).unwrap();
+        assert!(text.contains(accepted), "{doc} names the accepted producer");
+        for unit in text.split("\n\n").flat_map(|p| p.split("\n|")) {
+            let u = unit.split_whitespace().collect::<Vec<_>>().join(" ");
+            if u.contains("Validate producer") {
+                for stale in [
+                    "awaiting focused independent review",
+                    "awaits focused independent review",
+                    "it is not accepted",
+                ] {
+                    assert!(!u.contains(stale), "{doc}: {stale:?} in: {u}");
+                }
+            }
+            for stale in [
+                "The frontend presents no validation",
+                "navigation and screens remain unimplemented",
+                "their snapshot/detail are `refused unavailable`, in and outside fixtures",
+            ] {
+                assert!(!u.contains(stale), "{doc}: {stale:?} in: {u}");
+            }
+        }
+    }
+}
