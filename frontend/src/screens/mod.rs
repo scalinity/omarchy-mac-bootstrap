@@ -8,7 +8,7 @@ mod plan;
 mod table;
 mod welcome;
 
-use crate::app::{Blocker, Level, Model, Screen};
+use crate::app::{Blocker, Level, Model, Region, Screen};
 use crate::keys;
 use crate::theme::{Theme, Token};
 use crate::widgets::{self, BANNER_H, MIN_H, MIN_W, Tier, tier};
@@ -90,7 +90,11 @@ pub fn draw(f: &mut Frame, m: &Model, t: &Theme, tick_ms: u32) {
     if with_status {
         widgets::status(f, status, m, t, tick_ms);
     }
-    let place = keys::place(m.screen, m.region, m.logs_tab);
+    let place = if m.region == Region::Work && crate::app::value_open(m, m.screen) {
+        keys::Place::Value
+    } else {
+        keys::place(m.screen, m.region, m.logs_tab)
+    };
     widgets::footer(f, footer, m, place, t);
 }
 

@@ -6,6 +6,7 @@
 //! kept in the order the core sent them.
 
 use crate::record::{self, Record};
+use std::cell::Cell;
 
 /// The read scopes the frontend presents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,8 +148,14 @@ pub struct Detail {
     pub editing: bool,
     /// Logs only: show lines of this level alone.
     pub level: Option<String>,
-    /// The focused row's full values, wrapped.
+    /// The focused row's full values, wrapped; while open, the moving keys
+    /// scroll them instead of the rows.
     pub open: bool,
+    /// The first line of the open values shown. Only the frame knows the
+    /// width they wrap at and the room under the row, so it keeps this within
+    /// them as it draws — as a stateful widget keeps its offset — and the
+    /// keys move it from where the last frame left it.
+    pub value_top: Cell<usize>,
     pub land: Land,
 }
 
@@ -168,6 +175,7 @@ impl Detail {
             editing: false,
             level: None,
             open: false,
+            value_top: Cell::new(0),
             land: Land::First,
         }
     }

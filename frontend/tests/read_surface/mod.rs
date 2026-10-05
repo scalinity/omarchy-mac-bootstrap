@@ -1179,3 +1179,442 @@ fn the_plan_answer_scrolls_to_its_basis() {
     press(&mut m, KeyCode::Char('0'));
     assert!(frame(&m, 80, 24).contains("Shared size  100GB0"));
 }
+
+// --- A refresh never pairs one generation's facts with another's rows -------
+
+use omb_tui::read::{Kind, Scope};
+
+/// A generation id made of one repeated byte pair, so its first twelve
+/// characters (what the frame shows) say which read it is.
+fn id_of(pair: &str) -> String {
+    pair.repeat(32)
+}
+
+/// The line of F that holds NEEDLE.
+fn line_with<'a>(f: &'a str, needle: &str) -> &'a str {
+    f.lines()
+        .find(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("{needle:?} in:\n{f}"))
+}
+
+fn logs_snap(g: &str, source: &str) -> String {
+    format!(
+        "generation\tid={g}\ttotal=0
+fact\tscope=logs\tkey=logs.state_dir\tlabel=State\tvalue=/s\tstate=info
+fact\tscope=logs\tkey=logs.directory\tlabel=Logs\tvalue=/s/logs\tstate=info
+fact\tscope=logs\tkey=logs.source\tlabel=Source\tvalue={source}\tstate=info
+fact\tscope=logs\tkey=logs.lines\tlabel=Lines\tvalue=1\tstate=info
+{DONE}"
+    )
+}
+
+fn log_page(g: &str, message: &str) -> String {
+    format!(
+        "generation\tid={g}\ttotal=1\nrow\tkind=log\tkey=1\tcol=2026-10-04T10:00:00Z\tcol=info\tcol=%5BSURVEY%5D\tcol={message}\n{DONE}"
+    )
+}
+
+fn health_snap(g: &str, pass: u32, warn: u32, fail: u32) -> String {
+    format!(
+        "generation\tid={g}\ttotal=0
+fact\tscope=health\tkey=doctor.pass\tlabel=Passed\tvalue={pass}\tstate=info
+fact\tscope=health\tkey=doctor.warn\tlabel=Warnings\tvalue={warn}\tstate=info
+fact\tscope=health\tkey=doctor.fail\tlabel=Failures\tvalue={fail}\tstate=info
+{DONE}"
+    )
+}
+
+fn doctor_page(g: &str, label: &str) -> String {
+    format!(
+        "generation\tid={g}\ttotal=1\nrow\tkind=doctor\tkey=1\tcol=warn\tcol={label}\tcol=a%20finding\n{DONE}"
+    )
+}
+
+/// The ways a replacement page can end without its rows: no answer, never
+/// sent, refused (the core holds yet another generation) and an error.
+fn unanswered(m: &mut Model, page: Req, how: &str) {
+    match how {
+        "no answer" => {
+            update(m, Msg::Done(page, Outcome::Unknown("no result".into())));
+        }
+        "not sent" => {
+            update(m, Msg::Done(page, Outcome::NotSent("no core".into())));
+        }
+        "refused" => {
+            answer(
+                m,
+                page,
+                &format!(
+                    "generation\tid={}\ttotal=0\nresult\tstatus=refused\tcode=changed\ttext=The%20dataset%20changed.\tnext=\n",
+                    id_of("c3")
+                ),
+            );
+        }
+        _ => {
+            answer(
+                m,
+                page,
+                &format!(
+                    "generation\tid={EMPTY}\ttotal=0\nresult\tstatus=error\tcode=io\ttext=The%20response%20could%20not%20be%20prepared.\tnext=\n"
+                ),
+            );
+        }
+    }
+}
+
+const ENDINGS: [(&str, &str); 4] = [
+    ("no answer", "no answer"),
+    ("not sent", "not sent"),
+    ("refused", "changed since you looked"),
+    ("error", "error · io"),
+];
+
+/// G2-FE-002, Logs: lines of A.log (g1), then a refresh whose snapshot
+/// selects B.log (g2). Until B's lines are admitted, the frame shows A.log
+/// above A's lines and names both generations; B.log never heads ONLY_A,
+/// whether the replacement is pending, unanswered, unsent, refused or failed.
+/// Admitted, B.log, ONLY_B and g2 are shown together and A is gone.
+#[test]
+fn logs_source_and_lines_are_always_one_generation() {
+    let (ga, gb) = (id_of("a1"), id_of("b2"));
+    let stale = || {
+        let mut m = ready();
+        let req = sent(&press(&mut m, KeyCode::Char('L')));
+        let det = sent(&answer(&mut m, req, &logs_snap(&ga, "A.log")));
+        answer(&mut m, det, &log_page(&ga, "ONLY_A"));
+        let f = frame(&m, 120, 40);
+        assert!(line_with(&f, "Source ").contains("A.log"), "{f}");
+        assert!(line_with(&f, "ONLY_A").contains("[SURVEY]"), "{f}");
+        assert!(line_with(&f, "rows 1").contains(&ga[..12]), "{f}");
+        let req = sent(&press(&mut m, KeyCode::Char('r')));
+        assert_eq!(req, Req::Read(Scope::Logs));
+        let page = sent(&answer(&mut m, req, &logs_snap(&gb, "B.log")));
+        assert!(
+            bytes(&page).contains(&format!("kind=log\tgeneration={gb}\toffset=0")),
+            "the replacement is asked of the new generation: {}",
+            bytes(&page)
+        );
+        (m, page)
+    };
+    let held = |m: &Model, what: &str| {
+        for (w, h) in [(120, 40), (80, 24), (60, 20)] {
+            let f = frame(m, w, h);
+            assert!(
+                !f.contains("B.log"),
+                "{what} {w}x{h}: B.log never heads A's lines:\n{f}"
+            );
+        }
+        let f = frame(m, 120, 40);
+        assert!(line_with(&f, "Source ").contains("A.log"), "{what}:\n{f}");
+        assert!(f.contains("ONLY_A"), "{what}:\n{f}");
+        assert!(
+            line_with(&f, "rows 1").contains(&ga[..12]),
+            "{what}: the lines' own generation:\n{f}"
+        );
+        assert!(
+            line_with(&f, "shown:").contains(&ga[..12]) && f.contains(&gb[..12]),
+            "{what}: the frame names the read shown and the newest:\n{f}"
+        );
+        f
+    };
+    let (m, _) = stale();
+    let f = held(&m, "pending");
+    assert!(f.contains("Logs · reading"), "{f}");
+    for (how, words) in ENDINGS {
+        let (mut m, page) = stale();
+        unanswered(&mut m, page, how);
+        let f = held(&m, how);
+        assert!(f.contains(words), "{how}: {words:?}:\n{f}");
+        assert!(!f.contains("Logs · reading"), "{how}:\n{f}");
+    }
+    let (mut m, page) = stale();
+    let c = answer(&mut m, page, &log_page(&gb, "ONLY_B"));
+    assert_eq!(requests(&c), 0);
+    for (w, h) in [(120, 40), (60, 20)] {
+        let f = frame(&m, w, h);
+        assert!(line_with(&f, "Source ").contains("B.log"), "{w}x{h}:\n{f}");
+        assert!(
+            line_with(&f, "ONLY_B").contains("[SURVEY]"),
+            "{w}x{h}:\n{f}"
+        );
+        assert!(line_with(&f, "rows 1").contains(&gb[..12]), "{w}x{h}:\n{f}");
+        for gone in ["A.log", "ONLY_A", &ga[..12], "shown:", "changed since"] {
+            assert!(!f.contains(gone), "{w}x{h}: {gone:?}:\n{f}");
+        }
+    }
+}
+
+/// G2-FE-002, Health: counts A over finding ONLY_A (g1), then a refresh to
+/// counts B (g2). Counts B are never drawn over ONLY_A, whatever becomes of
+/// the replacement; admitted, counts B and finding ONLY_B are shown together.
+#[test]
+fn health_counts_summarise_only_the_findings_shown() {
+    let (ga, gb) = (id_of("d4"), id_of("e5"));
+    let stale = || {
+        let mut m = ready();
+        let req = sent(&go(&mut m, 4));
+        let det = sent(&answer(&mut m, req, &health_snap(&ga, 10, 1, 0)));
+        answer(&mut m, det, &doctor_page(&ga, "ONLY_A"));
+        let f = frame(&m, 120, 40);
+        assert!(
+            line_with(&f, "Passed ").contains("Passed 10    Warnings 1    Failures 0"),
+            "{f}"
+        );
+        let req = sent(&press(&mut m, KeyCode::Char('r')));
+        assert_eq!(req, Req::Read(Scope::Health));
+        let page = sent(&answer(&mut m, req, &health_snap(&gb, 21, 4, 2)));
+        assert!(bytes(&page).contains(&format!("kind=doctor\tgeneration={gb}\toffset=0")));
+        (m, page)
+    };
+    let held = |m: &Model, what: &str| {
+        for (w, h) in [(120, 40), (80, 24), (60, 20)] {
+            let f = frame(m, w, h);
+            for b in ["Passed 21", "Warnings 4", "Failures 2"] {
+                assert!(
+                    !f.contains(b),
+                    "{what} {w}x{h}: {b:?} never summarises ONLY_A:\n{f}"
+                );
+            }
+        }
+        let f = frame(m, 120, 40);
+        assert!(
+            line_with(&f, "Passed ").contains("Passed 10    Warnings 1    Failures 0"),
+            "{what}:\n{f}"
+        );
+        assert!(f.contains("ONLY_A"), "{what}:\n{f}");
+        assert!(line_with(&f, "rows 1").contains(&ga[..12]), "{what}:\n{f}");
+        assert!(
+            line_with(&f, "shown:").contains(&ga[..12]) && f.contains(&gb[..12]),
+            "{what}:\n{f}"
+        );
+        f
+    };
+    let (m, _) = stale();
+    assert!(held(&m, "pending").contains("Health · reading"));
+    for (how, words) in ENDINGS {
+        let (mut m, page) = stale();
+        unanswered(&mut m, page, how);
+        assert!(held(&m, how).contains(words), "{how}: {words:?}");
+    }
+    let (mut m, page) = stale();
+    answer(&mut m, page, &doctor_page(&gb, "ONLY_B"));
+    let f = frame(&m, 120, 40);
+    assert!(
+        line_with(&f, "Passed ").contains("Passed 21    Warnings 4    Failures 2"),
+        "{f}"
+    );
+    assert!(line_with(&f, "ONLY_B").contains("warn"), "{f}");
+    assert!(line_with(&f, "rows 1").contains(&gb[..12]), "{f}");
+    for gone in ["Passed 10", "ONLY_A", &ga[..12], "shown:"] {
+        assert!(!f.contains(gone), "{gone:?}:\n{f}");
+    }
+}
+
+// --- An open value is read to its last character -----------------------------
+
+const MARK: &str = "UNIQUE_TRAILING_MARKER";
+/// The open value's first line, as drawn under its row (the row's own cell, cut
+/// short, begins with the same word).
+const START: &str = "       word000 ";
+
+/// About 1,500 characters of words, the marker last: legal in every column
+/// (a value may be 4 KiB), and longer than a 60×20 view can show at once.
+fn long_value() -> String {
+    let words: Vec<String> = (0..180).map(|i| format!("word{i:03}")).collect();
+    format!("{} {MARK}", words.join(" "))
+}
+
+fn encoded(s: &str) -> String {
+    s.replace(' ', "%20")
+}
+
+/// The keys while a value is open, each drawn at W×H before the next, as the
+/// event loop draws between keys; the commands they made.
+fn keys_drawn(m: &mut Model, keys: &[KeyCode], w: u16, h: u16) -> Vec<Cmd> {
+    let mut out = Vec::new();
+    for k in keys {
+        out.extend(press(m, *k));
+        frame(m, w, h);
+    }
+    out
+}
+
+/// G2-FE-003: at 60×20 a long log line's suffix is reached from the
+/// keyboard. Opened, the value shows its start; the arrows (and j k) scroll
+/// it, PgUp PgDn by a page, Home End (and g G) to either end, with no key
+/// that does nothing at an end; Esc or Enter close it and the arrows move
+/// rows again. None of it asks the core anything or changes what was loaded.
+#[test]
+fn an_open_value_scrolls_to_its_last_character() {
+    let (w, h) = (60, 20);
+    let mut m = opened(
+        5,
+        &[
+            &logs_snap(LGEN, "omarchy-bootstrap-20261004.log"),
+            &format!(
+                "generation\tid={LGEN}\ttotal=2\nrow\tkind=log\tkey=1\tcol=2026-10-04T10:00:00Z\tcol=info\tcol=%5BPLAN%5D\tcol={}\nrow\tkind=log\tkey=2\tcol=\tcol=\tcol=\tcol=SECOND_ROW\n{DONE}",
+                encoded(&long_value())
+            ),
+        ],
+    );
+    let before = m.detail(Kind::Log).unwrap().clone();
+    let snap = m.logread.snap.clone();
+    let mut cmds = Vec::new();
+    let f = frame(&m, w, h);
+    assert!(!f.contains(MARK), "collapsed:\n{f}");
+    cmds.extend(keys_drawn(&mut m, &[KeyCode::Enter], w, h));
+    let f = frame(&m, w, h);
+    assert!(
+        f.contains(START) && !f.contains(MARK),
+        "opened at its start:\n{f}"
+    );
+    assert!(line_with(&f, "value lines 1–").contains(&LGEN[..12]), "{f}");
+    // Down, one line at a time, until the suffix is drawn.
+    let mut presses = 0;
+    while !frame(&m, w, h).contains(MARK) {
+        presses += 1;
+        assert!(
+            presses <= 200,
+            "the suffix is never reached:\n{}",
+            frame(&m, w, h)
+        );
+        let k = if presses % 2 == 0 {
+            KeyCode::Down
+        } else {
+            KeyCode::Char('j')
+        };
+        cmds.extend(keys_drawn(&mut m, &[k], w, h));
+    }
+    let f = frame(&m, w, h);
+    assert!(presses > 5, "the value overflowed the view: {presses}");
+    assert!(!f.contains(START), "the start scrolled away:\n{f}");
+    assert_eq!(m.detail(Kind::Log).unwrap().cursor, 0, "the row stays");
+    // Past the end nothing moves, and one step back moves at once.
+    cmds.extend(keys_drawn(
+        &mut m,
+        &[KeyCode::Down, KeyCode::PageDown],
+        w,
+        h,
+    ));
+    assert!(frame(&m, w, h).contains(MARK));
+    cmds.extend(keys_drawn(&mut m, &[KeyCode::Up], w, h));
+    assert!(!frame(&m, w, h).contains(MARK), "Up leaves the end at once");
+    // The ends, both ways, and a page.
+    for (k, start, end) in [
+        (KeyCode::Home, true, false),
+        (KeyCode::End, false, true),
+        (KeyCode::PageUp, false, false),
+        (KeyCode::PageDown, false, true),
+        (KeyCode::Char('g'), true, false),
+        (KeyCode::Char('G'), false, true),
+        (KeyCode::Char('k'), false, false),
+    ] {
+        cmds.extend(keys_drawn(&mut m, &[k], w, h));
+        let f = frame(&m, w, h);
+        assert_eq!(
+            (f.contains(START), f.contains(MARK)),
+            (start, end),
+            "{k:?}:\n{f}"
+        );
+    }
+    assert_eq!(requests(&cmds), 0, "scrolling asks nothing: {cmds:?}");
+    // Esc closes it: the screen, the rows and their keys come back.
+    assert_eq!(requests(&press(&mut m, KeyCode::Esc)), 0);
+    assert_eq!(m.screen, Screen::Logs);
+    let f = frame(&m, w, h);
+    assert!(!f.contains(MARK) && f.contains("rows 1–2 of 2"), "{f}");
+    assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
+    assert_eq!(
+        m.detail(Kind::Log).unwrap().cursor,
+        1,
+        "the arrows move rows"
+    );
+    // Enter closes it too, and it opens again at its start.
+    press(&mut m, KeyCode::Up);
+    keys_drawn(
+        &mut m,
+        &[KeyCode::Enter, KeyCode::End, KeyCode::Enter],
+        w,
+        h,
+    );
+    assert!(!frame(&m, w, h).contains(MARK), "Enter closed it");
+    keys_drawn(&mut m, &[KeyCode::Enter], w, h);
+    assert!(frame(&m, w, h).contains(START), "reopened at its start");
+    press(&mut m, KeyCode::Esc);
+    // What was loaded, from which generation, at which offset: unchanged.
+    let after = m.detail(Kind::Log).unwrap();
+    assert_eq!(
+        (
+            &after.generation,
+            after.offset,
+            after.total,
+            &after.rows,
+            after.loaded,
+            after.changed,
+            &after.fault
+        ),
+        (
+            &before.generation,
+            before.offset,
+            before.total,
+            &before.rows,
+            before.loaded,
+            before.changed,
+            &before.fault
+        )
+    );
+    assert_eq!(m.logread.snap, snap);
+    assert!(m.pending.is_none());
+}
+
+/// The same reach on every detail kind (machine, status, health, log) at the
+/// floor and at a larger layout, and the next page still read on request
+/// once the value is closed.
+#[test]
+fn every_detail_kinds_open_value_reaches_its_end() {
+    let v = encoded(&long_value());
+    let machine = format!(
+        "generation\tid={GEN}\ttotal=1\nrow\tkind=machine\tkey=machine.long\tcol=Long\tcol={v}\n{DONE}"
+    );
+    // One row of a status read longer than the page asked for.
+    let status = format!(
+        "generation\tid={GEN}\ttotal=812\nrow\tkind=status\tkey=1\tcol=Detected%20now\tcol=Long\tcol={v}\tcol=\n{DONE}"
+    );
+    let doctor = format!(
+        "generation\tid={HGEN}\ttotal=1\nrow\tkind=doctor\tkey=1\tcol=warn\tcol=Long\tcol={v}\n{DONE}"
+    );
+    let log = format!(
+        "generation\tid={LGEN}\ttotal=1\nrow\tkind=log\tkey=1\tcol=\tcol=\tcol=\tcol={v}\n{DONE}"
+    );
+    for kind in Kind::ALL {
+        for (w, h) in [(60, 20), (100, 30), (120, 40)] {
+            let mut m = match kind {
+                Kind::Machine => opened(2, &[&machine]),
+                Kind::Status => opened(3, &[&status]),
+                Kind::Doctor => opened(4, &[&format!("{HEALTH}{DONE}"), &doctor]),
+                Kind::Log => opened(5, &[&format!("{LOGS}{DONE}"), &log]),
+            };
+            let mut cmds = keys_drawn(&mut m, &[KeyCode::Enter], w, h);
+            assert!(frame(&m, w, h).contains(START), "{kind:?} {w}x{h}");
+            cmds.extend(keys_drawn(&mut m, &[KeyCode::End], w, h));
+            let f = frame(&m, w, h);
+            assert!(f.contains(MARK), "{kind:?} {w}x{h}:\n{f}");
+            cmds.extend(keys_drawn(&mut m, &[KeyCode::Home, KeyCode::Esc], w, h));
+            assert_eq!(requests(&cmds), 0, "{kind:?} {w}x{h}");
+            assert!(!frame(&m, w, h).contains(MARK), "{kind:?} {w}x{h}");
+            assert_eq!(m.screen.kind(), Some(kind));
+            if kind == Kind::Status {
+                // Closed, the rows' keys are back: past the loaded page, the
+                // next page of the same generation is read on request.
+                let next = sent(&press(&mut m, KeyCode::Down));
+                assert!(
+                    bytes(&next).contains(&format!(
+                        "kind=status\tgeneration={GEN}\toffset=1\tlimit=500"
+                    )),
+                    "{}",
+                    bytes(&next)
+                );
+            }
+        }
+    }
+}

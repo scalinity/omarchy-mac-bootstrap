@@ -19,6 +19,8 @@ pub enum Place {
     Table,
     /// The tool's log.
     Logs,
+    /// A row's full values, open under it in a detail table or the log.
+    Value,
     /// The core's diagnostics.
     Diagnostics,
     /// The plan check's size fields.
@@ -98,6 +100,12 @@ pub static KEYMAP: &[Binding] = &[
         "first and last (and g G)",
         0,
     ),
+    b(Place::Value, "↑↓", "up/down", "scroll", 1),
+    b(Place::Value, "⏎ esc", "enter esc", "close", 2),
+    b(Place::Value, "Home End", "Home End", "start, end", 3),
+    b(Place::Value, "k j", "k j", "scroll (vim)", 0),
+    b(Place::Value, "PgUp PgDn", "PgUp PgDn", "a page", 0),
+    b(Place::Value, "g G", "g G", "start, end (vim)", 0),
     b(Place::Diagnostics, "↑↓", "up/down", "scroll", 1),
     b(Place::Diagnostics, "Tab", "Tab", "the tool's log", 2),
     b(Place::Plan, "⏎", "enter", "check", 1),
@@ -213,14 +221,21 @@ pub fn hints(place: Place, unicode: bool, max: usize) -> Vec<(&'static str, &'st
 }
 
 /// The bindings help lists for the screen BACK it was opened from: that
-/// screen's own keys, the rail's while the rail has the keys, and the frame's.
+/// screen's own keys (an open VALUE's, when one is open there), the rail's
+/// while the rail has the keys, and the frame's.
 pub fn help_for(
     back: Screen,
     region: Region,
     logs: LogsTab,
+    value: bool,
     unicode: bool,
 ) -> Vec<(&'static str, &'static str)> {
-    let mut out = help(place(back, Region::Work, logs), unicode);
+    let own = if value {
+        Place::Value
+    } else {
+        place(back, Region::Work, logs)
+    };
+    let mut out = help(own, unicode);
     if region == Region::Nav {
         for b in help(Place::Nav, unicode) {
             if !out.contains(&b) {
@@ -248,12 +263,13 @@ pub fn help(place: Place, unicode: bool) -> Vec<(&'static str, &'static str)> {
 mod tests {
     use super::*;
 
-    const ALL: [Place; 11] = [
+    const ALL: [Place; 12] = [
         Place::Dashboard,
         Place::Welcome,
         Place::Nav,
         Place::Table,
         Place::Logs,
+        Place::Value,
         Place::Diagnostics,
         Place::Plan,
         Place::Gate,

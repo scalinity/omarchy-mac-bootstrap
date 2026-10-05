@@ -51,9 +51,15 @@ pub fn fatal(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
 pub fn help(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     let inner = widgets::panel(f, area, "Keys", t);
     let mut lines = Vec::new();
-    for (k, d) in keys::help_for(m.back, m.region, m.logs_tab, t.caps.unicode)
-        .into_iter()
-        .skip(m.help_scroll)
+    for (k, d) in keys::help_for(
+        m.back,
+        m.region,
+        m.logs_tab,
+        crate::app::value_open(m, m.back),
+        t.caps.unicode,
+    )
+    .into_iter()
+    .skip(m.help_scroll)
     {
         lines.push(Line::from(vec![
             Span::styled(format!("   {k:<12}"), t.style(Token::Accent)),

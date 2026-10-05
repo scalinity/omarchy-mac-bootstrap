@@ -93,16 +93,34 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
         return;
     }
     let scope = kind.scope();
-    if scope != Scope::Journey {
+    let d = m.detail(kind);
+    // The newest snapshot's generation, when the rows shown are an earlier
+    // read's: never admitted, its rows are not those shown.
+    let newest = d
+        .filter(|d| d.loaded)
+        .and_then(|d| m.generation(scope).filter(|g| *g != d.generation));
+    // The facts drawn above the rows are those of the snapshot the rows came
+    // from: a newer snapshot's counts or source never head an older read's.
+    let facts = if scope == Scope::Journey {
+        None
+    } else {
         let r = m.scope(scope);
-        if let Some(s) = &r.snap {
+        match d.filter(|d| d.loaded) {
+            Some(d) => [&r.snap, &r.held]
+                .into_iter()
+                .flatten()
+                .find(|s| s.generation == d.generation),
+            None => r.snap.as_ref(),
+        }
+    };
+    if scope != Scope::Journey {
+        if let Some(s) = facts {
             head.extend(scope_head(scope, s, t, width));
         }
-        if let Some(fault) = &r.fault {
+        if let Some(fault) = &m.scope(scope).fault {
             head.extend(fault_lines(fault, t, width));
         }
     }
-    let d = m.detail(kind);
     match d {
         None if reading => head.push(Line::styled(
             "   Reading the core's answer.",
@@ -118,6 +136,24 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             t.style(Token::Muted),
         )),
         Some(d) => {
+            if let Some(g) = newest {
+                let short = |g: &str| g.get(..12).unwrap_or(g).to_string();
+                let shown = format!(
+                    "{} shown: an earlier read, generation {}; the newest read is {}{}",
+                    t.g.warn,
+                    short(&d.generation),
+                    short(g),
+                    if reading {
+                        ", reading now"
+                    } else {
+                        ", not shown"
+                    }
+                );
+                for (i, l) in wrap(&shown, width.saturating_sub(4)).iter().enumerate() {
+                    let pad = if i == 0 { " " } else { "   " };
+                    head.push(Line::styled(format!("{pad}{l}"), t.style(Token::Warn)));
+                }
+            }
             if d.changed && !reading {
                 head.push(Line::styled(
                     format!(
@@ -143,11 +179,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                     Kind::Status => "The journey's read holds no status lines.",
                     Kind::Doctor => "The doctor reported no findings.",
                     Kind::Log => {
-                        let said = m
-                            .logread
-                            .snap
-                            .as_ref()
-                            .is_some_and(|s| !s.messages.is_empty());
+                        let said = facts.is_some_and(|s| !s.messages.is_empty());
                         if said {
                             ""
                         } else {
@@ -161,7 +193,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             }
         }
     }
-    let foot = d.filter(|d| d.loaded && d.total > 0).map(|d| foot(d, t));
+    let footed = d.filter(|d| d.loaded && d.total > 0);
     let edit = d.filter(|d| d.editing).map(|d| {
         Line::from(vec![
             Span::styled(" / ", t.style(Token::Accent)),
@@ -170,7 +202,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
         ])
     });
     let head_h = (head.len() as u16).min(inner.height);
-    let tail_h = u16::from(foot.is_some()) + u16::from(edit.is_some());
+    let tail_h = u16::from(footed.is_some()) + u16::from(edit.is_some());
     let [h, body, tail] = Layout::vertical([
         Constraint::Length(head_h),
         Constraint::Min(0),
@@ -178,11 +210,12 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     ])
     .areas(inner);
     f.render_widget(Paragraph::new(head), h);
-    if let Some(d) = d.filter(|d| d.loaded) {
-        rows(f, body, d, m, t, tier);
-    }
+    let held = newest.is_some();
+    let seen = d
+        .filter(|d| d.loaded)
+        .and_then(|d| rows(f, body, d, held, m, t, tier));
     let mut tl = Vec::new();
-    tl.extend(foot);
+    tl.extend(footed.map(|d| foot(d, seen, t)));
     tl.extend(edit);
     f.render_widget(Paragraph::new(tl), tail);
 }
@@ -270,12 +303,16 @@ fn scope_head<'a>(
     out
 }
 
-fn foot<'a>(d: &Detail, t: &Theme) -> Line<'a> {
+/// The page shown and its generation; while a value is open, SEEN — the
+/// lines of it drawn (first, last) and how many it has — in place of the rows.
+fn foot<'a>(d: &Detail, seen: Option<(usize, usize, usize)>, t: &Theme) -> Line<'a> {
     let dash = if t.caps.unicode { "–" } else { "-" };
     let dot = t.g.dot;
     let a = d.offset + 1;
     let b = d.offset + d.rows.len() as u64;
-    let mut s = if d.rows.is_empty() {
+    let mut s = if let Some((first, last, n)) = seen {
+        format!(" value lines {first}{dash}{last} of {n}")
+    } else if d.rows.is_empty() {
         format!(" no rows past {} of {}", d.offset, d.total)
     } else {
         format!(" rows {a}{dash}{b} of {}", d.total)
@@ -284,6 +321,9 @@ fn foot<'a>(d: &Detail, t: &Theme) -> Line<'a> {
         " {dot} generation {}",
         d.generation.get(..12).unwrap_or(&d.generation)
     ));
+    if seen.is_some() {
+        return Line::styled(s, t.style(Token::Muted));
+    }
     if b < d.total || d.offset > 0 {
         s.push_str(&format!(" {dot} pages past either end are read on request"));
     }
@@ -390,7 +430,18 @@ fn cells_of(
     }
 }
 
-fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme, _tier: Tier) {
+/// The rows shown, the focused one's values under it when open; HELD when
+/// they are an earlier read's. Returns, for an open value, the lines of it
+/// drawn (first, last) and how many it has.
+fn rows(
+    f: &mut Frame,
+    area: Rect,
+    d: &Detail,
+    held: bool,
+    m: &Model,
+    t: &Theme,
+    _tier: Tier,
+) -> Option<(usize, usize, usize)> {
     let width = area.width as usize;
     let height = area.height as usize;
     let shown = d.shown();
@@ -404,7 +455,7 @@ fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme, _tier: Tier
                 area,
             );
         }
-        return;
+        return None;
     }
     let c = cols(d.kind, width);
     let label = |r: &Row| match d.kind {
@@ -437,13 +488,21 @@ fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme, _tier: Tier
     } else {
         Vec::new()
     };
+    // Values longer than the room under their row are drawn a window at a
+    // time, from the line the keys reached, kept here within them: the last
+    // window is the furthest, so every key short of an end moves it.
+    let total = open.len();
+    let window = height.saturating_sub(1);
+    let top = d.value_top.get().min(total.saturating_sub(window));
+    d.value_top.set(top);
+    let open = &open[top..total.min(top + window)];
     let room = height.saturating_sub(open.len()).max(1);
     let start = (cursor + 1).saturating_sub(room);
     let mut lines: Vec<Line> = Vec::new();
     let mut last_section = String::new();
     for (i, r) in shown.iter().enumerate().skip(start).take(room) {
         let here = i == cursor && focused;
-        let dim = d.changed;
+        let dim = d.changed || held;
         let pointer = if here { t.g.pointer } else { " " };
         let mut spans = vec![Span::styled(format!(" {pointer} "), t.style(Token::Accent))];
         let mut used = 3;
@@ -495,12 +554,13 @@ fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme, _tier: Tier
         }
         lines.push(Line::from(spans));
         if i == cursor {
-            for l in &open {
+            for l in open {
                 lines.push(Line::styled(format!("       {l}"), t.style(Token::Text)));
             }
         }
     }
     f.render_widget(Paragraph::new(lines), area);
+    (d.open && !open.is_empty()).then(|| (top + 1, top + open.len(), total))
 }
 
 /// The core's diagnostics kept in this session: read from the session's own

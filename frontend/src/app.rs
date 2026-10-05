@@ -205,6 +205,11 @@ pub enum LogsTab {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScopeRead {
     pub snap: Option<Snapshot>,
+    /// The earlier snapshot the rows shown came from, kept when a newer one
+    /// arrived before any of its rows. The frame draws the facts of whichever
+    /// of the two has the rows' generation, so a newer snapshot's facts never
+    /// head an earlier read's rows.
+    pub held: Option<Snapshot>,
     pub fault: Option<Fault>,
     /// Asked for at least once: it is read again only on `r`.
     pub asked: bool,
@@ -699,8 +704,19 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             let c = if status == "done" {
                 let s = snapshot_of(&records);
                 let id = s.generation.clone();
+                // The rows shown keep the snapshot they came with until rows
+                // of the new one are admitted.
+                let shown = Kind::ALL
+                    .into_iter()
+                    .filter(|k| k.scope() == scope)
+                    .find_map(|k| m.detail(k).filter(|d| d.loaded))
+                    .map(|d| d.generation.clone());
                 let r = m.scope_mut(scope);
-                r.snap = Some(s);
+                let old = r.snap.replace(s);
+                r.held = [old, r.held.take()]
+                    .into_iter()
+                    .flatten()
+                    .find(|o| o.generation != id && Some(&o.generation) == shown.as_ref());
                 r.fault = None;
                 regenerated(m, scope, &id)
             } else {
@@ -728,7 +744,7 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                         d.loaded = true;
                         d.changed = false;
                         d.fault = None;
-                        d.open = false;
+                        close_value(d);
                         let n = d.shown().len();
                         d.cursor = match d.land {
                             Land::First => 0,
@@ -893,6 +909,26 @@ fn editing(m: &Model) -> Option<Kind> {
     .then_some(k)
 }
 
+/// The detail shown on SCREEN, if any (the Logs screen's diagnostics show none).
+fn shown_detail(m: &Model, s: Screen) -> Option<&Detail> {
+    let k = s.kind()?;
+    if s == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
+        return None;
+    }
+    m.detail(k)
+}
+
+/// Whether the detail shown on SCREEN has its full values open: their keys
+/// apply there (keys::Place::Value).
+pub fn value_open(m: &Model, s: Screen) -> bool {
+    shown_detail(m, s).is_some_and(|d| d.open)
+}
+
+fn close_value(d: &mut Detail) {
+    d.open = false;
+    d.value_top.set(0);
+}
+
 /// A text field has the keys: the plan's sizes or a filter.
 fn typing(m: &Model) -> bool {
     (m.screen == Screen::Plan && m.region == Region::Work && !m.check) || editing(m).is_some()
@@ -944,7 +980,9 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                 KeyCode::Up | KeyCode::Char('k') => m.help_scroll = m.help_scroll.saturating_sub(1),
                 _ => {}
             }
-            let n = crate::keys::help_for(m.back, m.region, m.logs_tab, true).len();
+            let n =
+                crate::keys::help_for(m.back, m.region, m.logs_tab, value_open(m, m.back), true)
+                    .len();
             m.help_scroll = m.help_scroll.min(n.saturating_sub(1));
             Vec::new()
         }
@@ -1060,6 +1098,9 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                 m.side = false;
             } else if m.region == Region::Nav {
                 m.region = Region::Work;
+            } else if value_open(m, m.screen) {
+                let k = m.screen.kind().expect("a detail is shown");
+                close_value(m.detail_mut(k).expect("a detail is shown"));
             } else if m.screen != Screen::Dashboard {
                 m.screen = Screen::Dashboard;
                 m.nav = 1;
@@ -1248,6 +1289,22 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
     let Some(d) = m.detail_mut(kind) else {
         return Vec::new();
     };
+    // An open value has the moving keys: they scroll it, and never a row, a
+    // page or the core. Enter (or Esc) closes it.
+    if d.open {
+        let top = d.value_top.get_mut();
+        match k.code {
+            KeyCode::Down | KeyCode::Char('j') => *top = top.saturating_add(1),
+            KeyCode::Up | KeyCode::Char('k') => *top = top.saturating_sub(1),
+            KeyCode::PageDown => *top = top.saturating_add(PAGE_STEP),
+            KeyCode::PageUp => *top = top.saturating_sub(PAGE_STEP),
+            KeyCode::Home | KeyCode::Char('g') => *top = 0,
+            KeyCode::End | KeyCode::Char('G') => *top = usize::MAX,
+            KeyCode::Enter => close_value(d),
+            _ => {}
+        }
+        return Vec::new();
+    }
     let n = d.shown().len();
     let last = n.saturating_sub(1);
     // Paging asks the core only for a page this view does not hold, and only
@@ -1294,7 +1351,7 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
             d.cursor = last;
             want = fetch(d, d.last(limit)).map(|p| (p, Land::Last));
         }
-        KeyCode::Enter => d.open = !d.open,
+        KeyCode::Enter if n > 0 => d.open = true,
         KeyCode::Char('/') => d.editing = true,
         KeyCode::Char('f') if kind == Kind::Log => {
             let levels = d.levels();
