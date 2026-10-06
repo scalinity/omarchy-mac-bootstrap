@@ -841,7 +841,8 @@ assert_contains "$C_OUT" "test.mutate" "naming the operation"
 c_exec test.read ""
 assert_eq "$(c_result)" "done ok" "read commands still work"
 assert_contains "$(cat "$OPS")" "state=running" "sup-no-reclaim-pid: a record whose core's PID is dead is never reclaimed"
-sleep 4
+# The killed core's child sleeps on, then writes the effect: until it ends.
+t_wait_gone "$(c_worker_pid "$n" 1)" 4
 rm -f "$OPS" "$EFFECT"
 
 # sup-mutator-escaped-pgid: the child starts a descendant in its own session
@@ -861,7 +862,9 @@ if command -v perl >/dev/null 2>&1; then
   c_conf mutate
   c_exec test.mutate test
   assert_eq "$(c_result)" "refused unsupervised" "sup-mutator-escaped-pgid: the barrier stays for the rest of the boot"
-  sleep 4
+  # The escaped writer's four seconds: one byte a tenth, forty in all.
+  i=0
+  while [ "$(wc -c <"$T/escaped" | tr -d ' ')" -lt 40 ] && [ "$i" -lt 80 ]; do sleep 0.05 && i=$((i + 1)); done
   rm -f "$OPS" "$EFFECT"
 else
   skip "sup-mutator-escaped-pgid (no perl to make a new session)"
@@ -933,7 +936,8 @@ rm -f "$C_FIX/test-children/read"
 c_exec test.mutate test
 assert_eq "$(c_result)" "done ok" "sup-read-orphan-no-barrier: the next act proceeds"
 rm -f "$EFFECT"
-sleep 3
+# The orphaned read child sleeps on: until it ends.
+t_wait_gone "$(c_worker_pid "$n" 1)" 3
 
 # --- frontend-check-*: the startup-check session ---------------------------------------
 # (docs/PROTOCOL.md → The startup-check session.) No fixture: the core reads

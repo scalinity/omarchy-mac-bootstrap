@@ -44,7 +44,7 @@ dir=$2
 b=$(cat "$(dirname "$0")/fake-behaviour" 2>/dev/null)
 env >"$(dirname "$0")/fake-env"
 case "$b" in
-  *linger*) sleep 3 & ;;
+  *linger*) sleep 3 & echo "$!" >"$(dirname "$0")/fake-linger" ;;
 esac
 case "$b" in
   *trace*) [ -n "${OMB_TUI_LOG:-}" ] && (umask 077 && echo "fake trace" >>"$OMB_TUI_LOG") ;;
@@ -287,7 +287,8 @@ assert_contains "$r" "1|unsettled|" "the launcher's wait ends at its limit witho
 assert_contains "$(cat "$T/tmp/fe-out")" "not known to be over" "and says so"
 n=$(ls "$T/tmp" | grep -c '^omb-session\.')
 assert_eq "$n" 1 "sup-owner-cleanup-refused: a late process in the group keeps the scratch"
-sleep 3
+# The late process ends with its three seconds: until it has.
+t_wait_gone "$(cat "$T/fake-linger" 2>/dev/null)" 3
 old=$(ls -d "$T/tmp"/omb-session.* | head -1)
 # The same scratch, once everything is dead, is reclaimed by a later launcher.
 r=$(fe_call '' fe_reclaim)

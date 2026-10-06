@@ -127,6 +127,9 @@ c_wait_file() {
   [ -e "$1" ]
 }
 
+# c_worker_pid N K — the PID request N's core recorded for its worker K.
+c_worker_pid() { sed -n 's/.*	pid=\([0-9]*\)	.*/\1/p' "$SESS/req-$1.worker-$2" 2>/dev/null; }
+
 # c_core_pid N — the PID request N's core recorded for itself.
 c_core_pid() { sed -n 's/.*	pid=\([0-9]*\)	.*/\1/p' "$SESS/req-$1.core" 2>/dev/null; }
 
