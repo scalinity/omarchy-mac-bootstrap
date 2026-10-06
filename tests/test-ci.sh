@@ -1,0 +1,372 @@
+#!/usr/bin/env bash
+# CI's plan, evidence and FULL completeness guard (tests/ci.sh), its manifest
+# (tests/ci-manifest.tsv) and the GNU Bash source acquisition
+# (tests/ci-bash.sh), all offline: FAST never stands in for FULL; the
+# manifest is the repository's suites; the guard refuses a missing shard or
+# unit, a duplicate, another SHA, an undeclared skip, another shell or
+# platform, FAST evidence and an executed failure, and tells a runner never
+# acquired and an exhausted source download from a failure; only runners never
+# acquired are retried; and a Bash source is used only with its pinned digest,
+# from an origin or from the cache.
+# shellcheck disable=SC2015 # ok/fail always return 0
+# shellcheck disable=SC2016 # awk programs, expanded by awk
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh"
+echo "test-ci"
+T=$(t_tmp)
+M="$REPO/tests/ci-manifest.tsv"
+SHA=0123456789abcdef0123456789abcdef01234567
+NOTACQ="The job was not acquired by Runner of type hosted even after multiple attempts"
+TAB=$(printf '\t')
+
+# Nothing here writes into the CI job running it: no GITHUB_ENV, and every
+# evidence file is named.
+ci() { GITHUB_ENV='' "$T_BASH" "$REPO/tests/ci.sh" "$@"; }
+digest() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'; }
+# edit FILE AWK — FILE rewritten through an awk program (tab-separated).
+edit() { awk -F'\t' -v OFS='\t' "$2" "$1" >"$1.new" && mv "$1.new" "$1"; }
+
+# --- ci-mode-*: FULL only by hand or on main --------------------------------
+assert_eq "$(ci mode push refs/heads/ci-throughput)" fast "ci-mode-push: a branch push is FAST"
+assert_eq "$(ci mode pull_request refs/pull/7/merge)" fast "ci-mode-pr: a pull request is FAST"
+assert_eq "$(ci mode push refs/heads/main)" full "ci-mode-main: a push to main is FULL"
+assert_eq "$(ci mode workflow_dispatch refs/heads/ci-throughput '')" full "ci-mode-dispatch: a dispatch is FULL"
+assert_eq "$(ci mode workflow_dispatch refs/heads/ci-throughput 37371989145)" retry "ci-mode-retry: a dispatch naming a run is the retry controller"
+
+# --- ci-plan-*: FULL selects every shard, FAST never a FULL-only lane --------
+count() { printf '%s\n' "$1" | grep -o "$2" | wc -l | tr -d ' '; }
+shards=$(awk -F'\t' '$1 == "unit" && !s[$2 " " $3]++ { n++ } END { print n }' "$M")
+stepped=$(awk -F'\t' '$1 == "unit" && $4 ~ /^step:/ && !s[$2]++ { n++ } END { print n }' "$M")
+out=$(echo '*' | ci plan full)
+assert_eq "$(count "$out" '"shard":')" "$shards" "ci-plan-full: every shard of every lane runs"
+assert_eq "$(count "$out" '"steps":true')" "$stepped" "ci-plan-full: and in each lane with step units, one shard runs them"
+printf '%s\n' "$out" | grep -qx 'fast=' && ok || fail "ci-plan-full: and no FAST checks"
+for paths in 'docs/TESTING.md' 'lib/core.sh' 'tests/test-cli.sh' '.github/workflows/ci.yml' 'frontend/src/main.rs' '.gitignore'; do
+  out=$(printf '%s\n' "$paths" | ci plan fast)
+  for lane in macos-bash32 target-bash53 frontend-linux-arm64 frontend-macos-arm64; do
+    printf '%s\n' "$out" | grep -qx "$lane=\[\]" && ok || fail "ci-plan-fast-not-full: a FAST run for $paths selects no $lane shard"
+  done
+  assert_contains "$out" "fast=check:fixtures check:syntax suite:docs suite:static suite:safety suite:ci" "ci-plan-fast: $paths gets the fast checks"
+done
+out=$(printf 'docs/TESTING.md\nREADME.md\n' | ci plan fast)
+assert_eq "$(count "$out" '"shard":')" 0 "ci-plan-fast-docs: documents alone run no shard"
+out=$(printf 'lib/core.sh\n' | ci plan fast)
+assert_contains "$out" 'linux-bash5=[{"shard":"l0","steps":false},{"shard":"l1","steps":false},{"shard":"l2","steps":false},{"shard":"l3","steps":false}]' "ci-plan-fast-shell: product code runs every Linux bash 5 shard"
+assert_contains "$out" 'frontend=[{"shard":"f1","steps":true}]' "ci-plan-fast-shell: and the frontend's checks against the core"
+out=$(printf 'tests/test-cli.sh\ntests/diag-temp.sh\n' | ci plan fast)
+assert_contains "$out" "suite:cli diag:temp" "ci-plan-fast-suites: a changed suite or unit runs itself"
+assert_eq "$(count "$out" '"shard":') $(count "$out" '"shard":"l0"')" "1 1" "ci-plan-fast-suites: with ShellCheck, nothing more"
+out=$(printf '.gitignore\n' | ci plan fast)
+assert_contains "$out" "tiers=shell frontend workflow" "ci-plan-fast-unknown: a path no tier names runs every FAST tier"
+out=$(echo '*' | ci plan retry)
+assert_eq "$(count "$out" '"shard":')" 0 "ci-plan-retry: the retry controller runs no shard"
+
+# --- ci-workflow-*: each lane is one job of the workflow --------------------
+W="$REPO/.github/workflows/ci.yml"
+wf=$(awk '
+  /^jobs:/ { j = 1; next }
+  j && /^  [a-z0-9-]+:$/ { job = $1; sub(/:$/, "", job); next }
+  job == "" { next }
+  /^    runs-on: / { print "runs", job, $2 }
+  /^      - id: unit-/ { s = $3; sub(/^unit-/, "", s); print "step", job, s }
+  /tests\/ci\.sh begin / { for (i = 1; i < NF; i++) if ($i == "begin") print "begin", job, $(i + 1) }
+  /^          name: evidence-/ { print "upload", job }
+' "$W")
+needs=$(sed -n 's/^    needs: \[\(.*\)\]$/\1/p' "$W" | tr -d ' ')
+lanes=$(awk -F'\t' '$1 == "lane" { print $2 }' "$M")
+for lane in $lanes; do
+  runner=$(awk -F'\t' -v l="$lane" '$1 == "lane" && $2 == l { print $3 }' "$M")
+  assert_eq "$(printf '%s\n' "$wf" | awk -v l="$lane" '$1 == "runs" && $2 == l { print $3 }')" "$runner" "ci-workflow-runner: the $lane job runs on the manifest's runner"
+  assert_eq "$(printf '%s\n' "$wf" | awk -v l="$lane" '$1 == "begin" && $2 == l { print $3 }')" "$lane" "ci-workflow-evidence: the $lane job's evidence names its lane"
+  assert_eq "$(printf '%s\n' "$wf" | awk -v l="$lane" '$1 == "upload" && $2 == l' | wc -l | tr -d ' ')" 1 "ci-workflow-evidence: the $lane job uploads it"
+  case ",$needs," in
+    *",$lane,"*) ok ;;
+    *) fail "ci-workflow-verdict: the verdict waits for the $lane job" ;;
+  esac
+  diff=$({
+    awk -F'\t' -v l="$lane" '$1 == "unit" && $2 == l && $4 ~ /^step:/ { print "m", substr($4, 6) }' "$M"
+    printf '%s\n' "$wf" | awk -v l="$lane" '$1 == "step" && $2 == l { print "w", $3 }'
+  } | awk '{ c[$2] = c[$2] $1 } END { for (k in c) if (c[k] != "mw") print k " (" c[k] ")" }')
+  assert_eq "$diff" "" "ci-workflow-steps: the $lane job's unit- steps are exactly its step units in the manifest"
+done
+
+# --- ci-manifest-*: the manifest is the repository's suites ------------------
+assert_eq "$(ci lint)" "manifest: ok (6 lanes)" "ci-manifest-ok: every lane runs exactly the suites it names"
+for s in "$REPO"/tests/test-*.sh; do
+  n=${s##*/test-}
+  n=${n%.sh}
+  [ "$n" = diag ] && continue
+  for lane in macos-bash32 linux-bash5; do
+    [ "$(awk -F'\t' -v l="$lane" -v u="suite:$n" '$1 == "unit" && $2 == l && $4 == u' "$M" | wc -l | tr -d ' ')" = 1 ] && ok ||
+      fail "ci-manifest-suites: $lane runs tests/test-$n.sh exactly once"
+  done
+done
+dunits=$(sed -n 's/^UNITS="\(.*\)"$/\1/p' "$REPO/tests/test-diag.sh")
+for u in $dunits; do
+  for lane in macos-bash32 linux-bash5 target-bash53 frontend-linux-arm64; do
+    [ "$(awk -F'\t' -v l="$lane" -v u="diag:$u" '$1 == "unit" && $2 == l && $4 == u' "$M" | wc -l | tr -d ' ')" = 1 ] && ok ||
+      fail "ci-manifest-diag: $lane runs the diagnostics unit $u exactly once"
+  done
+done
+lint() { # NAME AWK — the lint of a manifest rewritten by AWK; sets out and rc
+  awk -F'\t' -v OFS='\t' "$2" "$M" >"$T/$1.tsv"
+  out=$(OMB_CI_MANIFEST=$T/$1.tsv ci lint)
+  rc=$?
+}
+lint drop '!($1 == "unit" && $2 == "macos-bash32" && $4 == "suite:records")'
+assert_rc "$rc" 1 "ci-manifest-missing: a suite no shard runs"
+assert_contains "$out" "lane macos-bash32 must run suite:records" "ci-manifest-missing: is named"
+lint dup '{ print } $1 == "unit" && $2 == "linux-bash5" && $4 == "suite:cli" { $3 = "l3"; print }'
+assert_rc "$rc" 1 "ci-manifest-duplicate: a unit twice in a lane"
+assert_contains "$out" "duplicate entry: linux-bash5 runs suite:cli in l1 and l3" "ci-manifest-duplicate: is named"
+lint nosuite '{ print } END { print "unit", "linux-bash5", "l1", "suite:nope" }'
+assert_contains "$out" "suite:nope is not a tests/test-*.sh suite" "ci-manifest-unknown: a suite with no file"
+lint whole '{ print } END { print "unit", "linux-bash5", "l1", "suite:diag" }'
+assert_contains "$out" "suite:diag is not a tests/test-*.sh suite (diag runs as diag:UNIT)" "ci-manifest-diag-whole: diagnostics run as units"
+lint nodiag '{ print } END { print "unit", "linux-bash5", "l1", "diag:nope" }'
+assert_contains "$out" "diag:nope is not a unit of tests/test-diag.sh" "ci-manifest-unknown: a diagnostics unit test-diag.sh does not list"
+lint steps '{ print } END { print "unit", "frontend", "f2", "step:more" }'
+assert_contains "$out" "lane frontend has step units in f1 and f2" "ci-manifest-steps: one shard a lane runs in its own job"
+lint row '{ print } END { print "shard", "frontend", "f1" }'
+assert_contains "$out" "unknown row shard" "ci-manifest-rows: no other row"
+
+# --- ci-guard-*: FULL is green only on the whole manifest --------------------
+# gen DIR — passing FULL evidence for every shard of the manifest at $SHA.
+gen() {
+  mkdir -p "$1"
+  awk -F'\t' -v dir="$1" -v sha="$SHA" '
+    $1 == "lane" { os[$2] = $4; ar[$2] = $5; v[$2] = ($2 ~ /macos/ ? "3.2.57(1)-release" : $2 == "target-bash53" ? "5.3.15(1)-release" : "5.2.21(1)-release") }
+    $1 == "unit" {
+      f = dir "/" $2 "-" $3 ".tsv"
+      if (!(f in done)) {
+        done[f] = 1
+        printf "# omb-ci-evidence 1\nmode\tfull\nlane\t%s\nshard\t%s\nsha\t%s\ngithub_sha\t%s\nrun\t1\nattempt\t1\njob\tj\nos\t%s\narch\t%s\n", $2, $3, sha, sha, os[$2], ar[$2] >>f
+      }
+      printf "unit\t%s\tpass\t0\t%s\t1\t%s\n", $4, v[$2], ($4 ~ /^(suite|diag):/ ? "test-x: 3 passed, 0 failed, 0 skipped" : "-") >>f
+      close(f)
+    }' "$M"
+}
+G=$T/evidence
+gen "$G"
+out=$(ci guard "$G" "$SHA")
+assert_rc "$?" 0 "ci-guard-green: the whole manifest, passed, at the SHA"
+assert_contains "$out" "verdict: GREEN · every unit of the manifest executed and passed exactly once at $SHA" "ci-guard-green: says so"
+# variant NAME — a copy of the passing evidence to change; prints its path.
+variant() {
+  rm -rf "${T:?}/$1"
+  cp -R "$G" "$T/$1"
+  printf '%s' "$T/$1"
+}
+guard() { # DIR [JOBS] — the guard at $SHA; sets out and rc
+  out=$(ci guard "$1" "$SHA" "${2:-/dev/null}")
+  rc=$?
+}
+v=$(variant missing-shard)
+rm "$v/target-bash53-t3.tsv"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-missing-shard: a shard with no evidence"
+assert_contains "$out" "missing · missing shard: target-bash53 · t3 left no evidence" "ci-guard-missing-shard: is named"
+printf '1\ttarget-bash53 · t3\tcompleted\tcancelled\t0\t0\t%s\n' "$NOTACQ" >"$T/notacq.tsv"
+guard "$v" "$T/notacq.tsv"
+assert_contains "$out" "infrastructure · runner never acquired (infrastructure non-run): target-bash53 · t3" "ci-guard-not-acquired: a runner never acquired is infrastructure"
+assert_contains "$out" "executed failures 0 · infrastructure 1 · missing 0" "ci-guard-not-acquired: not an executed failure"
+v=$(variant failure)
+edit "$v/linux-bash5-l2.tsv" '$1 == "unit" && $2 == "suite:dev" { $3 = "fail"; $4 = 1 } 1'
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-failure: an executed test failure"
+assert_contains "$out" "failure · executed failure: linux-bash5 · l2 · suite:dev (exit 1)" "ci-guard-failure: is named"
+assert_contains "$out" "executed failures 1 · infrastructure 0" "ci-guard-failure: and counted as executed"
+v=$(variant reported)
+edit "$v/linux-bash5-l2.tsv" '$1 == "unit" && $2 == "suite:dev" { $7 = "test-dev: 3 passed, 2 failed, 0 skipped" } 1'
+guard "$v"
+assert_contains "$out" "executed failure: linux-bash5 · l2 · suite:dev reports test-dev: 3 passed, 2 failed, 0 skipped" "ci-guard-failure: a failed count with exit 0"
+v=$(variant source)
+edit "$v/target-bash53-t1.tsv" '$1 != "unit" { print } END { print "setup", "bash-5.3.15", "fail", 75 }'
+guard "$v"
+assert_contains "$out" "infrastructure · source acquisition / external infrastructure: target-bash53 · t1 · bash-5.3.15 exhausted every origin (exit 75)" "ci-guard-source: an exhausted Bash source download is infrastructure"
+assert_contains "$out" "missing · not executed: target-bash53 · t1 · diag:children" "ci-guard-source: and its units did not run"
+assert_contains "$out" "executed failures 0 · infrastructure 1" "ci-guard-source: not an executed failure"
+v=$(variant unit)
+edit "$v/macos-bash32-m2.tsv" '!($1 == "unit" && $2 == "suite:core")'
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-missing-unit: a unit that did not run"
+assert_contains "$out" "not executed: macos-bash32 · m2 · suite:core" "ci-guard-missing-unit: is named"
+v=$(variant dup-unit)
+printf 'unit\tsuite:cli\tpass\t0\t5.2.21(1)-release\t1\ttest-cli: 3 passed, 0 failed, 0 skipped\n' >>"$v/linux-bash5-l2.tsv"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-duplicate-unit: a unit run twice"
+assert_contains "$out" "duplicate: linux-bash5 · suite:cli ran in l1 and in l2" "ci-guard-duplicate-unit: is named"
+v=$(variant dup-shard)
+cp "$v/macos-bash32-m1.tsv" "$v/again.tsv"
+guard "$v"
+assert_contains "$out" "duplicate: two evidence files for macos-bash32 · m1" "ci-guard-duplicate-shard: two files for one shard"
+v=$(variant sha)
+edit "$v/frontend-f1.tsv" '$1 == "sha" { $2 = "ffffffffffffffffffffffffffffffffffffffff" } 1'
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-sha: a shard at another commit"
+assert_contains "$out" "wrong SHA: frontend · f1 checked out ffffffffffffffffffffffffffffffffffffffff" "ci-guard-sha: is named"
+v=$(variant github-sha)
+edit "$v/frontend-f1.tsv" '$1 == "github_sha" { $2 = "eeee" } 1'
+guard "$v"
+assert_contains "$out" "wrong SHA: frontend · f1 ran for eeee" "ci-guard-sha: a shard of another run's commit"
+out=$(ci guard "$G" ffffffffffffffffffffffffffffffffffffffff)
+assert_rc "$?" 1 "ci-guard-sha: evidence for one commit is not evidence for another"
+v=$(variant skip)
+printf 'skip\tsuite:core\tmacOS plist checks in test-core.sh (no plutil)\n' >>"$v/macos-bash32-m2.tsv"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-skip: a skip the macOS lane does not allow"
+assert_contains "$out" "undeclared skip: macos-bash32 · m2 · suite:core: macOS plist checks in test-core.sh (no plutil)" "ci-guard-skip: is named"
+v=$(variant allowed)
+printf 'skip\tsuite:core\tmacOS plist checks in test-core.sh (no plutil)\n' >>"$v/linux-bash5-l3.tsv"
+guard "$v"
+assert_rc "$rc" 0 "ci-guard-skip-allowed: a plutil skip on Linux is the lane's policy"
+printf 'skip\tsuite:core\tthe storm (no reason)\n' >>"$v/linux-bash5-l3.tsv"
+guard "$v"
+assert_contains "$out" "undeclared skip: linux-bash5 · l3 · suite:core: the storm (no reason)" "ci-guard-skip: any other skip on Linux"
+v=$(variant shell)
+edit "$v/target-bash53-t2.tsv" '$1 == "unit" { $5 = "5.2.21(1)-release" } 1'
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-shell: the target lane under the runner's Bash 5.2"
+assert_contains "$out" "wrong shell: target-bash53 · t2 · diag:bounds ran under bash 5.2.21(1)-release" "ci-guard-shell: is named"
+v=$(variant platform)
+edit "$v/frontend-linux-arm64-a2.tsv" '$1 == "arch" { $2 = "x86_64" } 1'
+guard "$v"
+assert_contains "$out" "wrong platform: frontend-linux-arm64 · a2 ran on Linux x86_64" "ci-guard-platform: another architecture"
+v=$(variant fast)
+edit "$v/linux-bash5-l1.tsv" '$1 == "mode" { $2 = "fast" } 1'
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-fast: FAST evidence is not FULL evidence"
+assert_contains "$out" "not FULL evidence: linux-bash5 · l1 says mode fast" "ci-guard-fast: is named"
+v=$(variant summary)
+edit "$v/macos-bash32-m3.tsv" '$1 == "unit" && $2 == "suite:dev" { $7 = "-" } 1'
+guard "$v"
+assert_contains "$out" "no summary: macos-bash32 · m3 · suite:dev printed no" "ci-guard-summary: a suite that printed no count"
+v=$(variant unexpected)
+printf 'unit\tsuite:nope\tpass\t0\t5.2.21(1)-release\t1\ttest-nope: 1 passed, 0 failed, 0 skipped\n' >>"$v/linux-bash5-l1.tsv"
+guard "$v"
+assert_contains "$out" "unexpected: linux-bash5 · l1 · suite:nope is not in the manifest" "ci-guard-unexpected: a unit the manifest does not name"
+guard "$G" "$T/notacq.tsv"
+assert_rc "$rc" 0 "ci-guard-jobs: job records alone change nothing when every shard reported"
+out=$(OMB_CI_MANIFEST=$T/dup.tsv ci guard "$G" "$SHA")
+assert_rc "$?" 1 "ci-guard-manifest: a manifest that does not hold"
+assert_contains "$out" "verdict: RED · the manifest does not hold" "ci-guard-manifest: is named"
+
+# --- ci-retry-*: one retry, only for runners never acquired ------------------
+# The jobs of run 37371989145's first attempt: two never acquired a runner.
+J=$T/jobs.tsv
+{
+  printf '11\tfrontend-macos-arm64 · x1 · build\tcompleted\tsuccess\t1000001760\t15\t-\n'
+  printf '12\ttarget-bash53 · t4\tcompleted\tsuccess\t1000001757\t10\t-\n'
+  printf '13\tfrontend · f1 · fmt, clippy\tcompleted\tcancelled\t0\t0\t%s\n' "$NOTACQ"
+  printf '14\tlinux-bash5 · l0\tcompleted\tcancelled\t0\t0\t%s\n' "$NOTACQ"
+  printf '15\tFULL acceptance · completeness guard\tcompleted\tfailure\t1000001790\t7\tProcess completed with exit code 1.\n'
+} >"$J"
+out=$(ci retry-eligible "$J")
+assert_rc "$?" 0 "ci-retry-not-acquired: jobs that never had a runner are retried"
+assert_contains "$out" "runner never acquired: linux-bash5 · l0" "ci-retry-not-acquired: each is named"
+cp "$J" "$T/executed.tsv"
+printf '16\tmacos-bash32 · m1\tcompleted\tfailure\t1000001761\t9\tProcess completed with exit code 1.\n' >>"$T/executed.tsv"
+out=$(ci retry-eligible "$T/executed.tsv")
+assert_rc "$?" 1 "ci-retry-executed: no retry beside an executed failure"
+assert_contains "$out" "not a runner-acquisition non-run: macos-bash32 · m1 (failure)" "ci-retry-executed: is named"
+printf '16\ttarget-bash53 · t1\tcompleted\tfailure\t1000001762\t6\tProcess completed with exit code 75.\n' >"$T/source.tsv"
+out=$(ci retry-eligible "$T/source.tsv")
+assert_rc "$?" 1 "ci-retry-source: a source download that failed on a runner is not a non-run"
+printf '17\tlinux-bash5 · l1\tcompleted\tcancelled\t0\t0\t-\n' >"$T/cancelled.tsv"
+out=$(ci retry-eligible "$T/cancelled.tsv")
+assert_rc "$?" 1 "ci-retry-cancelled: a job cancelled before it started is not a non-run"
+head -2 "$J" >"$T/green.tsv"
+out=$(ci retry-eligible "$T/green.tsv")
+assert_rc "$?" 1 "ci-retry-green: nothing to retry"
+
+# --- ci-evidence-*: what a shard records ------------------------------------
+F=$T/repo
+mkdir -p "$F/tests"
+cp "$REPO/tests/ci.sh" "$F/tests/ci.sh"
+printf '%s\n' 'echo "  skip a plist section (no plutil)"' 'echo "test-good: 3 passed, 0 failed, 1 skipped"' >"$F/tests/test-good.sh"
+printf '%s\n' 'echo "test-bad: 1 passed, 2 failed, 0 skipped"' 'exit 1' >"$F/tests/test-bad.sh"
+{
+  printf 'lane\tlx\trunner\tany\tany\t.\tnone\tgood bad\n'
+  printf 'lane\tly\trunner\tany\tany\t^9\\.\tnone\tgood\n'
+  printf 'unit\tlx\ts1\tsuite:good\n'
+  printf 'unit\tlx\ts1\tstep:elsewhere\n'
+  printf 'unit\tlx\ts1\tsuite:bad\n'
+  printf 'unit\tly\ts1\tsuite:good\n'
+} >"$F/tests/ci-manifest.tsv"
+fake() { GITHUB_ENV='' OMB_EVIDENCE=$T/ev.tsv OMB_CI_MODE=full "$T_BASH" "$F/tests/ci.sh" "$@"; }
+fake begin lx s1 >/dev/null
+OMB_LANE=lx OMB_SHARD=s1 fake shard >"$T/shard.out"
+assert_rc "$?" 1 "ci-evidence-shard: a shard with a failed suite fails"
+row() { awk -F'\t' -v t="$1" -v n="$2" '$1 == t && $2 == n' "$T/ev.tsv"; }
+assert_eq "$(row lane lx)" "lane${TAB}lx" "ci-evidence-header: the lane"
+assert_eq "$(row mode full | cut -f2)" full "ci-evidence-header: the mode"
+assert_eq "$(row os "$(uname -s)" | cut -f2)" "$(uname -s)" "ci-evidence-header: the platform"
+assert_eq "$(row unit suite:good | cut -f3,4,7)" "pass${TAB}0${TAB}test-good: 3 passed, 0 failed, 1 skipped" "ci-evidence-unit: a passing suite and its count"
+assert_eq "$(row unit suite:good | cut -f5)" "$("$T_BASH" -c 'echo "$BASH_VERSION"')" "ci-evidence-unit: the bash under test it ran under"
+assert_eq "$(row skip suite:good | cut -f3)" "a plist section (no plutil)" "ci-evidence-skip: each skip it printed"
+assert_eq "$(row unit suite:bad | cut -f3,4,7)" "fail${TAB}1${TAB}test-bad: 1 passed, 2 failed, 0 skipped" "ci-evidence-unit: a failing suite runs and is recorded"
+assert_eq "$(row unit step:elsewhere)" "" "ci-evidence-steps: a step unit is the workflow's to record"
+: >"$T/ev.tsv"
+OMB_LANE=ly OMB_SHARD=s1 fake shard >"$T/shard.out"
+assert_rc "$?" 1 "ci-evidence-shell: a lane's units never run under another bash"
+assert_contains "$(cat "$T/shard.out")" "the ly lane runs under a bash matching ^9\\.; " "ci-evidence-shell: says so"
+assert_eq "$(row unit suite:good)$(row setup shell | cut -f3)" fail "ci-evidence-shell: and records no unit"
+fake setup bash-5.3.15 -- sh -c 'exit 75' >/dev/null
+assert_rc "$?" 75 "ci-evidence-setup: a setup step keeps its status"
+assert_eq "$(row setup bash-5.3.15 | cut -f3,4)" "fail${TAB}75" "ci-evidence-setup: and records it"
+if command -v jq >/dev/null 2>&1; then
+  : >"$T/ev.tsv"
+  OMB_STEPS='{"unit-fmt":{"outputs":{},"outcome":"success","conclusion":"success"},"unit-pty":{"outputs":{},"outcome":"failure","conclusion":"failure"},"unit-later":{"outputs":{},"outcome":"skipped","conclusion":"skipped"},"tools":{"outputs":{},"outcome":"success","conclusion":"success"}}' fake steps
+  assert_eq "$(cut -f1-4 "$T/ev.tsv" | tr '\t\n' ' |')" "unit step:fmt pass 0|unit step:pty fail 1|" "ci-evidence-steps: each unit- step that ran, and only those"
+else
+  skip "ci.sh steps reads the steps context with jq (no jq)"
+fi
+
+# --- ci-diag-units: tests/test-diag.sh runs the units it is given ------------
+out=$(OMB_DIAG_UNITS=nope "$T_BASH" "$REPO/tests/test-diag.sh")
+assert_rc "$?" 1 "ci-diag-units: a unit test-diag.sh does not list"
+assert_contains "$out" "OMB_DIAG_UNITS names nope, which is not a diagnostics unit" "ci-diag-units: is named"
+out=$(OMB_DIAG_UNITS=bounds "$T_BASH" "$REPO/tests/test-diag.sh")
+assert_rc "$?" 0 "ci-diag-units: one unit alone"
+assert_contains "$out" "test-diag-bounds: " "ci-diag-units: runs it"
+assert_not_contains "$out" "test-diag-temp: " "ci-diag-units: and no other"
+assert_contains "$out" "test-diag: 6 passed, 0 failed" "ci-diag-units: with the listing checks"
+
+# --- ci-bash-*: a source is used only with its pinned digest -----------------
+B=$T/bash
+mkdir -p "$B/good/bash-5.3-patches" "$B/bad/bash-5.3-patches"
+printf 'the tarball\n' >"$B/good/bash-5.3.tar.gz"
+printf 'patch one\n' >"$B/good/bash-5.3-patches/bash53-001"
+printf 'patch two\n' >"$B/good/bash-5.3-patches/bash53-002"
+printf 'patch one, changed\n' >"$B/bad/bash-5.3-patches/bash53-001"
+{
+  echo "# the test's pin"
+  printf '%s  bash-5.3.tar.gz\n' "$(digest "$B/good/bash-5.3.tar.gz")"
+  printf '%s  bash53-001\n' "$(digest "$B/good/bash-5.3-patches/bash53-001")"
+  printf '%s  bash53-002\n' "$(digest "$B/good/bash-5.3-patches/bash53-002")"
+} >"$B/pin"
+src() { # ORIGINS DIR — sets out and rc
+  out=$(OMB_BASH_PIN=$B/pin OMB_BASH_ORIGINS=$1 "$T_BASH" "$REPO/tests/ci-bash.sh" sources "$2" 2>&1)
+  rc=$?
+}
+src "file://$B/none file://$B/bad file://$B/good" "$B/src"
+assert_rc "$rc" 0 "ci-bash-origins: every pinned file from the origins in order"
+assert_contains "$out" "file://$B/none: bash-5.3.tar.gz not fetched" "ci-bash-origins: an origin without the file is passed over"
+assert_contains "$out" "file://$B/bad served bash53-001 with another digest; not used" "ci-bash-digest: a file with another digest is not used"
+assert_contains "$out" "fetched bash53-001 from file://$B/good" "ci-bash-origins: the origin that delivered each file is named"
+assert_eq "$(cat "$B/src/bash53-001")" "patch one" "ci-bash-digest: the pinned bytes, not the other origin's"
+assert_contains "$out" "bash53-002: OK" "ci-bash-strict: the whole pin is checked strictly at the end"
+printf 'patch t' >"$B/src/bash53-002"
+rm "$B/src/bash-5.3.tar.gz"
+src "file://$B/good" "$B/src"
+assert_rc "$rc" 0 "ci-bash-cache: a restored cache is held to the pin"
+assert_contains "$out" "cached: bash53-001" "ci-bash-cache: a cached file with its digest is used"
+assert_contains "$out" "cached bash53-002 does not match its pinned digest; fetching it again" "ci-bash-cache: a short or changed cached file is not"
+assert_contains "$out" "fetched bash-5.3.tar.gz from file://$B/good" "ci-bash-cache: a missing cached file is fetched again"
+assert_eq "$(cat "$B/src/bash53-002")" "patch two" "ci-bash-cache: and replaced with the pinned bytes"
+src "file://$B/none file://$B/bad" "$B/src2"
+assert_rc "$rc" 75 "ci-bash-exhausted: no origin with the pinned file is external infrastructure"
+assert_contains "$out" "source acquisition exhausted: no origin delivered bash53-001 with its pinned digest" "ci-bash-exhausted: is named"
+assert_eq "$(ls "$B/src2")" "" "ci-bash-exhausted: and nothing with another digest is kept"
+
+t_done test-ci
