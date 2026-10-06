@@ -715,10 +715,20 @@ of docs/TESTING.md.
   remediation, forward from `806a879` and documentation only, writes UR-C01
   into U2, U17 and U19; UR-C02 into *The states* and the cases C02-A to
   C02-D, as U25 to U28; and UR-C03 into *Clearing*, *The clear transaction*
-  and the cases C03-A to C03-E, as U29 to U33. Disposition: **GATE 3
-  PREREQUISITE CONTRACT REMEDIATED — AWAITING FOCUSED INDEPENDENT UR-C01 /
-  UR-C02 / UR-C03 RE-REVIEW** (**M14 GATE 3 PREREQUISITE — FOCUSED CONTRACT
-  REMEDIATION RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`;
+  and the cases C03-A to C03-E, as U29 to U33. The focused independent
+  re-review of `806a879..ba2146749d6cbbc6ded583f115a0bd08aa6ba8d0` closed
+  **UR-C01**, **UR-C02** and **UR-C03** and raised one finding, **UR-C04**
+  (medium, contract-blocking: U31 took an identity that cannot be confirmed
+  for a confirmed mismatch). It judged the target-shell job's failure to
+  download the pinned Bash sources from `ftp.gnu.org` external
+  infrastructure incompleteness for that documentation-only delta, not an
+  acceptance blocker. The UR-C04 remediation, forward from `ba21467` and
+  documentation only, splits U31 into a confirmed mismatch, U31(a), and an
+  identity not confirmed, U31(b), with the wording that refers to it.
+  Disposition: **UR-C04 REMEDIATED — AWAITING FOCUSED INDEPENDENT CLOSURE /
+  GATE 3 PREREQUISITE ACCEPTANCE REVIEW** (**M14 GATE 3 PREREQUISITE — UR-C04
+  CLOSURE / FINAL PREREQUISITE ACCEPTANCE RE-REVIEW**). Gate 2 stays
+  **ACCEPTED / CLOSED** at `c855f61`;
   frontend `0.2.0` stays **UNRELEASED**. No recovery, diagnostic, clear,
   reconciliation, execute or action exposure is implemented or authorized.
 

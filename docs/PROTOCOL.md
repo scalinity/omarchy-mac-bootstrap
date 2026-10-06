@@ -781,7 +781,7 @@ bytes:
 | the record's path | `core_op_path`, the tool's own construction | shortened with `~`, as the refusal shows it today |
 | the state | *The states* | A, B, C or D |
 | for D, the step that failed | looking, reading or checking | one of a fixed set |
-| a clear in the scope not verified complete | the clear's own evidence (*The clear transaction*) | attempted or taken; for a taken entry, whether it is the one inspected |
+| a clear in the scope not verified complete | the clear's own evidence (*The clear transaction*) | attempted or taken; for a taken entry, confirmed as the one inspected, shown not to be, or not confirmed (U31) |
 | the entry's kind | its status, never followed | plain file, link, folder, other |
 | its owner | its status | this user, root, another user |
 | whether group or others may write it | its status | yes or no |
@@ -854,10 +854,13 @@ not settled, the question that owns it is named. A clear:
 6. **Acts on exactly the entry it names.** The entry is taken from its path
    by a rename and confirmed to be the inspected one before anything else,
    as the baseline clears an abandoned run lock (`lib/state.sh`). An entry
-   that cannot be confirmed as the inspected one — another fingerprint, one
-   swapped in between the inspection and the rename, one that cannot be
-   read — is neither destroyed nor accepted: it is kept as it was taken, the
-   clear does not complete, and its answer says so. It changes nothing but
+   not confirmed as the inspected one is neither destroyed nor accepted: it
+   is kept as it was taken, the clear does not complete, and its answer says
+   which holds (U31). It is a mismatch only when a comparison that ran to
+   its end shows another fingerprint, as an entry swapped in between the
+   inspection and the rename would; when the comparison cannot complete —
+   the entry cannot be read, its fingerprint cannot be computed — its
+   identity is unconfirmed, never taken for a mismatch. It changes nothing but
    that entry and the clear's own evidence (rule 5, *The clear
    transaction*): no other scope's record, no scratch, effect, partition or
    package. Whether the taken entry is then deleted or kept aside is UR-Q1.
@@ -891,7 +894,8 @@ need and nothing more, and nothing but the clear writes them:
 - **The taken entry**: what the clear moved from `ops/<scope>.omb` (rule 6),
   kept identifiable and preserved, with what tells whether it is the
   inspected one, for as long as the clear is not verified complete. A
-  mismatch destroys nothing and accepts nothing.
+  mismatch, or an identity that cannot be confirmed, destroys nothing and
+  accepts nothing.
 - **The verified completion**: the clear confirmed that the entry it took is
   the inspected one, disposed of it as the accepted clear requires, and
   recorded its completion, with no mismatch or interruption left unsettled.
@@ -899,7 +903,8 @@ need and nothing more, and nothing but the clear writes them:
   answer `done`.
 
 A clear with an attempt and no verified completion — interrupted before or
-after its take, refused part-way, stopped by a mismatch — is **unsettled**,
+after its take, refused part-way, stopped by a mismatch or by an identity it
+cannot confirm — is **unsettled**,
 and it is a barrier with the same effect as the unreadable record: every act
 in the scope is refused, no other clear in the scope is offered, and owner
 cleanup and stale reclaim count it as naming every session. `ops/<scope>.omb`
@@ -949,8 +954,8 @@ what is there, A only when it establishes A, and nothing more.
 8. The person types the word.
 9. The clear runs in *Executing*'s order, recorded before it changes
    anything, the entry taken as rule 6 says. It answers `done` only once
-   verified complete; interrupted or mismatched, it leaves an unsettled
-   clear and the scope barred.
+   verified complete; interrupted, mismatched or unable to confirm what it
+   took, it leaves an unsettled clear and the scope barred.
 10. Nothing resumes; the frontend returns to a fresh read, as after every
     act.
 11. A later act is a new request, checked in full.
@@ -988,7 +993,7 @@ what is there, A only when it establishes A, and nothing more.
 | a clear with the wrong word | `refused word` | existing (step 7) |
 | a clear whose own record cannot be written | `refused unavailable`, nothing changed | existing, as for an operation record that cannot be written |
 | a clear verified complete (*The clear transaction*) | `done`, saying what it does not prove | existing status; its text is UR-Q6 |
-| a clear not verified complete: a mismatch, or a stop after its record | never `done`; the answer says the clear did not complete and the scope stays barred | its code is UR-Q6 |
+| a clear not verified complete: a mismatch, an identity it cannot confirm, or a stop after its record | never `done`; the answer says the clear did not complete and the scope stays barred | its code is UR-Q6 |
 | a core that ends without its `result` | unknown outcome, then a fresh read | existing (*The terminal result*) |
 | the clear's action id and typed word, the diagnostic's operation or detail kind | none yet | UR-Q6, UR-Q7 |
 
@@ -1030,7 +1035,7 @@ it exists, keep working and change nothing; *refused* means refused at step
 | U28 inadmissible, established | the status read; for a plain file, the size read, the bounded copy made and every check run to its end; the kind, owner or mode, or the size, byte class, ending, header, seal or schema, found inadmissible | C | as U4 |
 | U29 a clear interrupted before its take | an explicit clear began and its attempt is recorded; `ops/<scope>.omb` still holds the entry; the clear stopped before taking it | the clear did not complete; the scope is held as C, by the entry and by the unsettled clear | that the clear completed; that its authorization carries to a later act or clear |
 | U30 a clear interrupted after its take | the inspected entry was taken; `ops/<scope>.omb` has no entry; the clear stopped before its verified completion | an unsettled clear holds the scope as C; the taken entry is preserved for its resolution | A; that the clear completed; that the taken entry may be discarded |
-| U31 a clear's taken entry does not match | the entry taken, or seen during the clear, is not the inspected one: another fingerprint, or one that cannot be confirmed | the clear did not complete; an entry other than the inspected one was found | that either entry may be destroyed or accepted; that the clear completed; that the entry found is the scope's record |
+| U31 a clear cannot confirm the entry it took | the entry taken, or one seen during the clear, is compared with the inspected one, and: (a) a comparison that ran to its end, such as a complete fingerprint of its bytes, shows that it differs; (b) the comparison cannot complete: the entry cannot be read after the take, its fingerprint cannot be computed, or what it is compared with is unavailable | (a) the entry taken or seen is not the inspected one; (b) its identity is unconfirmed: the inspected identity was not verified; in both, the clear did not complete and an unsettled clear holds the scope as C | in both: that the clear completed; A; that anything may be destroyed or accepted; that the entry found is the scope's record; that the clear's authorization carries over; (a) how it came to differ, or that two distinct entries exist, unless an observation shows both; (b) that the entry differs from the inspected one; that two entries exist; that the inspected entry was replaced |
 | U32 a clear's evidence cannot be inspected | `ops/<scope>.omb` may have no entry; whether a clear in the scope completed cannot be established | D | that a clear completed; A |
 | U33 a clear verified complete, inspected later | the clear's completion was verified and recorded; a later inspection reads it | that clear's entry no longer bars the scope; the scope's state is whatever that inspection finds | that an earlier action resumes; that a later act may rely on any earlier inspection, basis or eligibility |
 
@@ -1066,7 +1071,7 @@ it exists, keep working and change nothing; *refused* means refused at step
 | U28 | as U4 | refused | as U4 | as U4 | as U4 |
 | U29 | the diagnostic reports C and the unsettled clear, attempted | refused | no: a clear is unsettled (P1) | the person; how an unsettled clear is resolved is not yet defined | the clear's evidence is not settled here |
 | U30 | the diagnostic reports the unsettled clear, taken, with the taken entry's fingerprint; never A | refused | no (P1) | as U29 | as U29 |
-| U31 | the clear's answer and the diagnostic say the taken entry is not the one inspected; both entries are kept | refused; the clear is never `done` | no (P1) | as U29 | the clear's answer: its code is UR-Q6 |
+| U31 | the clear's answer and the diagnostic say (a) that the entry taken or seen does not match the one inspected, or (b) that its identity is not confirmed, naming the check that could not complete, never that it differs; in both, whatever was taken or seen is kept as it is | refused, (a) and (b) alike; the clear is never `done` | no (P1) | as U29 | the clear's answer: its code is UR-Q6 |
 | U32 | `done`, reporting D and that the clear's evidence cannot be inspected | refused | no (P1) | make the evidence inspectable, inspect again | as U20 |
 | U33 | the diagnostic reports the completed clear and the state it finds now | a new request decides from its own step 3, as U19 | as the state found | as U19 | existing |
 
