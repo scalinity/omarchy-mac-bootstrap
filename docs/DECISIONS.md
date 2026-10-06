@@ -185,15 +185,20 @@ is); a general process tracker.
 
 **D54. An operation record that cannot be read stays a barrier until an
 explicit, evidenced clear** (the Gate 3 prerequisite; a contract awaiting
-its independent review, not implemented: docs/PROTOCOL.md → *An operation
-record that cannot be read*). Failing to decode a record is never evidence
-that nothing runs, that the operation ended or that it left no effect,
-because every judgement of D47 starts from the record's fields and none is
-available. Looking and reading are judged apart, so an inspection that
-failed is told from bytes that were read and refused, and neither becomes
-no record; and no record itself means only that nothing is recorded as
+its focused independent re-review, not implemented: docs/PROTOCOL.md → *An
+operation record that cannot be read*). Failing to decode a record is never
+evidence that nothing runs, that the operation ended or that it left no
+effect, because every judgement of D47 starts from the record's fields and
+none is available. Looking and reading are judged apart, so an inspection
+that failed is told from bytes that were read and refused, and neither
+becomes no record. Unreadable rests only on an inspection whose every step
+completed, never on a reason code alone, since the current seal check
+reports a tool that failed as `seal`; what could not be established stays
+undetermined. No record itself means only that nothing is recorded as
 begun and unsettled, since each act's fresh read and rebuilt basis, not the
-record's absence, make it safe. Read commands keep working, and a read-only
+record's absence, make it safe; and a readable record whose core's liveness
+is unknown stays excluded without being called supervised. Read commands
+keep working, and a read-only
 diagnostic reports what can be established without trusting the bytes —
 the entry's kind, owner, size and fingerprint, admission's reason code,
 worker evidence and effect certainty — and nothing taken from them. No
@@ -205,10 +210,19 @@ inspected bytes, recorded before it changes anything, and taken by rename
 and confirmed as an abandoned run lock is cleared; it is offered only when
 no recorded process is alive or unknown, the processes that could have
 written those bytes are proven gone, and the scope's reconciliation finds
-nothing unexpected; it proves nothing about the past and resumes nothing. The
-frontend presents and never decides (D5). The mechanisms this leaves open
-are UR-Q1 to UR-Q9 (*Open review questions*). *Set aside:* treating
-corruption as no record; clearing on a reboot; file times as proof of which
+nothing unexpected; it proves nothing about the past and resumes nothing.
+Those conditions make a clear eligible, an authorized attempt, never a
+completed one. Its record is its own, so the ordinary operation record's
+pre-write never overwrites the entry it is for; it is complete only when
+verified complete, and one that began and is not — interrupted, or stopped
+by an entry that is not the one inspected — keeps the scope barred as the
+unreadable record did, even with `ops/<scope>.omb` gone, and preserves what
+it took. A completed clear gives a later request nothing to rely on: each
+act inspects afresh. The frontend presents and never decides (D5). The
+mechanisms this leaves open are UR-Q1 to UR-Q9 (*Open review questions*).
+*Set aside:* treating corruption as no record; a reason code as proof that
+its check ran; the record's path being empty as proof that a clear
+finished; clearing on a reboot; file times as proof of which
 boot wrote the bytes (a process of the person can set them, and the clock
 can move); the person's word in place of the boot-change proof; showing an
 unadmitted record's fields, even marked as unverified; a frontend that

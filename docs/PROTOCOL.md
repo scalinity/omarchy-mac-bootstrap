@@ -575,8 +575,9 @@ action that changes the machine also keeps an **operation record**,
 
 **Status: the recovery and diagnostic contract that MILESTONES.md → *Gate 3
 — The action contract under fixtures* requires before any real mutating
-action is exposed (D54). Documentation only, awaiting its independent
-review: nothing below beyond *Today* is implemented or authorized, and its
+action is exposed (D54). Documentation only, awaiting its focused
+independent re-review (MILESTONES.md → *Gate 3 — The action contract under
+fixtures*): nothing below beyond *Today* is implemented or authorized, and its
 open questions (docs/DECISIONS.md → *Open review questions*, UR-Q1 to
 UR-Q9) are not settled here.**
 
@@ -624,18 +625,39 @@ keep working.
   snapshot shows no barrier and a launcher may remove a scratch. And
   admission's reason code is discarded, so bytes that could not be read look
   like bytes that were read and refused.
+- Admission's reason code is a label, not provenance, so keeping it would
+  not close that gap. `rec_admit_copied` (`lib/records.sh`) answers `seal`
+  whenever `_rec_seal_ok` is false, and that is false not only when the
+  bytes fail their seal but when a step of the check cannot complete: the
+  `awk` count of seal lines, `tail`, the bounded `head -c` copy, `shasum` or
+  `sha256sum`, or a `read` of their output. A file whose bytes are valid can
+  therefore be refused `seal`. The implementation keeps each step's own
+  outcome and never classifies by switching on the code (*The states*, C
+  and D).
+- A running record whose core's liveness cannot be established —
+  `core_alive` cannot read this process's start, or this boot cannot be
+  identified — is answered `busy`, as one whose core is alive. Refusing is
+  right; but the refusal's text, that the operation "is still running under
+  a live core", and the journey snapshot's "running" claim a supervision
+  that unknown liveness does not show (U2).
 
 **The states.** A record is judged in two steps, each of which can fail on
 its own: *looking* — whether the path has an entry, and whether that could
 be established — and *reading* — whether a plain file's bytes admit as this
 scope's `omb-op 1` record. The letters name states of this section; none is
-a wire value (*Answers*, below).
+a wire value (*Answers*, below). Each state rests on positive evidence of its
+own: A on a lookup that could have seen an entry and found none, C on an
+inspection whose every step ran to its end and found the entry
+inadmissible. Whatever could not be established — a lookup, a status, a
+read or a check that did not complete — is D, whatever label a step gave
+it.
 
 - **A. No record.** The lookup could have seen an entry, and there is none,
-  not even a link. It could have seen one when the state directory and its
-  `ops` folder are real directories (not links) of this user that this
-  process can search, and read where it lists; an `ops` folder that does not
-  exist, under such a state directory, is no record too. A says only that no
+  not even a link, and no clear in the scope is unsettled (below). It could
+  have seen one when the state directory and its `ops` folder are real
+  directories (not links) of this user that this process can search, and
+  read where it lists; an `ops` folder that does not exist, under such a
+  state directory, is no record too. A says only that no
   operation in the scope is recorded as begun and not yet settled. It does
   not say that no act ran, that nothing changed, or that the machine matches
   a plan: the baseline's own actions write no operation record, and a record
@@ -644,32 +666,40 @@ a wire value (*Answers*, below).
   *Executing* re-read the machine, rebuild the basis and run the baseline's
   own checks.
 - **B. Readable.** The record admits, and *Operations and exclusion*
-  applies unchanged: running under a live core (`busy`), `unsupervised`,
-  `failed`, or from an earlier boot and reconciled. Worker evidence only ever
-  keeps a barrier there: the record's own core identity decides `busy`
-  against `unsupervised`, and no reading of the process table clears
-  anything (D47).
-- **C. Unreadable.** An entry exists, was inspected, and cannot be admitted
-  as this scope's record: it is not a plain file (a link, dangling or not, a
-  folder, a FIFO, a device); it is owned by a user other than this one or
-  root, or writable by group or others; or admission refuses its bytes for
-  any reason but `io` (§2: `too-large`, `byte`, `eof`, `header`, `schema`,
-  `seal` and the rest). An entry that is not a plain file is never opened: a
-  FIFO would block, and a device could be anything. C supports one
-  conclusion — an operation record exists in this scope and nothing it says
-  is known: not its action, session, core, boot or state, nor whether it
-  ended. It is never A, a completed or stopped operation, safe, no worker or
-  no effect.
-- **D. Undetermined.** The tool could not look or could not read: the state
+  applies unchanged: running with its core established alive, or with its
+  core's liveness not established either way (`busy` for both, though only
+  the first observes supervision: U2), `unsupervised`, `failed`, or from an
+  earlier boot and reconciled. Worker evidence only ever keeps a barrier
+  there: the record's own core identity decides `busy` against
+  `unsupervised`, and no reading of the process table clears anything
+  (D47).
+- **C. Unreadable.** An entry exists, and an inspection whose every step
+  completed established that it cannot be admitted as this scope's record:
+  its status, read, shows that it is not a plain file (a link, dangling or
+  not, a folder, a FIFO, a device), or that it is owned by a user other than
+  this one or root, or writable by group or others; or admission, with its
+  size read, its bounded copy made and each of its checks run to the end,
+  found the bytes inadmissible (§2's reasons: `too-large`, `byte`, `eof`,
+  `header`, `schema`, `seal` and the rest). A reason code alone is not that
+  evidence: it says which check refused, not that the check ran (*Today*:
+  `seal` can stand for a tool that failed). An entry that is not a plain
+  file is never opened: a FIFO would block, and a device could be anything.
+  C supports one conclusion — an operation record exists in this scope and
+  nothing it says is known: not its action, session, core, boot or state,
+  nor whether it ended. It is never A, a completed or stopped operation,
+  safe, no worker or no effect.
+- **D. Undetermined.** The tool could not look, read or check: the state
   directory or `ops` is a link, not a directory, or cannot be searched or
   listed; an entry's status cannot be read; a plain file cannot be read in
-  full (admission's `io`: a tool that failed, the per-run copy not made).
-  Whether a record exists, and what it says, is unknown. D is never A, and
-  never C, since no malformed bytes were seen; it may pass, and an inspection
-  that later succeeds finds A, B or C. Every act in the scope is refused
-  while it holds, as for C; only the next step differs. A link in place of
-  `ops` is D because where records live cannot be trusted, as
-  `core_op_write` already refuses one.
+  full (admission's `io`: a tool that failed, the per-run copy not made); a
+  check of the bytes could not run to its end, whatever code it then gave;
+  or the evidence of a clear in the scope cannot be inspected (*The clear
+  transaction*). Whether a record exists, and what it says, is unknown. D is
+  never A, and never C, since no inspection established that the entry
+  cannot be admitted; it may pass, and an inspection that later succeeds
+  finds A, B or C. Every act in the scope is refused while it holds, as for
+  C; only the next step differs. A link in place of `ops` is D because where
+  records live cannot be trusted, as `core_op_write` already refuses one.
 - **E. The record and worker evidence disagree.** With B, *Operations and
   exclusion* decides, as above. With C or D, nothing ties a process to the
   record: its session, core identity and boot session are among what cannot
@@ -678,6 +708,10 @@ a wire value (*Answers*, below).
   clear. No recorded process alive is no evidence that this one ended
   (*Workers*). No second owner model is introduced, in the core or in the
   frontend.
+- **An unsettled clear** — one that began and is not verified complete
+  (*The clear transaction*) — holds the scope as C does, whatever
+  `ops/<scope>.omb` shows: whatever it took is moved, not cleared, and
+  nothing it says is known. The path's absence is then not A.
 
 **Workers.** Liveness stays where *The processes* puts it: an identity is
 a PID, a start time and a boot session, read by one method and compared
@@ -746,13 +780,14 @@ bytes:
 | --- | --- | --- |
 | the record's path | `core_op_path`, the tool's own construction | shortened with `~`, as the refusal shows it today |
 | the state | *The states* | A, B, C or D |
-| for D, the step that failed | looking or reading | one of a fixed set |
+| for D, the step that failed | looking, reading or checking | one of a fixed set |
+| a clear in the scope not verified complete | the clear's own evidence (*The clear transaction*) | attempted or taken; for a taken entry, whether it is the one inspected |
 | the entry's kind | its status, never followed | plain file, link, folder, other |
 | its owner | its status | this user, root, another user |
 | whether group or others may write it | its status | yes or no |
 | its size | `wc -c`, plain files only | bytes |
 | its fingerprint | the SHA-256 of its bytes, plain files within the stored-document limit only | 64 hex digits, as a basis |
-| why admission refused it | §2's reason code and line | one fixed code and a line number |
+| for C, why admission refused it | §2's reason code and line, from a check that ran to its end | one fixed code and a line number |
 | worker evidence | *Workers* | active, not observed, unknown or ended for these bytes, with which inspection failed |
 | effect | *Effects* | observed, no unexpected effect or unknown |
 | what stays unknown | fixed text per state | — |
@@ -766,15 +801,25 @@ hold. This is the debug report's rule (D33): values from structured probes,
 never content. A person who wants the bytes opens the file the path names,
 with their own tools. The fingerprint lets two inspections, or an
 inspection and a clear, be compared without reading content. A finding of D
-is a delivered answer, not a failure of the diagnostic.
+is a delivered answer, not a failure of the diagnostic: a step of inspecting
+the record — looking, reading, or checking its bytes, the tools a check runs
+included — that cannot complete is the finding, and the answer names the
+step, never a reason code that step left behind as a finding about the
+bytes. The diagnostic itself fails only when its own machinery cannot
+produce an answer — its per-run scratch, the hashing of the fingerprint it
+reports, the building and admission of its answer — and then it answers
+`error io` with nothing partial, never a finding (*Answers*).
 
 The next safe step it names: for A, none; for B, the existing one (wait for
 the live core, or restart, then run the tool again); for C, inspecting again
 once the processes that could have written it are proven gone (UR-Q4),
 never removal while one may run; for D, making the record inspectable — the
 failed step says what: a link or a file in place of `ops`, a folder that
-cannot be searched or listed, a file that cannot be read — then inspecting
-again. The tool changes no permission and moves nothing to get there.
+cannot be searched or listed, a file that cannot be read, a check that
+could not run — then inspecting again; for an unsettled clear, none the tool
+can take: how one is resolved, other than by its own verified completion, is
+a recovery contract not yet written. The tool changes no permission and
+moves nothing to get there.
 
 **Clearing.** A clear is defined here as a contract; where a mechanism is
 not settled, the question that owns it is named. A clear:
@@ -793,17 +838,29 @@ not settled, the question that owns it is named. A clear:
    again (step 4), rebuilds the basis (step 6) and refuses `changed` on any
    difference: a record that became readable, changed, vanished or became
    undetermined is never cleared on an earlier look.
-4. **Takes exclusion as every act does**: the run lock first (step 3).
-5. **Is recorded before it changes anything**: the scope, the fingerprint,
-   the size, admission's reason code, the evidence each prerequisite rested
-   on, the boot session and the time, with the baseline's checked writer; a
-   record that cannot be written stops the clear (`state_must_set`).
+4. **Takes the run lock as every act does** (step 3), but never step 3's
+   operation record: that pre-write is `ops/<scope>.omb`, the very entry the
+   clear is for, and the unreadable entry is the evidence the clear is bound
+   to. Nothing writes over it, renames it or replaces it before the
+   inspection, the basis, the word and every prerequisite have been checked;
+   after them, only the clear's own take (rule 6) moves it.
+5. **Is recorded before it changes anything**, in a record of its own,
+   distinct from the operation record it clears: the scope, the
+   fingerprint, the size, admission's reason code, the evidence each
+   prerequisite rested on, the boot session and the time, with the
+   baseline's checked writer; a record that cannot be written stops the
+   clear (`state_must_set`). That record is the clear's attempt (*The clear
+   transaction*); its name, schema and place are not settled here.
 6. **Acts on exactly the entry it names.** The entry is taken from its path
    by a rename and confirmed to be the inspected one before anything else,
-   as the baseline clears an abandoned run lock (`lib/state.sh`); any other
-   entry is never removed. Nothing outside `ops/<scope>.omb` is touched: no
-   other scope's record, no scratch, effect, partition or package. Whether
-   the renamed entry is then deleted or kept aside is UR-Q1.
+   as the baseline clears an abandoned run lock (`lib/state.sh`). An entry
+   that cannot be confirmed as the inspected one — another fingerprint, one
+   swapped in between the inspection and the rename, one that cannot be
+   read — is neither destroyed nor accepted: it is kept as it was taken, the
+   clear does not complete, and its answer says so. It changes nothing but
+   that entry and the clear's own evidence (rule 5, *The clear
+   transaction*): no other scope's record, no scratch, effect, partition or
+   package. Whether the taken entry is then deleted or kept aside is UR-Q1.
 7. **Proves nothing about the past**: not that no worker existed, that no
    effect occurred, that earlier work completed, or that the machine matches
    a plan. Its answer says so.
@@ -811,28 +868,65 @@ not settled, the question that owns it is named. A clear:
    is required, it is a prerequisite of the clear, never replaced by it.
 9. **Resumes nothing.** It ends its request and no action follows in it. The
    next act is a new request through every step of *Executing*, whose fresh
-   read and rebuilt basis make that act safe, never the record's absence. A
-   basis shown before the record became unreadable matches afterwards only
-   while the machine still matches it, which is what a basis means.
-10. **Has an unknown outcome when interrupted**, as any request without its
-    `result`: the next inspection finds the entry, or no record and the
-    clear recorded.
+   read and rebuilt basis make that act safe, never the record's absence:
+   its own step 3 inspects the scope again and finds A only when that
+   inspection establishes A. A completed clear leaves no fact about the
+   scope for a later request to rely on. A basis shown before the record
+   became unreadable matches afterwards only while the machine still
+   matches it, which is what a basis means.
+10. **Is complete only when verified complete.** An interrupted clear has
+    an unknown outcome, as any request without its `result`, and until its
+    completion is verified it is an unsettled clear, which keeps the scope
+    barred (*The clear transaction*).
 
-Its prerequisites, each required by this contract, with the question that
-owns its mechanism:
+**The clear transaction.** Three things a clear leaves are kept apart,
+whatever form they finally take; their names, schema, place, how long they
+are kept and whether the taken entry is deleted or kept aside (UR-Q1) are
+the implementation's, reviewed with it. The clear keeps what these three
+need and nothing more, and nothing but the clear writes them:
+
+- **The attempt**: the clear's own record (rule 5), showing that an
+  explicit clear began on a named entry, with its fingerprint and the
+  evidence it rested on. It never means that the clear completed.
+- **The taken entry**: what the clear moved from `ops/<scope>.omb` (rule 6),
+  kept identifiable and preserved, with what tells whether it is the
+  inspected one, for as long as the clear is not verified complete. A
+  mismatch destroys nothing and accepts nothing.
+- **The verified completion**: the clear confirmed that the entry it took is
+  the inspected one, disposed of it as the accepted clear requires, and
+  recorded its completion, with no mismatch or interruption left unsettled.
+  Only this means the clear finished, and only after it does the clear
+  answer `done`.
+
+A clear with an attempt and no verified completion — interrupted before or
+after its take, refused part-way, stopped by a mismatch — is **unsettled**,
+and it is a barrier with the same effect as the unreadable record: every act
+in the scope is refused, no other clear in the scope is offered, and owner
+cleanup and stale reclaim count it as naming every session. `ops/<scope>.omb`
+absent beside an unsettled clear is never A, and a clear's evidence that
+cannot be inspected is D. The barrier holds until the clear is verified
+complete under its accepted rules, or is resolved by a recovery contract
+accepted on its own, which this contract does not define.
+
+A clear's prerequisites, each required by this contract, with the question
+that owns its mechanism:
 
 | | Prerequisite | Open |
 | --- | --- | --- |
-| P1 | the entry is in C on the inspection at execute: never A, B or D | — |
+| P1 | the entry is in C on the inspection at execute: never A, B or D, and no clear in the scope is unsettled | — |
 | P2 | its fingerprint equals the one the person was shown: a plain file within the limit | UR-Q2, for other entries |
 | P3 | no recorded identity is established alive, and none is unknown | UR-Q4, for which identities |
 | P4 | the processes that could have written the bytes are proven gone | UR-Q4 |
 | P5 | the scope's reconciliation found no unexpected effect | UR-Q3, UR-Q5 |
 
+When P1 to P5 hold and the basis and the word match, a clear is eligible:
+that authorizes its attempt and nothing more. It never shows that the clear
+completed; only the clear's verified completion does (U17).
+
 Until P4's and P5's mechanisms are accepted, no clear can be offered. The
 only way past an unreadable record is then the person's own removal of the
-file: outside the tool's authority, after which the scope reads as A and
-nothing more.
+file: outside the tool's authority, after which the next inspection finds
+what is there, A only when it establishes A, and nothing more.
 
 **What the person sees.** The sequence the contract allows:
 
@@ -854,7 +948,9 @@ nothing more.
    interface builds.
 8. The person types the word.
 9. The clear runs in *Executing*'s order, recorded before it changes
-   anything, the entry taken as rule 6 says.
+   anything, the entry taken as rule 6 says. It answers `done` only once
+   verified complete; interrupted or mismatched, it leaves an unsettled
+   clear and the scope barred.
 10. Nothing resumes; the frontend returns to a fresh read, as after every
     act.
 11. A later act is a new request, checked in full.
@@ -863,8 +959,9 @@ nothing more.
 
 - The core inspects, classifies A to D, reads identities, decides whether a
   clear is available, builds its basis, runs it, records it and answers. The
-  launcher keeps its one reading of records — an unreadable one names every
-  session, so no scratch goes — and gains no authority to clear.
+  launcher keeps its one reading of records — an unreadable one, or an
+  unsettled clear, names every session, so no scratch goes — and gains no
+  authority to clear.
 - The frontend shows the core's facts, blockers, actions and results, and
   asks for a fresh snapshot after a clear as after every act. It never reads
   `ops/`: it reads no record in the state directory (docs/FRONTEND.md), the
@@ -884,13 +981,14 @@ nothing more.
 | an act refused by D | `refused`, before any effect | the refusal is settled; its code is UR-Q6 (today D falls into A or C) |
 | the snapshot's barrier for C | the fact `operation` and `blocker id=unsupervised` | existing, foundation fixture only; UR-Q6, UR-Q8 |
 | the diagnostic's finding, D included | `done` | a negative finding delivered is a success, as for health (*Future health and logs producers*) |
-| the diagnostic's own machinery fails (per-run scratch, hashing, admission of its answer) | `error io`, nothing partial | the accepted read rule; its text is UR-Q6 |
+| the diagnostic's own machinery fails (per-run scratch, hashing the fingerprint it reports, admission of its answer) | `error io`, nothing partial | the accepted read rule; its text is UR-Q6 |
 | a required value, the path, that the record format cannot carry | `error representation`, nothing partial | follows `Gate2-read-representation-failure`; its text is UR-Q6 |
 | a clear not available now | `refused unavailable` | existing (step 5) |
 | a clear on an entry that changed | `refused changed` | existing (step 6) |
 | a clear with the wrong word | `refused word` | existing (step 7) |
 | a clear whose own record cannot be written | `refused unavailable`, nothing changed | existing, as for an operation record that cannot be written |
-| a clear completed | `done`, saying what it does not prove | existing status; its text is UR-Q6 |
+| a clear verified complete (*The clear transaction*) | `done`, saying what it does not prove | existing status; its text is UR-Q6 |
+| a clear not verified complete: a mismatch, or a stop after its record | never `done`; the answer says the clear did not complete and the scope stays barred | its code is UR-Q6 |
 | a core that ends without its `result` | unknown outcome, then a fresh read | existing (*The terminal result*) |
 | the clear's action id and typed word, the diagnostic's operation or detail kind | none yet | UR-Q6, UR-Q7 |
 
@@ -903,9 +1001,9 @@ it exists, keep working and change nothing; *refused* means refused at step
 | Case | Observable facts | May conclude | Must not conclude |
 | --- | --- | --- | --- |
 | U1 no record | the lookup could see an entry; none at `ops/<scope>.omb` | no operation in the scope is recorded as begun and not settled | that no act ever ran; that nothing changed; that the machine matches a plan |
-| U2 readable, running | the record admits, `state=running`, its core alive or unknown | an operation is supervised now | that it ended; that it is unsupervised |
+| U2 readable, running | the record admits, `state=running`, and: (a) its core identity is established alive; (b) its core's liveness is established neither way — `ps` or a start time cannot be read, or this boot cannot be identified | (a) the recorded core is alive: supervision is observed now; (b) nothing about supervision: the unknown counts as alive (*The processes*), so the record excludes as a supervised one does | (a) and (b) that it ended; that it is unsupervised; (b) that a supervisor is known to exist now |
 | U3 readable, failed or unsupervised | the record admits: `state=failed`; or its core is gone or it is marked `unsupervised`; or it is from another boot | as *Operations and exclusion* | that a reboot alone settled it; for `failed`, that it may still be running |
-| U4 unreadable | a plain file of this user, read whole; admission refused it, reason not `io` | a record exists in the scope; nothing it says is known | no record; done; stopped; safe; no worker; no effect; any field's value |
+| U4 unreadable | a plain file of this user, read whole; admission ran every check to its end and refused it (U28) | a record exists in the scope; nothing it says is known | no record; done; stopped; safe; no worker; no effect; any field's value |
 | U5 unreadable, live worker | C; a recorded core or worker of some session established alive | a process the tool started is running; an operation may be in progress, possibly this one | that the live process is this record's; anything about effects |
 | U6 unreadable, no worker observed | C; every recorded identity found established not alive | no recorded process is running now | that no worker exists; that the operation ended; that nothing happened |
 | U7 unreadable, inspection fails | C; `ps` fails, or the boot session, an identity or a scratch cannot be read | nothing about workers; each unknown counts as alive | that nothing is running |
@@ -918,19 +1016,28 @@ it exists, keep working and change nothing; *refused* means refused at step
 | U14 a clear asked for | `execute` of the listed clear action, its basis and word, in an act session | the person chose to clear what they were shown | that the operation ended or left no effect |
 | U15 a clear, worker active | as U14; P3 fails: a recorded identity established alive | as U5 | that the clear may proceed |
 | U16 a clear, worker unknown | as U14; P3 fails: an identity cannot be established | as U7 | that the clear may proceed |
-| U17 a clear, prerequisites held | P1 to P5 hold at execute; the word matches | the person cleared that entry, on that evidence | that no worker ever existed; that nothing happened; that earlier work completed; that the machine matches a plan |
+| U17 a clear, prerequisites held | (a) at execute, before the clear changes anything: P1 to P5 hold, the basis and the word match; (b) afterwards: the clear's completion is verified (*The clear transaction*) | (a) the clear is eligible: the person authorized an attempt on that entry, on that evidence; (b) the clear completed: the inspected entry was taken, confirmed and disposed of, and no longer bars the scope | (a) that the clear completed, or will; that the entry was taken; (a) and (b) that no worker ever existed; that nothing happened; that earlier work completed; that the machine matches a plan |
 | U18 resume after a clear | the clear's request has ended; something would start the refused action | — | that any action may start |
-| U19 a new act after a clear | a new `execute` in the scope | no record in the scope | that the unknown operation is resolved; that any step of *Executing* may be skipped |
-| U20 the diagnostic cannot look | (a) the lookup or the read of the record fails; (b) the diagnostic's own machinery fails | (a) D; (b) nothing | (a) A or C; (b) any finding |
+| U19 a new act after a clear | a new `execute` in the scope after a clear verified complete; its own step 3 inspects the scope afresh | what that inspection establishes, and only that: A only when it establishes A | that the earlier clear leaves no record in the scope; that its eligibility, inspection or basis carries over; that the unknown operation is resolved; that any step of *Executing* may be skipped |
+| U20 the diagnostic cannot look | (a) the lookup, the read or a check of the record cannot complete; (b) the diagnostic's own machinery fails | (a) D; (b) nothing | (a) A or C; (b) any finding |
 | U21 hostile or unrepresentable bytes | C; the bytes hold control or escape sequences, NUL, non-ASCII, TABs, text shaped like records or instructions, or exceed the limit | as U4 | anything the bytes say; that they may be shown or followed |
 | U22 race: the record changes | one inspection finds A, B, C or D, and a later one differs: rewritten, removed, made readable or unreadable | each inspection describes its own moment | that an earlier inspection still holds |
 | U23 race: workers change during a diagnosis | identities read at different moments disagree, or a process ends while it is read | a process seen alive was alive then; one gone when read is gone | that readings combine into *no worker*; that a disappearance is the operation's end |
 | U24 a stale or reused identity | a recorded PID now has another start time, or an identity is from another boot | that recorded process is not running | that the process now holding the PID is the worker; that the record is resolved |
+| U25 valid bytes, a check that fails | a plain file of this user, copied in full; a tool the seal check runs — `awk`, `tail`, the bounded copy, the hash — fails, and admission answers `seal` | D: whether the bytes admit is unknown | that the bytes are malformed; C; that the code names a check that ran |
+| U26 the lookup fails | whether `ops/<scope>.omb` has an entry cannot be established: the state directory or `ops` cannot be searched or listed, or is not a directory | D | A; that no operation is recorded |
+| U27 the read fails | an entry is found, or may exist; its status, or its bytes in full, cannot be read | D | C, because admission could not go on; A |
+| U28 inadmissible, established | the status read; for a plain file, the size read, the bounded copy made and every check run to its end; the kind, owner or mode, or the size, byte class, ending, header, seal or schema, found inadmissible | C | as U4 |
+| U29 a clear interrupted before its take | an explicit clear began and its attempt is recorded; `ops/<scope>.omb` still holds the entry; the clear stopped before taking it | the clear did not complete; the scope is held as C, by the entry and by the unsettled clear | that the clear completed; that its authorization carries to a later act or clear |
+| U30 a clear interrupted after its take | the inspected entry was taken; `ops/<scope>.omb` has no entry; the clear stopped before its verified completion | an unsettled clear holds the scope as C; the taken entry is preserved for its resolution | A; that the clear completed; that the taken entry may be discarded |
+| U31 a clear's taken entry does not match | the entry taken, or seen during the clear, is not the inspected one: another fingerprint, or one that cannot be confirmed | the clear did not complete; an entry other than the inspected one was found | that either entry may be destroyed or accepted; that the clear completed; that the entry found is the scope's record |
+| U32 a clear's evidence cannot be inspected | `ops/<scope>.omb` may have no entry; whether a clear in the scope completed cannot be established | D | that a clear completed; A |
+| U33 a clear verified complete, inspected later | the clear's completion was verified and recorded; a later inspection reads it | that clear's entry no longer bars the scope; the scope's state is whatever that inspection finds | that an earlier action resumes; that a later act may rely on any earlier inspection, basis or eligibility |
 
 | Case | Reads and diagnostic | Act in the scope | Clear offered | The person's next step | Vocabulary |
 | --- | --- | --- | --- | --- | --- |
 | U1 | work; the diagnostic reports A | proceeds to steps 4 to 8 | no: nothing to clear | none | existing |
-| U2 | work; the snapshot shows it running | refused `busy` | no: B is settled by *Operations and exclusion* | wait for it | existing |
+| U2 | work; (a) the snapshot shows it running; (b) the snapshot shows the barrier, never that a live core supervises it | refused `busy`, (a) and (b) alike | no: B is settled by *Operations and exclusion* | (a) wait for it; (b) wait, then inspect again; if liveness stays unknown, restart (U3) | `busy`, existing, for both; (b)'s text must not claim a live core, as today's texts do (*Today*), and is not settled here |
 | U3 | work; show the barrier | refused `unresolved` or `unsupervised` in this boot; after a new boot, reconciled, `unexpected` staying blocked | no | restart, then run the tool again | existing |
 | U4 | work; the snapshot shows the barrier; the diagnostic reports C, size, fingerprint, reason code and line, worker and effect | refused | no, unless P1 to P5 | run the diagnostic | today `refused unsupervised` with its text; UR-Q6 |
 | U5 | the diagnostic reports the worker active | refused | no (P3) | let it end, then inspect again | as U4 |
@@ -945,14 +1052,23 @@ it exists, keep working and change nothing; *refused* means refused at step
 | U14 | — | the clear in *Executing*'s order: lock, inspection, available now (P1 to P5), basis (P2), word, then its record, then the entry | this is the clear | — | action id and word: UR-Q6 |
 | U15 | — | the clear refused `unavailable`; the record unchanged | no | as U5 | existing |
 | U16 | — | the clear refused `unavailable`; the record unchanged | no | as U7 | existing |
-| U17 | the next snapshot shows no record in the scope and the clear recorded | the clear: recorded first, the entry taken by rename and confirmed; `done` | — | a fresh snapshot; any act is a new request | `done`, its text UR-Q6 |
+| U17 | (a) unchanged until the clear changes something; (b) the next snapshot shows the clear completed, and the scope's state as its own inspection finds it | (a) the clear begins: its own record first, then the entry taken by rename and confirmed; (b) `done`, only now | — | a fresh snapshot; any act is a new request (U19) | `done` for (b) alone, its text UR-Q6 |
 | U18 | the frontend asks for a fresh snapshot, as after every act | nothing starts; no request is queued or replayed | — | choose again | existing |
-| U19 | — | every step of *Executing*: lock, A, its own operation record, fresh read, availability, rebuilt basis, word, the baseline's checks | — | — | existing |
+| U19 | — | every step of *Executing* from its own inspection: on A, as U1 (lock, its own operation record, fresh read, availability, rebuilt basis, word, the baseline's checks); on B, C, D or an unsettled clear, as that state's case says | as the state found | as the state found | existing |
 | U20 | (a) `done`, reporting D and the failed step; (b) `error io`, nothing partial | (a) refused; (b) as the record's state, which this answer does not establish | no | (a) make the record inspectable, inspect again; (b) run it again | `done`, `error io`; texts UR-Q6 |
 | U21 | the diagnostic reports kind, owner, size, fingerprint and reason only; a file over the limit by its size alone; an entry that is not a plain file is never opened | refused | as U4; a file over the limit has no fingerprint, so no clear (UR-Q2) | run the diagnostic; the person may open the file with their own tools | a path the format cannot carry: `error representation` |
 | U22 | each answer carries its own state and fingerprint | decided by execute's own step 3, under the run lock | refused `changed` when the fresh inspection differs from the one shown; a swap between inspection and rename is caught by rule 6 | inspect again | `refused changed`, existing |
 | U23 | the evidence as read; any identity alive or unknown in any reading makes the worker active or unknown | refused | P3 is established again at execute, never taken from the diagnostic | inspect again | existing |
 | U24 | the identity counts as not alive | refused (C) | P3 counts it not alive; P4 is still required | as U6 | the identity rule of *The processes* |
+| U25 | the diagnostic reports D and the check that could not run, never its code as a finding about the bytes | refused | no: P1 fails | inspect again once the check can run; the person may look with their own tools | `done`; today this is C, refused `unsupervised` (*Today*); D's code is UR-Q6 |
+| U26 | `done`, reporting D and the lookup that failed | refused; today it falls into A (*Today*) | no | make `ops` inspectable, inspect again | as U20 |
+| U27 | `done`, reporting D and the read that failed | refused | no | make the record readable, inspect again | as U20 |
+| U28 | as U4 | refused | as U4 | as U4 | as U4 |
+| U29 | the diagnostic reports C and the unsettled clear, attempted | refused | no: a clear is unsettled (P1) | the person; how an unsettled clear is resolved is not yet defined | the clear's evidence is not settled here |
+| U30 | the diagnostic reports the unsettled clear, taken, with the taken entry's fingerprint; never A | refused | no (P1) | as U29 | as U29 |
+| U31 | the clear's answer and the diagnostic say the taken entry is not the one inspected; both entries are kept | refused; the clear is never `done` | no (P1) | as U29 | the clear's answer: its code is UR-Q6 |
+| U32 | `done`, reporting D and that the clear's evidence cannot be inspected | refused | no (P1) | make the evidence inspectable, inspect again | as U20 |
+| U33 | the diagnostic reports the completed clear and the state it finds now | a new request decides from its own step 3, as U19 | as the state found | as U19 | existing |
 
 ### The Shared critical interval
 
@@ -1824,7 +1940,8 @@ In this order, stopping at the first refusal:
    session's scopes, both from the environment.
 3. **Take exclusion**: the run lock; then the scope's operation records — an
    unsupervised one refuses (`unsupervised`), a failed one refuses
-   (`unresolved`), a supervised one of a live core refuses (`busy`), one
+   (`unresolved`), a running one whose core is alive, or not established
+   dead, refuses (`busy`), one
    that cannot be read refuses (`unsupervised`; *An operation record that
    cannot be read*) — then write this action's operation record.
 4. **Re-read** the action's machine and destination observations.

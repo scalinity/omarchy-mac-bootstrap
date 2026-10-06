@@ -661,7 +661,9 @@ of docs/TESTING.md.
   LIMITATION — NON-BLOCKING FOR GATE 2 PERFORMANCE SIGNOFF**. No Logs
   optimization was performed, and none is authorized; the finding stays
   recorded until a later measurement establishes compliance. Gate 2 as a
-  whole remains **IN PROGRESS**.
+  whole remains **IN PROGRESS**. (Historical campaign-time status, as of
+  this signoff: Gate 2 was later accepted and closed at `c855f61` by its
+  independent review, *Status* above, which supersedes it.)
 
 ### Gate 3 — The action contract under fixtures
 
@@ -686,15 +688,39 @@ of docs/TESTING.md.
   effect remains", and how the record is cleared: never automatically,
   never by a reboot alone, never by treating corruption as no operation.
   That contract is written in docs/PROTOCOL.md → *An operation record that
-  cannot be read* and D54, with its acceptance cases U1 to U24 and its open
+  cannot be read* and D54, with its acceptance cases U1 to U33 and its open
   questions UR-Q1 to UR-Q9 (docs/DECISIONS.md → *Open review questions*). It
   is documentation only and implements none of it.
-- **Status:** not started. The prerequisite contract is **CONTRACT
-  DOCUMENTED — AWAITING INDEPENDENT GATE 3 PREREQUISITE CONTRACT REVIEW**
-  (**M14 GATE 3 PREREQUISITE — UNREADABLE-OPERATION-RECORD CONTRACT
-  REVIEW**), on branch `m14-gate3-prereq-unreadable-record` from the Gate 2
-  endpoint `c855f61`. No recovery, diagnostic, clear, reconciliation,
-  execute or action exposure is implemented or authorized.
+- **Status:** not started. The prerequisite contract's candidate
+  `806a8793a1c1537e3e10ee5840817e53b8c35e93`, on branch
+  `m14-gate3-prereq-unreadable-record` from the Gate 2 endpoint `c855f61`,
+  was independently reviewed: **GATE 3 PREREQUISITE CONTRACT REMEDIATION
+  REQUIRED**. Its architecture was credited; three contract findings block
+  it, and only they are remediated: **UR-C01** (the acceptance matrix
+  allowed conclusions stronger than the evidence: U2's unknown liveness as
+  supervision, U17's eligibility as a completed clear, U19's later act as
+  finding no record), **UR-C02** (any admission reason but `io` was taken
+  as evidence of malformed bytes, though the current seal check reports a
+  tool that failed as `seal`) and **UR-C03**, high (a clear interrupted or
+  mismatched after taking the entry could leave `ops/<scope>.omb` absent and
+  read as no record). The review accepted UR-Q2 (a clear only for a plain
+  file read in full within the stored-document limit, with every other
+  prerequisite still required) and UR-Q9 (a record naming another scope, or
+  an action its scope does not own, may be C; a scope's own action merely
+  unavailable now is not corruption). UR-Q1 and UR-Q3 to UR-Q8 stay open and
+  block the implementation; a fingerprint sighting with a reboot is not yet
+  an accepted P4 mechanism, UR-Q4 must still define which worker identities
+  count, the diagnostic's and the clear's controllers not silently excluded,
+  and a scope's ownership of reconciliation alone does not prove P5. The
+  remediation, forward from `806a879` and documentation only, writes UR-C01
+  into U2, U17 and U19; UR-C02 into *The states* and the cases C02-A to
+  C02-D, as U25 to U28; and UR-C03 into *Clearing*, *The clear transaction*
+  and the cases C03-A to C03-E, as U29 to U33. Disposition: **GATE 3
+  PREREQUISITE CONTRACT REMEDIATED — AWAITING FOCUSED INDEPENDENT UR-C01 /
+  UR-C02 / UR-C03 RE-REVIEW** (**M14 GATE 3 PREREQUISITE — FOCUSED CONTRACT
+  REMEDIATION RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`;
+  frontend `0.2.0` stays **UNRELEASED**. No recovery, diagnostic, clear,
+  reconciliation, execute or action exposure is implemented or authorized.
 
 ### Gate 4 — Scanner and profile
 
