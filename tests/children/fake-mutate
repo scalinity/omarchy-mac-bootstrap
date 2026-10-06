@@ -5,42 +5,71 @@
 # Runs with no terminal and its output going nowhere, as a mutating child must.
 effect=$1 want=$2
 conf=${OMB_FIXTURE:-/nonexistent}/test-children/mutate
-here=$(dirname "$0")
-get() { [ -f "$conf" ] && sed -n "s/^$1=//p" "$conf" | tail -n 1; }
+# get KEY — GOT: the value on KEY's last line of the fixture's file, read when
+# asked (a test rewrites the file while a killed core's child still sleeps),
+# or empty; 1 when there is no file. The shell reads it itself, so a lookup
+# starts no process.
+get() {
+  GOT=""
+  [ -f "$conf" ] || return 1
+  [ -r "$conf" ] || return 0
+  while IFS= read -r __get_line || [ -n "$__get_line" ]; do
+    case $__get_line in "$1"=*) GOT=${__get_line#"$1"=} ;; esac
+  done <"$conf"
+}
 # own PID — record a process this child started, with its start time, in the
 # file the fixture names (pids=): a test signals only what it can name so.
 own() {
-  p=$(get pids) && [ -n "$p" ] || return 0
+  get pids && p=$GOT && [ -n "$p" ] || return 0
   printf '%s %s\n' "$1" "$(LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1 = $1; print}')" >>"$p"
 }
 
-v=$(get fds) && [ -n "$v" ] && "$here/probe-fds" >"$v"
-v=$(get grandchild) && [ -n "$v" ] && {
-  f=$(get grandchild_fds)
-  sh -c 'if [ -n "$1" ]; then "$2/probe-fds" >"$1"; fi; exec sleep "$0"' "$v" "$f" "$here" &
+get fds
+v=$GOT
+[ -n "$v" ] && "$(dirname "$0")/probe-fds" >"$v"
+get grandchild
+v=$GOT
+[ -n "$v" ] && {
+  get grandchild_fds
+  f=$GOT
+  sh -c 'if [ -n "$1" ]; then "$2/probe-fds" >"$1"; fi; exec sleep "$0"' "$v" "$f" "$(dirname "$0")" &
   own $!
 }
-v=$(get out_bytes) && [ -n "$v" ] && { head -c "$v" /dev/zero; head -c "$v" /dev/zero >&2; }
-v=$(get sleep) && [ -n "$v" ] && sleep "$v"
-case "$(get effect)" in
+get out_bytes
+v=$GOT
+[ -n "$v" ] && { head -c "$v" /dev/zero; head -c "$v" /dev/zero >&2; }
+get sleep
+v=$GOT
+[ -n "$v" ] && sleep "$v"
+get effect
+case "$GOT" in
   none) ;;
   unexpected) printf 'something else' >"$effect" ;;
   *) printf '%s' "$want" >"$effect" ;;
 esac
 # A descendant left in the process group: a worker still present.
-v=$(get linger) && [ -n "$v" ] && {
+get linger
+v=$GOT
+[ -n "$v" ] && {
   sleep "$v" &
   own $!
 }
 # A descendant that leaves the group (its own session) and keeps writing:
 # invisible to the group snapshot, which is why the registry, not
 # inspection, is the guarantee.
-v=$(get escape) && [ -n "$v" ] && perl -e '
+get escape
+v=$GOT
+[ -n "$v" ] && {
+  get escape_out
+  perl -e '
   use POSIX ();
   exit 0 if fork;
   POSIX::setsid();
   my ($secs, $out) = @ARGV;
   for (1 .. $secs * 10) { open(my $f, ">>", $out) or exit 1; print $f "x"; close $f; select(undef, undef, undef, 0.1) }
-' "$v" "$(get escape_out)"
-v=$(get exit) && [ -n "$v" ] && exit "$v"
+' "$v" "$GOT"
+}
+get exit
+v=$GOT
+[ -n "$v" ] && exit "$v"
 exit 0
