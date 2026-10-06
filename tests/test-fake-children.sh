@@ -160,30 +160,39 @@ same handoff-raw handoff 'x\n' 'leave_raw=1\n' out/effect WANT
 # --- The fixture's file changed while the child sleeps -------------------------------------
 # A key read after the sleep sees the file as it is then: rewritten, the mutating
 # child writes what the new file says; removed, the read child exits 0.
-# changed NAME CHILD CONF NEW [ARGS...] — start CHILD with CONF (which names
-# out/started as its descriptor probe, written as it starts), wait for that
-# probe, then write NEW over the file ("-" removes it), and wait for the child.
+# changed NAME CHILD CONF NEW [ARGS...] — start CHILD with CONF (which makes it
+# sleep), wait until it is inside that sleep, so every key before it has been
+# read, then write NEW over the file ("-" removes it), and wait for the child.
+# Inside its sleep: a process whose parent is the child, read with ps (by its
+# parent's PID, never by a name, and never signalled), is a sleep.
 changed() {
-  local name=$1 child=$2 conf=$3 new=$4 which d bg i
+  local name=$1 child=$2 conf=$3 new=$4 which d pid i
   shift 4
   for which in old new; do
     d=$(prepare "$which" "$name" "$child" "$conf")
-    launch "$d" "$child" "" "$@" &
-    bg=$!
+    # exec, twice: $! is the child's own PID.
+    (cd "$d" && exec env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C OMB_FIXTURE=fx \
+      "../tests/children/fake-$child" "$@" </dev/null >stdout 2>stderr) &
+    pid=$!
     i=0
-    while [ ! -s "$d/out/started" ] && [ "$i" -lt 200 ]; do sleep 0.05 && i=$((i + 1)); done
+    until ps -axo ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)sleep$/ { f = 1 } END { exit !f }'; do
+      [ "$i" -lt 200 ] || break
+      sleep 0.05
+      i=$((i + 1))
+    done
     if [ "$new" = - ]; then
       rm -f "$d/fx/test-children/$child"
     else
       printf '%b' "$new" >"$d/fx/test-children/$child"
     fi
-    wait "$bg"
+    wait "$pid"
+    printf '%s' "$?" >"$d/status"
   done
   agree "$name"
 }
-changed mutate-rewritten mutate 'fds=out/started\nsleep=1\n' 'effect=unexpected\n' out/effect WANT
+changed mutate-rewritten mutate 'sleep=1\n' 'effect=unexpected\n' out/effect WANT
 assert_eq "$(cat "$T/new/mutate-rewritten/out/effect")" "something else" "a key read after the sleep sees the rewritten file"
-changed read-removed read 'fds=out/started\nsleep=1\nexit=3\n' -
+changed read-removed read 'sleep=1\nexit=3\n' -
 assert_eq "$(cat "$T/new/read-removed/status")" 0 "a key read after the file is removed is no key"
 
 t_done test-fake-children
