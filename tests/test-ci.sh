@@ -780,6 +780,104 @@ if command -v jq >/dev/null 2>&1; then
   done
   RMUT=
   assert_contains "$out" "GitHub's record of run 7 could not be read whole; nothing re-run" "ci-retry-run-record: is named"
+
+  # A1–A14: an annotation proves something only when every page GitHub
+  # answered is a list and every member of it an annotation whose message is
+  # text; the pages are joined only then, in page and member order.
+  # paged DIR — job $NOTE_ID's annotations as the pages $NOTE_PAGES names, in
+  # order: @ is the list recorded for it, ! a request that fails, and any
+  # other page is itself, MSG in it standing for the recorded list's last
+  # member (a non-run's annotation; the verdict job's signal).
+  paged() {
+    local f=$1/repos_o_r_check-runs_${NOTE_ID}_annotations n=1 p m
+    [ -f "$f.json" ] || return 0
+    mv "$f.json" "$1/recorded"
+    m=$(jq -c '.[-1]' "$1/recorded")
+    for p in "${NOTE_PAGES[@]}"; do
+      case $p in
+        '@') cp "$1/recorded" "$f.$n.json" ;;
+        '!') touch "$f.$n.fail" ;;
+        *) printf '%s\n' "${p//MSG/$m}" >"$f.$n.json" ;;
+      esac
+      n=$((n + 1))
+    done
+    mv "$f.1.json" "$f.json"
+  }
+  # pagecase NAME ID PAGE... — mcase NAME, job ID's annotations as PAGEs.
+  pagecase() {
+    local name=$1
+    NOTE_ID=$2
+    shift 2
+    NOTE_PAGES=("$@")
+    HOOK=paged
+    mcase "$name"
+    HOOK=
+  }
+  # note NAME ID — ci_note itself, under the bash under test, over job ID's
+  # annotations as mcase NAME's completed run records them; sets nrc, nout.
+  note() {
+    mkdir -p "$T/note"
+    nout=$(PATH="$T/bin:$PATH" GH_FIXTURE=$T/api/$1 "$T_BASH" -c 'f=$(sed -n "/^ci_note() {/,/^}/p" "$1") && eval "$f" && ci_note o/r "$2" "$3"' _ "$REPO/tests/ci.sh" "$2" "$T/note" 2>/dev/null)
+    nrc=$?
+  }
+  # bad NAME PAGE... — a page set that is not GitHub's list of annotations,
+  # on each half: as job 103's, a non-run's proof, the verdict job leaves no
+  # signal and tests/ci.sh jobs prints nothing; as the completed verdict
+  # job's, which carry its signal, the controller's own reread fails. In
+  # both, ci_note fails and gives no text, and nothing is POSTed.
+  bad() {
+    local name=$1
+    shift
+    pagecase "$name" 103 "$@"
+    assert_eq "$msig" "" "ci-retry-pages-$name: [$*] as a non-run's annotation pages: the verdict job leaves no signal"
+    unread "$name"
+    assert_eq "$rc $posts" "1 " "ci-retry-pages-$name: and the controller, its verdict signalling, makes no POST"
+    assert_contains "$out" "could not be read whole" "ci-retry-pages-$name: its own reread failing"
+    note "$name" 103
+    assert_eq "$([ "$nrc" -ne 0 ] && echo fails) [$nout]" "fails []" "ci-note-pages-$name: ci_note fails and gives no text"
+    pagecase "$name-verdict" 106 "$@"
+    assert_eq "$msig" "$sig" "ci-retry-pages-$name-verdict: the verdict job, reading no annotation of its own, signals"
+    assert_eq "$rc $posts" "1 " "ci-retry-pages-$name-verdict: [$*] as the completed verdict job's annotation pages: the controller makes no POST"
+    assert_contains "$out" "could not be read whole" "ci-retry-pages-$name-verdict: its own reread failing"
+    note "$name-verdict" 106
+    assert_eq "$([ "$nrc" -ne 0 ] && echo fails) [$nout]" "fails []" "ci-note-pages-$name-verdict: ci_note fails and gives no text"
+  }
+
+  # A1, A2, A14: valid pages are kept, joined in page and member order, and
+  # prove what they say on each half.
+  pagecase a1 103 @
+  assert_eq "$msig · $posts" "$sig · $POST" "ci-retry-pages-a1: one valid page: the verdict signals, the controller makes its POST (A1)"
+  note a1 103
+  assert_eq "$nrc [$nout]" "0 [$NOTACQ]" "ci-note-pages-a1: ci_note gives its message"
+  pagecase a2 103 @ '[{"message":"on page 2"}]'
+  assert_eq "$(awk -F'\t' '$1 == 103 { print $7 }' "$T/jobs-a2.tsv")" "$NOTACQ | on page 2" "ci-jobs-pages-a2: two valid pages, both kept, in page order (A2)"
+  assert_eq "$msig · $posts" "$sig · $POST" "ci-retry-pages-a2: the verdict signals, the controller makes its POST (A2)"
+  pagecase a2-verdict 106 '[{"message":"Process completed with exit code 1."}]' '[MSG]'
+  note a2-verdict 106
+  assert_eq "$nrc [$nout]" "0 [Process completed with exit code 1. | $sig]" "ci-note-pages-a2-verdict: the verdict job's two pages, in page order (A2)"
+  assert_eq "$posts" "$POST" "ci-retry-pages-a2-verdict: its signal on the second page: the controller makes its POST (A2)"
+  pagecase a14 103 '[{"message":"first"},{"message":"second"}]' '[{"message":"third"},MSG]'
+  assert_eq "$(awk -F'\t' '$1 == 103 { print $7 }' "$T/jobs-a14.tsv")" "first | second | third | $NOTACQ" "ci-jobs-pages-a14: two pages of two, in page and member order (A14)"
+  note a14 103
+  assert_eq "$nrc [$nout]" "0 [first | second | third | $NOTACQ]" "ci-note-pages-a14: ci_note keeps that order (A14)"
+  assert_eq "$msig · $posts" "$sig · $POST" "ci-retry-pages-a14: the verdict signals, the controller makes its POST (A14)"
+
+  # A3–A13: a page, or a member of one, that is not GitHub's.
+  bad a3 @ null
+  bad a4 null @
+  bad a5 null
+  bad a6 @ MSG
+  bad a7 MSG @
+  bad a8-number @ 7
+  bad a8-text @ '"text"'
+  bad a8-boolean @ true
+  bad a9 '[MSG,null]'
+  bad a10 '[MSG,{"title":"no message"}]'
+  bad a11 '[MSG,{"message":null}]'
+  bad a12-number '[MSG,{"message":7}]'
+  bad a12-object '[MSG,{"message":{}}]'
+  bad a12-array '[MSG,{"message":[]}]'
+  bad a13 @ '!'
 else
   skip "the retry controller reads GitHub's API through gh --jq (no jq)"
 fi

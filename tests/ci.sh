@@ -416,10 +416,12 @@ ci_jobs() {
 }
 
 # ci_note REPO ID DIR — job ID's annotations, their messages joined by " | ",
-# every page read and projected whole; otherwise nothing, and a failure.
+# every page read whole, and every page and every member of it held to
+# GitHub's shape before any page is joined to another (a null page added to
+# a list would vanish); otherwise nothing, and a failure.
 ci_note() {
   gh api --paginate "repos/$1/check-runs/$2/annotations?per_page=100" >"$3/note" &&
-    jq -r -s 'add | if type == "array" and all(.[]; type == "object" and (.message | type) == "string") then map(.message | gsub("[\t\n]"; " ")) | join(" | ") else error("annotations that are not a list of messages") end' "$3/note"
+    jq -r -s 'if length > 0 and all(.[]; type == "array" and all(.[]; type == "object" and (.message | type) == "string")) then add | map(.message | gsub("[\t\n]"; " ")) | join(" | ") else error("annotation pages that are not lists of messages") end' "$3/note"
 }
 
 # The verdict job's own verdict step in each mode, as ci.yml names it, and the
