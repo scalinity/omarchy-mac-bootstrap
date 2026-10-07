@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 229
+expression: "text(&render(&m, &profile(\"color\"), w, h))"
+---
+ ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
+│  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│▍ Journey     ││ survey      resolve     asahi       shared      verify       │
+│  Machine     ││       profile     plan        omarchy     restore     done   │
+│  Status      ││ No stage is derived yet: every station is later.             │
+│  Health      ││                                                              │
+│  Logs        ││ ▍Where it stands                                             │
+│  Plan        ││   The core gave no next step for this session.               │
+│              ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
+│              ││              process it started may still be running.        │
+│              ││              Restart this Mac (or this Linux system), then   │
+│              ││              run the tool again.                             │
+│              ││                                                              │
+│              ││ ▍Facts                                                       │
+│              ││   Interface  the foundation: test actions over fixtures      │
+│              ││   Fixture    mac-m1pro-1tb-roomy                             │
+│              ││   Operation  ✗ test.mutate unsupervised                      │
+│              ││                                                              │
+│              ││ ▍Actions                                                     │
+│              ││ ❯ Read the fixture (test)   read                            ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help      may act · 1 action · fixture

@@ -1,0 +1,35 @@
+---
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
+---
+ ◒ Journey ───────────────────────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────────────────────────┐
+│  Welcome     ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·        │
+│▍ Journey     ││ survey  profile resolve plan    asahi   omarchy shared  restore verify  done     │
+│  Machine     ││ No stage is derived yet: every station is later.                                 │
+│  Status      ││                                                                                  │
+│  Health      ││ ▍Where it stands                                                                 │
+│  Logs        ││   Run ./omarchy-bootstrap to survey this Mac and plan storage.                   │
+│  Plan        ││                                                                                  │
+│              ││ ▍Facts                                                                           │
+│              ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
+│              ││   Asahi install   none                                                           │
+│              ││   Safe Linux max  654 GB                                                         │
+│              ││   Surveyed        not yet · recorded                                             │
+│              ││   Plan            not yet · recorded                                             │
+│              ││                                                                                  │
+│              ││ ▍Actions                                                                         │
+│              ││   Nothing is available now.                                                      │
+│              ││                                                                                  │
+│              │└──────────────────────────────────────────────────────────────────────────────────┘
+│              │┌ This machine ────────────────────────────────────────────────────────────────────┐
+│              ││ Platform      macos                                                              │
+│              ││ Architecture  arm64                                                              │
+│              ││ Model         MacBookPro18,1                                                     │
+│              ││ Chip          Apple M1 Pro                                                       │
+│              ││ Memory        17179869184                                                        │
+│              ││ macOS         14.6                                                               │
+└──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit       read-only · no system changes · fixture

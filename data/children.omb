@@ -1,0 +1,5 @@
+omb-children 1
+child	action=test.read	cmd=tests/children/fake-read	class=read	stdout=functional	stderr=diagnostics	tty=none	detaches=no	owner=	check=
+child	action=test.mutate	cmd=tests/children/fake-mutate	class=mutating	stdout=null	stderr=null	tty=none	detaches=no	owner=	check=
+child	action=test.handoff	cmd=tests/children/fake-handoff	class=handoff	stdout=functional	stderr=functional	tty=needs	detaches=no	owner=	check=
+seal	sha256=c155fbfb7f96707035a850c19659ee552dbaf69f9c85735fc2ad3d64ef2d9249

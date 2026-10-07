@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 373
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ Logs ──────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Logs ────────────────────────────────────────────────────────┐
+│  Welcome     ││  Tool log   ▍Diagnostics                                     │
+│  Journey     ││                                                              │
+│  Machine     ││   request 1:                                                 │
+│  Status      ││   childtest.readexit=000kept=00041discarded=0                │
+│  Health      ││   fake read child: a line of diagnostics                     │
+│▍ Logs        ││                                                              │
+│  Plan        ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ↑↓ scroll  Tab the tool's log  ? help            may act · 3 actions · fixture

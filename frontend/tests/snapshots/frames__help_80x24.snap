@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 376
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ Journey · Keys ────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Keys ────────────────────────────────────────────────────────┐
+│  Welcome     ││   ⏎           select                                         │
+│▍ Journey     ││   ↑↓          move                                           │
+│  Machine     ││   k j         move (vim)                                     │
+│  Status      ││   PgUp PgDn   scroll                                         │
+│  Health      ││   r           refresh                                        │
+│  Logs        ││   L           logs                                           │
+│  Plan        ││   ?           help                                           │
+│              ││   q           quit                                           │
+│              ││   ← →         the rail or the workspace                      │
+│              ││   Tab         move focus                                     │
+│              ││   esc         back                                           │
+│              ││   s           the sidebar, at narrow widths                  │
+│              ││   Ctrl-C      quit when idle, cancel a request that can be   │
+│              ││   Ctrl-Z      suspend (not while a request runs)             │
+│              ││                                                              │
+│              ││   The mouse is not captured: select text as usual.           │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ esc back  ↑↓ scroll                              may act · 3 actions · fixture

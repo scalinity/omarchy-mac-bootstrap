@@ -1,0 +1,15 @@
+---
+source: tests/frames.rs
+expression: text(&b)
+---
+
+
+
+
+
+
+
+
+
+
+      terminal too small — needs 60x20, this is 59x20

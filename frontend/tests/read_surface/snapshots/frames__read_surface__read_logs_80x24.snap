@@ -1,0 +1,29 @@
+---
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
+---
+ ◒ Logs ──────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Logs ────────────────────────────────────────────────────────┐
+│  Welcome     ││ ▍Tool log    Diagnostics                                     │
+│  Journey     ││   State   /Users/alex/.local/state/omarchy-mac-bootstrap     │
+│  Machine     ││   Logs    …sers/alex/.local/state/omarchy-mac-bootstrap/logs │
+│  Status      ││   Source  omarchy-bootstrap-20261004.log                     │
+│  Health      ││   Lines   3                                                  │
+│▍ Logs        ││   the selected log's last lines, as `logs` shows them        │
+│  Plan        ││ ❯ info   [SURVEY]  reading the disk                          │
+│              ││   warn   [PLAN]    Linux below recommended                   │
+│              ││                    not a log-shaped line                     │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││ rows 1–3 of 3 · generation 545e054a9742                      │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ↑↓ move  / filter  ? help              read-only · no system changes · fixture

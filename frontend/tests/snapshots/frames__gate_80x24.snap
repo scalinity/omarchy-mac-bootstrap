@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 247
+expression: "text(&render(&m, &profile(\"color\"), w, h))"
+---
+ ◒ Journey · Gate ────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+ ▍Change the fixture (test)
+
+   Does      Runs the fake mutating child under supervision.
+   Touches   the fixture's test state folder only
+   Terminal  not needed: it runs with no terminal
+   Next      nothing asks after this
+
+   Type test to continue    tes▏
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ⏎ continue (exact word)  esc cancel              may act · 3 actions · fixture

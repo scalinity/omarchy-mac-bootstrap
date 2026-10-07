@@ -1,0 +1,5 @@
+omb-frontend-lock 1
+frontend	version=0.1.0	proto=1	source_commit=54c3770f99c2affdf63ceaf2d46990cb3d9fd94b	inputs_digest=3accc9ce9fd188cb599cbe7d805ac3eda7c29205fead5df0beb015f8dfa41aaa	rust=1.88.0
+artifact	target=aarch64-apple-darwin	url=https://github.com/scalinity/omarchy-mac-bootstrap/releases/download/frontend-v0.1.0/omb-tui-0.1.0-aarch64-apple-darwin	size=991872	sha256=c651bdfe0271e2c8217741213a42de21a0164d0e7cfdc4716f6b4720ab1ee871	minos=13.5	glibc_max=	interp=	align_min=
+artifact	target=aarch64-unknown-linux-gnu	url=https://github.com/scalinity/omarchy-mac-bootstrap/releases/download/frontend-v0.1.0/omb-tui-0.1.0-aarch64-unknown-linux-gnu	size=987904	sha256=5fbd89cc7c5ff74fa3289e6d006d5f3769b4a785a04b0e925e38a7148fbe3ab9	minos=	glibc_max=2.39	interp=/lib/ld-linux-aarch64.so.1	needed=libgcc_s.so.1	needed=libm.so.6	needed=libc.so.6	align_min=65536
+seal	sha256=5cb358224f7defb8ebe47c78eb3967321278aa5c39633302b242e299d87d278e

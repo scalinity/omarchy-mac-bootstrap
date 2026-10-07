@@ -1,0 +1,25 @@
+---
+source: tests/read_surface/mod.rs
+assertion_line: 1051
+expression: f
+---
+ ◒ Journey ───────────────────────────────────────── v0.2.0
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan
+┌ Journey ─────────────────────────────────────────────────┐
+│ · · · · · · · · · ·                                      │
+│ No stage is derived yet: every station is later.         │
+│                                                          │
+│ ▍Where it stands                                         │
+│   Run ./omarchy-bootstrap to survey this Mac and plan    │
+│   storage.                                               │
+│                                                          │
+│ ▍Facts                                                   │
+│   Machine         MacBook Pro (16-inch, M1 Pro, 2021)    │
+│   Asahi install   none                                   │
+│   Safe Linux max  654 GB                                 │
+│   Surveyed        not yet · recorded                     │
+│   Plan            not yet · recorded                     │
+│                                                          │
+│ ▍Actions                                                ↓│
+└──────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  ? help   read-only · fixture

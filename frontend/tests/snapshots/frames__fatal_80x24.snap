@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 344
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ No answer ─────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ No answer ───────────────────────────────────────────────────┐
+│  Welcome     ││                                                              │
+│  Journey     ││   ✗ The core could not be started (no such file).            │
+│  Machine     ││                                                              │
+│  Status      ││   r try again   q continue in the text interface             │
+│  Health      ││   ./omarchy-bootstrap status shows where the machine is.     │
+│  Logs        ││                                                              │
+│  Plan        ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ r try again  q leave

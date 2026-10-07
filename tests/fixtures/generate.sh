@@ -88,6 +88,8 @@ mac() {
 $entries
 EOF
   put "$d/cmd/uname_s" Darwin
+  # The boot session a process identity is read in (docs/PROTOCOL.md → §3).
+  put "$d/cmd/bootsession" 5E1D0B00-7A3C-4F21-9D6E-0000000000B1
   put "$d/cmd/uname_m" "$arch"
   put "$d/cmd/id_u" 501
   put "$d/cmd/id_un" alex
@@ -318,6 +320,8 @@ linux() {
   rm -rf "$d"
   mkdir -p "$d/cmd" "$d/net" "$d/root/proc/device-tree" "$d/root/etc"
   put "$d/cmd/uname_s" Linux
+  # The boot session a process identity is read in (docs/PROTOCOL.md → §3).
+  put "$d/root/proc/sys/kernel/random/boot_id" 5e1d0b00-7a3c-4f21-9d6e-0000000000b1
   put "$d/cmd/uname_m" aarch64
   put "$d/cmd/uname_r" 6.16.8-asahi-1-1-ARCH
   put "$d/cmd/id_u" "$uid"

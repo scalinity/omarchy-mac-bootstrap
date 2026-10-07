@@ -1,0 +1,75 @@
+#!/bin/sh
+# The fake mutating child of M14 gate 1 (data/children.omb → test.mutate):
+# writes WANT into EFFECT, a file in the test state folder the core names.
+# Its behaviour comes from $OMB_FIXTURE/test-children/mutate (key=value).
+# Runs with no terminal and its output going nowhere, as a mutating child must.
+effect=$1 want=$2
+conf=${OMB_FIXTURE:-/nonexistent}/test-children/mutate
+# get KEY — GOT: the value on KEY's last line of the fixture's file, read when
+# asked (a test rewrites the file while a killed core's child still sleeps),
+# or empty; 1 when there is no file. The shell reads it itself, so a lookup
+# starts no process.
+get() {
+  GOT=""
+  [ -f "$conf" ] || return 1
+  [ -r "$conf" ] || return 0
+  while IFS= read -r __get_line || [ -n "$__get_line" ]; do
+    case $__get_line in "$1"=*) GOT=${__get_line#"$1"=} ;; esac
+  done <"$conf"
+}
+# own PID — record a process this child started, with its start time, in the
+# file the fixture names (pids=): a test signals only what it can name so.
+own() {
+  get pids && p=$GOT && [ -n "$p" ] || return 0
+  printf '%s %s\n' "$1" "$(LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1 = $1; print}')" >>"$p"
+}
+
+get fds
+v=$GOT
+[ -n "$v" ] && "$(dirname "$0")/probe-fds" >"$v"
+get grandchild
+v=$GOT
+[ -n "$v" ] && {
+  get grandchild_fds
+  f=$GOT
+  sh -c 'if [ -n "$1" ]; then "$2/probe-fds" >"$1"; fi; exec sleep "$0"' "$v" "$f" "$(dirname "$0")" &
+  own $!
+}
+get out_bytes
+v=$GOT
+[ -n "$v" ] && { head -c "$v" /dev/zero; head -c "$v" /dev/zero >&2; }
+get sleep
+v=$GOT
+[ -n "$v" ] && sleep "$v"
+get effect
+case "$GOT" in
+  none) ;;
+  unexpected) printf 'something else' >"$effect" ;;
+  *) printf '%s' "$want" >"$effect" ;;
+esac
+# A descendant left in the process group: a worker still present.
+get linger
+v=$GOT
+[ -n "$v" ] && {
+  sleep "$v" &
+  own $!
+}
+# A descendant that leaves the group (its own session) and keeps writing:
+# invisible to the group snapshot, which is why the registry, not
+# inspection, is the guarantee.
+get escape
+v=$GOT
+[ -n "$v" ] && {
+  get escape_out
+  perl -e '
+  use POSIX ();
+  exit 0 if fork;
+  POSIX::setsid();
+  my ($secs, $out) = @ARGV;
+  for (1 .. $secs * 10) { open(my $f, ">>", $out) or exit 1; print $f "x"; close $f; select(undef, undef, undef, 0.1) }
+' "$v" "$GOT"
+}
+get exit
+v=$GOT
+[ -n "$v" ] && exit "$v"
+exit 0

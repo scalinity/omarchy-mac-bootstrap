@@ -1,0 +1,45 @@
+---
+source: tests/frames.rs
+assertion_line: 221
+expression: text(&b)
+---
+ ◒ Journey ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ This machine ────────────────┐
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ This session's snapshot      │
+│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ holds no machine facts.      │
+│  Machine             ││       profile     plan        omarchy     restore     done   │└──────────────────────────────┘
+│  Status              ││ No stage is derived yet: every station is later.             │
+│  Health              ││                                                              │
+│  Logs                ││ ▍Where it stands                                             │
+│  Plan check          ││   The core gave no next step for this session.               │
+│                      ││                                                              │
+│                      ││ ▍Facts                                                       │
+│                      ││   Interface  the foundation: test actions over fixtures      │
+│                      ││   Fixture    mac-m1pro-1tb-roomy                             │
+│                      ││   Operation  ✓ none                                          │
+│                      ││                                                              │
+│                      ││ ▍Actions                                                     │
+│                      ││ ❯ Read the fixture (test)         read                       │
+│                      ││   Change the fixture (test)       act · type test            │
+│                      ││   Hand over the terminal (test)   act · handoff · type test  │
+│                      ││   Runs the fake read child: its output is shown, its         │
+│                      ││   diagnostics kept within their limits.                      │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                                     may act · 3 actions · fixture

@@ -15,6 +15,9 @@ afterwards, and records.
 - `MILESTONES.md` — mark a milestone done only when its acceptance criteria hold.
   Its accepted baseline names the reviewed commit every later change is a
   delta against; new work does not inherit that review.
+- `docs/DECISIONS.md` — the product expansion (M14–M18): its decisions, the
+  review questions they settle, and which design document governs each part;
+  read it, and the gates in `MILESTONES.md`, before building any of them.
 
 ## Rules
 
@@ -116,6 +119,21 @@ afterwards, and records.
 - Linux progress is re-derived from the machine (Omarchy Mac's marker, runtime
   version, display manager, setup conf, migration conf and marker); recorded
   state is history only.
+- One command substitution per command in the code the core runs
+  (`lib/core.sh`, `lib/records.sh`): Bash 5.2 loses a trap that fires while a
+  command holding two side by side is expanded (`tests/bash-trap-comsub.sh`);
+  `test-static` holds both files to it.
+- A decoded record value goes into a variable with `rec_get_into`:
+  `$(rec_get …)` drops trailing newlines. On Bash 3.2, `printf -v NAME '%b'
+  ''` assigns the previous `printf -v`'s output; an empty value is assigned
+  with `'%s'`.
+- Tests signal only processes they own — a PID recorded at its start and held
+  to its start time (`t_signal`), or a group they made; never `pkill`,
+  `pgrep` or `killall`, which reach the developer's own programs too.
+- A new `tests/test-*.sh` or diagnostics unit goes into
+  `tests/ci-manifest.tsv` in the same commit: `test-ci` fails until each lane
+  that runs every suite runs it, and the FULL guard accepts only what the
+  manifest names.
 - Test seams `OMB_FIXTURE`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER` (the machine
   after a recorded command) and `OMB_TEST_RC` (that command's exit status) are
   refused as root and never execute anything. A recorded `sudo -v` changes
@@ -125,12 +143,22 @@ afterwards, and records.
 ## Verify
 
 ```bash
-tests/run.sh                         # syntax, shellcheck (SHELLCHECK=path if not on PATH), all tests; ~15 min
+tests/run.sh                         # syntax, shellcheck (SHELLCHECK=path if not on PATH), all tests; ~30 min
 OMB_STRICT_SKIPS=1 tests/run.sh      # as CI: any skip fails (Linux CI allows only "(no plutil)")
 OMB_TEST_BASH=/path/to/bash5 tests/run.sh
 tests/fixtures/generate.sh           # after changing fixture shapes; commit the output
 OMB_FIXTURE=$PWD/tests/fixtures/<name> ./omarchy-bootstrap --dry-run
+# The frontend, from frontend/, with CARGO_TARGET_DIR outside the repository:
+cargo fmt --check && cargo clippy --locked --all-targets --features test-hooks -- -D warnings
+OMB_TEST_BASH=/bin/bash cargo test --locked --features test-hooks   # layers A–H, the PTY tests included
+tests/frontend-inputs.sh clean | digest | closure DIR BUILD | compat-macos FILE   # the build-input and artifact rules CI and the release apply (BUILD: the build's --message-format=json output)
 ```
 
-Report an unrun check as unrun. `.github/workflows/ci.yml` runs Linux (bash
-5, ShellCheck) and macOS (`/bin/bash` 3.2) jobs.
+Report an unrun check as unrun. `.github/workflows/ci.yml` runs FAST on a
+push (feedback, never acceptance evidence) and FULL when dispatched
+(`gh workflow run ci.yml --ref BRANCH -f candidate=SHA`) or on main: every
+shard of `tests/ci-manifest.tsv` (macOS `/bin/bash` 3.2, Linux bash 5 with
+ShellCheck, GNU Bash 5.3.15 on aarch64, the frontend on Linux x86_64 and both
+arm64 runners), then a completeness guard. Only a green FULL guard at the
+exact SHA is acceptance evidence. `release.yml` runs only for a
+`frontend-v*` tag.

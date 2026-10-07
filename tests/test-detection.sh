@@ -9,6 +9,66 @@ echo "test-detection"
 OMB_STATE_DIR=$(t_tmp)
 state_init
 
+# --- PLIST-M01: real helper, deterministic plutil transport on every platform ---
+plist_test_dir=$(t_tmp)
+mkdir "$plist_test_dir/bin"
+cat >"$plist_test_dir/bin/plutil" <<'PLUTIL'
+#!/bin/sh
+printf x >>"$PLIST_HITS"
+printf '%s\n' "$@" >"$PLIST_ARGS"
+cat >"$PLIST_INPUT"
+cat "$PLIST_VALUE"
+exit "$PLIST_STATUS"
+PLUTIL
+chmod +x "$plist_test_dir/bin/plutil"
+export PLIST_HITS=$plist_test_dir/hits PLIST_ARGS=$plist_test_dir/args
+export PLIST_INPUT=$plist_test_dir/input PLIST_VALUE=$plist_test_dir/value PLIST_STATUS
+printf '%s\n' -extract Test.key raw -o - - >"$plist_test_dir/want.args"
+printf '%s' plist-input >"$plist_test_dir/want.input"
+plist_case() {
+  local name=$1 st
+  PLIST_STATUS=$2
+  printf '%s' "$3" >"$PLIST_VALUE"
+  : >"$PLIST_HITS"
+  PATH="$plist_test_dir/bin:$PATH" plist_get plist-input Test.key >"$plist_test_dir/out"
+  st=$?
+  assert_rc "$st" "$PLIST_STATUS" "PLIST-M01 $name: exact process status"
+  assert_eq "$(cat "$PLIST_HITS")" x "PLIST-M01 $name: exactly one extraction"
+  if cmp -s "$PLIST_ARGS" "$plist_test_dir/want.args"; then ok; else fail "PLIST-M01 $name: extraction arguments"; fi
+  if cmp -s "$PLIST_INPUT" "$plist_test_dir/want.input"; then ok; else fail "PLIST-M01 $name: original input"; fi
+  if [ "$PLIST_STATUS" = 0 ]; then
+    if cmp -s "$plist_test_dir/out" "$PLIST_VALUE"; then ok; else fail "PLIST-M01 $name: successful bytes preserved"; fi
+  else
+    assert_empty_file "$plist_test_dir/out" "PLIST-M01 $name: no failed stdout"
+  fi
+  printf 'PLIST-M01 %s: status=%s hits=%s stdout-hex=' "$name" "$st" "$(cat "$PLIST_HITS")"
+  od -An -tx1 "$plist_test_dir/out" | tr -d '\n'
+  printf '\n'
+}
+plist_case diagnostic 7 '<stdin>: Could not extract value, error: no value at key path'
+plist_case device-failure 9 disk9s2
+plist_case integer-failure 23 12345
+plist_case filesystem-failure 65 exfat
+plist_case ordinary 0 disk0s2
+plist_case false 0 false
+plist_case zero 0 0
+plist_case empty-success 0 ''
+plist_case spaces-quotes-backslashes 0 '  "quoted" \\path\file  '
+plist_case unicode 0 'café 雪'
+plist_case multiline 0 $'first\nsecond\n\n  \t\n\n'
+plist_case success-before-failure 0 $'previous value\n\n'
+plist_case failure-after-success 17 $'new failure diagnostic\n'
+: >"$PLIST_HITS"
+PATH="$plist_test_dir/bin:$PATH" plist_get '' Test.key >"$plist_test_dir/out"
+assert_rc "$?" 1 'PLIST-M01 empty input: existing failure status'
+assert_empty_file "$plist_test_dir/out" 'PLIST-M01 empty input: no stdout'
+assert_empty_file "$PLIST_HITS" 'PLIST-M01 empty input: no extraction'
+unset PLIST_HITS PLIST_ARGS PLIST_INPUT PLIST_VALUE PLIST_STATUS
+if [ "${1:-}" = --plist-helper-only ]; then
+  t_done test-detection-plist
+  exit "$?"
+fi
+
 # --- Device table ------------------------------------------------------------
 device_by_model MacBookPro18,1
 assert_eq "$DEV_BOARD $DEV_SOC $DEV_CHIP $DEV_TIER" "j316s t6000 M1 Pro supported" "M1 Pro 16-inch"
@@ -62,6 +122,8 @@ if t_plutil "macOS detection and planning"; then
   assert_eq "$MAC_MODEL_ID $DEV_TIER" "MacBookPro18,1 supported" "roomy model"
   assert_eq "$MAC_CHIP" "Apple M1 Pro" "chip from system_profiler"
   assert_eq "$MAC_DISK $MAC_DISK_INTERNAL $MAC_STORE $MAC_CONTAINER" "disk0 true disk0s2 disk3" "boot disk derived from /"
+  assert_eq "$MAC_STORE" disk0s2 'PLIST-M01 single-store: primary identity'
+  assert_eq "$MAC_STORES_EXTRA" '' 'PLIST-M01 single-store: optional second store is absent'
   assert_eq "$MAC_DISK_SIZE" 1000555581440 "disk size"
   assert_eq "$MAC_CONTAINER_SIZE $MAC_CONTAINER_FREE" "994610155520 700000000000" "container size/free"
   assert_eq "$MAC_APPLE_SYS" $((576716800 + 5368664064)) "Apple system partitions"
@@ -124,6 +186,8 @@ if t_plutil "macOS detection and planning"; then
   mac_case mac-geo-multi-apfs
   assert_contains "$(mac_blockers)" "Another APFS container is on the internal disk (disk0s4)" "a second APFS container blocks planning"
   mac_case mac-geo-no-limits
+  assert_eq "$MAC_LIMIT_PREF" '' 'PLIST-M01 absent limits remain unknown'
+  assert_eq "$PLAN_LIMITS_KNOWN" 0 'PLIST-M01 unknown limits are not zero/usable limits'
   assert_contains "$(mac_blockers)" "did not report the resize limits of disk3" "unknown resize limits block a resize, with the reason"
   fx=$(t_variant mac-m1pro-1tb-roomy)
   sed -i.bak 's#<key>Internal</key><true/>#<key>Internal</key><false/>#' "$fx/cmd/diskutil_info_disk0s2" && rm -f "$fx/cmd/"*.bak
@@ -132,7 +196,56 @@ if t_plutil "macOS detection and planning"; then
   fx=$(t_variant mac-m1pro-1tb-roomy)
   sed -i.bak 's#</array><key>Internal</key>#<dict><key>APFSPhysicalStore</key><string>disk4s2</string></dict></array><key>Internal</key>#' "$fx/cmd/diskutil_info_root" && rm -f "$fx/cmd/"*.bak
   mac_case "$fx"
+  assert_eq "$MAC_STORE" disk0s2 'PLIST-M01 true two-store: primary identity'
+  assert_eq "$MAC_STORES_EXTRA" disk4s2 'PLIST-M01 true two-store: actual second identity'
   assert_contains "$(mac_blockers)" "more than one physical store" "a multi-store container blocks planning"
+
+  # Native extraction except one status-controlled failure, through the real
+  # helper. Plausible stdout must never satisfy required downstream fields.
+  plist_native_dir=$(t_tmp)
+  mkdir "$plist_native_dir/bin"
+  export PLIST_NATIVE
+  PLIST_NATIVE=$(command -v plutil)
+  cat >"$plist_native_dir/bin/plutil" <<'PLUTIL'
+#!/bin/sh
+if [ "$2" = "$PLIST_FAIL_KEY" ]; then
+  cat >/dev/null
+  printf '%s' "$PLIST_FAIL_VALUE"
+  exit 31
+fi
+exec "$PLIST_NATIVE" "$@"
+PLUTIL
+  chmod +x "$plist_native_dir/bin/plutil"
+  export PLIST_FAIL_KEY PLIST_FAIL_VALUE
+  PLIST_FAIL_KEY=APFSPhysicalStores.0.APFSPhysicalStore PLIST_FAIL_VALUE=disk9s2
+  PATH="$plist_native_dir/bin:$PATH" mac_case mac-m1pro-1tb-roomy
+  assert_eq "$MAC_STORE" '' 'PLIST-M01 required first store failure is not device data'
+  assert_eq "$GEO_OK" 0 'PLIST-M01 missing first store blocks exact geometry'
+  for key in Size DeviceBlockSize AllDisksAndPartitions.0.Partitions.0.DeviceIdentifier \
+    PartitionMapPartitionOffset AllDisksAndPartitions.0.Partitions.0.Size \
+    AllDisksAndPartitions.0.Partitions.0.DiskUUID; do
+    PLIST_FAIL_KEY=$key PLIST_FAIL_VALUE=12345
+    PATH="$plist_native_dir/bin:$PATH" mac_case mac-m1pro-1tb-roomy
+    assert_eq "$GEO_OK" 0 "PLIST-M01 required $key failure blocks geometry"
+    assert_contains "$(mac_blockers)" 'could not be read exactly' "PLIST-M01 required $key: existing owner blocks"
+  done
+  PLIST_FAIL_KEY=AllDisksAndPartitions.0.Partitions.3.Content PLIST_FAIL_VALUE='phantom partition'
+  PATH="$plist_native_dir/bin:$PATH" mac_case mac-m1pro-1tb-roomy
+  assert_eq "$GEO_OK" 1 'PLIST-M01 failed terminal enumeration stays at the true boundary'
+  assert_eq "$(printf '%s' "$MAC_PARTS" | grep -c .)" 3 'PLIST-M01 no phantom partition from failed stdout'
+  PLIST_FAIL_KEY=AllDisksAndPartitions.0.Partitions.1.Content
+  PATH="$plist_native_dir/bin:$PATH" mac_case mac-m1pro-1tb-roomy
+  assert_eq "$GEO_OK" 0 'PLIST-M01 missing interior Content fails completeness'
+  assert_contains "$GEO_ERR" '3 partitions' 'PLIST-M01 real count catches an early enumeration end'
+  PLIST_FAIL_KEY=MinimumSizePreferred PLIST_FAIL_VALUE=0
+  PATH="$plist_native_dir/bin:$PATH" mac_case mac-m1pro-1tb-roomy
+  assert_eq "$MAC_LIMIT_PREF/$PLAN_LIMITS_KNOWN" '/0' 'PLIST-M01 failed limit does not become known zero'
+  assert_contains "$(mac_blockers)" 'did not report the resize limits' 'PLIST-M01 resize requiring unknown authority is blocked'
+  PATH="$plist_native_dir/bin:$PATH" mac_case mac-m1-free-space
+  assert_eq "$MAC_LIMIT_PREF/$PLAN_LIMITS_KNOWN" '/0' 'PLIST-M01 verified gap keeps resize unknown'
+  assert_eq "$(mac_blockers)" '' 'PLIST-M01 verified existing gap remains usable'
+  [ "$PLAN_LINUX_MAX" -gt 0 ] && ok || fail 'PLIST-M01 existing gap is still planned'
+  unset PLIST_NATIVE PLIST_FAIL_KEY PLIST_FAIL_VALUE
 
   # Through the real entrypoint (set -u): an unreadable layout stops with
   # its reason instead of failing on an unset variable.

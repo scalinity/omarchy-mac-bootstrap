@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Explicit benchmark-only entry. Ordinary tests never invoke timing.
+set -eu
+cd "$(dirname "$0")/.." || exit 1
+usage() { echo 'usage: bench/run --list OUTPUT | --smoke OUTPUT | --full --ack-o1-preparation OUTPUT' >&2; exit 2; }
+case "${1:-}" in
+  --list | --smoke) [ "$#" = 2 ] || usage; mode=${1#--}; output=$2 ;;
+  --full)
+    if [ "$#" != 3 ] || [ "$2" != --ack-o1-preparation ]; then usage; fi
+    mode=full; output=$3 ;;
+  *) usage ;;
+esac
+case "$output" in /*) ;; *) echo 'OUTPUT must be an absolute path outside the repository' >&2; exit 2 ;; esac
+parent=$(cd "$(dirname "$output")" && pwd -P) || exit 2
+output=$parent/$(basename "$output")
+case "$output" in "$PWD" | "$PWD"/*) echo 'OUTPUT must be outside the repository' >&2; exit 2 ;; esac
+[ ! -e "$output" ] || { echo 'OUTPUT already exists' >&2; exit 2; }
+# Existing suite scratch is a conservative interlock. Do not delete it here.
+if [ "$mode" != list ] && [ -d tests/.tmp ]; then
+  echo 'refusing timing while tests/.tmp exists; finish the suite and its cleanup first' >&2
+  exit 2
+fi
+if [ "$mode" != list ] && [ -n "$(git status --porcelain -- bench frontend lib data release omarchy-bootstrap tests/fixtures tests/frontend-inputs.sh)" ]; then
+  echo 'refusing timing with uncommitted benchmark/source inputs' >&2
+  exit 2
+fi
+: "${CARGO_TARGET_DIR:=${TMPDIR:-/tmp}/omb-benchmark-target}"
+export CARGO_TARGET_DIR
+# Keep benchmark test symbols: stripping the release proc-macro dylib makes
+# rustc 1.88 report E0463 on this Mac. The production profile is untouched.
+export CARGO_PROFILE_RELEASE_STRIP=none
+export OMB_BENCH_MODE=$mode OMB_BENCH_OUTPUT=$output
+if [ "$mode" = full ]; then export OMB_BENCH_FULL_ACK=measurement-preparation-no-signoff; fi
+cd frontend
+exec cargo test --release --locked --offline --test contract benchmark::measurement -- --ignored --exact --nocapture --test-threads=1

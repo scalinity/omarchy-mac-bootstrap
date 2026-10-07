@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 229
+expression: "text(&render(&m, &profile(\"color\"), w, h))"
+---
+ ◒ Journey ───────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan
+┌ Journey ─────────────────────────────────────────────────┐
+│ · · · · · · · · · ·                                      │
+│ No stage is derived yet: every station is later.         │
+│                                                          │
+│ ▍Where it stands                                         │
+│   The core gave no next step for this session.           │
+│   ✗ blocked  The outcome of test.mutate is unknown and   │
+│              a process it started may still be running.  │
+│              Restart this Mac (or this Linux system),    │
+│              then run the tool again.                    │
+│                                                          │
+│ ▍Facts                                                   │
+│   Interface  the foundation: test actions over fixtures  │
+│   Fixture    mac-m1pro-1tb-roomy                         │
+│   Operation  ✗ test.mutate unsupervised                  │
+│                                                          │
+│ ▍Actions                                                 │
+│ ❯ Read the fixture (test)   read                         │
+│   Runs the fake read child.                              │
+└──────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture

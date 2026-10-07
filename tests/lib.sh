@@ -153,6 +153,97 @@ t_plan_answers() {
   )
 }
 
+# Signals in tests reach only processes a test owns: a PID recorded when the
+# process was started, held to that process's start time, or a process group
+# the test made. Never a name or a command line — those match the
+# developer's own programs as well (test-owned-signal-only).
+
+# t_started PID — PID's start time as lib/state.sh reads it (C locale,
+# whitespace squeezed); empty when there is no such process.
+t_started() { LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1 = $1; print}'; }
+
+# t_wait_gone PID SECONDS — wait until no process has PID, read with ps and
+# never signalled, for at most SECONDS: the fixed wait it replaces, so it is
+# never longer and ends as soon as the process has. With no PID to watch, the
+# whole fixed wait.
+t_wait_gone() {
+  local i=0 n=$(($2 * 20))
+  if [ -z "$1" ]; then
+    sleep "$2"
+    return
+  fi
+  while [ -n "$(ps -p "$1" -o pid= 2>/dev/null)" ] && [ "$i" -lt "$n" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+}
+
+# t_signal SIG PID START — signal PID while it is still the process that
+# started at START; 1 when it is not (gone, or its PID now another's).
+t_signal() {
+  case "$2" in '' | *[!0-9]*) return 1 ;; esac
+  if [ -z "$3" ] || [ "$(t_started "$2")" != "$3" ]; then return 1; fi
+  kill -"$1" "$2" 2>/dev/null
+}
+
+# t_signal_owned SIG FILE — t_signal every "PID START" line of FILE: the
+# processes a fake child recorded as it started them.
+t_signal_owned() {
+  local line
+  [ -f "$2" ] || return 0
+  while IFS= read -r line; do
+    t_signal "$1" "${line%% *}" "${line#* }"
+  done <"$2"
+  return 0
+}
+
+# t_child PPID PREFIX — "PID START" of a child of PPID (a process the test
+# started, or one it holds the identity of) whose command line begins with
+# PREFIX; empty when there is none.
+t_child() {
+  local pid
+  pid=$(ps -axo pid=,ppid=,command= 2>/dev/null | awk -v p="$1" -v c="$2" '
+    $2 == p { pid = $1; $1 = ""; $2 = ""; sub(/^ +/, ""); if (index($0, c) == 1) { print pid; exit } }')
+  [ -n "$pid" ] && printf '%s %s\n' "$pid" "$(t_started "$pid")"
+}
+
+# t_decoy TEXT — an unrelated process whose command line begins with TEXT:
+# a sleep with TEXT as its name, in a process group of its own (so no core
+# counts it as a worker). A kill by name or command line would reach it;
+# t_decoys_survive proves nothing a suite does has
+# (test-unrelated-matching-process-survives).
+T_DECOYS=""
+t_decoy() {
+  local pid
+  perl -e 'setpgrp(0, 0); exec { "/bin/sleep" } $ARGV[0], "3600" or exit 1' "$1" &
+  pid=$!
+  T_DECOYS="$T_DECOYS$pid $(t_started "$pid")
+"
+}
+
+# t_decoys_survive SUITE — each decoy is still the process it was; then the
+# decoys' groups are ended.
+t_decoys_survive() {
+  local line pid n=0 gone=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    pid=${line%% *} n=$((n + 1))
+    if [ "$(t_started "$pid")" = "${line#* }" ]; then
+      kill -TERM -- "-$pid" 2>/dev/null
+    else
+      gone=$((gone + 1))
+    fi
+  done <<EOF
+$T_DECOYS
+EOF
+  if [ "$n" -gt 0 ] && [ "$gone" = 0 ]; then
+    ok
+  else
+    fail "test-unrelated-matching-process-survives: $gone of $n processes whose command lines match what $1 runs were signalled"
+  fi
+  T_DECOYS=""
+}
+
 t_done() {
   printf '%s: %d passed, %d failed, %d skipped\n' "$1" "$T_PASS" "$T_FAIL" "$T_SKIP"
   [ "$T_FAIL" = 0 ]

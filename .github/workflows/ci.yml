@@ -1,80 +1,680 @@
 # Checks only: nothing here touches a disk. Every test runs against recorded
 # machine fixtures, with shims in front of every disk, boot and package
 # command, and records the commands it would run instead of running them.
+#
+# Two modes (docs/TESTING.md → CI; tests/ci.sh decides). FULL — a dispatch,
+# or a push to main — runs every shard of tests/ci-manifest.tsv at one SHA,
+# and its completeness guard over every shard's evidence is the acceptance
+# evidence. FAST — any other push, and a pull request from a fork — runs what
+# the changed paths call for, and is never acceptance evidence.
 name: ci
+# Display only; the plan job's tests/ci.sh mode is the rule.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && inputs.retry_of != '' && format('retry controller · run {0}', inputs.retry_of)
+  || (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && format('FULL acceptance · {0}', github.sha)
+  || format('FAST · not acceptance evidence · {0}', github.sha) }}
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: The SHA FULL must run on; the run stops when the branch is elsewhere
+        required: false
+        default: ""
+      retry_of:
+        description: Set by the verdict job only — the run whose never-acquired jobs run again, once
+        required: false
+        default: ""
+      retry_sha:
+        description: That run's SHA
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
-  linux:
-    name: Linux · bash 5 · ShellCheck
-    # Pinned: ubuntu-latest moves to a new release on GitHub's schedule, which
-    # would change bash, coreutils and ShellCheck under this suite unannounced.
+  plan:
+    name: plan
+    # A pull request from this repository is its branch's push run over again
+    # (and checks out a merge commit, not the candidate). FULL never comes
+    # from pull_request, so this suppresses no FULL evidence.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      fast: ${{ steps.plan.outputs.fast }}
+      tiers: ${{ steps.plan.outputs.tiers }}
+      macos-bash32: ${{ steps.plan.outputs.macos-bash32 }}
+      linux-bash5: ${{ steps.plan.outputs.linux-bash5 }}
+      target-bash53: ${{ steps.plan.outputs.target-bash53 }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      frontend-linux-arm64: ${{ steps.plan.outputs.frontend-linux-arm64 }}
+      frontend-macos-arm64: ${{ steps.plan.outputs.frontend-macos-arm64 }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          RETRY_OF: ${{ inputs.retry_of }}
+          RETRY_SHA: ${{ inputs.retry_sha }}
+          CANDIDATE: ${{ inputs.candidate }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          mode=$(tests/ci.sh mode "$EVENT" "$GITHUB_REF" "$RETRY_OF")
+          echo "$mode at $GITHUB_SHA ($EVENT, $GITHUB_REF)"
+          if [ "$mode" = retry ] && ! { [[ $RETRY_OF =~ ^[0-9]+$ ]] && [[ $RETRY_SHA =~ ^[0-9a-f]{40}$ ]]; }; then
+            echo "::error::a retry names a run id and its full SHA"
+            exit 1
+          fi
+          if [ "$mode" = full ] && [ -n "$CANDIDATE" ] && [ "$CANDIDATE" != "$GITHUB_SHA" ]; then
+            echo "::error::FULL was asked for $CANDIDATE, but $GITHUB_REF is at $GITHUB_SHA"
+            exit 1
+          fi
+          if [ "$mode" = fast ] && [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BASE" "$GITHUB_SHA"
+          else
+            echo '*'
+          fi >"$RUNNER_TEMP/paths"
+          tests/ci.sh plan "$mode" <"$RUNNER_TEMP/paths" | tee -a "$GITHUB_OUTPUT"
+
+  # FAST only: never acceptance evidence.
+  fast:
+    name: fast · syntax, fixtures, docs, static, safety, CI, the suites a change touched
+    needs: plan
+    if: needs.plan.outputs.fast != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      UNITS: ${{ needs.plan.outputs.fast }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Evidence (FAST)
+        run: tests/ci.sh begin linux-bash5 fast
       - name: Tools
         run: |
           bash --version | head -1
-          shellcheck --version | head -2
-      - name: Fixtures are what the generator writes
+      - name: The fast checks, and the suites the change touched
         run: |
-          tests/fixtures/generate.sh
-          git diff --exit-code -- tests/fixtures
-          test -z "$(git status --porcelain -- tests/fixtures)"
-      - name: Syntax, ShellCheck and every test
-        env:
-          OMB_REQUIRE_SHELLCHECK: "1"
-          # Linux has no plutil: only the macOS plist checks may skip here;
-          # any other skip fails the job.
-          OMB_STRICT_SKIPS: "1"
-          OMB_ALLOWED_SKIP_RE: "\\(no plutil\\)$"
-        run: tests/run.sh
+          read -r -a units <<<"$UNITS"
+          tests/ci.sh units "${units[@]}"
 
-  macos:
-    name: macOS · stock /bin/bash 3.2 · BSD userland
+  macos-bash32:
+    name: macos-bash32 · ${{ matrix.shard }} · stock /bin/bash 3.2 · BSD userland
+    needs: plan
+    if: needs.plan.outputs.macos-bash32 != '[]'
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.macos-bash32) }}
+    env:
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      # Full history: tests/test-baseline.sh runs the accepted baseline,
+      # 2edb76a, beside this commit.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Evidence for this shard
+        run: tests/ci.sh begin macos-bash32 "$SHARD"
+      - name: Tools
+        run: |
+          uname -sm
+          sw_vers
+          /bin/bash --version | head -1
+      - name: The shard's units under /bin/bash 3.2, with plutil and BSD tools; no skip
+        run: tests/ci.sh shard
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-macos-bash32-${{ matrix.shard }}
+          path: ${{ runner.temp }}/omb-evidence.tsv
+          overwrite: true
+
+  linux-bash5:
+    name: linux-bash5 · ${{ matrix.shard }} · bash 5 · ShellCheck 0.9.0
+    needs: plan
+    if: needs.plan.outputs.linux-bash5 != '[]'
+    # Pinned: ubuntu-latest moves to a new release on GitHub's schedule, which
+    # would change bash, coreutils and ShellCheck under this suite unannounced.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.linux-bash5) }}
+    env:
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v7
-      - name: Stock bash is 3.2
+        with:
+          fetch-depth: 0
+      - name: Evidence for this shard
+        run: tests/ci.sh begin linux-bash5 "$SHARD"
+      - name: Tools
         run: |
-          /bin/bash --version | head -1
-          /bin/bash -c '[ "${BASH_VERSINFO[0]}" = 3 ]'
-      - name: Fixtures are what the generator writes
+          uname -sm
+          bash --version | head -1
+          shellcheck --version | head -2
+      # Linux has no plutil: only the macOS plist checks may skip here, and the
+      # signal-storm case when Ubuntu's Bash 5.2 hits its own parser bug
+      # (tests/test-core.sh says which); any other skip fails the unit.
+      - name: The shard's units under bash 5
+        run: tests/ci.sh shard
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-linux-bash5-${{ matrix.shard }}
+          path: ${{ runner.temp }}/omb-evidence.tsv
+          overwrite: true
+
+  target-bash53:
+    # The Linux root's shell is GNU Bash 5.3.15 (docs/UPSTREAM.md); the
+    # runners' is 5.2.21. Every shard builds it from GNU's sources, each file
+    # held to the digest tests/bash-5.3.15.sha256 pins (tests/ci-bash.sh), and
+    # runs no unit under another bash: the core — its protocol, supervision,
+    # diagnostics and the signal storm — runs under it, and in the steps shard
+    # the Rust client and the real terminal against it. Nothing is skipped but
+    # what needs plutil.
+    name: target-bash53 · ${{ matrix.shard }} · GNU Bash 5.3.15 from pinned sources · aarch64
+    needs: plan
+    if: needs.plan.outputs.target-bash53 != '[]'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.target-bash53) }}
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Evidence for this shard
+        run: tests/ci.sh begin target-bash53 "$SHARD"
+      # The cache holds the pinned source files only, never a build; what it
+      # restores is held to the pinned digests like any download.
+      - name: The pinned sources, from the cache
+        id: bash-src
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/bash-src
+          key: bash-5.3.15-src-${{ hashFiles('tests/bash-5.3.15.sha256', 'tests/ci-bash.sh') }}
+      - name: GNU Bash 5.3.15, built from the sources tests/bash-5.3.15.sha256 pins
         run: |
-          tests/fixtures/generate.sh
-          git diff --exit-code -- tests/fixtures
-          test -z "$(git status --porcelain -- tests/fixtures)"
-      - name: Every test under /bin/bash, with plutil and BSD tools
+          tests/ci.sh setup bash-5.3.15 -- tests/ci-bash.sh build "$RUNNER_TEMP/bash-src" "$RUNNER_TEMP/bash-5.3.15"
+          echo "OMB_TEST_BASH=$RUNNER_TEMP/bash-5.3.15/bin/bash" >>"$GITHUB_ENV"
+      - name: The verified sources, to the cache
+        if: steps.bash-src.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/bash-src
+          key: bash-5.3.15-src-${{ hashFiles('tests/bash-5.3.15.sha256', 'tests/ci-bash.sh') }}
+      - name: The toolchain frontend/rust-toolchain.toml names
+        if: matrix.steps
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal
+      - name: Tools
         env:
-          # Everything runs on macOS: no skip is allowed.
-          OMB_STRICT_SKIPS: "1"
-        run: tests/run.sh
-      # macOS's sh is bash 3.2 in POSIX mode. A green exit status is not
-      # enough: stderr must be empty, the version exact, and a command whose
-      # code loads after lib/shared.sh must run.
-      - name: The entrypoint starts under sh and stock bash, with nothing on stderr, recording nothing
+          STEPS: ${{ matrix.steps }}
         run: |
-          set -eu
-          tmp=$(mktemp -d)
-          want="omarchy-bootstrap $(sed -n 's/^OMB_VERSION="\(.*\)"$/\1/p' lib/common.sh)"
-          for shell in sh /bin/bash; do
-            echo "== $shell"
-            OMB_STATE_DIR=$tmp/state $shell ./omarchy-bootstrap --version >"$tmp/out" 2>"$tmp/err"
-            if [ -s "$tmp/err" ]; then echo "stderr from --version:"; cat "$tmp/err"; exit 1; fi
-            if [ "$(cat "$tmp/out")" != "$want" ]; then echo "stdout from --version: $(cat "$tmp/out")"; exit 1; fi
-            echo "--version: $(cat "$tmp/out")"
-            # doctor lives in lib/doctor.sh, which loads after lib/shared.sh.
-            OMB_STATE_DIR=$tmp/state OMB_FIXTURE=$PWD/tests/fixtures/linux-omarchy-installed \
-              $shell ./omarchy-bootstrap doctor --ascii >"$tmp/out" 2>"$tmp/err"
-            if [ -s "$tmp/err" ]; then echo "stderr from doctor:"; cat "$tmp/err"; exit 1; fi
-            grep -F '[PASS] Omarchy 4' "$tmp/out"
-            test ! -e "$tmp/state"
-          done
+          uname -sm
+          "$OMB_TEST_BASH" --version | head -1
+          /usr/bin/bash --version | head -1
+          if [ "$STEPS" = true ]; then
+            cd frontend
+            rustc --version
+            cargo --version
+            grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
+          fi
+      - name: The shard's units under 5.3.15 (the upstream trap defect, records, supervision with the signal storm, diagnostics, the launcher, static, Gate 2 reads)
+        run: tests/ci.sh shard
+      - id: unit-layer-h
+        name: Layer H with the 5.3.15 core
+        if: matrix.steps
+        working-directory: frontend
+        run: |
+          cargo fetch --locked
+          cargo test --locked --offline --features test-hooks --test contract --test proto_diff
+      - id: unit-pty
+        name: The real terminal (L→F→C→X) with the 5.3.15 launcher and core
+        if: matrix.steps
+        working-directory: frontend
+        run: cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+      - name: Evidence of the steps
+        if: always() && matrix.steps
+        env:
+          OMB_STEPS: ${{ toJSON(steps) }}
+        run: tests/ci.sh steps
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-target-bash53-${{ matrix.shard }}
+          path: ${{ runner.temp }}/omb-evidence.tsv
+          overwrite: true
+
+  # The frontend (docs/TESTING.md → CI). Build output goes outside the
+  # repository, and the checkout must be exactly the commit before any build
+  # (docs/FRONTEND.md → Four identities).
+  frontend:
+    name: frontend · ${{ matrix.shard }} · fmt · clippy · layers A–F and H · build inputs
+    needs: plan
+    if: needs.plan.outputs.frontend != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.frontend) }}
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      # The unreleased frontend this branch builds, named on purpose: the
+      # number is edited by hand, never read from Cargo.toml (docs/DECISIONS.md → D49).
+      FRONTEND_CANDIDATE_VERSION: "0.2.0"
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      # The full history and the tags: the candidate check reproduces the
+      # pinned release's inputs from its source commit and requires its tag
+      # to name that commit.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Evidence for this shard
+        run: tests/ci.sh begin frontend "$SHARD"
+      - id: unit-checkout-exact
+        name: The checkout is exactly the commit
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal --component rustfmt,clippy
+      - name: Tools
+        working-directory: frontend
+        run: |
+          uname -sm
+          bash --version | head -1
+          rustc --version
+          cargo --version
+          grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
+      - id: unit-fmt
+        name: cargo fmt --check
+        working-directory: frontend
+        run: cargo fmt --check
+      - id: unit-inputs
+        name: Crates from Cargo.lock; no build script, path or git source of its own; no other Cargo configuration
+        run: |
+          (cd frontend && cargo fetch --locked)
+          tests/frontend-inputs.sh metadata
+          tests/frontend-inputs.sh config
+      - id: unit-digest
+        name: inputs_digest against release/frontend.lock (3 = no release pinned yet), or the named unreleased candidate
+        run: |
+          tests/frontend-inputs.sh digest
+          rc=0
+          tests/frontend-inputs.sh lock || rc=$?
+          case "$rc" in
+            0 | 3) ;;
+            *) tests/frontend-inputs.sh candidate "$FRONTEND_CANDIDATE_VERSION" ;;
+          esac
+      - id: unit-clippy
+        name: clippy -D warnings, with and without the test hooks
+        working-directory: frontend
+        run: |
+          cargo clippy --locked --offline --all-targets -- -D warnings
+          cargo clippy --locked --offline --all-targets --features test-hooks -- -D warnings
+      - id: unit-layers
+        name: Layers A–F (state, frames, snapshots, emphasis, degraded modes, lifecycle), H against the Bash 5 core, proto-diff-*
+        working-directory: frontend
+        run: |
+          cargo test --locked --offline --lib --bins --test frames --test contract --test proto_diff --test panics
+          cargo test --locked --offline --features test-hooks --test contract
+      # The release build's own dependency files, bound to its targets by its own
+      # messages: clippy's and the tests'
+      # record their own environment (CLIPPY_ARGS, CARGO_MANIFEST_DIR).
+      - id: unit-closure
+        name: Each target of the frontend's own the release build compiled read only tracked inputs, a registry crate or the toolchain; no build environment but Cargo.toml's package values
+        run: |
+          (cd frontend && cargo build --release --locked --offline --message-format=json-render-diagnostics) >"$RUNNER_TEMP/build.json"
+          tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
+      - id: unit-nothing-written
+        name: No pending snapshot, nothing written into frontend/
+        run: tests/frontend-inputs.sh clean
+      - name: frontend-input-* and frontend-lock-not-input
+        run: tests/ci.sh shard
+      - name: Evidence of the steps
+        if: always()
+        env:
+          OMB_STEPS: ${{ toJSON(steps) }}
+        run: tests/ci.sh steps
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-frontend-${{ matrix.shard }}
+          path: ${{ runner.temp }}/omb-evidence.tsv
+          overwrite: true
+
+  frontend-linux-arm64:
+    name: frontend-linux-arm64 · ${{ matrix.shard }} · build, PTY, supervision, frontend-compat-linux
+    needs: plan
+    if: needs.plan.outputs.frontend-linux-arm64 != '[]'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.frontend-linux-arm64) }}
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      # Full history: test-static compares lib/shared.sh with 2edb76a.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Evidence for this shard
+        run: tests/ci.sh begin frontend-linux-arm64 "$SHARD"
+      - id: unit-checkout-exact
+        name: The checkout is exactly the commit
+        if: matrix.steps
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        if: matrix.steps
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal --component rustfmt,clippy
+      - name: Tools
+        env:
+          STEPS: ${{ matrix.steps }}
+        run: |
+          uname -sm
+          getconf PAGESIZE
+          bash --version | head -1
+          ldd --version | head -1
+          if [ "$STEPS" = true ]; then
+            cd frontend
+            rustc --version
+            cargo --version
+            grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
+          fi
+      - id: unit-build
+        name: Build the release artifact
+        if: matrix.steps
+        working-directory: frontend
+        run: |
+          cargo fetch --locked
+          cargo build --release --locked --offline --message-format=json-render-diagnostics >"$RUNNER_TEMP/build.json"
+      - id: unit-closure
+        name: Each target the release build compiled read only tracked inputs, a registry crate or the toolchain
+        if: matrix.steps
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
+      - id: unit-compat
+        name: frontend-compat-linux
+        if: matrix.steps
+        run: tests/frontend-inputs.sh compat-linux "$CARGO_TARGET_DIR/release/omb-tui"
+      - id: unit-artifact-line
+        name: The lock line this build would have (evidence only; nothing is published)
+        if: matrix.steps
+        run: tests/frontend-inputs.sh artifact-line aarch64-unknown-linux-gnu "$CARGO_TARGET_DIR/release/omb-tui" unreleased
+      - id: unit-pty
+        name: Layer G (pty-*, the real L→F→C→X topology) and the launcher starting the verified artifact
+        if: matrix.steps
+        working-directory: frontend
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+      - id: unit-units
+        name: The process table, descriptors and the panic gate on aarch64 (unit tests, H against the core, the gate)
+        if: matrix.steps
+        working-directory: frontend
+        run: cargo test --locked --offline --features test-hooks --lib --test contract --test panics
+      - name: The shard's sup-*, diag-* and frontend-check-* units under Bash 5 on aarch64
+        run: tests/ci.sh shard
+      # The launcher starting the build above through frontend-check's own
+      # route, on a real terminal (docs/TESTING.md → frontend-check-*); the
+      # stand-in cases run in the suites.
+      - id: unit-frontend-check-native
+        name: frontend-check-* with the native build, the dashboard read from the screen
+        if: matrix.steps
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui tests/frontend-check.sh
+      - id: unit-cp1-released
+        name: CP1 actual published 0.1.0 from the production lock, native startup-check
+        if: matrix.steps
+        run: tests/cp1-released-frontend.sh
+      - name: Evidence of the steps
+        if: always() && matrix.steps
+        env:
+          OMB_STEPS: ${{ toJSON(steps) }}
+        run: tests/ci.sh steps
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-frontend-linux-arm64-${{ matrix.shard }}
+          path: ${{ runner.temp }}/omb-evidence.tsv
+          overwrite: true
+
+  frontend-macos-arm64:
+    # macos-15: the oldest arm64 image GitHub still runs reliably; macOS 14's
+    # images are being withdrawn (failing jobs on scheduled days, removed on
+    # 2026-11-02). The 13.5 floor itself is checked from the binary (minos).
+    name: frontend-macos-arm64 · ${{ matrix.shard }} · build, PTY, contract under /bin/bash 3.2, frontend-compat-macos
+    needs: plan
+    if: needs.plan.outputs.frontend-macos-arm64 != '[]'
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.frontend-macos-arm64) }}
+    env:
+      CARGO_TERM_COLOR: never
+      INSTA_UPDATE: "no"
+      OMB_TEST_BASH: /bin/bash
+      OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Evidence for this shard
+        run: tests/ci.sh begin frontend-macos-arm64 "$SHARD"
+      - id: unit-checkout-exact
+        name: The checkout is exactly the commit
+        if: matrix.steps
+        run: tests/frontend-inputs.sh clean
+      - name: The toolchain frontend/rust-toolchain.toml names
+        if: matrix.steps
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/target" >>"$GITHUB_ENV"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+            PATH=$HOME/.cargo/bin:$PATH
+          fi
+          ch=$(sed -n 's/^channel = "\(.*\)"$/\1/p' frontend/rust-toolchain.toml)
+          rustup toolchain install "$ch" --profile minimal --component rustfmt,clippy
+      - name: Tools
+        env:
+          STEPS: ${{ matrix.steps }}
+        run: |
+          uname -sm
+          sw_vers
+          /bin/bash --version | head -1
+          if [ "$STEPS" = true ]; then
+            cd frontend
+            rustc --version
+            cargo --version
+            grep -A1 -E '^name = "(ratatui|crossterm)"$' Cargo.lock
+          fi
+      - id: unit-build
+        name: Build the release artifact
+        if: matrix.steps
+        working-directory: frontend
+        run: |
+          cargo fetch --locked
+          cargo build --release --locked --offline --message-format=json-render-diagnostics >"$RUNNER_TEMP/build.json"
+      - id: unit-closure
+        name: Each target the release build compiled read only tracked inputs, a registry crate or the toolchain
+        if: matrix.steps
+        run: tests/frontend-inputs.sh closure "$CARGO_TARGET_DIR/release/deps" "$RUNNER_TEMP/build.json"
+      - id: unit-compat
+        name: frontend-compat-macos
+        if: matrix.steps
+        run: tests/frontend-inputs.sh compat-macos "$CARGO_TARGET_DIR/release/omb-tui"
+      - id: unit-artifact-line
+        name: The lock line this build would have (evidence only; nothing is published)
+        if: matrix.steps
+        run: tests/frontend-inputs.sh artifact-line aarch64-apple-darwin "$CARGO_TARGET_DIR/release/omb-tui" unreleased
+      - id: unit-pty
+        name: Layer G with the /bin/bash 3.2 core, and the launcher starting the verified artifact
+        if: matrix.steps
+        working-directory: frontend
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+      - id: unit-units
+        name: Layer H with the /bin/bash 3.2 core, the unit tests, proto-diff-*, the panic gate
+        if: matrix.steps
+        working-directory: frontend
+        run: cargo test --locked --offline --features test-hooks --lib --test contract --test proto_diff --test panics
+      # diag-* and sup-overflow run under /bin/bash on arm64 in the
+      # macos-bash32 lane; these are the other sup-* suites.
+      - name: The shard's sup-* and frontend-check-* units under /bin/bash 3.2 on arm64
+        run: tests/ci.sh shard
+      - id: unit-frontend-check-native
+        name: frontend-check-* with the native build, the dashboard read from the screen
+        if: matrix.steps
+        run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui tests/frontend-check.sh
+      - id: unit-cp1-released
+        name: CP1 actual published 0.1.0 from the production lock, native startup-check
+        if: matrix.steps
+        run: tests/cp1-released-frontend.sh
+      - name: Evidence of the steps
+        if: always() && matrix.steps
+        env:
+          OMB_STEPS: ${{ toJSON(steps) }}
+        run: tests/ci.sh steps
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-frontend-macos-arm64-${{ matrix.shard }}
+          path: ${{ runner.temp }}/omb-evidence.tsv
+          overwrite: true
+
+  # FULL: the completeness guard over every shard's evidence. FAST: a summary
+  # that says it is not acceptance evidence. Both: one automatic retry, by a
+  # dispatched run (GitHub re-runs a job only once its run has completed),
+  # when the only things that went wrong are runners never acquired and this
+  # job's red follows from them alone; it leaves that signal on itself.
+  verdict:
+    name: ${{ needs.plan.outputs.mode == 'full' && 'FULL acceptance · completeness guard' || 'FAST · not acceptance evidence' }}
+    needs: [plan, fast, macos-bash32, linux-bash5, target-bash53, frontend, frontend-linux-arm64, frontend-macos-arm64]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.mode != 'retry'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The run's jobs
+        run: tests/ci.sh jobs "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | tee "$RUNNER_TEMP/jobs.tsv"
+      - name: Every shard's evidence
+        if: always() && needs.plan.outputs.mode == 'full'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: evidence-*
+          path: ${{ runner.temp }}/evidence
+      - name: FULL completeness guard (tests/ci-manifest.tsv)
+        if: always() && needs.plan.outputs.mode == 'full'
+        run: |
+          rc=0
+          tests/ci.sh guard "$RUNNER_TEMP/evidence" "$GITHUB_SHA" "$RUNNER_TEMP/jobs.tsv" >"$RUNNER_TEMP/guard.txt" || rc=$?
+          cat "$RUNNER_TEMP/guard.txt"
+          { echo '```'; cat "$RUNNER_TEMP/guard.txt"; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: FAST is not acceptance evidence
+        if: always() && needs.plan.outputs.mode == 'fast'
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          TIERS: ${{ needs.plan.outputs.tiers }}
+        run: |
+          {
+            echo "FAST · NOT ACCEPTANCE EVIDENCE · $GITHUB_SHA · tiers: $TIERS"
+            jq -r 'to_entries[] | "  \(.key): \(.value.result)"' <<<"$NEEDS"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -e '[.[].result] | all(. == "success" or . == "skipped")' <<<"$NEEDS" >/dev/null
+      - name: One automatic retry when a runner was never acquired
+        if: always() && github.run_attempt == '1' && github.event_name != 'pull_request'
+        env:
+          MODE: ${{ needs.plan.outputs.mode }}
+        run: |
+          if tests/ci.sh retry-signal "$RUNNER_TEMP/jobs.tsv" "$GITHUB_SHA" "$MODE" "$RUNNER_TEMP/guard.txt"; then
+            gh workflow run ci.yml --ref "$GITHUB_REF_NAME" -f retry_of="$GITHUB_RUN_ID" -f retry_sha="$GITHUB_SHA"
+          fi
+
+  # Dispatched by the verdict job only. It waits for that run to complete,
+  # holds it to this repository's ci.yml, a push or a dispatch, the SHA and
+  # attempt 1, reads that attempt again, and re-runs its failed jobs once when
+  # every one of them never had a runner and the verdict job ended red from
+  # them alone, carrying its signal for exactly those jobs (tests/ci.sh retry).
+  retry:
+    name: retry controller · run ${{ inputs.retry_of }}
+    needs: plan
+    if: needs.plan.outputs.mode == 'retry'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: write
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.retry_sha }}
+      - name: Re-run, once, the jobs that never had a runner
+        env:
+          RUN: ${{ inputs.retry_of }}
+          SHA: ${{ inputs.retry_sha }}
+        run: tests/ci.sh retry "$GITHUB_REPOSITORY" "$RUN" "$SHA"

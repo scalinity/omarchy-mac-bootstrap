@@ -1,0 +1,29 @@
+---
+source: tests/frames.rs
+assertion_line: 285
+expression: "text(&render(&m, &t, 80, 24))"
+---
+ ◒ Connecting ────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Connecting ──────────────────────────────────────────────────┐
+│  Welcome     ││                                                              │
+│  Journey     ││   Asking the core who it is and what this session may do.    │
+│  Machine     ││                                                              │
+│  Status      ││                                                              │
+│  Health      ││                                                              │
+│  Logs        ││                                                              │
+│  Plan        ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+                                                                     connecting
+ q quit

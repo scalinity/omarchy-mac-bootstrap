@@ -1,0 +1,45 @@
+---
+source: tests/frames.rs
+assertion_line: 247
+expression: "text(&render(&m, &profile(\"color\"), w, h))"
+---
+ ◒ Journey · Gate ────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ This machine ────────────────┐
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ This session's snapshot      │
+│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ holds no machine facts.      │
+│  Machine             ││       profile     plan        omarchy     restore     done   │└──────────────────────────────┘
+│  Status              ││ No stage is derived yet: every station is later.             │
+│  Health              ││                                                              │
+│  Logs                ││ ▍Where it stands                                             │
+│  Plan check          ││   The core gave no next step for this session.               │
+│                      ││                                                              │
+│                      ││ ▍Facts                                                       │
+│                 ┌──────────────────────────────────────────────────────────────────────────────────┐
+│                 │ ▍Change the fixture (test)                                                       │
+│                 │                                                                                  │
+│                 │   Does      Runs the fake mutating child under supervision.                      │
+│                 │   Touches   the fixture's test state folder only                                 │
+│                 │   Terminal  not needed: it runs with no terminal                                 │
+│                 │   Next      nothing asks after this                                              │
+│                 │                                                                                  │
+│                 │   Type test to continue    tes▏                                                  │
+│                 └──────────────────────────────────────────────────────────────────────────────────┘
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ continue (exact word)  esc cancel                                                      may act · 3 actions · fixture

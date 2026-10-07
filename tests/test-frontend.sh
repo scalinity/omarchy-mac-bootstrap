@@ -1,0 +1,709 @@
+#!/usr/bin/env bash
+# The launcher's side of the frontend (docs/FRONTEND.md → Distribution and
+# provenance, Intent and persistence; docs/PROTOCOL.md → The session
+# scratch): frontend-digest, frontend-offline, frontend-unrunnable,
+# frontend-dev, frontend-intent-*, and the session scratch's owner cleanup
+# and stale reclaim (sup-owner-cleanup-refused, sup-reclaim-*, sup-pid-reuse,
+# sup-identity-unknown, sup-eintr's wait loop).
+#
+# The frontend here is a small fake — a shell script whose behaviour a file
+# decides — pinned by a test lock in a copy of the tool, so the distribution
+# logic is proved without a release. frontend/tests/pty.rs runs the real one.
+# shellcheck disable=SC2010,SC2012,SC2015,SC2016,SC2030,SC2031,SC2086,SC2143 # ls over names the test made; ok/fail always return 0; literal $ in scripts; subshell-local exports; FE_ENV is a list of assignments
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh"
+echo "test-frontend"
+T=$(t_tmp)
+t_decoy "bash -c (a program of the developer's) fe_run act journey"
+
+# A copy of the tool: its lock is the test's (the checkout's is not touched).
+TOOL=$T/tool
+mkdir -p "$TOOL/release" "$TOOL/tests"
+cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$TOOL/"
+cp -R "$REPO/tests/children" "$TOOL/tests/"
+
+# This host's frontend target, as the launcher sees it; a uname shim gives
+# every runner an aarch64 answer, so no runner skips these checks.
+SHIM=$T/uname-shim
+mkdir -p "$SHIM"
+case "$(uname -s)" in
+  Darwin) TARGET=aarch64-apple-darwin && printf '#!/bin/sh\ncase "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) /usr/bin/uname "$@" ;; esac\n' >"$SHIM/uname" ;;
+  *) TARGET=aarch64-unknown-linux-gnu && printf '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo aarch64 ;; *) /bin/uname "$@" ;; esac\n' >"$SHIM/uname" ;;
+esac
+chmod +x "$SHIM/uname"
+BASE_PATH="$SHIM:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# The fake frontend: exits as $dir/../fake-behaviour says (first word), and
+# may first leave a process behind, write an operation record naming its
+# session, or record the environment it was given.
+FAKE=$T/fake-omb-tui
+cat >"$FAKE" <<'EOF'
+#!/bin/bash
+# A stand-in for omb-tui in the launcher's tests.
+dir=$2
+b=$(cat "$(dirname "$0")/fake-behaviour" 2>/dev/null)
+env >"$(dirname "$0")/fake-env"
+case "$b" in
+  *linger*) sleep 3 & echo "$!" >"$(dirname "$0")/fake-linger" ;;
+esac
+case "$b" in
+  *trace*) [ -n "${OMB_TUI_LOG:-}" ] && (umask 077 && echo "fake trace" >>"$OMB_TUI_LOG") ;;
+esac
+case "$b" in
+  *sleep*) sleep 2 ;;
+esac
+# Live until the test releases it (fake-release), for 600 polls of 0.05 s
+# (about 30 s) at most: it says so by writing its PID to fake-live, and keeps
+# SIGTERM's default action, so a signal that reaches it ends it by the signal.
+case "$b" in
+  *term-live*)
+    echo "$$" >"$(dirname "$0")/fake-live"
+    i=0
+    while [ ! -e "$(dirname "$0")/fake-release" ] && [ "$i" -lt 600 ]; do
+      sleep 0.05
+      i=$((i + 1))
+    done
+    ;;
+esac
+# A core left running in the session: a live process recorded as one, with
+# the identity a core writes.
+case "$b" in
+  *core*)
+    sleep 3 &
+    p=$!
+    (
+      for l in common ui state records core; do . "$OMB_HOME/lib/$l.sh"; done
+      platform_init
+      core_boot_read
+      core_proc_write "$dir/req-1.core" core "$p"
+    )
+    ;;
+esac
+# A core identity left as a dangling link, which no core ever writes.
+case "$b" in
+  *dangle*) ln -s "$dir/gone" "$dir/req-1.core" ;;
+esac
+code=${b%% *}
+exit "${code:-0}"
+EOF
+chmod +x "$FAKE"
+sha_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -c1-64; else sha256sum "$1" | cut -c1-64; fi; }
+FAKE_SHA=$(sha_of "$FAKE")
+FAKE_SIZE=$(wc -c <"$FAKE" | tr -d ' ')
+
+# lock TARGET SHA SIZE — the test lock, sealed.
+lock() {
+  (
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    f=$TOOL/release/frontend.lock
+    {
+      printf 'omb-frontend-lock 1\n'
+      rec_line frontend version 0.1.0 proto 1 source_commit "$(printf '%040d' 0)" inputs_digest "$(printf '%064d' 0)" rust 1.88.0
+      rec_line artifact target "$1" url "https://example.invalid/omb-tui-0.1.0-$1" size "$3" sha256 "$2" minos "" glibc_max "" interp "" align_min ""
+    } >"$f"
+    rec_seal_write "$f"
+    omb_cleanup
+  )
+}
+lock "$TARGET" "$FAKE_SHA" "$FAKE_SIZE"
+
+# A fixture whose network serves the frontend.
+FIXB=$(t_variant mac-m1pro-1tb-roomy)
+mkdir -p "$FIXB/net"
+CACHE=$T/home/.cache/omarchy-mac-bootstrap/frontend
+
+# fe_call INPUT FN ARGS... — load the libraries from the copy and call a
+# launcher function with the fake's world, answering prompts with INPUT;
+# prints "FE_STATE|FE_BIN|FE_WHY". FE_TMP gives it a TMPDIR of its own. The
+# launcher runs in a process group of its own, as a terminal's job does: its
+# owner cleanup counts every process that joins its group after launcher.omb,
+# so it must not share the test runner's group, whose other members (the
+# runner's shells, anything a CI step left running) the test does not control.
+# (perl in the C locale, so a runner without LANG's locale adds no warning;
+# the launcher's environment is env -i's.)
+fe_call() {
+  local input=$1
+  shift
+  printf '%b' "$input" | LC_ALL=C perl -e 'setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127' env -i PATH="${FE_PATH:-$BASE_PATH}" HOME="$T/home" TMPDIR="${FE_TMP:-$T/tmp}" LANG=en_US.UTF-8 TERM=dumb \
+    OMB_FIXTURE="${FE_FIX-$FIXB}" OMB_STATE_DIR="$T/state" ${FE_ENV:-} "$T_BASH" -c '
+      . "$1/lib/common.sh"; . "$1/lib/ui.sh"; . "$1/lib/state.sh"; . "$1/lib/records.sh"; . "$1/lib/core.sh"; . "$1/lib/frontend.sh"
+      OMB_HOME=$1; shift
+      OMB_COLOR=never; ui_init; platform_init; state_init
+      "$@" >"$TMPDIR/fe-out" 2>&1
+      rc=$?
+      printf "%s|%s|%s|%s\n" "$rc" "${FE_STATE:-}" "${FE_BIN:-}" "${FE_WHY:-}"
+      omb_cleanup
+    ' bash "$TOOL" "$@"
+}
+mkdir -p "$T/tmp"
+
+# --- Acquisition: the right target and digest ---------------------------------------
+cp "$FAKE" "$FIXB/net/frontend-$TARGET"
+r=$(fe_call 'y\n' fe_select act)
+assert_eq "${r%%|*}" 0 "act: acquired after [Y/n]"
+assert_contains "$r" "|verified|$CACHE/$FAKE_SHA/omb-tui|" "the pinned artifact, cached under its digest"
+cmp -s "$FAKE" "$CACHE/$FAKE_SHA/omb-tui" && ok || fail "the cached bytes are the pinned bytes"
+[ -x "$CACHE/$FAKE_SHA/omb-tui" ] && ok || fail "executable"
+assert_eq "$(find "$CACHE" -maxdepth 1 -perm 700 -type d | grep -c "$FAKE_SHA")" 1 "the cache folder is private"
+# A cached, verified binary: no download needed at all.
+rm -f "$FIXB/net/frontend-$TARGET"
+r=$(fe_call '' fe_select act)
+assert_contains "$r" "0|verified|$CACHE/$FAKE_SHA/omb-tui|" "a cached valid artifact is started, its digest checked, nothing fetched"
+
+# --- frontend-digest: a corrupted cache ---------------------------------------------------
+printf 'tampered' >>"$CACHE/$FAKE_SHA/omb-tui"
+cp "$FAKE" "$FIXB/net/frontend-$TARGET"
+r=$(fe_call 'n\n' fe_select act)
+assert_contains "$r" "|mismatch||" "frontend-digest: a cached binary with another digest is never run"
+[ -f "$CACHE/$FAKE_SHA/omb-tui" ] && ok || fail "declined: the bad copy is left where it is"
+r=$(fe_call 'y\ny\n' fe_select act)
+assert_contains "$r" "0|verified|" "act: after a yes, moved aside and acquired again"
+ls "$CACHE/$FAKE_SHA" | grep -q 'omb-tui.mismatch-' && ok || fail "the mismatching copy moved aside, not deleted"
+cmp -s "$FAKE" "$CACHE/$FAKE_SHA/omb-tui" && ok || fail "the pinned bytes are back"
+rm -rf "$CACHE"
+
+# --- frontend-digest: a replaced release asset, a partial download ----------------------
+{ head -c $((FAKE_SIZE - 1)) "$FAKE"; printf X; } >"$FIXB/net/frontend-$TARGET"
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "|mismatch||" "frontend-digest: a download with the right size and another digest is refused"
+[ ! -e "$CACHE/$FAKE_SHA/omb-tui" ] && ok || fail "nothing is cached from it"
+head -c 100 "$FAKE" >"$FIXB/net/frontend-$TARGET"
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "|missing||" "a partial download is refused"
+assert_contains "$r" "not the $FAKE_SIZE the lock pins" "and says so"
+[ ! -e "$CACHE/$FAKE_SHA/omb-tui" ] && ok || fail "nothing is cached from a partial download"
+[ -z "$(ls -A "$CACHE/$FAKE_SHA" 2>/dev/null)" ] && ok || fail "no temporary is left behind"
+
+# --- frontend-offline --------------------------------------------------------------------
+rm -f "$FIXB/net/frontend-$TARGET"
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "|missing||the download failed (no network): https://example.invalid/omb-tui-0.1.0-$TARGET" "frontend-offline: the reason and the URL"
+r=$(fe_call '' fe_select plan)
+assert_contains "$r" "|missing||the interface is not downloaded yet" "plan: nothing acquired; the default run sets it up"
+
+# --- The lock itself ---------------------------------------------------------------------
+lock x86_64-apple-darwin "$FAKE_SHA" "$FAKE_SIZE"
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "|missing||the lock pins no frontend for $TARGET" "a lock with no artifact for this host: missing, with the reason"
+mv "$TOOL/release/frontend.lock" "$T/lock.aside"
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "|missing||this checkout pins no frontend release" "no lock: missing, never a guess"
+mv "$T/lock.aside" "$TOOL/release/frontend.lock"
+printf 'x' >>"$TOOL/release/frontend.lock"
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "is not admissible" "a lock that fails admission is refused"
+lock "$TARGET" "$FAKE_SHA" "$FAKE_SIZE"
+
+# --- frontend-unrunnable -------------------------------------------------------------------
+printf '\177ELF\002\001\001\000\000\000garbage' >"$T/not-a-binary"
+BAD_SHA=$(sha_of "$T/not-a-binary")
+lock "$TARGET" "$BAD_SHA" "$(wc -c <"$T/not-a-binary" | tr -d ' ')"
+cp "$T/not-a-binary" "$FIXB/net/frontend-$TARGET"
+r=$(fe_call 'y\n' fe_run act journey)
+assert_eq "${r%%|*}" 10 "frontend-unrunnable: back to text (status 10)"
+assert_contains "$r" "|unrunnable|" "reported as unrunnable"
+assert_contains "$r" "would not execute (status 126; SHA-256 $BAD_SHA, $TARGET)" "with its digest and target"
+rm -rf "$CACHE"
+lock "$TARGET" "$FAKE_SHA" "$FAKE_SIZE"
+cp "$FAKE" "$FIXB/net/frontend-$TARGET"
+
+# --- A handshake refused: fallback ----------------------------------------------------------
+# Acquire once; the fake then reads its behaviour beside the cached binary.
+r=$(fe_call 'y\n' fe_select act)
+assert_contains "$r" "0|verified|" "the pinned fake is cached"
+printf '10' >"$CACHE/$FAKE_SHA/fake-behaviour"
+r=$(fe_call '' fe_run act journey)
+assert_eq "${r%%|*}" 10 "a frontend that refuses the handshake (exit 10): text"
+assert_contains "$r" "|fallback|" "reported as fallback"
+printf '0' >"$CACHE/$FAKE_SHA/fake-behaviour"
+r=$(fe_call '' fe_run act journey)
+assert_eq "${r%%|*}" 0 "a frontend that finishes: 0"
+e=$(cat "$CACHE/$FAKE_SHA/fake-env")
+for v in "OMB_HOME=$TOOL" OMB_SESSION_INTENT=act OMB_SESSION_SCOPES=journey OMB_DRY_RUN=0 "OMB_SESSION_DIR=$T/tmp/omb-session."; do
+  assert_contains "$e" "$v" "the launcher sets $v for the frontend"
+done
+assert_eq "$(ls "$T/tmp" | grep -c '^omb-session\.')" 0 "sup-owner-cleanup: the launcher removed its own scratch"
+# frontend-check-read-session: a session purpose is frontend-check's alone;
+# every other session the launcher starts drops an inherited one.
+for p in frontend-check install ""; do
+  r=$(FE_ENV="OMB_SESSION_PURPOSE=$p" fe_call '' fe_run act journey)
+  assert_eq "$(grep -c '^OMB_SESSION_PURPOSE=' "$CACHE/$FAKE_SHA/fake-env")" 0 "frontend-check-read-session: an inherited purpose ('$p') never reaches an ordinary session"
+done
+printf '1' >"$CACHE/$FAKE_SHA/fake-behaviour"
+r=$(fe_call '' fe_run act journey)
+assert_eq "${r%%|*}" 1 "a frontend that fails: a failure the launcher reports"
+assert_contains "$r" "|crashed|" "reported"
+assert_contains "$(cat "$T/tmp/fe-out")" "the interface stopped" "with what happened"
+assert_contains "$(tr '\n' ' ' <"$T/tmp/fe-out" | tr -s ' ')" "status shows where the machine is" "and what to run"
+
+# --- frontend-intent-*: a corrupted cache and OMB_TUI_LOG, for each intent ----------------
+# The filesystem outside the scratch folders stays as it was: nothing moved,
+# no trace — except in an act session, where the move is offered and the trace
+# written 0600.
+printf 'tampered' >>"$CACHE/$FAKE_SHA/omb-tui"
+before=$(t_snapshot "$T/home"; t_snapshot "$T/state")
+r=$(FE_ENV="OMB_TUI_LOG=$T/trace" fe_call '' fe_select plan)
+assert_contains "$r" "|mismatch|" "frontend-intent-plan: reported"
+r=$(FE_ENV="OMB_TUI_LOG=$T/trace" fe_call 'y\n' fe_select dry-run)
+assert_contains "$r" "|mismatch|" "frontend-intent-dry-run: reported, never moved"
+assert_eq "$(t_snapshot "$T/home"; t_snapshot "$T/state")" "$before" "plan and dry-run change nothing persistent"
+[ ! -e "$T/trace" ] && ok || fail "no trace outside an act session"
+rm -rf "$CACHE"
+r=$(FE_ENV="OMB_TUI_LOG=$T/trace" fe_call 'y\n' fe_select dry-run)
+assert_contains "$r" "0|verified|$T/tmp/omarchy-bootstrap." "frontend-intent-dry-run: downloaded into the per-run scratch"
+[ ! -e "$CACHE" ] && ok || fail "frontend-intent-dry-run: nothing cached"
+[ -z "$(ls "$T/tmp" | grep 'omarchy-bootstrap\.')" ] && ok || fail "and the scratch copy is gone when the run ends"
+r=$(fe_call 'y\n' fe_select act)
+printf '0 trace' >"$CACHE/$FAKE_SHA/fake-behaviour"
+r=$(FE_ENV="OMB_TUI_LOG=$T/trace" fe_call '' fe_run plan journey)
+assert_contains "$(cat "$T/tmp/fe-out")" "OMB_TUI_LOG is ignored outside an act session" "frontend-intent-plan: a one-line notice"
+[ ! -e "$T/trace" ] && ok || fail "frontend-intent-plan: no trace"
+r=$(FE_ENV="OMB_TUI_LOG=$T/trace" fe_call '' fe_run act journey)
+[ -f "$T/trace" ] && ok || fail "frontend-intent-act: the trace written"
+assert_eq "$(find "$T/trace" -perm 600 | wc -l | tr -d ' ')" 1 "frontend-intent-act: 0600"
+rm -f "$T/trace"
+printf 'tampered' >>"$CACHE/$FAKE_SHA/omb-tui"
+before=$(t_snapshot "$T/home")
+T_ENV="XDG_CACHE_HOME=$T/home/.cache OMB_TUI_LOG=$T/trace" t_cli mac-m1pro-1tb-roomy "" status
+assert_rc "$T_RC" 0 "frontend-intent-read: status runs"
+assert_eq "$(t_snapshot "$T/home")" "$before" "frontend-intent-read: the cache untouched"
+T_ENV="XDG_CACHE_HOME=$T/home/.cache OMB_TUI_LOG=$T/trace" t_cli mac-m1pro-1tb-roomy "q\n" --no-tui
+assert_eq "$(t_snapshot "$T/home")" "$before" "frontend-intent-no-tui: the cache untouched"
+[ ! -e "$T/trace" ] && ok || fail "frontend-intent-read and -no-tui: no trace"
+rm -rf "$CACHE"
+
+# --- frontend-dev: the override outside fixture mode, or as root ------------------------
+T_ENV="OMB_FRONTEND_DEV=$FAKE" t_cli "" "" status
+assert_rc "$T_RC" 2 "frontend-dev: refused outside fixture mode"
+assert_contains "$T_OUT" "work only in fixture mode" "and says so"
+idshim=$(t_tmp)
+printf '#!/bin/sh\n[ "$1" = -u ] && { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n' >"$idshim/id"
+chmod +x "$idshim/id"
+T_ENV="PATH=$idshim:/usr/bin:/bin OMB_FRONTEND_DEV=$FAKE" t_cli mac-m1pro-1tb-roomy "" status
+assert_rc "$T_RC" 2 "frontend-dev: refused as root"
+r=$(FE_FIX="" FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_select act)
+assert_contains "$r" "|missing||OMB_FRONTEND_DEV works only in fixture mode" "the launcher checks it again"
+r=$(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_select act)
+assert_contains "$r" "0|verified|$FAKE|" "in fixture mode, the unreleased build is used"
+T_ENV="OMB_TEST_HANDOFF_CHILD=$FAKE" t_cli "" "" status
+assert_rc "$T_RC" 2 "OMB_TEST_HANDOFF_CHILD is refused outside fixture mode"
+
+# --- sup-owner-cleanup-refused: the owner leaves its scratch ---------------------------------
+# A process that joined the group after launcher.omb and outlives the
+# frontend. The launcher waits for it before taking the terminal back; one
+# that outlasts the wait leaves the terminal and the scratch as they are.
+printf '0 linger' >"$T/fake-behaviour"
+r=$(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' eval 'FE_WAIT_LIMIT=1; fe_run act journey')
+assert_contains "$r" "1|unsettled|" "the launcher's wait ends at its limit without calling the session over"
+assert_contains "$(cat "$T/tmp/fe-out")" "not known to be over" "and says so"
+n=$(ls "$T/tmp" | grep -c '^omb-session\.')
+assert_eq "$n" 1 "sup-owner-cleanup-refused: a late process in the group keeps the scratch"
+# The late process ends with its three seconds: until it has.
+t_wait_gone "$(cat "$T/fake-linger" 2>/dev/null)" 3
+old=$(ls -d "$T/tmp"/omb-session.* | head -1)
+# The same scratch, once everything is dead, is reclaimed by a later launcher.
+r=$(fe_call '' fe_reclaim)
+[ ! -e "$old" ] && ok || fail "sup-reclaim-quiescent: reclaimed once every recorded identity is dead"
+# Within its limit, the launcher waits the late process out, then cleans up.
+t0=$SECONDS
+r=$(FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+assert_contains "$r" "0|verified|" "a late process waited for, the session is over"
+[ $((SECONDS - t0)) -ge 2 ] && ok || fail "the launcher waited for the late process ($((SECONDS - t0)) s)"
+assert_eq "$(ls "$T/tmp" | grep -c '^omb-session\.')" 0 "and the owner removed its scratch"
+
+# The other conditions, one by one, on a scratch built as a launcher leaves it.
+# mk_scratch — a session folder whose launcher and frontend are dead.
+mk_scratch() {
+  (
+    export TMPDIR=$T/tmp OMB_FIXTURE=$FIXB
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    # shellcheck source=lib/core.sh
+    . "$REPO/lib/core.sh"
+    platform_init
+    core_boot_read
+    d=$(mktemp -d "$T/tmp/omb-session.XXXXXX")
+    chmod 700 "$d"
+    sleep 0.1 &
+    dead=$!
+    core_proc_write "$d/launcher.omb" launcher "$dead"
+    core_proc_write "$d/frontend.omb" frontend "$dead"
+    wait "$dead"
+    printf '%s' "$d"
+    omb_cleanup
+  )
+}
+# proc_file FILE ROLE PID [START] — an identity file for PID (a start time
+# other than its own models a reused PID).
+proc_file() {
+  (
+    export OMB_FIXTURE=$FIXB
+    t_load >/dev/null 2>&1
+    # shellcheck source=lib/records.sh
+    . "$REPO/lib/records.sh"
+    # shellcheck source=lib/core.sh
+    . "$REPO/lib/core.sh"
+    platform_init
+    core_boot_read
+    start=${4:-$(LC_ALL=C _proc_started "$3")}
+    { printf 'omb-proc 1\n' && rec_line proc role "$2" pid "$3" start "$start" boot "${BOOT:-$CORE_BOOT}"; } >"$1"
+    rec_seal_write "$1"
+    omb_cleanup
+  )
+}
+sleep 30 &
+live=$!
+d=$(mk_scratch)
+proc_file "$d/req-1.core" core "$live"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d" ] && ok || fail "sup-reclaim-live-core: an old scratch whose core is alive is not reclaimed"
+r=$(fe_call '' eval "FE_SESSION=$d FE_SNAP='' FE_PGID=0; fe_owner_cleanup")
+[ -d "$d" ] && ok || fail "sup-owner-cleanup-refused: a live core keeps the scratch"
+rm -f "$d/req-1.core"
+proc_file "$d/req-1.worker-1" worker "$live"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d" ] && ok || fail "sup-reclaim-live-worker: a live recorded worker keeps it"
+r=$(fe_call '' eval "FE_SESSION=$d FE_SNAP='' FE_PGID=0; fe_owner_cleanup")
+[ -d "$d" ] && ok || fail "sup-owner-cleanup-refused: a live recorded worker keeps the scratch"
+rm -f "$d/req-1.worker-1"
+# A reused PID: the live process, with another start time, is not the worker.
+proc_file "$d/req-1.worker-1" worker "$live" "Mon Jan  1 00:00:00 2001"
+fe_call '' fe_reclaim >/dev/null
+[ ! -d "$d" ] && ok || fail "sup-pid-reuse: a PID now owned by another process is not the recorded worker"
+# A frontend alive, recorded; then one not yet recorded, named by its arguments.
+d=$(mk_scratch)
+proc_file "$d/frontend.omb" frontend "$live"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d" ] && ok || fail "sup-reclaim-live-controller: a live frontend recorded in frontend.omb keeps the scratch"
+# Identities are read in the C locale: a live frontend recorded by a launcher
+# running in German is alive to a later one running in English.
+dl=$(mk_scratch)
+rm -f "$dl/frontend.omb"
+(
+  export OMB_FIXTURE=$FIXB LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  # shellcheck source=lib/core.sh
+  . "$REPO/lib/core.sh"
+  platform_init
+  core_boot_read
+  core_proc_write "$dl/frontend.omb" frontend "$live"
+  omb_cleanup
+)
+fe_call '' fe_reclaim >/dev/null
+[ -d "$dl" ] && ok || fail "sup-reclaim-live-controller: a live frontend recorded in another language keeps the scratch"
+d2=$(mk_scratch)
+rm -f "$d2/frontend.omb"
+(exec -a "omb-tui --session $d2" sleep 30) &
+named=$!
+sleep 0.3
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d2" ] && ok || fail "sup-reclaim-live-controller: a frontend named only by its arguments keeps the scratch"
+kill "$named" 2>/dev/null
+wait "$named" 2>/dev/null
+fe_call '' fe_reclaim >/dev/null
+[ ! -d "$d2" ] && ok || fail "and once it is gone, the scratch is reclaimed"
+# An operation record naming the session.
+d3=$(mk_scratch)
+mkdir -p "$T/state/ops"
+(
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  f=$T/state/ops/journey.omb
+  { printf 'omb-op 1\n' && rec_line op action test.mutate scope journey basis "$(printf '%064d' 1)" session "$d3" state unsupervised finding "" pid 1 start x boot x at 2026-09-26T00:00:00Z; } >"$f"
+  rec_seal_write "$f"
+  omb_cleanup
+)
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d3" ] && ok || fail "sup-reclaim-operation-barrier: an unresolved operation naming the session keeps it"
+r=$(fe_call '' eval "FE_SESSION=$d3 FE_SNAP='' FE_PGID=0; fe_owner_cleanup")
+[ -d "$d3" ] && ok || fail "sup-owner-cleanup-refused: an unresolved operation keeps the scratch"
+rm -f "$T/state/ops/journey.omb"
+# sup-identity-unknown: ps failing, or the boot session unreadable — nothing
+# is deleted on the strength of an identity that cannot be established.
+psshim=$(t_tmp)
+printf '#!/bin/sh\nexit 1\n' >"$psshim/ps"
+chmod +x "$psshim/ps"
+d4=$(mk_scratch)
+FE_PATH="$psshim:$BASE_PATH" fe_call '' fe_reclaim >/dev/null
+[ -d "$d4" ] && ok || fail "sup-identity-unknown: ps failing, nothing is reclaimed"
+fix2=$(t_variant mac-m1pro-1tb-roomy)
+rm -f "$fix2/cmd/bootsession"
+FE_FIX=$fix2 fe_call '' fe_reclaim >/dev/null
+[ -d "$d4" ] && ok || fail "sup-identity-unknown: the boot session unreadable, nothing is reclaimed"
+mv "$d4/launcher.omb" "$d4/launcher.gone"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d4" ] && ok || fail "a scratch whose launcher identity is missing counts as alive"
+mv "$d4/launcher.gone" "$d4/launcher.omb"
+# A launcher PID that is merely gone, with the rest alive, is never enough.
+proc_file "$d4/req-2.core" core "$live"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d4" ] && ok || fail "sup-reclaim-quiescent: a dead launcher alone is never enough"
+rm -f "$d4/req-2.core"
+fe_call '' fe_reclaim >/dev/null
+[ ! -d "$d4" ] && ok || fail "and with everything dead, it is"
+# From a previous boot: every identity dead.
+d5=$(mk_scratch)
+BOOT=5E1D0B00-0000-0000-0000-000000000000 proc_file "$d5/req-1.core" core "$live"
+fe_call '' fe_reclaim >/dev/null
+[ ! -d "$d5" ] && ok || fail "sup-pid-reuse: a live PID recorded in a previous boot is not the recorded core"
+# sup-identity-link: an identity is a plain file. A link in its place,
+# dangling or pointing at an ended process's sealed identity, cannot be
+# established, so it keeps the scratch; the same identity as a plain file
+# lets it go. A pattern that matched nothing is no entry at all, which the
+# scratch reclaimed above (no req-* file) already shows.
+dead=$(mk_scratch)
+cp "$dead/launcher.omb" "$T/dead-identity"
+rm -rf "$dead"
+for name in req-1.core req-1.worker-1 frontend.omb launcher.omb; do
+  d6=$(mk_scratch)
+  rm -f "$d6/$name"
+  ln -s "$T/link-target" "$d6/$name"
+  fe_call '' fe_reclaim >/dev/null
+  [ -d "$d6" ] && ok || fail "sup-identity-link: a dangling $name keeps the scratch from reclaim"
+  case $name in
+    req-*)
+      fe_call '' eval "FE_SESSION=$d6 FE_SNAP='' FE_PGID=0; fe_owner_cleanup" >/dev/null
+      [ -d "$d6" ] && ok || fail "sup-identity-link: and from its owner's cleanup ($name)"
+      ;;
+  esac
+  cp "$T/dead-identity" "$T/link-target"
+  fe_call '' fe_reclaim >/dev/null
+  [ -d "$d6" ] && ok || fail "sup-identity-link: a $name linked to an ended process's identity is not admitted"
+  rm -f "$T/link-target" "$d6/$name"
+  cp "$T/dead-identity" "$d6/$name"
+  fe_call '' fe_reclaim >/dev/null
+  [ ! -d "$d6" ] && ok || fail "and as a plain file, the same identity lets the scratch go ($name)"
+done
+# A FIFO in a worker's place is not one either (nothing opens it).
+d6=$(mk_scratch)
+mkfifo "$d6/req-1.worker-1"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d6" ] && ok || fail "sup-identity-link: a FIFO in place of a worker identity keeps the scratch"
+fe_call '' eval "FE_SESSION=$d6 FE_SNAP='' FE_PGID=0; fe_owner_cleanup" >/dev/null
+[ -d "$d6" ] && ok || fail "and from its owner's cleanup"
+rm -f "$d6/req-1.worker-1"
+# A link in place of an operation record counts as naming every session.
+ln -s "$T/link-target" "$T/state/ops/journey.omb"
+fe_call '' fe_reclaim >/dev/null
+[ -d "$d6" ] && ok || fail "sup-reclaim-operation-barrier: a dangling link in place of an operation record keeps the scratch"
+fe_call '' eval "FE_SESSION=$d6 FE_SNAP='' FE_PGID=0; fe_owner_cleanup" >/dev/null
+[ -d "$d6" ] && ok || fail "and from its owner's cleanup"
+rm -f "$T/state/ops/journey.omb"
+fe_call '' fe_reclaim >/dev/null
+[ ! -d "$d6" ] && ok || fail "and without it, the scratch goes"
+kill "$live" 2>/dev/null
+wait "$live" 2>/dev/null
+[ -d "$d" ] && ok || fail "the live frontend's scratch is still there"
+
+# --- sup-eintr: a signal during the launcher's wait -----------------------------------------
+# A launcher under test is found by the identity it recorded, launcher.omb in
+# the scratch of a TMPDIR of its own, and signalled as that process.
+# launcher_id DIR FILE — "PID START" of the launcher whose scratch is in DIR,
+# once FILE exists in that scratch (up to 10 s).
+launcher_id() {
+  local i=0 s
+  while [ "$i" -lt 200 ]; do
+    for s in "$1"/omb-session.*; do
+      [ -f "$s/$2" ] && [ -f "$s/launcher.omb" ] || continue
+      sed -n 's/.*	pid=\([0-9]*\)	start=\([^	]*\)	.*/\1 \2/p' "$s/launcher.omb" | sed 's/%20/ /g'
+      return 0
+    done
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+# frontend_live DIR — "PID START" of the frontend that the launcher whose
+# scratch is in DIR recorded, once that frontend has said it is live
+# (fake-live holds its PID; up to 10 s).
+frontend_live() {
+  local i=0 s p
+  while [ "$i" -lt 200 ]; do
+    for s in "$1"/omb-session.*; do
+      [ -f "$s/frontend.omb" ] && [ -f "$T/fake-live" ] || continue
+      p=$(sed -n 's/.*	pid=\([0-9]*\)	start=\([^	]*\)	.*/\1 \2/p' "$s/frontend.omb" | sed 's/%20/ /g')
+      [ -n "$p" ] && [ "${p%% *}" = "$(cat "$T/fake-live")" ] || continue
+      printf '%s\n' "$p"
+      return 0
+    done
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+# SIGINT is caught and kept by the launcher (the child acts on its own).
+printf '0 sleep' >"$T/fake-behaviour"
+mkdir -p "$T/tmp-int"
+(FE_TMP=$T/tmp-int FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
+bg=$!
+l=$(launcher_id "$T/tmp-int" frontend.omb)
+t_signal INT "${l%% *}" "${l#* }" && ok || fail "sup-eintr: the launcher, by the identity it recorded ($l)"
+wait "$bg"
+assert_contains "$(cat "$T/eintr")" "0|verified|" "sup-eintr: the launcher's wait is retried after a signal, and the frontend's status kept"
+# SIGTERM (and SIGHUP) the launcher passes to the frontend: this fake has no
+# handler, so it ends by the signal, and its status says so. It stays live
+# until the test releases it, so the signal finds it however late it is sent;
+# only the launcher is signalled. A frontend still live 10 s after the signal
+# was never reached: it is released, ends on its own (status 0), and the
+# status assertion fails.
+printf '0 term-live' >"$T/fake-behaviour"
+mkdir -p "$T/tmp-term"
+(FE_TMP=$T/tmp-term FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
+bg=$!
+l=$(launcher_id "$T/tmp-term" frontend.omb)
+f=$(frontend_live "$T/tmp-term")
+[ -n "$f" ] && [ "$(t_started "${f%% *}")" = "${f#* }" ] && ok || fail "the frontend the launcher recorded is live when the launcher is signalled ($f)"
+t_signal TERM "${l%% *}" "${l#* }" && ok || fail "the launcher, by the identity it recorded ($l)"
+[ -z "$f" ] || t_wait_gone "${f%% *}" 10
+touch "$T/fake-release"
+wait "$bg"
+assert_contains "$(cat "$T/eintr")" "status 143" "SIGTERM to the launcher reaches the frontend"
+
+# While a core of the session may be supervising a child, the launcher waits
+# for it starting no process: anything that joins the group then is a worker
+# to that core (docs/PROTOCOL.md → worker quiescence). The fake records a
+# live core and exits; the launcher's children are sampled through the wait.
+printf '0 core' >"$T/fake-behaviour"
+mkdir -p "$T/tmp-core"
+(FE_TMP=$T/tmp-core FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/waitcore") &
+bg=$!
+l=$(launcher_id "$T/tmp-core" req-1.core)
+l=${l%% *}
+# The samples start once the frontend, the launcher's own child, has ended:
+# from then on the launcher is only waiting (signal 0 only asks).
+f=$(sed -n 's/.*	pid=\([0-9]*\)	.*/\1/p' "$T"/tmp-core/omb-session.*/frontend.omb)
+i=0
+while [ -n "$f" ] && kill -0 "$f" 2>/dev/null && [ "$i" -lt 100 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+busy=0
+for k in 1 2 3 4 5 6 7 8 9 10; do
+  [ "$(ps -axo ppid= | awk -v p="$l" '$1 == p' | wc -l)" -gt 0 ] && busy=$((busy + 1))
+  sleep 0.15
+done
+wait "$bg"
+[ -n "$l" ] && ok || fail "the launcher was found"
+assert_eq "$busy" 0 "the launcher starts no process while it waits for the session's core (samples with a child, of 10)"
+assert_contains "$(cat "$T/waitcore")" "0|verified|" "and finishes once the core has ended"
+
+# --- The launcher takes the terminal back only once the session is over (H06) -------
+# wait_case CODE [LIMIT] — fe_wait_cores's answer, "wait=N WHY", for a new
+# session of this launcher once CODE has run in its shell (FE_SESSION made,
+# the pause made as fe_run makes it).
+mkdir -p "$T/tmp-wait"
+wait_case() {
+  FE_TMP=$T/tmp-wait fe_call '' eval "
+    omb_tmp_init && fe_session_create || exit 9
+    FE_PAUSE=\$OMB_TMP/pause
+    mkfifo -m 600 \"\$FE_PAUSE\" || exit 9
+    $1
+    fe_wait_cores \"\$FE_SESSION\" ${2:-10}
+    printf 'wait=%s %s\n' \"\$?\" \"\$FE_WHY\"
+    rm -rf \"\$FE_SESSION\"" >/dev/null
+  cat "$T/tmp-wait/fe-out"
+}
+assert_eq "$(wait_case ':')" "wait=0 " "launcher-quiescent: nothing recorded, nothing late: over"
+t0=$SECONDS
+r=$(wait_case 'printf "omb-proc 1\ntorn" >"$FE_SESSION/req-1.core"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-corrupt: a core identity that cannot be read is unknown, not over"
+[ $((SECONDS - t0)) -lt 12 ] && ok || fail "and the launcher stops waiting on it ($((SECONDS - t0)) s)"
+r=$(wait_case 'printf "proc\trole=worker\tpid=x" >"$FE_SESSION/req-1.worker-1"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-corrupt: a worker identity that cannot be read is unknown"
+r=$(wait_case 'mkdir "$FE_SESSION/req-1.core"')
+assert_contains "$r" "wait=2 " "an identity that is not a file is unknown"
+# launcher-identity-link: a dangling link is an entry, never the absence of
+# one (-e alone follows it and finds nothing); a link to an ended process's
+# sealed identity is not admitted either; nor is a FIFO.
+r=$(wait_case 'ln -s "$FE_SESSION/gone" "$FE_SESSION/req-1.core"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a dangling core identity is unknown, not over"
+r=$(wait_case 'ln -s "$FE_SESSION/gone" "$FE_SESSION/req-1.worker-1"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a dangling worker identity is unknown, not over"
+r=$(wait_case 'sleep 0.1 & p=$!; core_proc_write "$FE_SESSION/gone" core $p; wait $p; ln -s "$FE_SESSION/gone" "$FE_SESSION/req-1.core"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a link to an ended core's identity is unknown"
+r=$(wait_case 'mkfifo "$FE_SESSION/req-1.worker-1"')
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-link: a FIFO in a worker's place is unknown"
+# fe_scratch_idle on its own, with no wait before it: the same answers.
+r=$(wait_case 'ln -s "$FE_SESSION/gone" "$FE_SESSION/req-2.worker-1"; fe_scratch_idle "$FE_SESSION"; echo "idle=$?"; rm -f "$FE_SESSION/req-2.worker-1"; fe_scratch_idle "$FE_SESSION"; echo "idle=$?"; :' 1)
+assert_contains "$r" "idle=2" "launcher-identity-link: fe_scratch_idle takes a dangling worker identity as unknown"
+assert_contains "$r" "idle=0" "and a session with no req-* entry at all, the patterns matching nothing, as idle"
+# A recorded core still alive at the limit: the wait ends, never as over.
+sleep 30 &
+live=$!
+r=$(wait_case "core_proc_write \"\$FE_SESSION/req-1.core\" core $live" 2)
+assert_eq "$r" "wait=1 a process of the session was still running after 2 s" "launcher-timeout-live: a live core at the limit is not over"
+# The same PID with another start (a reused PID) is waited for all the same:
+# only the full identity, read once no PID answers, can say it has ended.
+r=$(wait_case "rec_line_v proc role core pid $live start 'Mon Jan  1 00:00:00 2001' boot \$CORE_BOOT; { printf 'omb-proc 1\n'; printf '%s\n' \"\$REC_LINE\"; } >\"\$FE_SESSION/req-1.core\"; rec_seal_write \"\$FE_SESSION/req-1.core\"" 2)
+assert_contains "$r" "wait=1 " "a live PID is never taken for an ended core"
+kill "$live" 2>/dev/null
+wait "$live" 2>/dev/null
+# A recorded core that ends within the limit: over once it has.
+r=$(wait_case "sleep 2 & core_proc_write \"\$FE_SESSION/req-1.core\" core \$!" 10)
+assert_eq "$r" "wait=0 " "a recorded core that ends: over"
+# launcher-identity-missing: a process that joined the group and was never
+# recorded (a core that died before writing its identity left it) is waited
+# for as a worker.
+r=$(wait_case 'sleep 2 &' 10)
+assert_eq "$r" "wait=0 " "launcher-identity-missing: an unrecorded late process is waited out"
+r=$(wait_case 'sleep 4 &' 1)
+assert_contains "$r" "wait=1 " "launcher-identity-missing: and one that outlasts the limit is not over"
+# Identities that cannot be established once no PID answers (ps fails).
+psflag=$T/ps-broken
+psbroken=$(t_tmp)
+printf '#!/bin/sh\n[ -e "%s" ] && exit 1\nexec /bin/ps "$@"\n' "$psflag" >"$psbroken/ps"
+chmod +x "$psbroken/ps"
+r=$(FE_PATH="$psbroken:$BASE_PATH" wait_case "sleep 0.1 & p=\$!; core_proc_write \"\$FE_SESSION/req-1.core\" core \$p; wait \$p; : >'$psflag'")
+rm -f "$psflag"
+assert_eq "$r" "wait=2 an identity the session recorded cannot be read" "launcher-identity-unknown: ps failing, a recorded core is unknown, not over"
+r=$(FE_PATH="$psbroken:$BASE_PATH" wait_case ": >'$psflag'")
+rm -f "$psflag"
+assert_eq "$r" "wait=2 the process table cannot be read" "launcher-table-unknown: the group that cannot be read is not over"
+# The whole launcher: a frontend that ends leaving a dangling core identity
+# never has its session called over, so neither its terminal settings nor
+# the text interface follow, and the scratch stays.
+mkdir -p "$T/tmp-dangle"
+printf '0 dangle' >"$T/fake-behaviour"
+r=$(FE_TMP=$T/tmp-dangle FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+assert_contains "$r" "1|unsettled|" "launcher-identity-link: a frontend leaving a dangling core identity: not known to be over"
+assert_contains "$(cat "$T/tmp-dangle/fe-out")" "not known to be over" "and the launcher says so"
+assert_not_contains "$r" "fallback" "and no text interface follows"
+assert_eq "$(ls "$T/tmp-dangle" | grep -c '^omb-session\.')" 1 "and the scratch stays"
+[ -L "$(ls -d "$T/tmp-dangle"/omb-session.* | head -1)/req-1.core" ] && ok || fail "with the link in it, untouched"
+rm -rf "$T/tmp-dangle"
+# No pause, no wait: fe_wait_cores refuses rather than start processes.
+r=$(FE_TMP=$T/tmp-wait fe_call '' eval 'omb_tmp_init; fe_session_create; FE_PAUSE=""; fe_wait_cores "$FE_SESSION"; echo "wait=$?"; rm -rf "$FE_SESSION"')
+assert_contains "$(cat "$T/tmp-wait/fe-out")" "wait=2" "launcher-no-pause: without its pause the launcher never calls the session over"
+
+# launcher-pause-failure: the pause cannot be made, so no frontend starts.
+mkshim=$(t_tmp)
+printf '#!/bin/sh\nexit 1\n' >"$mkshim/mkfifo"
+chmod +x "$mkshim/mkfifo"
+rm -f "$T/fake-env"
+printf '0' >"$T/fake-behaviour"
+r=$(FE_PATH="$mkshim:$BASE_PATH" FE_TMP=$T/tmp-wait FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey)
+assert_contains "$r" "10|fallback|" "launcher-pause-failure: the text interface instead"
+assert_contains "$r" "could not make its pause" "and why"
+[ ! -e "$T/fake-env" ] && ok || fail "launcher-pause-failure: the frontend was never started"
+assert_eq "$(ls "$T/tmp-wait" | grep -c '^omb-session\.')" 0 "and its scratch removed"
+
+# launcher-forward-identity: a forwarded signal reaches only the frontend
+# this launcher started — its PID with its start time.
+sleep 30 &
+live=$!
+fe_call '' eval "FE_FPID=$live FE_FSTART='Mon Jan  1 00:00:00 2001'; fe_forward TERM" >/dev/null
+kill -0 "$live" 2>/dev/null && ok || fail "launcher-forward-identity: a PID now another process's is not signalled"
+fe_call '' eval "FE_FPID=$live FE_FSTART=''; fe_forward TERM" >/dev/null
+kill -0 "$live" 2>/dev/null && ok || fail "launcher-forward-identity: a frontend whose start was never read is not signalled"
+fe_call '' eval "FE_FPID=$live FE_FSTART='$(t_started "$live")'; fe_forward TERM" >/dev/null
+wait "$live" 2>/dev/null
+kill -0 "$live" 2>/dev/null && fail "launcher-forward-identity: the frontend itself is signalled" || ok
+
+t_decoys_survive test-frontend
+t_done test-frontend

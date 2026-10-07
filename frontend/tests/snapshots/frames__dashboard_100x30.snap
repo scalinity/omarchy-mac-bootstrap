@@ -1,0 +1,35 @@
+---
+source: tests/frames.rs
+assertion_line: 221
+expression: text(&b)
+---
+ ◒ Journey ───────────────────────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────────────────────────┐
+│  Welcome     ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·        │
+│▍ Journey     ││ survey  profile resolve plan    asahi   omarchy shared  restore verify  done     │
+│  Machine     ││ No stage is derived yet: every station is later.                                 │
+│  Status      ││                                                                                  │
+│  Health      ││ ▍Where it stands                                                                 │
+│  Logs        ││   The core gave no next step for this session.                                   │
+│  Plan        ││                                                                                  │
+│              ││ ▍Facts                                                                           │
+│              ││   Interface  the foundation: test actions over fixtures                          │
+│              ││   Fixture    mac-m1pro-1tb-roomy                                                 │
+│              ││   Operation  ✓ none                                                              │
+│              ││                                                                                  │
+│              ││ ▍Actions                                                                         │
+│              ││ ❯ Read the fixture (test)         read                                           │
+│              ││   Change the fixture (test)       act · type test                                │
+│              ││   Hand over the terminal (test)   act · handoff · type test                      │
+│              ││   Runs the fake read child: its output is shown, its diagnostics kept within     │
+│              ││   their limits.                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+└──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                 may act · 3 actions · fixture
