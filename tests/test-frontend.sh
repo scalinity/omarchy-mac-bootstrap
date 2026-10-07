@@ -52,6 +52,19 @@ esac
 case "$b" in
   *sleep*) sleep 2 ;;
 esac
+# Live until the test releases it (fake-release), for 600 polls of 0.05 s
+# (about 30 s) at most: it says so by writing its PID to fake-live, and keeps
+# SIGTERM's default action, so a signal that reaches it ends it by the signal.
+case "$b" in
+  *term-live*)
+    echo "$$" >"$(dirname "$0")/fake-live"
+    i=0
+    while [ ! -e "$(dirname "$0")/fake-release" ] && [ "$i" -lt 600 ]; do
+      sleep 0.05
+      i=$((i + 1))
+    done
+    ;;
+esac
 # A core left running in the session: a live process recorded as one, with
 # the identity a core writes.
 case "$b" in
@@ -506,6 +519,24 @@ launcher_id() {
   done
   return 1
 }
+# frontend_live DIR — "PID START" of the frontend that the launcher whose
+# scratch is in DIR recorded, once that frontend has said it is live
+# (fake-live holds its PID; up to 10 s).
+frontend_live() {
+  local i=0 s p
+  while [ "$i" -lt 200 ]; do
+    for s in "$1"/omb-session.*; do
+      [ -f "$s/frontend.omb" ] && [ -f "$T/fake-live" ] || continue
+      p=$(sed -n 's/.*	pid=\([0-9]*\)	start=\([^	]*\)	.*/\1 \2/p' "$s/frontend.omb" | sed 's/%20/ /g')
+      [ -n "$p" ] && [ "${p%% *}" = "$(cat "$T/fake-live")" ] || continue
+      printf '%s\n' "$p"
+      return 0
+    done
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
 # SIGINT is caught and kept by the launcher (the child acts on its own).
 printf '0 sleep' >"$T/fake-behaviour"
 mkdir -p "$T/tmp-int"
@@ -516,12 +547,21 @@ t_signal INT "${l%% *}" "${l#* }" && ok || fail "sup-eintr: the launcher, by the
 wait "$bg"
 assert_contains "$(cat "$T/eintr")" "0|verified|" "sup-eintr: the launcher's wait is retried after a signal, and the frontend's status kept"
 # SIGTERM (and SIGHUP) the launcher passes to the frontend: this fake has no
-# handler, so it ends by the signal, and its status says so.
+# handler, so it ends by the signal, and its status says so. It stays live
+# until the test releases it, so the signal finds it however late it is sent;
+# only the launcher is signalled. A frontend still live 10 s after the signal
+# was never reached: it is released, ends on its own (status 0), and the
+# status assertion fails.
+printf '0 term-live' >"$T/fake-behaviour"
 mkdir -p "$T/tmp-term"
 (FE_TMP=$T/tmp-term FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_run act journey >"$T/eintr") &
 bg=$!
 l=$(launcher_id "$T/tmp-term" frontend.omb)
+f=$(frontend_live "$T/tmp-term")
+[ -n "$f" ] && [ "$(t_started "${f%% *}")" = "${f#* }" ] && ok || fail "the frontend the launcher recorded is live when the launcher is signalled ($f)"
 t_signal TERM "${l%% *}" "${l#* }" && ok || fail "the launcher, by the identity it recorded ($l)"
+[ -z "$f" ] || t_wait_gone "${f%% *}" 10
+touch "$T/fake-release"
 wait "$bg"
 assert_contains "$(cat "$T/eintr")" "status 143" "SIGTERM to the launcher reaches the frontend"
 
