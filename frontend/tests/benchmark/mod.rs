@@ -460,7 +460,7 @@ fn phase_sources() -> Fallible<Vec<(String, String)>> {
                 (
                     ". \"$OMB_HOME/lib/core.sh\"",
                     ". \"$OMB_BENCH_COPY/core.sh\"",
-                    3,
+                    4,
                 ),
                 (
                     "\nmain \"$@\"\n",
@@ -477,7 +477,7 @@ fn phase_sources() -> Fallible<Vec<(String, String)>> {
                 (
                     ". \"$OMB_HOME/lib/read.sh\"",
                     ". \"$OMB_BENCH_COPY/read.sh\"",
-                    4,
+                    5,
                 ),
                 (
                     ". \"$OMB_HOME/lib/health.sh\"",
