@@ -184,9 +184,9 @@ proof (the controllers are always in it, and a daemonised descendant never
 is); a general process tracker.
 
 **D54. An operation record that cannot be read stays a barrier until an
-explicit, evidenced clear** (the Gate 3 prerequisite; a contract awaiting
-its focused independent re-review, not implemented: docs/PROTOCOL.md → *An
-operation record that cannot be read*). Failing to decode a record is never
+explicit, evidenced clear** (the Gate 3 prerequisite; a contract accepted at
+`152c8f68854368025816b926494dbec0e94bc903`, not implemented:
+docs/PROTOCOL.md → *An operation record that cannot be read*). Failing to decode a record is never
 evidence that nothing runs, that the operation ended or that it left no
 effect, because every judgement of D47 starts from the record's fields and
 none is available. Looking and reading are judged apart, so an inspection
@@ -228,6 +228,43 @@ can move); the person's word in place of the boot-change proof; showing an
 unadmitted record's fields, even marked as unverified; a frontend that
 reads `ops/`; an automatic clear after reconciliation, which a readable
 record gets only because its action and basis are known.
+
+**D55. The operation-record diagnostic is a detail of the record's own
+scope** (a candidate awaiting its focused independent review, not
+implemented: docs/PROTOCOL.md → *The operation-record diagnostic*). The
+scope that keeps `ops/<scope>.omb` must already show its barrier and
+withhold its act actions, so its snapshot already inspects the record; the
+diagnostic publishes that inspection whole, as `detail kind=operation`, a
+projection of the snapshot's own data set under its generation, so a
+finding and the barrier beside it never describe two moments. The snapshot
+keeps one `operation` fact and a blocker of the state's own — `unreadable`,
+`undetermined`, `unsettled-clear` — and no path, so a value the record
+format cannot carry never hides a barrier. Every addition is a value of an
+`id`, `bytes` or `text` field: no enum, record type, key or cardinality
+changes, so protocol 1 holds by the admission rules both implementations
+already apply, not by a ruling for new enum words as CP1 needed. A finding
+is delivered `done` whatever it is, D included; only the diagnostic's own
+machinery answers `error io`, and only an unrepresentable required value
+`error representation`, each with nothing partial. The text interface asks
+with a read command of its own, `operation SCOPE`, whose required argument
+makes an older checkout refuse it before it touches the state directory.
+The contract states, field by field, whether a value is observed, recorded
+by a record that admitted, or inferred by a fixed rule, and a `recorded.`
+key marks the second on the wire; nothing is shown from a record that
+did not admit, a failed lookup is never no record and a check that did not
+finish is never an unreadable record, and no worker or effect evidence is
+claimed that the open UR-Q3, UR-Q4 and UR-Q5 have not supplied. *Set
+aside:* a new operation (a `req` enum word an older core refuses at
+admission, and a generic read made for one question); a new scope (an enum
+word the released parser rejects, and a second generation over the
+inspection the record's own snapshot already makes, so the two could
+disagree); a text-only command (the frontend would have no core answer to
+show, and would be left to infer one); protocol 2 (no existing record
+changes meaning); the whole finding as snapshot facts (every refresh would
+carry it, and an unrepresentable path would take the barrier with it);
+keeping `unsupervised` as C's blocker, whose meaning includes clearing by a
+new boot; a fingerprint for D, which would make a delivered D depend on the
+hash tool that may be what failed.
 
 **D43. The frontend's own persistence follows intent, with one named
 exception.** For every ordinary command, only an act session downloads and
@@ -771,6 +808,32 @@ code exists that depends on one.
 | UR-Q8 | Can the existing surfaces carry it safely? | The foundation's journey snapshot shows C today, fixture only. The ordinary Gate 2 reads, `status` and `doctor` read no operation record and are held to the baseline (D52); the startup check must not read one; the debug report's fields are allowlisted (docs/RESCUE.md → *Safe fields*) and include no operation; the launcher reads records only to keep a scratch. Today's fix text advises removal by hand once the operation is known to have ended, which no one can learn from the record. | (a) each surface gains fixed facts, as its own reviewed change; (b) only the scope's snapshot and the diagnostic carry it | (a): the scope's snapshot and a journey summary of barriers; the text interface in the reviewed baseline change Gate 3 already names; the debug report an operation-state enum and admission's reason code per scope; the startup check unchanged; the fix text naming the diagnostic instead of removal | each surface's change, separately |
 | UR-Q9 | Is admission enough to call a record readable? | `core_op_read` reads no `scope` field, so a record whose scope differs from its path is read as the path's; one naming an action this core does not have is read, and reconciles to `unexpected`. | (a) as today; (b) a record whose scope differs from its path, or whose action is not one of its scope's, is C | (b): it is not this scope's record, and C keeps it blocked with the same diagnostic | the classification's implementation |
 
+The prerequisite's review is concluded. Its first review required the
+remediation of UR-C01 to UR-C03; the re-review of `806a879..ba21467` closed
+them and raised UR-C04; the final re-review closed UR-C04 and accepted the
+contract at `152c8f68854368025816b926494dbec0e94bc903` (**GATE 3
+PREREQUISITE CONTRACT ACCEPTED**; MILESTONES.md → *Gate 3 — The action
+contract under fixtures*). UR-Q2 and UR-Q9 are accepted as that review
+ruled; UR-Q1 and UR-Q3 to UR-Q8 stay open, each blocking the work beside it,
+and Gate 3's implementation is not started.
+
+The read-only diagnostic interface contract (D55; docs/PROTOCOL.md → *The
+operation-record diagnostic*) then proposes the dispositions below. They
+are candidates for its focused independent review, not rulings; a question
+it touches stays open in every part the third column names.
+
+| # | State after the prerequisite's acceptance | Candidate disposition (D55) | Stays open |
+| --- | --- | --- | --- |
+| UR-Q1 | open | none | all of it |
+| UR-Q2 | accepted: a clear only for a plain file read in full within the stored-document limit, every other prerequisite still required | — | — |
+| UR-Q3 | open | none: the diagnostic runs no reconciliation and reports the effect `unknown` | all of it |
+| UR-Q4 | open | none: for C, D and an unsettled clear the diagnostic reads no recorded identity and reports workers `unknown` | all of it |
+| UR-Q5 | open | none | all of it |
+| UR-Q6 | open | the diagnostic's part: the `operation` detail and row kind, its keys, values, labels and texts; the `operation` fact's values; the blocker ids `unreadable`, `undetermined` and `unsettled-clear`; D as a delivered `done` finding naming its failed step; the fixed `error io` and `error representation` texts | the act refusals' codes and texts for C and D (C is refused `unsupervised` today, and D falls into A or C); the `busy` refusal's text for unknown liveness; the clear's action id, typed word and answers; a wire value for `unexpected`; every other Gate 3 action's vocabulary |
+| UR-Q7 | open | recommendation (a), made precise: the record's own scope; its `snapshot` carries the barrier and `detail kind=operation` the finding, from one inspection under one generation; no new operation, scope, purpose or protocol version | nothing of the transport; the text command's row in SPEC.md → *Commands* is written with its implementation |
+| UR-Q8 | open | the diagnostic's part: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
+| UR-Q9 | accepted: a record naming another scope, or an action its scope does not own, is C; a scope's own action merely unavailable now is not corruption | — | — |
+
 ## Where each design question is answered
 
 | # | Question | Answer |
@@ -814,5 +877,6 @@ code exists that depends on one.
 | — | Gate 1's production start, and its authority | docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The startup-check session*; D10, D18, D43, D48 |
 | — | Gate 2's read surface, generations and paging | docs/PROTOCOL.md → *The Gate 2 read surface*; D50, D52, D53, and *Open review questions* |
 | — | An operation record that cannot be read | docs/PROTOCOL.md → *An operation record that cannot be read*; D47, D54, and *Open review questions* (UR-Q1 to UR-Q9) |
+| — | Its diagnostic's request, answer, words and interfaces (a candidate) | docs/PROTOCOL.md → *The operation-record diagnostic*; D55 |
 | — | An unreleased frontend candidate | D49; docs/FRONTEND.md |
 | — | The interface | docs/UX.md; D51 |

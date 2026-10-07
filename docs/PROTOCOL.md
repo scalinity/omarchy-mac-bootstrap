@@ -10,8 +10,10 @@ Health (Doctor) at `27f79d6` and Validate at
 them is implemented in the unreleased 0.2.0 candidate, and its integration
 is accepted at `c855f6197be86e90f5fb833f7faec0d0f6372794`, which closes
 gate 2) and gate 3 (actions and bases; not implemented; its prerequisite
-contract, *An operation record that cannot be read*, is documented and
-awaits independent review).**
+contract, *An operation record that cannot be read*, is accepted at
+`152c8f68854368025816b926494dbec0e94bc903`, documentation only, and the
+interface of its diagnostic, *The operation-record diagnostic*, is a
+candidate awaiting independent review).**
 Local experiments that ground it are recorded in docs/UPSTREAM.md →
 *Experiments*.
 
@@ -575,11 +577,14 @@ action that changes the machine also keeps an **operation record**,
 
 **Status: the recovery and diagnostic contract that MILESTONES.md → *Gate 3
 — The action contract under fixtures* requires before any real mutating
-action is exposed (D54). Documentation only, awaiting its focused
-independent re-review (MILESTONES.md → *Gate 3 — The action contract under
-fixtures*): nothing below beyond *Today* is implemented or authorized, and its
-open questions (docs/DECISIONS.md → *Open review questions*, UR-Q1 to
-UR-Q9) are not settled here.**
+action is exposed (D54). Documentation only, accepted at
+`152c8f68854368025816b926494dbec0e94bc903` by its focused independent
+re-review (MILESTONES.md → *Gate 3 — The action contract under fixtures*):
+nothing below beyond *Today* is implemented or authorized. Of its open
+questions (docs/DECISIONS.md → *Open review questions*), the review accepted
+UR-Q2 and UR-Q9; UR-Q1 and UR-Q3 to UR-Q8 are not settled here. The
+diagnostic's interface is proposed, as a candidate awaiting its own review,
+in *The operation-record diagnostic* (§4).**
 
 Every judgement in *Operations and exclusion* starts from the record's
 fields: the core's identity decides `busy` or `unsupervised`, the boot
@@ -808,7 +813,9 @@ step, never a reason code that step left behind as a finding about the
 bytes. The diagnostic itself fails only when its own machinery cannot
 produce an answer — its per-run scratch, the hashing of the fingerprint it
 reports, the building and admission of its answer — and then it answers
-`error io` with nothing partial, never a finding (*Answers*).
+`error io` with nothing partial, never a finding (*Answers*). How it is
+asked for, its exact answer, words and interfaces are proposed in *The
+operation-record diagnostic* (§4).
 
 The next safe step it names: for A, none; for B, the existing one (wait for
 the live core, or restart, then run the tool again); for C, inspecting again
@@ -996,6 +1003,12 @@ what is there, A only when it establishes A, and nothing more.
 | a clear not verified complete: a mismatch, an identity it cannot confirm, or a stop after its record | never `done`; the answer says the clear did not complete and the scope stays barred | its code is UR-Q6 |
 | a core that ends without its `result` | unknown outcome, then a fresh read | existing (*The terminal result*) |
 | the clear's action id and typed word, the diagnostic's operation or detail kind | none yet | UR-Q6, UR-Q7 |
+
+For the diagnostic's own rows above — its detail kind, its texts and its
+answers — *The operation-record diagnostic* (§4) proposes candidate
+answers, awaiting their review; until they are accepted, this table stands
+as written. The act refusals' codes and the clear's vocabulary are not part
+of that proposal.
 
 **Acceptance cases.** What a future implementation must show, case by case.
 None is a test yet; test ids are named with the implementation
@@ -1679,6 +1692,597 @@ size` per free region the installer lists. The plan digest is the SHA-256 of
 An error response is the truthful hello and the fixed result alone. Staging,
 canonical admission of the whole response, retained-copy publication and an
 incomplete transport follow Health.
+
+### The operation-record diagnostic
+
+**Status: a candidate interface contract, documentation only, awaiting its
+focused independent review (MILESTONES.md → *Gate 3 — The action contract
+under fixtures*). It proposes resolutions for UR-Q7, for the part of UR-Q6
+the diagnostic needs and for the part of UR-Q8 that carries it (D55;
+docs/DECISIONS.md → *Open review questions*). None is accepted, nothing
+below is implemented or authorized, and UR-Q1, UR-Q3, UR-Q4 and UR-Q5 stay
+open.**
+
+This is the diagnostic of *An operation record that cannot be read* (§3),
+made exact: how it is asked for, what it answers, with which words, and
+which interfaces carry it. It is a read under the record's own scope. It
+takes no run lock, records no operation, writes nothing outside the per-run
+scratch, clears, reconciles and resumes nothing, and leaves the record byte
+for byte. The core inspects and decides every value; the frontend and the
+text interface render the same answer and decide nothing (D3, D5). The
+letters A to D name §3's states; on the wire each has a word of its own.
+
+**Transport.** UR-Q7's recommendation (a), made precise:
+
+1. **The record's scope owns it.** `S` is the scope whose act actions keep
+   `ops/<S>.omb`. There is no new scope, operation, session purpose or
+   protocol version.
+2. **The snapshot carries the barrier.** `S`'s `snapshot` carries one
+   `fact key=operation` and the `blocker` records the tables below give its
+   state, none for a running record, as today. It carries no path,
+   fingerprint or row, so a
+   value the record format cannot carry never hides the barrier, and no act
+   action of `S` is listed while it holds.
+3. **The detail carries the finding.** `detail` with `page kind=operation`
+   returns the whole finding as `row kind=operation` records. Only an
+   explicit request receives it.
+4. **One inspection, one generation.** A detail kind pages a projection of
+   its snapshot's own data set (*The Gate 2 read surface*), so `S`'s
+   snapshot performs the whole inspection below, the fingerprint included,
+   and its data set holds every `operation` row, off-page rows included;
+   `S`'s generation covers them. Each `detail kind=operation` inspects again,
+   recomputes the generation and answers `refused changed` on any
+   difference: a record rewritten, a core that died or a clear that moved
+   between the snapshot and the detail is never shown as one finding (U22,
+   U23).
+5. **Where it exists.** A scope answers `kind=operation` exactly when its act
+   actions keep operation records: first the foundation fixture's `journey`,
+   whose test actions write `ops/journey.omb`; then each Gate 3 scope, with
+   the producer of its first act action. No act action of a scope is listed
+   before that scope's snapshot carries the fact and the blocker and
+   answers the detail. The ordinary Gate 2 `journey`, `health` and `logs`
+   answers are unchanged: those scopes keep no operation record, and their
+   kinds stay as accepted.
+
+**The request.** A snapshot of `S`, then the detail from its generation:
+
+```text
+omb-req 1
+req	op=snapshot	proto=1	frontend=0.1.0	session=0123456789abcdef
+scope	name=shared
+```
+
+```text
+omb-req 1
+req	op=detail	proto=1	frontend=0.1.0	session=0123456789abcdef
+page	scope=shared	kind=operation	generation=9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15	offset=0	limit=20
+```
+
+`frontend` is the requesting client's own version, written here as the
+golden examples write it; the released 0.1.0 never sends this request
+(*Compatibility*, below).
+
+| Item | Rule |
+| --- | --- |
+| operation | `detail`, after a `snapshot` of `S`, which supplies the generation: the request schema gives no other way to learn one |
+| scope | `S`, in `page`'s `scope`; the session's scopes must include it, or the answer is `refused scope` |
+| required records | `req` and `page`, one each, as for every `detail` |
+| forbidden records | `scope`, `select`, `exec`, `arg`: any of them makes the request inadmissible (`schema`, exit status 2), as the request table below already says for `detail` |
+| optional fields | none |
+| `kind` | exactly `operation` |
+| paging | ordinary `detail` paging: `offset` from 0, `limit` 1 to 500; `offset` equal to `total` is `done` with no row, greater is `refused invalid`. A finding has at most 20 rows, so `offset=0` with `limit` 20 or more returns it whole. A client presents a finding only from rows 0 to `total` − 1 of one generation, never from part of them |
+| generation | the generation of `S`'s last snapshot; a well-formed one the core does not hold is `refused changed`, with the fresh generation and no row |
+| bounds | the request within §1's limits; the answer at most 20 rows, each within §1's record limit |
+| an invalid request | refused at admission with its reason code, exit status 2, before any inspection |
+| where it answers | in fixture mode, as every ordinary read (D16), until a release opens ordinary reads beyond fixtures, and `refused unavailable` outside one; `refused unavailable` in the startup-check session, as *The startup-check session* already says for `detail`; `refused unavailable`, with that producer's existing text, in a scope that keeps no operation record |
+
+The request schema, the response schema and every enum in §4 stay as they
+are: `page`'s `kind` is an `id`, `row`'s `kind` an `id`, its `key` `bytes`
+and its columns `text`.
+
+**The answer.** Records in the response schema's order, and nothing else: no
+`message`, `warning` or `overflow` record.
+
+| Situation | Records | `result` |
+| --- | --- | --- |
+| a finding, whatever its state: `none`, `readable`, `unreadable`, `undetermined` or `unsettled-clear` | `hello`; `generation`, `S`'s, with `total` the finding's row count; the requested page of `row kind=operation` | `status=done code=ok text= next=` |
+| the diagnostic's own machinery fails (below) | `hello`; `generation` with the SHA-256 of the empty string and `total=0`; no row | `status=error code=io`, fixed text `The operation record response could not be prepared.`, empty `next` |
+| a required value the record format cannot carry: the path | the same records | `status=error code=representation`, fixed text `The required operation record response cannot be represented in Protocol 1.`, empty `next` |
+| `changed`, `invalid`, `scope`, `unavailable` (*The request*) | as every refused `detail`: `hello`, the `generation` the schema requires, no row | `refused` with that code and the scope producer's text for it |
+
+A delivered D is a finding, `done`. The machinery's failure is `error io`,
+an unrepresentable path `error representation`, and none of the three ever
+stands in for another or is partial. The empty generation of an error says
+that this answer supplies no data set, not that the scope is empty.
+Publication follows `Gate2-read-representation-failure`: the complete
+response is staged and canonically admitted before any of it is published,
+and the admitted copy is what is published. Established invalidity of a
+required value is `representation`; inability to create, write or read the
+staging, to run admission, to keep the admitted copy or to compute a hash
+is `io`; when the safe-response machinery itself fails, the fixed emergency
+records of *Future health and logs producers* apply.
+
+The diagnostic's own machinery is its per-run scratch, the hashing of the
+fingerprint it reports, the computation of the generation, and the
+staging, admission and publication of its answer. Every other step looks
+at the record, and a step of those that cannot complete is the finding, D,
+whatever tool failed in it.
+
+**The rows.** Each row is `row kind=operation key=<field> col=<label>
+col=<value> col=<text>`, three columns always. `label` and `text` are fixed
+ASCII from the tables below, so they render the same on the Linux console;
+`value` is a fixed word, a decimal number, 64 hex digits, an admitted
+record's action id, or the path. Rows come in this table's order. A row
+whose field does not apply to the state is absent; a field that applies and
+could not be established is present with the value `unknown`. Absence never
+stands for a value: a client never reads a missing row as `none`, `no`,
+`not running` or no effect. A key prefixed `recorded.` holds a field of a
+record that admitted, as fact keys from records are prefixed (*The Gate 2
+read surface*).
+
+| Key | Label | Values | Present | From | Certainty |
+| --- | --- | --- | --- | --- | --- |
+| `scope` | `Scope` | `S` | always | the request | inferred: the scope asked for |
+| `path` | `Record` | `ops/<S>.omb` under the state directory, shortened with `~` as the refusal shows it | always | `core_op_path`, the tool's own construction | inferred, never read from the machine; a path `text` cannot carry is `error representation` |
+| `state` | `State` | `none`, `readable`, `unreadable`, `undetermined`, `unsettled-clear` | always | the inspection, in its order below | inferred from the steps' own outcomes |
+| `stage` | `Failed step` | `lookup`, `status`, `read`, `check`, `clear` | `undetermined` only | the step that could not complete | observed: that step's outcome, never a reason code it left behind |
+| `kind` | `Entry` | `file`, `link`, `folder`, `other` | `unreadable`; `undetermined` at `read` or `check` | the entry's own status, never followed | observed |
+| `owner` | `Owner` | `this-user`, `root`, `other-user` | with `kind` | the entry's status | observed |
+| `writable` | `Writable by others` | `yes`, `no` | with `kind`, except a `link`, whose own mode means nothing | the entry's status | observed |
+| `size` | `Size` | bytes, in decimal | with `kind=file`, once its size was read | `wc -c`, every tool's status counted | observed |
+| `fingerprint` | `Fingerprint` | 64 lower-case hex digits; `none`; `unknown` | `unreadable` with `kind=file` | *The fingerprint*, below | observed; `none`: not eligible; `unknown`: eligible, and its bytes could not be read in full |
+| `reason` | `Refused by` | `kind`, `owner`, `writable`, `too-large`, `byte`, `eof`, `line`, `blank`, `tab`, `header`, `key`, `value`, `nul-escape`, `non-canonical`, `schema`, `type`, `seal`, `other-scope`, `other-action` | `unreadable` only | the first check that refused, having run to its end: the status, then §2's admission, then UR-Q9's | observed: which completed check refused; never provenance, and never `io` |
+| `line` | `At line` | a line number, in decimal | with `reason`, when that check names a line | admission's line | observed |
+| `recorded.action` | `Recorded action` | the record's `action` | `readable` | the admitted record | recorded |
+| `recorded.state` | `Recorded state` | `running`, `unsupervised`, `failed` | `readable` | the admitted record | recorded |
+| `recorded.finding` | `Recorded finding` | `absent`, `unexpected` | `readable` with `recorded.state` `failed` | the admitted record | recorded: what a fresh read showed when the operation ended, not what the machine holds now |
+| `boot` | `Recorded boot` | `this`, `earlier`, `unknown` | `readable` | the record's boot session against this boot's | inferred; `unknown` when this boot cannot be identified |
+| `worker` | `Workers` | `active`, `unknown`, `ended` | every state but `none` | §3's *Workers*, by the tables below | `active` observed; `ended` recorded or inferred; `unknown` when nothing establishes either |
+| `effect` | `Effect` | `unknown` | every state but `none` | — | the diagnostic runs no reconciliation and reads no result of one |
+| `clear` | `Clear` | `none`, `attempted`, `taken` | in a core that implements the accepted clear, in every state but `undetermined` at `clear` | the clear's own evidence (§3, *The clear transaction*) | observed, by the mechanism defined with the clear |
+| `clear.entry` | `Taken entry` | `confirmed`, `mismatch`, `unconfirmed` | with `clear=taken` | the clear's comparison (U31) | observed: `mismatch` only from a comparison that ran to its end |
+| `clear.fingerprint` | `Taken fingerprint` | 64 lower-case hex digits; `unknown` | with `clear=taken` | the clear's own evidence | observed |
+| `unknown` | `Still unknown` | empty | always | fixed text per state | — |
+| `next` | `Next` | empty | always | fixed text per state | — |
+
+`owner` is `this-user` when the entry belongs to the user the tool runs as,
+root included, and `root` only when root owns it and the tool runs as
+another user. At most 17 of these apply at once, within the bound of 20.
+In this contract `worker` is only `unknown` for every state but
+`readable`, and `effect` only
+`unknown` for every state. The values the accepted *Workers* and *Effects*
+tables also name for an unreadable record — workers not observed or ended
+for these bytes, an effect observed or no unexpected effect — are not part
+of it: each arrives, by review, with the mechanism that can establish it
+(UR-Q4; UR-Q3 and UR-Q5). The `clear` rows appear only once the clear is
+accepted and implemented; their source and storage are the clear's (UR-Q1)
+and are not defined here.
+
+**The inspection.** In this order. Each step keeps its own outcome: a
+helper's boolean or reason code that cannot tell a tool that failed from a
+finding is never the evidence — `_state_file_ok`, whose `find` discards its
+own failure, and `rec_admit_copied`'s `seal` (§3, *Today*) among them.
+
+0. **Machinery.** The per-run scratch is created and shown writable before
+   the record is looked at. If it cannot be: `error io`.
+1. **Lookup.** The state directory, then `ops`, each by its own status,
+   never followed: each must be a folder (not a link) of this user that this
+   process can search, and `ops` one it can list, as the launcher lists it.
+   A state directory that does not exist is no record when its nearest
+   existing ancestor is a folder this process can search, as for Logs
+   (*Future health and logs producers*); an `ops` that does not exist under a
+   good state directory is no record. Then whether `ops/<S>.omb` has an
+   entry, `-e` or `-L`. Whatever of this cannot be established:
+   `undetermined` at `lookup`. No entry: `none`, unless step 5 finds a clear
+   unsettled.
+2. **Status.** The entry's own status, never followed: its kind, owner and
+   mode. Cannot be read: `undetermined` at `status`. Not a plain file:
+   `unreadable`, reason `kind`, and it is never opened. Another user's:
+   `unreadable`, `owner`. Writable by group or others: `unreadable`,
+   `writable`.
+3. **Read**, for a plain file. Its size, by `wc -c`. Over 65536 bytes, the
+   stored-document limit of an `op` record: `unreadable`, `too-large`,
+   fingerprint `none`, nothing read. Otherwise the bounded copy, `head -c
+   65537`, into the per-run scratch, whose length must equal the size read.
+   A size that cannot be read, a copy not made, or a copy of another length:
+   for a file its status admitted, `undetermined` at `read`; for a file
+   already `unreadable` by its status, fingerprint `unknown`, and the state
+   stands.
+4. **Check**, for a file its status admitted. §2's admission on the copy,
+   then UR-Q9's: the record's `scope` is `S`, and its `action` is one `S`
+   owns, whether or not it is available now, since a scope's own action
+   that is merely unavailable is not corruption. A check that refuses,
+   having run to its end: `unreadable`, with its
+   reason and, if it names one, its line (`other-scope`: it names another
+   scope; `other-action`: it names an action `S` does not have). A check
+   that could not run to its end: `undetermined` at `check`, whatever code
+   it then left. Every check passes: `readable`.
+5. **Clear**, in a core that implements the accepted clear only: its
+   evidence. Cannot be inspected: `undetermined` at `clear`, whatever the
+   path showed. A clear not verified complete: with no entry at the path,
+   `unsettled-clear`; beside an entry, the entry's state stands and the
+   `clear` rows say what the clear left. The barrier holds either way.
+6. **Fingerprint**, for `unreadable` with `kind=file` within the limit, from
+   step 3's copy. The hash cannot be computed: `error io`.
+7. **Workers**, by the tables below.
+
+A core that implements no clear writes no clear's evidence and has none to
+inspect, so it omits the `clear` rows, and its `none` rests on the lookup
+alone. That stays sound only while no core that writes such evidence has
+run against this state directory. The clear's own contract must keep it so
+across a change to an older checkout: whatever evidence a clear leaves must
+not let a core that cannot read it establish `none`. How is the clear's
+(UR-Q1); this contract requires it and defines no storage.
+
+**The states on the wire.**
+
+| `state` | §3 | Rests on |
+| --- | --- | --- |
+| `none` | A | a lookup that could have seen an entry and found none; in a core that implements the clear, no clear unsettled |
+| `readable` | B | every check of step 4 passed |
+| `unreadable` | C | a status read to its end, or a check run to its end, that refused |
+| `undetermined` | D | a step of looking, reading or checking, or the clear's evidence, that could not complete |
+| `unsettled-clear` | the scope held as C does, by a clear (§3, *The clear transaction*) | no entry at the path, and a clear not verified complete |
+
+For `readable`, the sub-case is the one `core_barrier` decides today, and
+each has its fixed rows, fact and next step:
+
+| Recorded state | This boot | The recorded core | `boot` | `worker` | Fact value | Fact state | Blocker |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `running` | the record's | established alive | `this` | `active` | `<action> running` | `info` | — |
+| `running` | the record's, or not identified | liveness established neither way | `this` or `unknown` | `unknown` | `<action> recorded as running; whether its core runs is unknown` | `warn` | — |
+| `running` | the record's | established not alive | `this` | `unknown` | `<action> unsupervised` | `fail` | `unsupervised`, as today |
+| `unsupervised` | the record's, or not identified | — | `this` or `unknown` | `unknown` | `<action> unsupervised` | `fail` | `unsupervised`, as today |
+| `failed` | the record's, or not identified | — | `this` or `unknown` | `ended` | `<action> ended without its expected effect` | `fail` | `unresolved`, as today |
+| any | another boot's | — | `earlier` | `ended` | `<action> from an earlier boot, to reconcile` | `warn` | — |
+
+`<action>` is the admitted record's action id. `ended` for `failed` is
+recorded: the core that wrote `failed` had established that no worker was
+present (*Operations and exclusion*). `ended` for an earlier boot is
+inferred: no process of an earlier boot still runs (D47). Neither says
+anything about effects.
+
+For the other states:
+
+| `state` | Fact value | Fact state | Blocker `id` | Blocker `text` | Blocker `fix` |
+| --- | --- | --- | --- | --- | --- |
+| `none` | `none recorded` | `ok` | — | — | — |
+| `unreadable` | `a record that cannot be read` | `fail` | `unreadable` | `The operation record of this scope exists and cannot be read, so what it recorded is unknown; a restart does not change that.` | `Nothing in this scope runs while it is there. Its operation record check shows what can be established.` |
+| `undetermined` | `cannot be inspected` | `unknown` | `undetermined` | `The operation record of this scope could not be inspected, so whether one exists is unknown.` | `Nothing in this scope runs until it can be inspected. Its operation record check names the step that failed.` |
+| `unsettled-clear` | `a clear that did not finish` | `fail` | `unsettled-clear` | `A clear in this scope began and is not verified complete.` | `Nothing in this scope runs meanwhile. Its operation record check shows what the clear left.` |
+
+Beside an entry, an unsettled clear adds its own blocker after the
+entry's. Every fact has `scope=S`, `key=operation` and `label=Operation`.
+The `none` fact is `ok` because no record bars the scope, which is all it
+says.
+
+**Fixed texts.** Every `text` column, by row and value:
+
+| Row | Value | Text |
+| --- | --- | --- |
+| `state` | `none` | `No operation in this scope is recorded as begun and not settled.` |
+| `state` | `readable` | `The operation record of this scope can be read.` |
+| `state` | `unreadable` | `A record exists in this scope and cannot be read, so nothing it says is known.` |
+| `state` | `undetermined` | `Whether a record exists in this scope, or what it says, could not be established.` |
+| `state` | `unsettled-clear` | `A clear in this scope began and is not verified complete; what it took is held, not cleared.` |
+| `stage` | `lookup` | `Whether the record exists could not be established: the state directory or its ops folder is a link, is not a folder of yours, or cannot be searched or listed.` |
+| `stage` | `status` | `The record's status could not be read.` |
+| `stage` | `read` | `The record's bytes could not be read in full.` |
+| `stage` | `check` | `A check of the record's bytes could not run to its end.` |
+| `stage` | `clear` | `The evidence of a clear in this scope could not be inspected.` |
+| `kind` | `file`, `link`, `folder`, `other` | `a plain file`; `a symbolic link, never followed`; `a folder, never opened`; `not a plain file, never opened` |
+| `owner` | `this-user`, `root`, `other-user` | `you`; `root`; `another user` |
+| `writable` | `yes`, `no` | `group or others may write it`; `only its owner may write it` |
+| `fingerprint` | 64 hex digits | `SHA-256 of all its bytes, for comparing inspections only` |
+| `fingerprint` | `none` | `none: it is larger than 65536 bytes, so it is not read in full` |
+| `fingerprint` | `unknown` | `unknown: its bytes could not be read in full` |
+| `reason` | `kind`, `owner`, `writable` | `it is not a plain file`; `it belongs to another user`; `group or others may write it` |
+| `reason` | `too-large`, `byte`, `eof`, `seal` | `it is larger than 65536 bytes`; `it holds a byte no record may hold`; `it does not end with a line end`; `its seal does not match its bytes` |
+| `reason` | `line`, `blank`, `tab`, `header`, `key`, `value`, `nul-escape`, `non-canonical` | `it breaks the record format` |
+| `reason` | `schema`, `type` | `its records are not an operation record's`; `a value breaks its type` |
+| `reason` | `other-scope`, `other-action` | `it names another scope`; `it names an action this scope does not have` |
+| `recorded.state` | `running`, `unsupervised`, `failed` | `recorded as running`; `recorded as unsupervised`; `recorded as ended without its expected effect` |
+| `recorded.finding` | `absent` | `When it ended, the machine still showed its old state.` |
+| `recorded.finding` | `unexpected` | `When it ended, the machine showed something other than its old state or its effect.` |
+| `boot` | `this`, `earlier`, `unknown` | `this boot`; `an earlier boot`; `this boot could not be identified` |
+| `worker` | `active` | `The core that recorded it is running now.` |
+| `worker` | `unknown`, `readable`, liveness established neither way | `Whether the core that recorded it is running could not be established; it counts as running.` |
+| `worker` | `unknown`, `readable`, unsupervised | `Its core no longer supervises it; a process it started may still be running.` |
+| `worker` | `ended`, `failed` | `It ended under its core's supervision, with no worker left, as recorded.` |
+| `worker` | `ended`, an earlier boot | `It was recorded in an earlier boot; no process of that boot still runs.` |
+| `worker` | `unknown`, `unreadable` or `unsettled-clear` | `Nothing ties a running process to this record, so whether one it started still runs is unknown.` |
+| `worker` | `unknown`, `undetermined` | `Unknown while the record cannot be inspected.` |
+| `effect` | `unknown`, `readable` | `Not judged: this check reconciles nothing.` |
+| `effect` | `unknown`, `unreadable` or `unsettled-clear` | `Unknown: what the operation changed cannot be judged without the record.` |
+| `effect` | `unknown`, `undetermined` | `Unknown while the record cannot be inspected.` |
+| `clear` | `none`, `attempted`, `taken` | `no clear in this scope is unsettled`; `a clear began and did not take the entry`; `a clear took the entry and is not verified complete` |
+| `clear.entry` | `confirmed`, `mismatch`, `unconfirmed` | `the entry taken is the one inspected`; `a completed comparison shows the entry is not the one inspected`; `whether the entry is the one inspected could not be established` |
+| `clear.fingerprint` | 64 hex digits; `unknown` | `SHA-256 of all the taken entry's bytes`; `unknown: the taken entry could not be read in full` |
+| `unknown` | `none` | `Whether any action ran here before, and what it changed: a settled or removed record leaves nothing behind.` |
+| `unknown` | `readable` | `What the machine holds now: this check reconciles nothing.` |
+| `unknown` | `unreadable` | `Everything the record says: its action, session, process, boot and state, whether it ended, and what it changed.` |
+| `unknown` | `undetermined` | `Whether a record exists here, and anything it says.` |
+| `unknown` | `unsettled-clear` | `Whether the clear finished, and everything the record it took said.` |
+
+`scope`, `path`, `size`, `line` and `recorded.action` have an empty `text`.
+
+**The next safe step.** The `next` row's text, fixed per state. None tells
+the person to delete, move or edit the record, to clear it after a restart,
+to assume that workers ended or that no effect remains, or to resume the
+refused action; the tool changes no permission and moves nothing to get
+there.
+
+| State | `next` |
+| --- | --- |
+| `none` | `None for this record. This alone allows nothing: every action still makes its own fresh checks.` |
+| `readable`, running, its core alive | `Wait for it to finish, then check again.` |
+| `readable`, running, liveness unknown | `Wait, then check again. If whether its core runs stays unknown, restart this Mac (or this Linux system), then run the tool again.` |
+| `readable`, unsupervised or failed, this boot | `Restart this Mac (or this Linux system), then run the tool again.` |
+| `readable`, an earlier boot | `Run the tool again, not as a dry run: it reconciles this scope from what the machine holds before any action in it.` |
+| `unreadable` | `Nothing in this scope can run while this record is there, and a restart does not change that. This tool offers no way to clear it yet. You may look at the file with your own tools; this tool never shows its bytes.` |
+| `undetermined`, `lookup` | `Make the state directory and its ops folder real folders of yours that you can open and list, then check again. This tool changes no permission and moves nothing.` |
+| `undetermined`, `status` | `Make the record's status readable, then check again. This tool changes no permission and moves nothing.` |
+| `undetermined`, `read` | `Make the record readable in full, then check again. This tool changes no permission and moves nothing.` |
+| `undetermined`, `check` | `Make sure the standard tools a check runs can run, then check again.` |
+| `undetermined`, `clear` | `Make the evidence of the clear inspectable, then check again. This tool changes no permission and moves nothing.` |
+| `unsettled-clear` | `None this tool can take yet: how an unfinished clear is resolved is not defined. Nothing in this scope runs meanwhile.` |
+
+For `unreadable` the next step is what the open questions leave: no clear
+can be offered until P4's and P5's mechanisms are accepted (§3,
+*Clearing*), so the text names none, and says nothing that would make one
+look near.
+
+**The fingerprint.** The SHA-256 of the complete contents of the plain file
+at `ops/<S>.omb`, as this inspection copied them (step 3), written as 64
+lower-case hex digits:
+
+- **What is hashed:** exactly the bytes of the bounded copy, from the
+  file's first byte to its end, when the size read is at most 65536 and the
+  copy's length equals it. Not the seal, which covers the bytes before the
+  seal line; not a prefix; not an encoded or escaped form; not the bytes of
+  an entry that is not a plain file, which is never opened.
+- **What is not part of it:** the path, the kind, the owner, the mode,
+  times and the inode. The status facts are reported in rows of their own;
+  the rest is not reported.
+- **When there is none:** over the limit, `none`, by size alone, since a
+  prefix is not the file (UR-Q2); bytes that could not be read in full,
+  `unknown`. In `none`, `readable`, `undetermined` and `unsettled-clear` the
+  `fingerprint` row is absent: no clear is bound to them, and a D finding
+  never depends on the hash tool that may be what failed.
+- **Its representation:** 64 hex digits always fit a `text` value. A hash
+  that cannot be computed is the diagnostic's own failure, `error io`.
+- **What it means:** two equal fingerprints say that two copies held the
+  same bytes. It is identity for comparison — between two inspections, and,
+  once a clear exists, between an inspection and the clear's basis (P2). It
+  is not evidence that workers ended or that an effect is or is not there,
+  nor of who wrote the bytes, in which boot, or whether anything was
+  reconciled. An equal fingerprint after a restart is not P4.
+
+**Nothing from the bytes.** No row, fact, blocker, message or text carries
+a byte of a record that did not admit, or a value parsed from one: not its
+action, session, basis, boot, state, time or process identity, not even
+marked unverified. A malformed or hand-edited record can say anything. The
+`reason` and `line` rows say which completed check refused and where, which
+the checker computed; the fingerprint is a hash. For a record that admitted,
+only `recorded.action`, `recorded.state` and `recorded.finding` are shown,
+each an `id` or an enum value its schema admitted.
+
+**Workers and effects.** The order of evidence stays §3's: no worker
+observed is less than the relevant workers proven ended, which is less than
+no unexpected effect remaining. This contract produces only what existing
+mechanisms establish: a readable record's core identity, by `core_alive`;
+a readable record's own `failed`; and a boot that differs from the
+record's. For `unreadable`, `undetermined` and `unsettled-clear`, workers
+and effect are `unknown`, and the texts say why. No recorded identity is
+read for an unreadable record, no scratch is read for it, no sighting is
+written, and nothing is reconciled.
+
+**The frontend.** It presents and decides nothing. When it gains this
+presentation, in a reviewed frontend change: it opens `kind=operation` only
+from the generation of `S`'s last snapshot, asking `offset=0` and a `limit`
+of at least 20; it shows the rows in order, each label, value and text; it
+takes a fresh snapshot after `refused changed`, as for every detail; after
+`refused unavailable` it shows that answer's text and that the check is not
+available there, and nothing else; after `error io` or `error
+representation` it shows the fixed text and no finding. It never reads
+`none` from a missing `operation` fact, a missing row, an empty value or a
+refusal, never derives a state from the blocker's id, never offers an action
+from the finding — actions come only from `action` records — and never
+reads `ops/`.
+
+**The text interface.** One read command, proposed with this contract: the
+command word `operation` with exactly one argument, a scope name from
+*Scopes*, typed after the program's name (`operation shared`). SPEC.md →
+*Commands* lists the commands as they are; it gains this one, with the
+intent `read`, in the change that implements it once this contract is
+accepted, and the documentation checks then hold every invocation to it.
+
+- **Arguments.** Exactly one, one of the scope names, checked with the
+  other per-command argument checks, before intent is decided or the state
+  directory is resolved. None, more than one, or a name that is not a scope:
+  `omarchy-bootstrap: operation takes one scope: journey, disk, plan,
+  profile, resolve, asahi, network, omarchy, shared, export, restore,
+  rescue, qualify, debug, health, logs (see --help)` on stderr, exit status
+  2. No path is built from an argument that has not passed that check.
+- **Intent.** `read`, persistence 0: no state directory created, no state,
+  log, lock or operation record written; the per-run scratch goes at exit.
+  `--dry-run` changes nothing in it.
+- **Scope.** Every scope name answers, in production as in fixtures: the
+  record's path is defined for every scope, and the launcher already counts
+  `ops/*.omb` of every name (§3, *Today*), so a person can inspect any
+  record the launcher counts. The protocol answers only where a scope's
+  snapshot carries the inspection, and only in fixture mode (D16). That is
+  availability, not a different finding: where both answer, the rows are
+  the same.
+- **Output.** The same function's finding the protocol publishes, whole: a
+  heading, then one line per row, in the core's order — its label, its
+  value, and ` - ` and its text when both are present. Nothing is added,
+  dropped, reordered or reworded, and every line goes through the
+  baseline's `ui_*` helpers. Exit status 0 for every finding, `none` to
+  `unsettled-clear` alike: a delivered finding is the command succeeding.
+- **Failures.** `error io`: its fixed text through `ui_fail`, no row, exit
+  status 1. `error representation`: its fixed text, no row, exit status 1,
+  and no escaped or shortened path in its place, so the two interfaces give
+  one answer.
+- **An older checkout.** Run against one that predates this command,
+  `operation SCOPE` stops at that checkout's argument check, before its
+  intent, state directory, lock or log: `omarchy-bootstrap: unexpected
+  argument: SCOPE (see --help)` on stderr, exit status 2, nothing written —
+  observed at `152c8f6` under `/bin/bash` 3.2.57 with `OMB_STATE_DIR` naming
+  a folder that did not exist and still did not afterwards. Without its
+  argument, the same checkout takes the word for an act command: it takes
+  the run lock and writes a log before it answers `Unknown command:
+  operation` (observed: the state folder and a log were created). The
+  argument is required for that reason; no fallback to another command
+  exists in either checkout.
+
+An unreadable record, as the text interface shows it (the state directory
+is the default; the fingerprint is an example):
+
+```text
+Operation record
+  Scope               shared
+  Record              ~/.local/state/omarchy-mac-bootstrap/ops/shared.omb
+  State               unreadable - A record exists in this scope and cannot be read, so nothing it says is known.
+  Entry               file - a plain file
+  Owner               this-user - you
+  Writable by others  no - only its owner may write it
+  Size                812
+  Fingerprint         9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15 - SHA-256 of all its bytes, for comparing inspections only
+  Refused by          seal - its seal does not match its bytes
+  Workers             unknown - Nothing ties a running process to this record, so whether one it started still runs is unknown.
+  Effect              unknown - Unknown: what the operation changed cannot be judged without the record.
+  Still unknown       Everything the record says: its action, session, process, boot and state, whether it ended, and what it changed.
+  Next                Nothing in this scope can run while this record is there, and a restart does not change that. This tool offers no way to clear it yet. You may look at the file with your own tools; this tool never shows its bytes.
+```
+
+The same finding cannot be looked up:
+
+```text
+Operation record
+  Scope               shared
+  Record              ~/.local/state/omarchy-mac-bootstrap/ops/shared.omb
+  State               undetermined - Whether a record exists in this scope, or what it says, could not be established.
+  Failed step         lookup - Whether the record exists could not be established: the state directory or its ops folder is a link, is not a folder of yours, or cannot be searched or listed.
+  Workers             unknown - Unknown while the record cannot be inspected.
+  Effect              unknown - Unknown while the record cannot be inspected.
+  Still unknown       Whether a record exists here, and anything it says.
+  Next                Make the state directory and its ops folder real folders of yours that you can open and list, then check again. This tool changes no permission and moves nothing.
+```
+
+The first page of the unreadable finding on the wire, illustrative rather
+than a golden (TAB shown as `⇥`; values as written):
+
+```text
+omb-res 1
+hello⇥core=0.3.0⇥commit=…⇥source=…⇥proto=1⇥platform=macos⇥arch=arm64⇥user=user⇥ceiling=act⇥dry_run=0⇥fixture=1
+generation⇥id=…⇥total=13
+row⇥kind=operation⇥key=scope⇥col=Scope⇥col=shared⇥col=
+row⇥kind=operation⇥key=path⇥col=Record⇥col=~/.local/state/omarchy-mac-bootstrap/ops/shared.omb⇥col=
+row⇥kind=operation⇥key=state⇥col=State⇥col=unreadable⇥col=A%20record%20exists%20in%20this%20scope%20and%20cannot%20be%20read,%20so%20nothing%20it%20says%20is%20known.
+…
+result⇥status=done⇥code=ok⇥text=⇥next=
+```
+
+**Compatibility.** Every addition is a value of a field whose type already
+admits it: `page`'s and `row`'s `kind` (`id`), `row`'s `key` (`bytes`) and
+columns (`text`), `blocker`'s `id` (`id`), and the `operation` fact's
+`value` (`text`). No enum gains a word — not the scopes, operations,
+result statuses, fact states or message levels — and no record type, key or
+cardinality changes. §1 makes a key, a record type or an enum word a
+schema does not list invalidate the whole document; none is introduced.
+The answers this contract uses are existing statuses and codes: `done ok`,
+`error io`, `error representation`, `refused changed`, `invalid`, `scope`
+and `unavailable`.
+
+- **The released client, 0.1.0, against an updated core.** Its request
+  builder sends `hello`, `snapshot scope name=journey` and `execute` only
+  (`frontend/src/app.rs` and `frontend/src/core.rs` at `frontend-v0.1.0`),
+  so it never asks for `kind=operation` and never receives a `row` of it or
+  the diagnostic's error texts. In production its one route is the
+  startup check, whose snapshot stays byte for byte and reads no operation
+  record. In fixture mode, a foundation journey snapshot can bring it the
+  `operation` fact's new values and the blocker ids `unreadable`,
+  `undetermined` and `unsettled-clear`: its parser admits them, since
+  `fact`'s `key` and `blocker`'s `id` are `id` fields in its own schema
+  (`frontend/src/record.rs` there), and it keeps a blocker's `text` and
+  `fix` only, never its `id` (`snapshot_of`). It shows them as words; no new
+  id can make it treat a barrier as safe, because what it may do comes only
+  from `action` records, which the core withholds while the barrier holds,
+  and an `execute` it sends anyway is refused at step 3. It substitutes no
+  code for another, because it reads none of these ids.
+- **The unreleased candidate, 0.2.0, against an updated core.** The same
+  holds for its journey snapshot. Its other requests are the `health` and
+  `logs` snapshots, the `machine`, `status`, `doctor` and `log` details, the
+  plan check and fixture executes; its detail kinds are a closed set, and it
+  keeps only rows of the kind it asked for (`frontend/src/read.rs`). It
+  presents no diagnostic until a reviewed frontend change adds one; none is
+  made here.
+- **An updated client against an older core.** Every older core answers an
+  explicit `kind=operation` request truthfully and boundedly, with
+  `refused unavailable` and no row, exit status 0: a scope with no read
+  producer, `This read dataset is not available.` (`core_read_op`); the
+  ordinary journey, `This journey detail kind is not available.`; `logs` and
+  `health`, their own texts; the foundation fixture, `Nothing in this gate
+  pages details or validates parameters.`; the startup check, its closed
+  table. Most often there is no generation to page from at all, since the
+  snapshot of an act scope is itself `refused unavailable`. Unless fixture
+  mode and the development override are both set, a frontend version other
+  than the lock's is `refused frontend` before anything. The client then
+  shows the refusal and that the check is not available from this core, and
+  stops: it
+  never falls back to another kind or scope, to the snapshot's `operation`
+  fact, to the text interface or to a retry under `journey`, never reads
+  the refusal as `none`, and changes nothing. The text interface's case is
+  *The text interface*, above.
+- **Protocol version.** Protocol 1 holds. *Versions* (§5) calls for a new
+  version when an existing record's meaning changes, and none does: the
+  `operation` fact still states the scope's operation state, and
+  `unsupervised` keeps its documented meaning, now used only for it. This
+  rests on the existing admission rules, not on a ruling for new enum words
+  as CP1's did: CP1 is precedent for request-selected additions, and this
+  contract adds less than it did.
+
+**Surfaces.** UR-Q8, for the diagnostic only:
+
+| Surface | This contract | Why |
+| --- | --- | --- |
+| the snapshot of an act scope `S` | contract change proposed: the `operation` fact and blocker, and the inspection in its data set | it must show the barrier and withhold actions anyway, and the detail must share its generation |
+| the foundation fixture's journey snapshot | contract change proposed, as the snapshot of its test actions' scope: the `operation` fact's values and the blocker ids for C, D and an unsettled clear replace `unsupervised` for C and today's removal advice | it is the one scope with operation records today |
+| `detail kind=operation` | contract change proposed: the finding | the explicit request |
+| the text interface | contract change proposed: the read command `operation SCOPE` | D3: the text interface asks for and shows the same finding |
+| the ordinary Gate 2 journey snapshot and its details | unchanged | the journey keeps no operation record outside the foundation fixture; D52 holds it to the baseline |
+| `status` | unchanged | held to the baseline (D52); it gains no operation-record inspection |
+| Doctor (`doctor`, `health`) | unchanged | the same |
+| Logs (`logs`) | unchanged | the same |
+| the debug report | unchanged | its allowlist (docs/RESCUE.md → *Safe fields*) gains nothing; an operation-state field stays a separate review |
+| the startup check | unchanged | it reads no operation record, and `detail` stays `refused unavailable` there |
+| the launcher | contract change proposed for the new command's routing and argument check only | its reading of `ops/*.omb` for owner cleanup and stale reclaim is unchanged, and it gains no authority to clear |
+| the frontend | contract change proposed, presentation only, not implemented | it presents the facts, blockers and rows (*The frontend*, above) and never reads `ops/` |
+| the act refusals for C and D | unchanged here | the act path's vocabulary stays open (UR-Q6) |
+
+**Acceptance cases.** Documentation cases for the future implementation's
+tests, named with it (docs/TESTING.md); none is a test yet. In every case
+the inspection takes no lock and writes nothing outside the per-run
+scratch, and the record is unchanged byte for byte.
+
+| Case | Observations | Answer | May conclude | Must not conclude |
+| --- | --- | --- | --- | --- |
+| DIA-01 none | the state directory and `ops` are folders of this user that can be searched and listed; `ops/<S>.omb` has no entry, not even a link; in a core that implements the clear, no clear is unsettled | `done`: `scope`, `path`, `state=none`, `unknown`, `next` (and `clear=none`); the fact `none recorded`, no blocker | no operation in the scope is recorded as begun and not settled | that an earlier operation completed or none ran; that nothing changed; that an act may skip any step of *Executing*; `none` from a lookup that failed |
+| DIA-02 readable, supervised | the record admits; `recorded.state=running`; its boot is this boot; its core is established alive | `done`: `state=readable`, `recorded.action`, `recorded.state=running`, `boot=this`, `worker=active`, `effect=unknown`; the fact `<action> running` | the recorded core is alive now: supervision is observed | that it will end, or how; anything about effects |
+| DIA-03 readable, liveness unknown | the record admits, `running`; `ps` or a start time cannot be read, or this boot cannot be identified | `done`: `worker=unknown` with its liveness text, `boot=this` or `unknown`; the fact `<action> recorded as running; whether its core runs is unknown`, state `warn` | nothing about supervision; the unknown counts as alive, so acts stay refused | that supervision is observed; that it is unsupervised; that it ended |
+| DIA-04 unreadable, established | a plain file of this user, not writable by others, at most 65536 bytes; size read, copy made, every check run to its end, one refused | `done`: `state=unreadable`, `kind=file`, `owner`, `writable=no`, `size`, `fingerprint`, `reason`, `line` where named, `worker=unknown`, `effect=unknown`; blocker `unreadable` | a record exists in the scope, and nothing it says is known | any field's value; that it ended, is stopped or is safe; that no worker or no effect remains; that a restart changes it; that it may be removed |
+| DIA-05 undetermined, lookup | `ops` or the state directory is a link, not a folder, another user's, or cannot be searched or listed; or the state directory is absent and its nearest ancestor cannot be searched | `done`: `state=undetermined`, `stage=lookup`, `worker` and `effect` `unknown`; blocker `undetermined` | whether a record exists is unknown | `none`; that no operation is recorded; `unreadable` |
+| DIA-06 undetermined, read or check | (a) the entry's status cannot be read; (b) its size or its copy fails, or the copy's length differs from the size; (c) a check's tool fails before the check ends | `done`: `state=undetermined`, `stage` `status`, `read` or `check`; the entry rows of the steps that completed; no `fingerprint` and no `reason` | whether the entry admits is unknown | `unreadable`; that the bytes are malformed; `none`; that the diagnostic failed (that is DIA-08) |
+| DIA-07 a lossy `seal` | (a) the seal check's `awk`, `tail`, bounded copy, hash or `read` fails, and today's helper answers `seal`; (b) `_state_owned_safe`'s `find` fails, and today's helper answers false | (a) `done`, `undetermined` at `check`, no `reason`; (b) `done`, `undetermined` at `status`; if the hash tool fails again when the generation is computed, `error io` (DIA-08) | that a check, or the status, could not complete | `unreadable`; `reason=seal`; `owner` or `writable`; any finding about the bytes from the label |
+| DIA-08 the machinery fails | the per-run scratch cannot be made or written; the fingerprint, or the generation, cannot be hashed; the answer cannot be staged, admitted or kept | `error io`, its fixed text, the empty generation, `total=0`, no row | nothing about the record | any state, `none` to `unsettled-clear`; that the record changed |
+| DIA-09 a value cannot be represented | the path, from the state directory, holds a byte a `text` value cannot carry | `error representation`, its fixed text, the empty generation, no row; the snapshot still shows the fact and the blocker, which carry no path | nothing about the record from this answer; the snapshot's barrier stands | any state; an escaped, shortened or partial path or finding |
+| DIA-10 a confirmed mismatch | (a) a readable `running` record's PID is alive with another start time, read to its end; (b) once the clear exists, its comparison ran to its end and found another fingerprint | (a) `done`: the core established not alive, `worker=unknown`, the fact `<action> unsupervised`, blocker `unsupervised`; (b) `done`: `clear.entry=mismatch` | (a) the process holding that PID is not the recorded core; (b) the entry taken or seen is not the one inspected | (a) that the operation ended or no worker remains; (b) how it came to differ; that two entries exist; that the clear completed |
+| DIA-11 an identity unconfirmed | (a) a readable `running` record's start time, or `ps`, cannot be read; (b) once the clear exists, its comparison could not complete | (a) as DIA-03; (b) `done`: `clear.entry=unconfirmed` | (a) nothing about the core; (b) its identity is not confirmed | a mismatch; that the core is not alive; that the entry differs |
+| DIA-12 an unsettled clear, the path empty | once the clear exists: no entry at `ops/<S>.omb`; the clear's evidence shows it attempted or taken and not verified complete | `done`: `state=unsettled-clear`, `clear`, `clear.entry` and `clear.fingerprint` for a taken entry, `worker` and `effect` `unknown`; blocker `unsettled-clear`; acts refused | an unsettled clear holds the scope as C does | `none`; that the clear completed; that the taken entry may be discarded; anything about how it is resolved |
+| DIA-13 a new client, an old core | a `kind=operation` detail, or `operation SCOPE` in the text interface, against a core or checkout that predates this contract | `refused unavailable` with that core's existing text, no row; the text interface's `unexpected argument`, exit status 2, nothing written | the check is not available there | `none`; any finding; a fallback to another kind, scope, fact, command or a retry under `journey`; any change to the machine |
+| DIA-14 an old client, a new core | 0.1.0, or the unreleased 0.2.0, against a core with this contract: the startup check; in fixture mode, a foundation journey snapshot with the new fact values and blocker ids | admitted; blockers shown by their `text` and `fix`; no action listed while the barrier holds; no `kind=operation` request is ever sent | what the core's words say | that a barrier is safe; that an unknown id names a familiar state; any action the core did not list |
+| DIA-15 hostile bytes | an unreadable record whose bytes hold control or escape sequences, NUL, non-ASCII, TABs, lines shaped like records — `op` with `state=done`, an action, a boot — or instructions | as DIA-04: only the fixed words, numbers, hex digits, the tool's own path and fixed texts | as DIA-04 | anything the bytes say; that a claimed action, state or boot is known; that the bytes may be shown or followed |
 
 ### Request schemas
 

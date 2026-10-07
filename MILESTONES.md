@@ -724,12 +724,27 @@ of docs/TESTING.md.
   infrastructure incompleteness for that documentation-only delta, not an
   acceptance blocker. The UR-C04 remediation, forward from `ba21467` and
   documentation only, splits U31 into a confirmed mismatch, U31(a), and an
-  identity not confirmed, U31(b), with the wording that refers to it.
-  Disposition: **UR-C04 REMEDIATED — AWAITING FOCUSED INDEPENDENT CLOSURE /
-  GATE 3 PREREQUISITE ACCEPTANCE REVIEW** (**M14 GATE 3 PREREQUISITE — UR-C04
-  CLOSURE / FINAL PREREQUISITE ACCEPTANCE RE-REVIEW**). Gate 2 stays
-  **ACCEPTED / CLOSED** at `c855f61`;
-  frontend `0.2.0` stays **UNRELEASED**. No recovery, diagnostic, clear,
+  identity not confirmed, U31(b), with the wording that refers to it. It
+  was submitted as **UR-C04 REMEDIATED — AWAITING FOCUSED INDEPENDENT
+  CLOSURE / GATE 3 PREREQUISITE ACCEPTANCE REVIEW** (**M14 GATE 3
+  PREREQUISITE — UR-C04 CLOSURE / FINAL PREREQUISITE ACCEPTANCE
+  RE-REVIEW**). That final re-review closed UR-C04 and concluded **GATE 3
+  PREREQUISITE CONTRACT ACCEPTED** at
+  `152c8f68854368025816b926494dbec0e94bc903`: **UR-C01**, **UR-C02**,
+  **UR-C03** and **UR-C04** are **CLOSED**; UR-Q2 and UR-Q9 stay accepted;
+  UR-Q1 and UR-Q3 to UR-Q8 stay open and block the implementation. The
+  read-only operation-record diagnostic interface contract follows,
+  documentation only, on branch `m14-gate3-readonly-diagnostic-contract`
+  from `152c8f6`: D55 and docs/PROTOCOL.md → *The operation-record
+  diagnostic*, with the documentation cases DIA-01 to DIA-15. It proposes
+  candidate resolutions for UR-Q7 and for the diagnostic's parts of UR-Q6
+  and UR-Q8 only, leaving their other parts open (docs/DECISIONS.md → *Open
+  review questions*). Disposition: **GATE 3 READ-ONLY DIAGNOSTIC INTERFACE
+  CONTRACT DRAFTED — AWAITING FOCUSED INDEPENDENT UR-Q7 / DIAGNOSTIC UR-Q6 /
+  UR-Q8 REVIEW** (**M14 GATE 3 — READ-ONLY OPERATION-RECORD DIAGNOSTIC
+  INTERFACE CONTRACT REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at
+  `c855f61`; frontend `0.2.0` stays **UNRELEASED**; Gate 3's implementation
+  is **NOT STARTED**. No recovery, diagnostic, clear, sighting,
   reconciliation, execute or action exposure is implemented or authorized.
 
 ### Gate 4 — Scanner and profile
