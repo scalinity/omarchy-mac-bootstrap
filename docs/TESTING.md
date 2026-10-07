@@ -1121,6 +1121,49 @@ historical anchors and ambiguous replacements. Static also invokes the helper
 contract cases, so the unchanged pinned Bash 5.3.15 CI job executes them.
 Native-only plist/owner cases retain the existing no-plutil gate on Linux.
 
+### Gate 3 operation-record diagnostic tests
+
+`tests/test-operation.sh` holds docs/PROTOCOL.md → *The operation-record
+diagnostic* (D55) to the actual core, driven as the frontend drives it
+(`tests/core-harness.sh`), and to the actual launcher's `operation SCOPE`.
+Each case checks the foundation journey snapshot (its `operation` fact,
+blockers and listed actions, no row and no path), the `detail
+kind=operation` rows in order with their total and generation, both
+answers whole and admitted, and the text interface's lines, exit status
+and empty stderr. Every case is also held to a read: the state folder and
+HOME as they were, the record byte for byte, no lock, log or scratch left.
+A tool fails only where a test puts a shim on `PATH` that fails for that
+one invocation (the record's path, or the private copy's, among its
+arguments). Its directory argument saves the nine foundation findings for
+DIA-14.
+
+| Case | Permanent test | What it depends on |
+| --- | --- | --- |
+| DIA-01 none | no state folder under a searchable one, no `ops`, no record; the deterministic text | `_op_lookup` |
+| DIA-02 readable, supervised | a running record whose PID and start are the test shell's | `rec_admit_copied`, `core_alive` (0) |
+| DIA-03 readable, liveness unknown | `ps` failing; the boot session unreadable | `core_alive` (2), `core_boot_read` |
+| DIA-04 unreadable | torn, empty, a non-ASCII byte, a header, a key, a value, no seal, a hand edit under the seal, a type, another kind of record, another scope, another scope's action, exactly 65536 bytes, 65537; a link, a dangling link, a folder, a FIFO (never opened), group-writable, another user's (a `find` that matches no owner) | `_op_status`, `_op_read`, `_op_check`, `_op_owns` |
+| DIA-05 undetermined at lookup | `ops` or the state folder a link or a file; `ops` not searchable or not listable; the state folder not searchable; no state folder under one that cannot be searched | `_op_lookup` |
+| DIA-06 undetermined at status, read or check | `find` failing on the entry; `wc` on it; `head` failing or short; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
+| DIA-07 a lossy `seal` or owner check | the seal's `tail` or `awk` failing where `_rec_seal_ok` answers `seal`; the owner `find` failing | `_op_seal`, `_op_status` |
+| DIA-08 the machinery fails | the scratch folder not made; the fingerprint's hash; the generation's hash; an unwritable `TMPDIR` for the text | `op_inspect` step 0, `_op_hash`, `op_failure` |
+| DIA-09 a value cannot be represented | a state folder whose path holds a TAB: the snapshot keeps its fact and blocker, the detail is `error representation` whatever its page or generation; a UTF-8 path is carried | `core_read_stage` over every row before any page |
+| DIA-10(a) a confirmed mismatch | the test shell's PID with another start time; recorded `unsupervised` and `failed` | `core_alive` (1), `op_barrier` |
+| DIA-11(a) an identity unconfirmed | as DIA-03 | as DIA-03 |
+| DIA-13 a new client, an old core | the accepted prerequisite `152c8f6`, extracted with `git archive`: its foundation, ordinary journey and production cores refuse `kind=operation` with their own texts and no row; its launcher stops `operation journey` at `unexpected argument` and writes nothing, and takes the bare word for an act command | the old checkout alone |
+| DIA-14 an old client, a new core | `frontend/tests/proto_diff.rs` builds the released `0.1.0` from its own sources at `54c3770` and runs its parser, `snapshot_of`, model and request builder over the saved answers; the candidate's parser, `snapshot_of` and closed detail kinds over the same | the saved answers |
+| DIA-15 hostile bytes | escape sequences, NUL, UTF-8, TABs, record-shaped lines and instructions: none reaches an answer or the terminal | `_op_check`, `op_rows` |
+| DIA-10(b), DIA-11(b), DIA-12 | **deferred**: no core implements a clear, so none writes or reads its evidence or a `clear` row | an accepted clear (UR-Q1) |
+
+The same suite pins paging (one row at a time, `offset` equal to and
+beyond `total`, a stale generation, a `limit` over 500); `refused changed`
+after a rewrite of the same size off the requested page, a replacement, a
+removal, a record that appears and a recorded core that ends between the
+snapshot and the detail; the unchanged act refusal of an unreadable
+record, the foundation's refusal of every other kind and of `validate`, the
+ordinary journey and the startup check; and the command's argument check
+for every scope name, none, two, another case, a path and a flag.
+
 ## Equivalence with the accepted baseline
 
 The focused Gate 2 remediation also tests the accepted decision

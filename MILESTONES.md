@@ -691,7 +691,8 @@ of docs/TESTING.md.
   cannot be read* and D54, with its acceptance cases U1 to U33 and its open
   questions UR-Q1 to UR-Q9 (docs/DECISIONS.md → *Open review questions*). It
   is documentation only and implements none of it.
-- **Status:** not started. The prerequisite contract's candidate
+- **Status:** not started but for the read-only diagnostic slice below. The
+  prerequisite contract's candidate
   `806a8793a1c1537e3e10ee5840817e53b8c35e93`, on branch
   `m14-gate3-prereq-unreadable-record` from the Gate 2 endpoint `c855f61`,
   was independently reviewed: **GATE 3 PREREQUISITE CONTRACT REMEDIATION
@@ -739,13 +740,28 @@ of docs/TESTING.md.
   diagnostic*, with the documentation cases DIA-01 to DIA-15. It proposes
   candidate resolutions for UR-Q7 and for the diagnostic's parts of UR-Q6
   and UR-Q8 only, leaving their other parts open (docs/DECISIONS.md → *Open
-  review questions*). Disposition: **GATE 3 READ-ONLY DIAGNOSTIC INTERFACE
-  CONTRACT DRAFTED — AWAITING FOCUSED INDEPENDENT UR-Q7 / DIAGNOSTIC UR-Q6 /
-  UR-Q8 REVIEW** (**M14 GATE 3 — READ-ONLY OPERATION-RECORD DIAGNOSTIC
-  INTERFACE CONTRACT REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at
-  `c855f61`; frontend `0.2.0` stays **UNRELEASED**; Gate 3's implementation
-  is **NOT STARTED**. No recovery, diagnostic, clear, sighting,
-  reconciliation, execute or action exposure is implemented or authorized.
+  review questions*). Its focused independent review concluded **GATE 3
+  READ-ONLY DIAGNOSTIC INTERFACE CONTRACT ACCEPTED** at
+  `2840fe2efc0b240ccb9343f6013912d6fc941a6f`: UR-Q7 is accepted; the
+  diagnostic's parts of UR-Q6 and UR-Q8 are accepted and their remainders
+  stay open, blocking the implementation; UR-Q1, UR-Q3, UR-Q4 and UR-Q5 stay
+  open. The bounded core and text implementation of D55 follows, forward
+  from `2840fe2` on branch `m14-gate3-readonly-diagnostic-implementation`:
+  `lib/operation.sh` (the inspection, its rows, the foundation journey
+  snapshot's `operation` fact and blockers, `detail kind=operation` and
+  `operation SCOPE`), its routing in `lib/core.sh` and the launcher, the
+  command's row in SPEC.md → *Commands*, `tests/test-operation.sh` and DIA-14
+  in `frontend/tests/proto_diff.rs`, which runs the released `0.1.0`'s own
+  code; docs/TESTING.md → *Gate 3 operation-record diagnostic tests* maps
+  each case, the clear's DIA-10(b), DIA-11(b) and DIA-12 deferred to UR-Q1.
+  No frontend source, act refusal, startup check or Gate 2 read changes.
+  Disposition: **GATE 3 CORE + TEXT READ-ONLY DIAGNOSTIC IMPLEMENTED —
+  AWAITING FOCUSED INDEPENDENT IMPLEMENTATION ACCEPTANCE REVIEW** (**OMB M14
+  GATE 3 — CORE + TEXT READ-ONLY OPERATION-RECORD DIAGNOSTIC IMPLEMENTATION
+  REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
+  `0.2.0` stays **UNRELEASED**; the rest of Gate 3's implementation is **NOT
+  STARTED**. No recovery, clear, sighting, reconciliation, execute or action
+  exposure is implemented or authorized.
 
 ### Gate 4 — Scanner and profile
 

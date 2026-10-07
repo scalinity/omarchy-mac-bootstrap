@@ -129,6 +129,7 @@ is in.
 | `dev` | act | Explains it runs on Linux | Optional developer modules |
 | `sources [--check]` | read | Targeted upstream URLs/branches/versions; `--check` compares with upstream | Same |
 | `logs` | read | Log location and recent entries | Same |
+| `operation SCOPE` (M14) | read | What the scope's operation record shows: whether one exists, whether it can be read, what it recorded if it can, and what stays unknown; takes no lock, writes nothing and changes no permission (docs/PROTOCOL.md → *The operation-record diagnostic*) | Same |
 | `scan` (M14) | read | The environment inventory (docs/MIGRATION.md); runs no tool, writes nothing | — |
 | `profile` (M14) | act, scoped | Scan, select, resolve, seal the Migration Profile; only the profile and resolve actions are reachable, and only the availability check downloads | — |
 | `profile show`, `profile show --select`, `profile show --unresolved` (M14) | read | The profile's review view; its choices as a record file; the unresolved items | The imported profile's |

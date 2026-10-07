@@ -230,8 +230,9 @@ reads `ops/`; an automatic clear after reconciliation, which a readable
 record gets only because its action and basis are known.
 
 **D55. The operation-record diagnostic is a detail of the record's own
-scope** (a candidate awaiting its focused independent review, not
-implemented: docs/PROTOCOL.md → *The operation-record diagnostic*). The
+scope** (accepted at `2840fe2`; its core and text implementation awaits its
+focused independent review: docs/PROTOCOL.md → *The operation-record
+diagnostic*). The
 scope that keeps `ops/<scope>.omb` must already show its barrier and
 withhold its act actions, so its snapshot already inspects the record; the
 diagnostic publishes that inspection whole, as `detail kind=operation`, a
@@ -818,20 +819,23 @@ ruled; UR-Q1 and UR-Q3 to UR-Q8 stay open, each blocking the work beside it,
 and Gate 3's implementation is not started.
 
 The read-only diagnostic interface contract (D55; docs/PROTOCOL.md → *The
-operation-record diagnostic*) then proposes the dispositions below. They
-are candidates for its focused independent review, not rulings; a question
-it touches stays open in every part the third column names.
+operation-record diagnostic*) then took the dispositions below, and its
+focused independent review accepted them at
+`2840fe2efc0b240ccb9343f6013912d6fc941a6f` (**GATE 3 READ-ONLY DIAGNOSTIC
+INTERFACE CONTRACT ACCEPTED**): UR-Q7, and the diagnostic's parts of UR-Q6
+and UR-Q8. A question it touches stays open, blocking the implementation,
+in every part the third column names.
 
-| # | State after the prerequisite's acceptance | Candidate disposition (D55) | Stays open |
+| # | State after the prerequisite's acceptance | Disposition (D55), accepted | Stays open |
 | --- | --- | --- | --- |
 | UR-Q1 | open | none | all of it |
 | UR-Q2 | accepted: a clear only for a plain file read in full within the stored-document limit, every other prerequisite still required | — | — |
 | UR-Q3 | open | none: the diagnostic runs no reconciliation and reports the effect `unknown` | all of it |
 | UR-Q4 | open | none: for C, D and an unsettled clear the diagnostic reads no recorded identity and reports workers `unknown` | all of it |
 | UR-Q5 | open | none | all of it |
-| UR-Q6 | open | the diagnostic's part: the `operation` detail and row kind, its keys, values, labels and texts; the `operation` fact's values; the blocker ids `unreadable`, `undetermined` and `unsettled-clear`; D as a delivered `done` finding naming its failed step; the fixed `error io` and `error representation` texts | the act refusals' codes and texts for C and D (C is refused `unsupervised` today, and D falls into A or C); the `busy` refusal's text for unknown liveness; the clear's action id, typed word and answers; a wire value for `unexpected`; every other Gate 3 action's vocabulary |
-| UR-Q7 | open | recommendation (a), made precise: the record's own scope; its `snapshot` carries the barrier and `detail kind=operation` the finding, from one inspection under one generation; no new operation, scope, purpose or protocol version | nothing of the transport; the text command's row in SPEC.md → *Commands* is written with its implementation |
-| UR-Q8 | open | the diagnostic's part: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
+| UR-Q6 | open | the diagnostic's part, accepted: the `operation` detail and row kind, its keys, values, labels and texts; the `operation` fact's values; the blocker ids `unreadable`, `undetermined` and `unsettled-clear`; D as a delivered `done` finding naming its failed step; the fixed `error io` and `error representation` texts | the act refusals' codes and texts for C and D (C is refused `unsupervised` today, and D falls into A or C); the `busy` refusal's text for unknown liveness; the clear's action id, typed word and answers; a wire value for `unexpected`; every other Gate 3 action's vocabulary |
+| UR-Q7 | open | accepted: recommendation (a), made precise: the record's own scope; its `snapshot` carries the barrier and `detail kind=operation` the finding, from one inspection under one generation; no new operation, scope, purpose or protocol version | nothing of the transport |
+| UR-Q8 | open | the diagnostic's part, accepted: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
 | UR-Q9 | accepted: a record naming another scope, or an action its scope does not own, is C; a scope's own action merely unavailable now is not corruption | — | — |
 
 ## Where each design question is answered
@@ -877,6 +881,6 @@ it touches stays open in every part the third column names.
 | — | Gate 1's production start, and its authority | docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The startup-check session*; D10, D18, D43, D48 |
 | — | Gate 2's read surface, generations and paging | docs/PROTOCOL.md → *The Gate 2 read surface*; D50, D52, D53, and *Open review questions* |
 | — | An operation record that cannot be read | docs/PROTOCOL.md → *An operation record that cannot be read*; D47, D54, and *Open review questions* (UR-Q1 to UR-Q9) |
-| — | Its diagnostic's request, answer, words and interfaces (a candidate) | docs/PROTOCOL.md → *The operation-record diagnostic*; D55 |
+| — | Its diagnostic's request, answer, words and interfaces (accepted; implemented in the core and the text interface, awaiting review) | docs/PROTOCOL.md → *The operation-record diagnostic*; D55 |
 | — | An unreleased frontend candidate | D49; docs/FRONTEND.md |
 | — | The interface | docs/UX.md; D51 |

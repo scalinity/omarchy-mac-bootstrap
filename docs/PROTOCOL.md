@@ -1695,13 +1695,16 @@ incomplete transport follow Health.
 
 ### The operation-record diagnostic
 
-**Status: a candidate interface contract, documentation only, awaiting its
-focused independent review (MILESTONES.md → *Gate 3 — The action contract
-under fixtures*). It proposes resolutions for UR-Q7, for the part of UR-Q6
-the diagnostic needs and for the part of UR-Q8 that carries it (D55;
-docs/DECISIONS.md → *Open review questions*). None is accepted, nothing
-below is implemented or authorized, and UR-Q1, UR-Q3, UR-Q4 and UR-Q5 stay
-open.**
+**Status: the interface contract accepted at
+`2840fe2efc0b240ccb9343f6013912d6fc941a6f`, with UR-Q7, the part of UR-Q6
+the diagnostic needs and the part of UR-Q8 that carries it (D55;
+docs/DECISIONS.md → *Open review questions*). Its core and text
+implementation (`lib/operation.sh`; docs/TESTING.md → *Gate 3
+operation-record diagnostic tests*) awaits its focused independent
+implementation review (MILESTONES.md → *Gate 3 — The action contract under
+fixtures*); no frontend presents it yet. The rest of UR-Q6 and UR-Q8, and
+UR-Q1, UR-Q3, UR-Q4 and UR-Q5, stay open, so no clear exists and the
+`clear` rows are written by no core.**
 
 This is the diagnostic of *An operation record that cannot be read* (§3),
 made exact: how it is asked for, what it answers, with which words, and
@@ -2090,12 +2093,9 @@ refusal, never derives a state from the blocker's id, never offers an action
 from the finding — actions come only from `action` records — and never
 reads `ops/`.
 
-**The text interface.** One read command, proposed with this contract: the
-command word `operation` with exactly one argument, a scope name from
-*Scopes*, typed after the program's name (`operation shared`). SPEC.md →
-*Commands* lists the commands as they are; it gains this one, with the
-intent `read`, in the change that implements it once this contract is
-accepted, and the documentation checks then hold every invocation to it.
+**The text interface.** One read command: `omarchy-bootstrap operation
+SCOPE`, with exactly one argument, a scope name from *Scopes* (`operation
+shared`). SPEC.md → *Commands* lists it with the intent `read`.
 
 - **Arguments.** Exactly one, one of the scope names, checked with the
   other per-command argument checks, before intent is decided or the state
@@ -2136,38 +2136,38 @@ accepted, and the documentation checks then hold every invocation to it.
   argument is required for that reason; no fallback to another command
   exists in either checkout.
 
-An unreadable record, as the text interface shows it (the state directory
-is the default; the fingerprint is an example):
+An unreadable record, as the text interface shows it with `--ascii` (the
+state directory is the default; the fingerprint is an example):
 
 ```text
-Operation record
-  Scope               shared
-  Record              ~/.local/state/omarchy-mac-bootstrap/ops/shared.omb
-  State               unreadable - A record exists in this scope and cannot be read, so nothing it says is known.
-  Entry               file - a plain file
-  Owner               this-user - you
-  Writable by others  no - only its owner may write it
-  Size                812
-  Fingerprint         9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15 - SHA-256 of all its bytes, for comparing inspections only
-  Refused by          seal - its seal does not match its bytes
-  Workers             unknown - Nothing ties a running process to this record, so whether one it started still runs is unknown.
-  Effect              unknown - Unknown: what the operation changed cannot be judged without the record.
-  Still unknown       Everything the record says: its action, session, process, boot and state, whether it ended, and what it changed.
-  Next                Nothing in this scope can run while this record is there, and a restart does not change that. This tool offers no way to clear it yet. You may look at the file with your own tools; this tool never shows its bytes.
+ | Operation record
+   Scope               shared
+   Record              ~/.local/state/omarchy-mac-bootstrap/ops/shared.omb
+   State               unreadable - A record exists in this scope and cannot be read, so nothing it says is known.
+   Entry               file - a plain file
+   Owner               this-user - you
+   Writable by others  no - only its owner may write it
+   Size                812
+   Fingerprint         9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15 - SHA-256 of all its bytes, for comparing inspections only
+   Refused by          seal - its seal does not match its bytes
+   Workers             unknown - Nothing ties a running process to this record, so whether one it started still runs is unknown.
+   Effect              unknown - Unknown: what the operation changed cannot be judged without the record.
+   Still unknown       Everything the record says: its action, session, process, boot and state, whether it ended, and what it changed.
+   Next                Nothing in this scope can run while this record is there, and a restart does not change that. This tool offers no way to clear it yet. You may look at the file with your own tools; this tool never shows its bytes.
 ```
 
 The same finding cannot be looked up:
 
 ```text
-Operation record
-  Scope               shared
-  Record              ~/.local/state/omarchy-mac-bootstrap/ops/shared.omb
-  State               undetermined - Whether a record exists in this scope, or what it says, could not be established.
-  Failed step         lookup - Whether the record exists could not be established: the state directory or its ops folder is a link, is not a folder of yours, or cannot be searched or listed.
-  Workers             unknown - Unknown while the record cannot be inspected.
-  Effect              unknown - Unknown while the record cannot be inspected.
-  Still unknown       Whether a record exists here, and anything it says.
-  Next                Make the state directory and its ops folder real folders of yours that you can open and list, then check again. This tool changes no permission and moves nothing.
+ | Operation record
+   Scope               shared
+   Record              ~/.local/state/omarchy-mac-bootstrap/ops/shared.omb
+   State               undetermined - Whether a record exists in this scope, or what it says, could not be established.
+   Failed step         lookup - Whether the record exists could not be established: the state directory or its ops folder is a link, is not a folder of yours, or cannot be searched or listed.
+   Workers             unknown - Unknown while the record cannot be inspected.
+   Effect              unknown - Unknown while the record cannot be inspected.
+   Still unknown       Whether a record exists here, and anything it says.
+   Next                Make the state directory and its ops folder real folders of yours that you can open and list, then check again. This tool changes no permission and moves nothing.
 ```
 
 The first page of the unreadable finding on the wire, illustrative rather
@@ -2247,24 +2247,25 @@ and `unavailable`.
 
 | Surface | This contract | Why |
 | --- | --- | --- |
-| the snapshot of an act scope `S` | contract change proposed: the `operation` fact and blocker, and the inspection in its data set | it must show the barrier and withhold actions anyway, and the detail must share its generation |
-| the foundation fixture's journey snapshot | contract change proposed, as the snapshot of its test actions' scope: the `operation` fact's values and the blocker ids for C, D and an unsettled clear replace `unsupervised` for C and today's removal advice | it is the one scope with operation records today |
-| `detail kind=operation` | contract change proposed: the finding | the explicit request |
-| the text interface | contract change proposed: the read command `operation SCOPE` | D3: the text interface asks for and shows the same finding |
+| the snapshot of an act scope `S` | changed: the `operation` fact and blocker, and the inspection in its data set | it must show the barrier and withhold actions anyway, and the detail must share its generation |
+| the foundation fixture's journey snapshot | changed, as the snapshot of its test actions' scope: the `operation` fact's values and the blocker ids for C, D and an unsettled clear replace `unsupervised` for C and today's removal advice | it is the one scope with operation records today |
+| `detail kind=operation` | changed: the finding | the explicit request |
+| the text interface | changed: the read command `operation SCOPE` | D3: the text interface asks for and shows the same finding |
 | the ordinary Gate 2 journey snapshot and its details | unchanged | the journey keeps no operation record outside the foundation fixture; D52 holds it to the baseline |
 | `status` | unchanged | held to the baseline (D52); it gains no operation-record inspection |
 | Doctor (`doctor`, `health`) | unchanged | the same |
 | Logs (`logs`) | unchanged | the same |
 | the debug report | unchanged | its allowlist (docs/RESCUE.md → *Safe fields*) gains nothing; an operation-state field stays a separate review |
 | the startup check | unchanged | it reads no operation record, and `detail` stays `refused unavailable` there |
-| the launcher | contract change proposed for the new command's routing and argument check only | its reading of `ops/*.omb` for owner cleanup and stale reclaim is unchanged, and it gains no authority to clear |
-| the frontend | contract change proposed, presentation only, not implemented | it presents the facts, blockers and rows (*The frontend*, above) and never reads `ops/` |
+| the launcher | changed for the new command's routing and argument check only | its reading of `ops/*.omb` for owner cleanup and stale reclaim is unchanged, and it gains no authority to clear |
+| the frontend | presentation only, for a reviewed frontend change; not implemented | it presents the facts, blockers and rows (*The frontend*, above) and never reads `ops/` |
 | the act refusals for C and D | unchanged here | the act path's vocabulary stays open (UR-Q6) |
 
-**Acceptance cases.** Documentation cases for the future implementation's
-tests, named with it (docs/TESTING.md); none is a test yet. In every case
-the inspection takes no lock and writes nothing outside the per-run
-scratch, and the record is unchanged byte for byte.
+**Acceptance cases.** Each is a case of `tests/test-operation.sh`
+(docs/TESTING.md → *Gate 3 operation-record diagnostic tests*) but the
+clear's, DIA-10(b), DIA-11(b) and DIA-12, which wait for an accepted clear
+(UR-Q1). In every case the inspection takes no lock and writes nothing
+outside the per-run scratch, and the record is unchanged byte for byte.
 
 | Case | Observations | Answer | May conclude | Must not conclude |
 | --- | --- | --- | --- | --- |
