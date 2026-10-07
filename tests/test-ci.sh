@@ -8,7 +8,8 @@
 # executed failure, and tells a runner never acquired and an exhausted source
 # download from a failure; only runners never acquired are retried, once,
 # when the verdict's red follows from them alone, on this repository's ci.yml
-# run at the SHA; and a Bash source is used only with its pinned digest, from
+# run at the SHA, as GitHub's metadata, read whole and each field of its
+# type, proves; and a Bash source is used only with its pinned digest, from
 # an origin or from the cache.
 # shellcheck disable=SC2015 # ok/fail always return 0
 # shellcheck disable=SC2016 # awk programs, expanded by awk
@@ -369,18 +370,20 @@ assert_rc "$?" 1 "ci-retry-green: nothing to retry"
 # The controller (tests/ci.sh retry) over recorded runs: a gh on PATH answers
 # each request from $GH_FIXTURE, in the shapes GitHub's API answered (run
 # 37371989145 for runners never acquired, run 36687583425 for jobs cancelled
-# by hand), and records each write instead of making it. The verdict job's
-# signal comes from tests/ci.sh retry-signal over the jobs tests/ci.sh jobs
-# read, and the guard's own output.
+# by hand), and records each write instead of making it. With --paginate it
+# writes page after page as gh does (NAME.json, NAME.2.json, ...), and fails
+# at a page recorded as NAME.N.fail, having written the pages before it. The
+# verdict job's signal comes from tests/ci.sh retry-signal over the jobs
+# tests/ci.sh jobs read, and the guard's own output.
 if command -v jq >/dev/null 2>&1; then
   mkdir -p "$T/bin"
   printf '%s\n' '#!/bin/sh' \
     '[ "$1" = api ] || exit 2' \
     'shift' \
-    "m=GET q='' p=''" \
+    "m=GET q='' p='' all=''" \
     'while [ $# -gt 0 ]; do' \
     '  case $1 in' \
-    '    --paginate) ;;' \
+    '    --paginate) all=1 ;;' \
     '    -X) m=$2; shift ;;' \
     '    --jq) q=$2; shift ;;' \
     '    *) p=$1 ;;' \
@@ -388,26 +391,37 @@ if command -v jq >/dev/null 2>&1; then
     '  shift' \
     'done' \
     'if [ "$m" != GET ]; then echo "$m $p" >>"$GH_FIXTURE/writes"; exit 0; fi' \
-    'f=$GH_FIXTURE/$(printf "%s" "${p%%\?*}" | tr / _).json' \
-    'if [ ! -f "$f" ]; then echo "gh: no recorded response for $p" >&2; exit 1; fi' \
-    'if [ -n "$q" ]; then jq -r "$q" "$f"; else cat "$f"; fi' >"$T/bin/gh"
+    'f=$GH_FIXTURE/$(printf "%s" "${p%%\?*}" | tr / _)' \
+    'if [ ! -f "$f.json" ]; then echo "gh: no recorded response for $p" >&2; exit 1; fi' \
+    'n=1' \
+    'g=$f.json' \
+    'while [ -f "$g" ]; do' \
+    '  if [ -n "$q" ]; then jq -r "$q" "$g" || exit 1; else cat "$g"; fi' \
+    '  [ -n "$all" ] || exit 0' \
+    '  n=$((n + 1))' \
+    '  g=$f.$n.json' \
+    '  if [ -f "$f.$n.fail" ]; then echo "gh: HTTP 502 at page $n of $p" >&2; exit 1; fi' \
+    'done' >"$T/bin/gh"
   chmod +x "$T/bin/gh"
   GR=o/r
   POST="POST repos/o/r/actions/runs/7/rerun-failed-jobs"
   # api DIR REPO HEAD WORKFLOW EVENT BRANCH SHA ATTEMPT — run 7 of o/r as
   # DIR records it, and its first attempt's jobs from $T/rows: id, name,
-  # status, conclusion (- while running), runner, steps (NAME=CONCLUSION;...
-  # or -), annotations (A | B or -).
+  # status, conclusion (- while running), runner (- for null, as GitHub
+  # records a skipped job's), steps (NAME=CONCLUSION;... or -), annotations
+  # (A | B or -). The run passes through the jq filter $RMUT and the jobs
+  # through $MUT, when set; then the function $HOOK, when set, is given DIR.
   api() {
     local d=$1 id notes
     rm -rf "$d"
     mkdir -p "$d"
     jq -n --arg r "$2" --arg h "$3" --arg p "$4" --arg e "$5" --arg b "$6" --arg s "$7" --argjson a "$8" \
-      '{id: 7, status: "completed", repository: {full_name: $r}, head_repository: {full_name: $h}, path: $p, event: $e, head_branch: $b, head_sha: $s, run_attempt: $a}' >"$d/repos_o_r_actions_runs_7.json"
-    jq -R -s '[split("\n")[] | select(length > 0) | split("\t") | {id: (.[0] | tonumber), name: .[1], status: .[2], conclusion: (if .[3] == "-" then null else .[3] end), runner_id: (.[4] | tonumber), steps: (if .[5] == "-" then [] else [.[5] | split(";")[] | split("=") | {name: .[0], status: (if .[1] == "-" then "in_progress" else "completed" end), conclusion: (if .[1] == "-" then null else .[1] end)}] end)}] | {total_count: length, jobs: .}' "$T/rows" >"$d/repos_o_r_actions_runs_7_attempts_1_jobs.json"
+      '{id: 7, status: "completed", repository: {full_name: $r}, head_repository: {full_name: $h}, path: $p, event: $e, head_branch: $b, head_sha: $s, run_attempt: $a} | '"${RMUT:-.}" >"$d/repos_o_r_actions_runs_7.json"
+    jq -R -s '[split("\n")[] | select(length > 0) | split("\t") | {id: (.[0] | tonumber), name: .[1], status: .[2], conclusion: (if .[3] == "-" then null else .[3] end), runner_id: (if .[4] == "-" then null else .[4] | tonumber end), steps: (if .[5] == "-" then [] else [.[5] | split(";")[] | split("=") | {name: .[0], status: (if .[1] == "-" then "in_progress" else "completed" end), conclusion: (if .[1] == "-" then null else .[1] end)}] end)}] | {total_count: length, jobs: .} | '"${MUT:-.}" "$T/rows" >"$d/repos_o_r_actions_runs_7_attempts_1_jobs.json"
     while IFS="$TAB" read -r id _ _ _ _ _ notes; do
       [ "$notes" = - ] || printf '%s' "$notes" | jq -R -s 'split(" | ") | map({annotation_level: (if startswith("retry: ") then "notice" else "failure" end), message: .})' >"$d/repos_o_r_check-runs_${id}_annotations.json"
     done <"$T/rows"
+    [ -z "${HOOK:-}" ] || "$HOOK" "$d"
   }
   # ctl NAME [REPO HEAD WORKFLOW EVENT BRANCH SHA ATTEMPT] — tests/ci.sh retry
   # o/r 7 $SHA over that run, by default this repository's ci.yml dispatched
@@ -424,32 +438,35 @@ if command -v jq >/dev/null 2>&1; then
   ran="Set up job=success;Complete job=success"
   workload() {
     jobrow 100 plan completed success 1000001750 "$ran" -
-    jobrow 101 "fast · syntax, fixtures, docs, static, safety, CI, the suites a change touched" completed skipped 0 - -
+    jobrow 101 "fast · syntax, fixtures, docs, static, safety, CI, the suites a change touched" completed skipped - - -
     jobrow 102 "macos-bash32 · m1 · stock /bin/bash 3.2 · BSD userland" completed success 1000001751 "$ran" -
     jobrow 103 "linux-bash5 · l0 · bash 5 · ShellCheck 0.9.0" completed cancelled 0 - "$NOTACQ"
     jobrow 104 "frontend · f1 · fmt · clippy · layers A–F and H · build inputs" completed cancelled 0 - "$NOTACQ"
     jobrow 105 "target-bash53 · t1 · GNU Bash 5.3.15 from pinned sources · aarch64" completed success 1000001752 "$ran" -
-    jobrow 107 "retry controller · run" completed skipped 0 - -
+    jobrow 107 "retry controller · run" completed skipped - - -
   }
   # vsteps CHECKOUT EVIDENCE GUARD FAST RETRY — the verdict job's steps, so ended
   vsteps() { printf '%s' "Set up job=success;Run actions/checkout@v7=$1;The run's jobs=success;Every shard's evidence=$2;$GSTEP=$3;$FSTEP=$4;$RSTEP=$5;Post Run actions/checkout@v7=success;Complete job=success"; }
   # verdict STATUS CONCLUSION STEPS ANNOTATIONS — the FULL verdict job
   verdict() { jobrow 106 "FULL acceptance · completeness guard" "$@"; }
+  # The FULL verdict job at its last step, still running.
+  at_verdict() { verdict in_progress - 1000001790 "Set up job=success;Run actions/checkout@v7=success;The run's jobs=-" -; }
 
   # R1-A: at its end the verdict job reads the jobs, the guard has run, and
   # the signal it leaves is the controller's evidence.
   {
     workload
-    jobrow 106 "FULL acceptance · completeness guard" in_progress - 1000001790 "Set up job=success;Run actions/checkout@v7=success;The run's jobs=-" -
+    at_verdict
   } >"$T/rows"
   api "$T/api/at-verdict" "$GR" "$GR" .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 1
   PATH="$T/bin:$PATH" GH_FIXTURE=$T/api/at-verdict ci jobs "$GR" 7 1 >"$T/jobs-at-verdict.tsv"
   assert_eq "$(awk -F'\t' '$1 == 103 { print $3, $4, $5, $6, $8 }' "$T/jobs-at-verdict.tsv")" "completed cancelled 0 0 -" "ci-jobs: a job never acquired, as GitHub records it"
   assert_contains "$(awk -F'\t' '$1 == 103 { print $7 }' "$T/jobs-at-verdict.tsv")" "$NOTACQ" "ci-jobs: with GitHub's annotation"
   assert_eq "$(awk -F'\t' '$1 == 106 { print $3, $4, $8 }' "$T/jobs-at-verdict.tsv")" "in_progress - The run's jobs=-" "ci-jobs: the verdict job still running"
-  v=$(variant at-verdict)
-  rm "$v/frontend-f1.tsv" "$v/linux-bash5-l0.tsv"
-  ci guard "$v" "$SHA" "$T/jobs-at-verdict.tsv" >"$T/guard-at-verdict.txt"
+  assert_eq "$(awk -F'\t' '$1 == 101 { print $4, $5, $6 }' "$T/jobs-at-verdict.tsv")" "skipped ?null 0" "ci-jobs: a skipped job's null runner reads ?null, never 0"
+  AV=$(variant at-verdict)
+  rm "$AV/frontend-f1.tsv" "$AV/linux-bash5-l0.tsv"
+  ci guard "$AV" "$SHA" "$T/jobs-at-verdict.tsv" >"$T/guard-at-verdict.txt"
   sig=$(ci retry-signal "$T/jobs-at-verdict.tsv" "$SHA" full "$T/guard-at-verdict.txt" | sed -n 's/^::notice:://p')
   assert_eq "$sig" "retry: red only from runners never acquired · full · $SHA · jobs 103,104" "ci-retry-signal: from the jobs GitHub lists and the guard's own output"
   ok_verdict() { verdict completed failure 1000001790 "$(vsteps success success failure skipped success)" "Process completed with exit code 1. | $sig"; }
@@ -466,7 +483,7 @@ if command -v jq >/dev/null 2>&1; then
   fast_jobs() {
     jobrow 100 plan completed success 1000001750 "$ran" -
     jobrow 101 "fast · syntax, fixtures, docs, static, safety, CI, the suites a change touched" completed cancelled 0 - "$NOTACQ"
-    jobrow 102 "macos-bash32 · m1 · stock /bin/bash 3.2 · BSD userland" completed skipped 0 - -
+    jobrow 102 "macos-bash32 · m1 · stock /bin/bash 3.2 · BSD userland" completed skipped - - -
     jobrow 103 "linux-bash5 · l0 · bash 5 · ShellCheck 0.9.0" completed success 1000001751 "$ran" -
   }
   {
@@ -600,6 +617,169 @@ if command -v jq >/dev/null 2>&1; then
   } >"$T/rows"
   ctl green
   assert_eq "$rc $posts" "0 " "ci-retry-none: a green run: no POST (R1-L)"
+
+  # M1–M17: what the rule proves from must itself be proven. R1-A's run, its
+  # jobs through $MUT and its recording through $HOOK, read by each half on
+  # its own. mcase NAME: the verdict job's half — tests/ci.sh jobs (jrc, its
+  # lines in $T/jobs-NAME.tsv), the guard, tests/ci.sh retry-signal (mout,
+  # and msig, the signal it left) — then the controller's over the completed
+  # run, whose verdict job carries R1-A's own signal, so that the controller
+  # refuses unaided (out, rc, posts).
+  mcase() {
+    {
+      workload
+      at_verdict
+    } >"$T/rows"
+    api "$T/api/$1-at-verdict" "$GR" "$GR" .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 1
+    PATH="$T/bin:$PATH" GH_FIXTURE=$T/api/$1-at-verdict ci jobs "$GR" 7 1 >"$T/jobs-$1.tsv" 2>"$T/jobs-$1.err"
+    jrc=$?
+    ci guard "$AV" "$SHA" "$T/jobs-$1.tsv" >"$T/guard-$1.txt"
+    mout=$(ci retry-signal "$T/jobs-$1.tsv" "$SHA" full "$T/guard-$1.txt")
+    msig=$(printf '%s\n' "$mout" | sed -n 's/^::notice:://p')
+    {
+      workload
+      ok_verdict
+    } >"$T/rows"
+    ctl "$1"
+  }
+  # refused NAME WHAT — mcase NAME, and neither half moves.
+  refused() {
+    mcase "$1"
+    assert_eq "$msig" "" "ci-retry-metadata-$1: $2: the verdict job leaves no signal"
+    assert_eq "$posts" "" "ci-retry-metadata-$1: $2: the controller, its verdict signalling, makes no POST"
+  }
+  # unread NAME — in mcase NAME, tests/ci.sh jobs failed and printed nothing.
+  unread() {
+    assert_eq "$jrc" 1 "ci-jobs-unread-$1: tests/ci.sh jobs fails"
+    assert_eq "$(wc -c <"$T/jobs-$1.tsv" | tr -d ' ')" 0 "ci-jobs-unread-$1: and prints no line to judge"
+    assert_contains "$(cat "$T/jobs-$1.err")" "could not be read whole" "ci-jobs-unread-$1: and says so"
+  }
+  # col NAME ID — job ID's runner and steps as tests/ci.sh jobs printed them in mcase NAME.
+  col() { awk -F'\t' -v id="$2" '$1 == id { print $5, $6 }' "$T/jobs-$1.tsv"; }
+  J103='(.jobs[] | select(.id == 103))'
+  J106='(.jobs[] | select(.id == 106))'
+  JOBS=repos_o_r_actions_runs_7_attempts_1_jobs
+
+  # M1: a non-run exactly as GitHub records one — runner_id the number 0,
+  # steps the empty array, its annotation read — is eligible by this path.
+  MUT="$J103 |= (.runner_id = 0 | .steps = [])"
+  mcase m1
+  assert_eq "$(jq -c "$J103 | [.runner_id, .steps]" "$T/api/m1/$JOBS.json")" "[0,[]]" "ci-retry-metadata-m1: runner_id the number 0, steps the empty array"
+  assert_eq "$msig" "$sig" "ci-retry-metadata-m1: the verdict job signals (M1)"
+  assert_eq "$posts" "$POST" "ci-retry-metadata-m1: and the controller makes its one POST (M1)"
+
+  # M2–M9: a non-run's runner_id or steps left out, null or of another type.
+  # badfield NAME WHAT FILTER RUNNER_STEPS — job 103 through FILTER: refused,
+  # its runner and steps read as RUNNER_STEPS, never as 0.
+  badfield() {
+    MUT="$J103 |= ($3)"
+    refused "$1" "$2"
+    assert_eq "$(col "$1" 103)" "$4" "ci-jobs-metadata-$1: $2 reads $4"
+  }
+  badfield m2 "runner_id left out (M2)" 'del(.runner_id)' '?absent 0'
+  assert_contains "$out" "not a runner-acquisition non-run: linux-bash5 · l0 · bash 5 · ShellCheck 0.9.0 (completed/cancelled) · runner ?absent · steps 0" "ci-retry-metadata-m2: is named"
+  badfield m3 "runner_id null (M3)" '.runner_id = null' '?null 0'
+  badfield m4 'runner_id the text "0" (M4)' '.runner_id = "0"' '?string 0'
+  badfield m5 "runner_id an object (M5)" '.runner_id = {}' '?object 0'
+  badfield m5-array "runner_id an array (M5)" '.runner_id = [0]' '?array 0'
+  badfield m5-number "runner_id a number no runner has (M5)" '.runner_id = 0.5' '?malformed 0'
+  badfield m6 "steps left out (M6)" 'del(.steps)' '0 ?absent'
+  badfield m7 "steps null (M7)" '.steps = null' '0 ?null'
+  badfield m8 "steps an object (M8)" '.steps = {}' '0 ?object'
+  badfield m8-string "steps text (M8)" '.steps = ""' '0 ?string'
+  badfield m9 "runner_id and steps left out (M9)" 'del(.runner_id, .steps)' '?absent ?absent'
+  badfield m9-null "runner_id and steps null (M9)" '.runner_id = null | .steps = null' '?null ?null'
+
+  # M10, M11: the annotation that proves a non-run could not be read, or not
+  # as GitHub's list of annotations: no line is printed to judge.
+  MUT=
+  no_note() { rm "$1/repos_o_r_check-runs_103_annotations.json"; }
+  HOOK=no_note
+  refused m10 "its annotations could not be read (M10)"
+  unread m10
+  # An object keyed like a list, its value the very message: still no list.
+  note_object() { jq '{"0": .[0]}' "$1/repos_o_r_check-runs_103_annotations.json" >"$1/note" && mv "$1/note" "$1/repos_o_r_check-runs_103_annotations.json"; }
+  HOOK=note_object
+  refused m11 "its annotations an object, not a list (M11)"
+  unread m11
+  note_number() { jq 'map(.message = 7)' "$1/repos_o_r_check-runs_103_annotations.json" >"$1/note" && mv "$1/note" "$1/repos_o_r_check-runs_103_annotations.json"; }
+  HOOK=note_number
+  refused m11-message "an annotation whose message is not text (M11)"
+  unread m11-message
+
+  # M12–M14: the jobs read fails before, during or after a valid prefix.
+  no_jobs() { rm "$1/$JOBS.json"; }
+  HOOK=no_jobs
+  refused m12 "the jobs could not be read at all (M12)"
+  unread m12
+  assert_contains "$mout" "no job list" "ci-retry-metadata-m12: retry-signal says why"
+  assert_eq "$rc" 1 "ci-retry-metadata-m12: the controller fails"
+  HOOK=
+  MUT='.jobs += ["not a job"] | .total_count += 1'
+  refused m13 "a valid prefix, then a job that is not one (M13)"
+  unread m13
+  assert_eq "$rc" 1 "ci-retry-metadata-m13: the controller fails"
+  # pages DIR — the jobs as two pages, the first $PAGE1 on the first, each
+  # page counting them all, as GitHub's do; page2_fails DIR — the second
+  # page's request fails.
+  pages() { jq ".jobs |= .[$PAGE1:]" "$1/$JOBS.json" >"$1/$JOBS.2.json" && jq ".jobs |= .[:$PAGE1]" "$1/$JOBS.json" >"$1/page" && mv "$1/page" "$1/$JOBS.json"; }
+  page2_fails() { pages "$1" && mv "$1/$JOBS.2.json" "$1/$JOBS.2.fail"; }
+  MUT=
+  PAGE1=3
+  HOOK=pages
+  mcase m14-pages
+  assert_eq "$msig · $posts" "$sig · $POST" "ci-retry-metadata-m14-pages: two pages, both read: the verdict signals, the controller makes its POST"
+  # Every job the verdict job reads is on the first page; on the second, an
+  # executed failure that makes the attempt ineligible.
+  MUT='.jobs += [{id: 108, name: "macos-bash32 · m2 · stock /bin/bash 3.2 · BSD userland", status: "completed", conclusion: "failure", runner_id: 1000001753, steps: [{name: "The units", status: "completed", conclusion: "failure"}]}] | .total_count += 1'
+  PAGE1=8
+  HOOK=page2_fails
+  refused m14 "the second page could not be read (M14)"
+  unread m14
+  HOOK=
+  MUT='.total_count += 1'
+  refused m14-count "fewer jobs than GitHub counts (M14)"
+  unread m14-count
+
+  # M15: a job object whose id and name are not GitHub's: the list is read
+  # whole, and the attempt is not proven.
+  MUT='.jobs += [{id: null, name: {}, status: "completed", conclusion: "success", runner_id: null, steps: []}] | .total_count += 1'
+  refused m15 "a job whose id and name are not GitHub's (M15)"
+  assert_eq "$jrc" 0 "ci-jobs-metadata-m15: the list is read whole"
+  assert_contains "$out" "a job GitHub did not describe whole: ?null · ?object (completed/success)" "ci-retry-metadata-m15: is named"
+
+  # M16, M17: the verdict job's own runner and steps, as the controller
+  # proves its red from them.
+  # vbad NAME WHAT FILTER — the verdict job through FILTER: no POST.
+  vbad() {
+    MUT="$J106 |= ($3)"
+    mcase "$1"
+    assert_eq "$posts" "" "ci-retry-metadata-$1: $2: no POST"
+  }
+  vbad m16 "the verdict job's runner_id left out (M16)" 'del(.runner_id)'
+  assert_contains "$out" "the verdict job shows runner ?absent and steps 9, not a runner of its own that ran its steps" "ci-retry-metadata-m16: is named"
+  vbad m16-null "the verdict job's runner_id null (M16)" '.runner_id = null'
+  vbad m16-string "the verdict job's runner_id text (M16)" '.runner_id = "1000001790"'
+  vbad m17 "the verdict job's steps left out (M17)" 'del(.steps)'
+  vbad m17-null "the verdict job's steps null (M17)" '.steps = null'
+  vbad m17-object "the verdict job's steps an object (M17)" '.steps = {}'
+  vbad m17-step "a verdict step whose conclusion is not text (M17)" '.steps[4].conclusion = 1'
+  assert_contains "$out" "the verdict job shows runner 1000001790 and steps ?malformed" "ci-retry-metadata-m17-step: is named"
+  MUT=
+
+  # The run's own record, each field GitHub's and of its type: one left out,
+  # null or of another type is unread, never a match.
+  {
+    workload
+    ok_verdict
+  } >"$T/rows"
+  for f in '.id = "7"' '.run_attempt = "1"' '.head_branch = null' 'del(.event)' '.path = null' '.head_sha = 1' '.head_repository = null' '.repository.full_name = ["o/r"]'; do
+    RMUT=$f
+    ctl run-record
+    assert_eq "$rc $posts" "1 " "ci-retry-run-record: a run record with $f: no POST"
+  done
+  RMUT=
+  assert_contains "$out" "GitHub's record of run 7 could not be read whole; nothing re-run" "ci-retry-run-record: is named"
 else
   skip "the retry controller reads GitHub's API through gh --jq (no jq)"
 fi

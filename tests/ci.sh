@@ -363,18 +363,63 @@ ci_steps() {
 
 # A run attempt's jobs, a line each: id, name, status, conclusion, runner,
 # steps, GitHub's annotations on a job that did not pass, and the steps that
-# did not pass (NAME=CONCLUSION).
+# did not pass (NAME=CONCLUSION). A field prints as itself only when GitHub
+# gave it, of its type: one left out prints ?absent, null ?null, of another
+# type ?TYPE, and of its type but no value it can hold ?malformed (a
+# skipped job's runner is null; a null conclusion, a job still running,
+# prints -). Every page and every annotation is read and projected whole
+# before a line is printed: a read that fails, a page or job that is not
+# one, or fewer jobs than GitHub counts print nothing, and fail.
 ci_jobs() {
-  gh api --paginate "repos/$1/actions/runs/$2/attempts/$3/jobs?per_page=100" \
-    --jq '.jobs[] | [.id, .name, .status, (.conclusion // "-"), (.runner_id // 0), (.steps // [] | length), ([.steps // [] | .[] | select(.conclusion != "success" and .conclusion != "skipped") | "\(.name)=\(.conclusion // "-")"] | join(" | ") | if . == "" then "-" else . end)] | @tsv' |
-    while IFS="$TAB" read -r id name status concl rid steps bad; do
+  local d rc=0 id name status concl rid steps bad note
+  d=$(mktemp -d) || return 1
+  if gh api --paginate "repos/$1/actions/runs/$2/attempts/$3/jobs?per_page=100" >"$d/pages" &&
+    jq -r -s '
+      def known($k; t; ok; out):
+        if has($k) | not then "?absent"
+        else .[$k] | if type != t then "?" + type elif ok then out else "?malformed" end end;
+      def step: type == "object" and (.name | type) == "string" and (.conclusion | type == "string" or type == "null");
+      if length > 0 and all(.[]; type == "object" and (.jobs | type) == "array" and (.total_count | type) == "number") then . else error("a page that is not a list of jobs") end
+      | (map(.total_count) | unique) as $n
+      | [.[].jobs[]]
+      | if $n == [length] then .[] else error("\(length) jobs, where GitHub counts \($n | map(tostring) | join(" and "))") end
+      | if type == "object" then . else error("a job that is not one: \(tojson)") end
+      | [known("id"; "number"; . > 0 and . == floor; tostring),
+        known("name"; "string"; . != ""; .),
+        known("status"; "string"; . != ""; .),
+        (if has("conclusion") and .conclusion == null then "-" else known("conclusion"; "string"; . != ""; .) end),
+        known("runner_id"; "number"; . >= 0 and . == floor; . + 0 | tostring),
+        known("steps"; "array"; all(.[]; step); length),
+        known("steps"; "array"; all(.[]; step); [.[] | select(.conclusion != "success" and .conclusion != "skipped") | "\(.name)=\(.conclusion // "-")"] | join(" | ") | if . == "" then "-" else . end)]
+      | @tsv' "$d/pages" >"$d/jobs"; then
+    while IFS="$TAB" read -r id name status concl rid steps bad <&3; do
       note=-
       case $concl in
         success | skipped | -) ;;
-        *) note=$(gh api "repos/$1/check-runs/$id/annotations" --jq '[.[].message] | join(" | ")' 2>/dev/null | tr '\t\n' '  ') ;;
+        *) note=$(ci_note "$1" "$id" "$d") || {
+          rc=1
+          break
+        } ;;
       esac
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$name" "$status" "$concl" "$rid" "$steps" "${note:--}" "$bad"
-    done
+    done 3<"$d/jobs" >"$d/out"
+  else
+    rc=1
+  fi
+  if [ "$rc" = 0 ]; then
+    cat "$d/out"
+  else
+    echo "ci.sh: run $2 attempt $3's jobs could not be read whole; no line is printed to judge" >&2
+  fi
+  rm -rf "$d"
+  return "$rc"
+}
+
+# ci_note REPO ID DIR — job ID's annotations, their messages joined by " | ",
+# every page read and projected whole; otherwise nothing, and a failure.
+ci_note() {
+  gh api --paginate "repos/$1/check-runs/$2/annotations?per_page=100" >"$3/note" &&
+    jq -r -s 'add | if type == "array" and all(.[]; type == "object" and (.message | type) == "string") then map(.message | gsub("[\t\n]"; " ")) | join(" | ") else error("annotations that are not a list of messages") end' "$3/note"
 }
 
 # The verdict job's own verdict step in each mode, as ci.yml names it, and the
@@ -385,34 +430,41 @@ CI_SIGNAL='retry: red only from runners never acquired'
 
 # ci_judge WHO JOBS SHA MODE [NR] — the one automatic retry's rule over a
 # run's first attempt (JOBS, from tests/ci.sh jobs). A runner never acquired:
-# the job ended cancelled or failed with no runner, no step, and GitHub's own
-# annotation saying so (run 37371989145). Every job that did not pass must be
-# one, but the verdict job, whose red must follow from them alone.
-# WHO verdict: the verdict job asks at its end, still running; in FULL its
-# guard found nothing else (NR, the guard's count of them). Its answer, the
-# signal, names MODE, SHA and those jobs. WHO controller: the run has
-# completed, and the verdict job ended failed on a runner of its own, in its
-# own verdict step alone, carrying that signal for exactly these jobs.
+# the job ended cancelled or failed with runner_id the number 0, steps the
+# empty list, and GitHub's own annotation saying so (run 37371989145); a
+# field GitHub did not give, of its type, proves nothing (tests/ci.sh jobs
+# prints it ?…). Every job must be described whole, and every job that did
+# not pass must be one, but the verdict job, whose red must follow from them
+# alone. WHO verdict: the verdict job asks at its end, still running; in
+# FULL its guard found nothing else (NR, the guard's count of them). Its
+# answer, the signal, names MODE, SHA and those jobs. WHO controller: the
+# run has completed, and the verdict job ended failed on a runner of its own
+# that ran its steps, in its own verdict step alone, carrying that signal
+# for exactly these jobs.
 ci_judge() {
   awk -F'\t' -v who="$1" -v sha="$3" -v mode="$4" -v nr="${5:-}" \
     -v gstep="$CI_GUARD_STEP" -v fstep="$CI_FAST_STEP" -v sig="$CI_SIGNAL" '
     function no(m) { other++; print m }
+    NF != 8 { no("a line that is not a job: " $0); next }
+    $1 !~ /^[1-9][0-9]*$/ || $2 ~ /^\?/ || $3 ~ /^\?/ || $4 ~ /^\?/ { no("a job GitHub did not describe whole: " $1 " · " $2 " (" $3 "/" $4 ")"); next }
     $2 ~ /^(FULL acceptance|FAST) · / { nv++; vs = $3; vc = $4; vr = $5; vk = $6; va = $7; vb = $8; next }
     $4 == "success" || $4 == "skipped" { next }
-    $3 == "completed" && ($4 == "cancelled" || $4 == "failure") && $5 == 0 && $6 == 0 && $7 ~ /was not acquired by Runner/ {
+    $3 == "completed" && ($4 == "cancelled" || $4 == "failure") && $5 == "0" && $6 == "0" && $7 ~ /was not acquired by Runner/ {
       acq++; got[$1] = 1; ids = ids (ids == "" ? "" : ",") $1
       print "runner never acquired: " $2
       next
     }
-    { no("not a runner-acquisition non-run: " $2 " (" $3 "/" $4 ")") }
+    { no("not a runner-acquisition non-run: " $2 " (" $3 "/" $4 ") · runner " $5 " · steps " $6) }
     END {
       if (mode != "full" && mode != "fast") no("no mode " mode)
       if (nv != 1) no("the attempt has " nv + 0 " verdict jobs, not one")
       else if (who == "verdict") {
         if (vc != "-") no("the verdict job has already ended " vc)
         if (mode == "full" && nr != acq) no("the guard found more than the runners never acquired, or did not finish")
-      } else if (vs != "completed" || vc != "failure" || vr == 0 || vk == 0) {
+      } else if (vs != "completed" || vc != "failure") {
         no("the verdict job ended " vs "/" vc ", not failed on a runner of its own")
+      } else if (vr !~ /^[1-9][0-9]*$/ || vk !~ /^[1-9][0-9]*$/) {
+        no("the verdict job shows runner " vr " and steps " vk ", not a runner of its own that ran its steps")
       } else if (vb != (mode == "full" ? gstep : fstep) "=failure") {
         no("the verdict job went wrong in " vb ", not in its own verdict step alone")
       } else {
@@ -449,6 +501,10 @@ ci_judge() {
 # guard's output.
 ci_retry_signal() {
   local nr=''
+  if [ ! -s "$1" ]; then
+    echo "no job list: tests/ci.sh jobs printed none it read whole; not eligible for an automatic retry"
+    return 1
+  fi
   if [ "$3" = full ]; then
     nr=$(sed -n 's/^retry: every problem is a runner never acquired (\([0-9][0-9]*\))$/\1/p' "$4" 2>/dev/null)
   fi
@@ -458,7 +514,8 @@ ci_retry_signal() {
 # The controller, in a run of its own: GitHub re-runs a job only once its run
 # has completed. RUN must be this repository's ci.yml, from a push or a
 # dispatch (never a pull request), at SHA, in its first attempt; its mode is
-# the one its event and branch give.
+# the one its event and branch give. Each field of the run's record must be
+# there, of its type, or nothing is compared.
 ci_retry() {
   local repo=$1 run=$2 sha=$3 n=0 info id of from path event branch head attempt jobs
   while [ "$(gh api "repos/$repo/actions/runs/$run" --jq .status)" != completed ]; do
@@ -469,7 +526,14 @@ ci_retry() {
     fi
     sleep 15
   done
-  info=$(gh api "repos/$repo/actions/runs/$run" --jq '[.id, .repository.full_name, .head_repository.full_name, .path, .event, .head_branch, .head_sha, .run_attempt] | map(. // "-") | @tsv') || return 1
+  # shellcheck disable=SC2016 # a jq program
+  info=$(gh api "repos/$repo/actions/runs/$run" --jq '
+    def text($f): if type == "string" and . != "" then . else error("its \($f) reads \(tojson)") end;
+    def count($f): if type == "number" and . > 0 and . == floor then tostring else error("its \($f) reads \(tojson)") end;
+    [(.id | count("id")), (.repository.full_name | text("repository")), (.head_repository.full_name | text("head repository")), (.path | text("path")), (.event | text("event")), (.head_branch | text("branch")), (.head_sha | text("SHA")), (.run_attempt | count("attempt"))] | @tsv') || {
+    echo "GitHub's record of run $run could not be read whole; nothing re-run"
+    return 1
+  }
   IFS="$TAB" read -r id of from path event branch head attempt <<EOF
 $info
 EOF
@@ -497,7 +561,10 @@ EOF
     return 0
   fi
   jobs=$(mktemp) || return 1
-  ci_jobs "$repo" "$run" 1 >"$jobs" || return 1
+  ci_jobs "$repo" "$run" 1 >"$jobs" || {
+    echo "nothing re-run"
+    return 1
+  }
   if ! ci_judge controller "$jobs" "$sha" "$(ci_mode "$event" "refs/heads/$branch")"; then
     echo "nothing re-run"
     return 0

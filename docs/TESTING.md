@@ -1264,19 +1264,25 @@ missing, short or different one is fetched again. When no origin delivers a
 file, the step exits 75, which the guard reports as external infrastructure.
 
 **One automatic retry.** A job that never acquired a runner ends cancelled
-with no runner, no step, and GitHub's annotation *The job was not acquired by
-Runner*. When everything that went wrong in a run's first attempt is such a
-job, and in FULL the guard found nothing else, the verdict job's last step
-leaves a notice on the verdict job naming the mode, the SHA and those jobs
-(`tests/ci.sh retry-signal`) and dispatches the workflow in retry mode. The
-controller waits for the run to complete and holds it to this repository's
-`ci.yml`, a push or a dispatch, the SHA and its first attempt. It reads the
-attempt again and re-runs its failed jobs once only when every job that did
-not pass is such a job but the verdict job, and the verdict job ended failed
-on a runner of its own, in its own verdict step alone, carrying that notice
-for exactly those jobs (`tests/ci.sh retry`). An executed failure, a failed
-download, a job or verdict cancelled by hand or timed out, a verdict that went
-wrong in any other step, a pull request or a second attempt is never retried.
+with `runner_id` the number 0, an empty list of steps, and GitHub's
+annotation *The job was not acquired by Runner*. A field GitHub left out,
+null or of another type proves nothing (a skipped job's runner is null), and
+`tests/ci.sh jobs` reads every page of the job list and every annotation
+whole before printing a line: a read that fails, or fewer jobs than GitHub
+counts, prints none, and nothing is retried from it. The run's own record is
+held to the same rule. When everything that went wrong in a run's first
+attempt is such a job, and in FULL the guard found nothing else, the verdict
+job's last step leaves a notice on the verdict job naming the mode, the SHA
+and those jobs (`tests/ci.sh retry-signal`) and dispatches the workflow in
+retry mode. The controller waits for the run to complete and holds it to this
+repository's `ci.yml`, a push or a dispatch, the SHA and its first attempt.
+It reads the attempt again and re-runs its failed jobs once only when every
+job that did not pass is such a job but the verdict job, and the verdict job
+ended failed on a runner of its own that ran its steps, in its own verdict
+step alone, carrying that notice for exactly those jobs
+(`tests/ci.sh retry`). An executed failure, a failed download, a job or
+verdict cancelled by hand or timed out, a verdict that went wrong in any
+other step, a pull request or a second attempt is never retried.
 
 **Caches.** Only the Bash source files. Cargo's registry and the Rust
 toolchain are fetched each time (`cargo fetch` takes under two seconds on
