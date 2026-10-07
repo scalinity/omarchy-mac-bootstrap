@@ -103,6 +103,7 @@ usage() {
   _help_row "shared test" "write, read back and remove one test file"
   _help_row "sources [--check]" "upstream URLs and versions; --check compares live (read-only)"
   _help_row "logs" "log location and recent entries (read-only)"
+  _help_row "operation SCOPE" "what a scope's operation record shows and what stays unknown (read-only)"
   _help_row "frontend-check" "check that the interface starts: downloads it once, changes nothing else"
   ui_section "Flags"
   _help_row "--dry-run" "show every step; change nothing, keep nothing"
@@ -135,7 +136,7 @@ on_interrupt() {
 }
 
 main() {
-  local cmd="" arg
+  local cmd="" arg scope=""
   local -a rest=()
   for arg in "$@"; do
     case "$arg" in
@@ -222,6 +223,16 @@ main() {
     sources) [ "${#rest[@]}" = 0 ] || { [ "${#rest[@]}" = 1 ] && [ "${rest[0]}" = --check ]; } ||
       { _usage_error "sources takes only --check" ; return 2; } ;;
     resume) [ "${#rest[@]}" -le 1 ] || { _usage_error "resume takes at most one token" ; return 2; } ;;
+    operation)
+      # Exactly one scope name, checked before intent, state or log
+      # (docs/PROTOCOL.md → *The text interface*): no path is built from
+      # anything else.
+      [ "${#rest[@]}" = 1 ] && scope=${rest[0]}
+      case "$scope" in
+        journey | disk | plan | profile | resolve | asahi | network | omarchy | shared | export | restore | rescue | qualify | debug | health | logs) ;;
+        *) _usage_error "operation takes one scope: journey, disk, plan, profile, resolve, asahi, network, omarchy, shared, export, restore, rescue, qualify, debug, health, logs" ; return 2 ;;
+      esac
+      ;;
     shared)
       case "${rest[0]:-status}" in
         status | test) [ "${#rest[@]}" -le 1 ] || { _usage_error "shared ${rest[0]} takes no code" ; return 2; } ;;
@@ -247,7 +258,7 @@ main() {
   # an action by the machine's state (run and fetch_upstream enforce it).
   OMB_CMD=${cmd:-default}
   case "$cmd" in
-    status | doctor | sources | logs) OMB_INTENT=read OMB_PERSIST=0 ;;
+    status | doctor | sources | logs | operation) OMB_INTENT=read OMB_PERSIST=0 ;;
     shared)
       if [ "${rest[0]:-status}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
       ;;
@@ -295,6 +306,18 @@ main() {
   case "$cmd" in
     sources) cmd_sources ${rest[@]+"${rest[@]}"} ; return ;;
     logs) cmd_logs ; return ;;
+    operation)
+      # shellcheck source=lib/records.sh
+      . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
+      # shellcheck source=lib/core.sh
+      . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
+      # shellcheck source=lib/read.sh
+      . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+      # shellcheck source=lib/operation.sh
+      . "$OMB_HOME/lib/operation.sh" || _omb_unloaded operation
+      cmd_operation "$scope"
+      return
+      ;;
     doctor) cmd_doctor ; return ;;
     status) cmd_status ; return ;;
     shared) cmd_shared ${rest[@]+"${rest[@]}"} ; return ;;

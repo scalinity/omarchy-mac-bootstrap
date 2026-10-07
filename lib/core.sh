@@ -1110,7 +1110,16 @@ core_main() {
   case "$op" in
     hello) core_result "done" ok ;;
     snapshot) core_op_snapshot ;;
-    detail | validate) core_result refused unavailable "Nothing in this gate pages details or validates parameters." ;;
+    detail)
+      # The journey's operation record check (docs/PROTOCOL.md → *The
+      # operation-record diagnostic*): its act actions keep ops/journey.omb.
+      if [ "$CORE_REQ_SCOPE" = journey ] && [ "$CORE_REQ_KIND" = operation ]; then
+        core_op_operation
+      else
+        core_result refused unavailable "Nothing in this gate pages details or validates parameters."
+      fi
+      ;;
+    validate) core_result refused unavailable "Nothing in this gate pages details or validates parameters." ;;
     execute) core_op_execute ;;
     *) core_result refused unavailable "This operation is not available." ;;
   esac
@@ -1222,9 +1231,13 @@ EOF
 }
 
 # core_op_snapshot — the journey scope of the foundation: its facts, the
-# barrier if any, and the actions available now.
+# barrier its operation record shows, and the actions available now, as one
+# data set whose generation the record's whole finding shares
+# (docs/PROTOCOL.md → *The operation-record diagnostic*). The record's path
+# is in no record of it, so a path the format cannot carry never hides the
+# barrier.
 core_op_snapshot() {
-  local scope body gen
+  local scope body
   scope=$CORE_REQ_SCOPE
   if ! core_in_scopes "$scope"; then
     core_result refused scope "This session does not include the $scope scope."
@@ -1234,49 +1247,54 @@ core_op_snapshot() {
     core_result refused unavailable "This gate's frontend reads only the foundation's fixtures; use the text interface (--no-tui)."
     return
   fi
-  core_barrier journey
-  body=$(_core_snapshot_body)
-  gen=$(sha256_str "$body")
-  core_emit generation id "$gen" total 0
+  _core_op_load
+  if ! core_op_dataset journey; then
+    op_failure 1
+    return
+  fi
+  if ! body=$(cat "$OP_DIR/body"); then
+    op_failure 1
+    return
+  fi
+  core_emit generation id "$OP_GEN" total 0
   _core_emit_body "$body" || return 1
   core_result "done" ok
 }
 
+# core_op_operation — `detail kind=operation` of the foundation's journey.
+core_op_operation() {
+  if ! core_in_scopes journey; then
+    core_result refused scope "This session does not include the journey scope."
+    return
+  fi
+  _core_op_load
+  core_op_detail
+}
+
+_core_op_load() {
+  # shellcheck source=lib/read.sh
+  . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+  # shellcheck source=lib/operation.sh
+  . "$OMB_HOME/lib/operation.sh" || _omb_unloaded operation
+}
+
 # _core_snapshot_body — the journey snapshot's records after its generation,
-# in the response schema's order (a function: /bin/bash 3.2 cannot parse a
-# case inside $( )).
+# in the response schema's order; 1 when one cannot be written. The operation
+# fact and blockers are the inspection's (op_barrier), and so is the barrier
+# the act actions answer to: read once for the whole data set, never again
+# here ("held" skips core_available's own read of the record).
 _core_snapshot_body() {
   local a
-  rec_line fact scope journey key foundation label "Interface" value "the foundation: test actions over fixtures" state info
-  rec_line fact scope journey key fixture label "Fixture" value "${OMB_FIXTURE##*/}" state info
-  case "$CORE_BAR" in
-    none) rec_line fact scope journey key operation label "Operation" value "none" state ok ;;
-    busy) rec_line fact scope journey key operation label "Operation" value "$CORE_BAR_ACTION running" state info ;;
-    stale) rec_line fact scope journey key operation label "Operation" value "$CORE_BAR_ACTION from an earlier boot, to reconcile" state warn ;;
-    failed) rec_line fact scope journey key operation label "Operation" value "$CORE_BAR_ACTION ended without its expected effect" state fail ;;
-    *) rec_line fact scope journey key operation label "Operation" value "${CORE_BAR_ACTION:-unknown} unsupervised" state fail ;;
-  esac
-  case "$CORE_BAR" in
-    failed)
-      core_failed_text
-      rec_line blocker id unresolved text "$CORE_FAILED_TEXT" \
-        fix "Restart this Mac (or this Linux system), then run the tool again: the scope is reconciled from what the machine then holds."
-      ;;
-    unsupervised)
-      rec_line blocker id unsupervised text "The outcome of ${CORE_BAR_ACTION:-an operation} is unknown and a process it started may still be running." \
-        fix "Restart this Mac (or this Linux system), then run the tool again."
-      ;;
-    corrupt)
-      rec_line blocker id unsupervised text "The operation record $(tildify "$(core_op_path journey)") cannot be read, so what it recorded is unknown; a restart does not change that." \
-        fix "Nothing in this scope runs while it is there. Look at it: remove it only once you know the operation it recorded has ended."
-      ;;
-  esac
+  rec_line fact scope journey key foundation label "Interface" value "the foundation: test actions over fixtures" state info || return 1
+  rec_line fact scope journey key fixture label "Fixture" value "${OMB_FIXTURE##*/}" state info || return 1
+  op_barrier journey || return 1
   for a in $CORE_TEST_ACTIONS; do
-    core_available "$a" || continue
+    core_available "$a" held || continue
+    if [ "$CA_INTENT" = act ] && [ "$OP_ACTS" != 1 ]; then continue; fi
     core_action_info "$a"
     core_basis "$a"
     rec_line action id "$a" scope "$CA_SCOPE" label "$CA_LABEL" intent "$CA_INTENT" gate "$CA_GATE" \
-      terminal "$CA_TERMINAL" cancel "$CA_CANCEL" basis "$CORE_BASIS" explain "$CA_EXPLAIN"
+      terminal "$CA_TERMINAL" cancel "$CA_CANCEL" basis "$CORE_BASIS" explain "$CA_EXPLAIN" || return 1
   done
 }
 

@@ -605,3 +605,206 @@ fn the_protocol_status_names_the_accepted_work() {
         }
     }
 }
+
+/// The frozen 0.1.0 client's own code, run against the answers DIA-14 saves.
+/// Only this harness is generated; the extracted sources are untouched.
+const DIA14_FROZEN: &str = r#"
+use omb_tui::app::{self, Model, Msg, Outcome, Req, update};
+use omb_tui::core::Session;
+use omb_tui::record::{self, Family, Op, Record};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+fn texts(recs: &[Record], ty: &str, keys: &[&str]) -> Vec<Vec<String>> {
+    recs.iter()
+        .filter(|r| r.ty == ty)
+        .map(|r| keys.iter().map(|k| r.text(k).unwrap_or("").to_string()).collect())
+        .collect()
+}
+
+#[test]
+fn dia14_frozen_client() {
+    let dir = std::path::PathBuf::from(std::env::var("DIA14_DIR").unwrap());
+    let mut out = String::new();
+    // Every request it can build: hello, the journey snapshot, execute.
+    let s = Session::new(dir.clone(), dir.clone(), true);
+    let execute = Req::Execute {
+        action: "test.mutate".into(),
+        basis: "0".repeat(64),
+        word: "test".into(),
+        handoff: false,
+        cancel: false,
+    };
+    for req in [Req::Hello, Req::Snapshot, execute] {
+        let b = String::from_utf8(s.request(&req)).unwrap();
+        assert!(!b.contains("op=detail") && !b.contains("kind=operation"), "{b}");
+        let op = b.lines().nth(1).unwrap().split('\t').nth(1).unwrap().to_string();
+        out.push_str(&format!("request {op}\n"));
+    }
+    for line in std::fs::read_to_string(dir.join("cases")).unwrap().lines() {
+        let (name, op) = line.split_once(' ').unwrap();
+        let bytes = std::fs::read(dir.join(format!("{name}.doc"))).unwrap();
+        let recs = match record::admit(Family::Res, Op::parse(op), &bytes) {
+            Ok(d) => d.records,
+            Err(r) => {
+                out.push_str(&format!("{name} refused {}\n", r.reason.code()));
+                continue;
+            }
+        };
+        if op != "snapshot" {
+            out.push_str(&format!("{name} admitted\n"));
+            continue;
+        }
+        let snap = app::snapshot_of(&recs);
+        let facts: Vec<Vec<String>> = snap
+            .facts
+            .iter()
+            .map(|f| vec![f.key.clone(), f.label.clone(), f.value.clone(), f.state.clone()])
+            .collect();
+        assert_eq!(facts, texts(&recs, "fact", &["key", "label", "value", "state"]), "{name}: facts as sent");
+        let blockers: Vec<Vec<String>> = snap.blockers.iter().map(|b| vec![b.text.clone(), b.fix.clone()]).collect();
+        assert_eq!(blockers, texts(&recs, "blocker", &["text", "fix"]), "{name}: blockers by text and fix");
+        let listed: Vec<String> = texts(&recs, "action", &["id"]).into_iter().map(|v| v[0].clone()).collect();
+        // The model as its event loop drives it: hello, then this snapshot.
+        let mut m = Model::default();
+        m.start();
+        let hello = recs.iter().find(|r| r.ty == "hello").unwrap().clone();
+        let done = recs.last().unwrap().clone();
+        update(&mut m, Msg::Done(Req::Hello, Outcome::Answer(vec![hello, done])));
+        update(&mut m, Msg::Done(Req::Snapshot, Outcome::Answer(recs.clone())));
+        let held: Vec<String> = m.snap.as_ref().unwrap().actions.iter().map(|a| a.id.clone()).collect();
+        assert_eq!(held, listed, "{name}: actions only from action records");
+        for _ in 0..8 {
+            if let Some(a) = m.focused() {
+                assert!(listed.contains(&a.id), "{name}: focus on an action the core did not list");
+            }
+            update(&mut m, Msg::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+        }
+        let fact = facts.iter().find(|f| f[0] == "operation").map(|f| format!("{}|{}", f[2], f[3])).unwrap_or_default();
+        let ids = texts(&recs, "blocker", &["id"]).into_iter().map(|v| v[0].clone()).collect::<Vec<_>>().join(",");
+        out.push_str(&format!("{name} fact={fact} blockers={ids} actions={}\n", held.join(",")));
+    }
+    std::fs::write(dir.join("verdicts"), out).unwrap();
+}
+"#;
+
+/// DIA-14 (docs/PROTOCOL.md → *The operation-record diagnostic*,
+/// *Compatibility*): the foundation snapshots and operation details the
+/// current core answers with (saved by tests/test-operation.sh), run through
+/// the released 0.1.0's own parser, snapshot decoder, model and request
+/// builder at its tag, built from its own sources, and through this
+/// candidate's. Both admit the new fact values and the blocker ids
+/// `unreadable` and `undetermined` as words, keep a blocker's text and fix,
+/// take actions only from `action` records, and never ask for
+/// `kind=operation`; the candidate's closed detail kinds keep no operation row.
+#[test]
+fn dia14_released_and_candidate_clients_against_the_operation_vocabulary() {
+    const S: &str = "54c3770f99c2affdf63ceaf2d46990cb3d9fd94b";
+    let dir = scratch("dia14");
+    let responses = dir.join("responses");
+    fs::create_dir_all(&responses).unwrap();
+    let out = Command::new(bash())
+        .arg(repo().join("tests/test-operation.sh"))
+        .arg(&responses)
+        .env("OMB_TEST_BASH", bash())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "the operation-record suite: {}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let cases: Vec<(String, String)> = fs::read_to_string(responses.join("cases"))
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let (n, o) = l.split_once(' ').unwrap();
+            (n.to_string(), o.to_string())
+        })
+        .collect();
+    assert_eq!(
+        cases.len(),
+        18,
+        "nine saved findings, a snapshot and a detail each"
+    );
+
+    // The candidate, 0.2.0.
+    for (name, op) in &cases {
+        let bytes = fs::read(responses.join(format!("{name}.doc"))).unwrap();
+        let recs = record::admit(Family::Res, Op::parse(op), &bytes)
+            .unwrap_or_else(|r| panic!("candidate refuses {name}: {r:?}"))
+            .records;
+        if op == "snapshot" {
+            let snap = omb_tui::app::snapshot_of(&recs);
+            let sent = |ty: &str| recs.iter().filter(|r| r.ty == ty).count();
+            assert_eq!(snap.facts.len(), sent("fact"), "{name}");
+            assert_eq!(snap.blockers.len(), sent("blocker"), "{name}");
+            assert_eq!(snap.actions.len(), sent("action"), "{name}");
+        } else {
+            for kind in omb_tui::read::Kind::ALL {
+                assert_ne!(kind.name(), "operation");
+                assert!(
+                    omb_tui::read::rows(&recs, kind).is_empty(),
+                    "{name}: an operation row read as {}",
+                    kind.name()
+                );
+            }
+        }
+    }
+
+    // The released client, built from its own sources at its tag.
+    let released = dir.join("released");
+    extract(
+        S,
+        &released,
+        &[
+            "frontend/.cargo",
+            "frontend/Cargo.toml",
+            "frontend/Cargo.lock",
+            "frontend/src",
+        ],
+    );
+    let crate_dir = released.join("frontend");
+    fs::create_dir_all(crate_dir.join("tests")).unwrap();
+    fs::write(crate_dir.join("tests/dia14.rs"), DIA14_FROZEN).unwrap();
+    let out = Command::new(env!("CARGO"))
+        .current_dir(&crate_dir)
+        .args(["test", "--locked", "--offline", "--test", "dia14"])
+        .env("CARGO_TARGET_DIR", dir.join("target"))
+        .env("DIA14_DIR", &responses)
+        .output()
+        .expect("build and run the released client's own code");
+    assert!(
+        out.status.success() && String::from_utf8_lossy(&out.stdout).contains("1 passed; 0 failed"),
+        "the released client's own code: {}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let verdicts = fs::read_to_string(responses.join("verdicts")).unwrap();
+    let want = "\
+request op=hello
+request op=snapshot
+request op=execute
+none.snapshot fact=none recorded|ok blockers= actions=test.read,test.mutate,test.handoff
+none.detail admitted
+readable-alive.snapshot fact=test.mutate running|info blockers= actions=test.read
+readable-alive.detail admitted
+readable-unknown.snapshot fact=test.mutate recorded as running; whether its core runs is unknown|warn blockers= actions=test.read
+readable-unknown.detail admitted
+readable-unsupervised.snapshot fact=test.mutate unsupervised|fail blockers=unsupervised actions=test.read
+readable-unsupervised.detail admitted
+readable-failed.snapshot fact=test.mutate ended without its expected effect|fail blockers=unresolved actions=test.read
+readable-failed.detail admitted
+readable-earlier.snapshot fact=test.mutate from an earlier boot, to reconcile|warn blockers= actions=test.read,test.mutate,test.handoff
+readable-earlier.detail admitted
+unreadable.snapshot fact=a record that cannot be read|fail blockers=unreadable actions=test.read
+unreadable.detail admitted
+undetermined.snapshot fact=cannot be inspected|unknown blockers=undetermined actions=test.read
+undetermined.detail admitted
+representation.snapshot fact=a record that cannot be read|fail blockers=unreadable actions=test.read
+representation.detail admitted
+";
+    assert_eq!(verdicts, want);
+    eprintln!("DIA-14: the released 0.1.0's own code at {S}:\n{verdicts}");
+    fs::remove_dir_all(dir).unwrap();
+}

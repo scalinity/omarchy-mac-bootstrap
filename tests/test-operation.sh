@@ -94,9 +94,9 @@ o_dec() {
     printf '%b\n' "$(printf '%s' "$line" | sed 's/%\([0-9A-F][0-9A-F]\)/\\x\1/g')"
   done
 }
-# o_rows [SPOOL] — the operation rows, KEY|LABEL|VALUE|TEXT, decoded.
+# o_rows — the last answer's operation rows, KEY|LABEL|VALUE|TEXT, decoded.
 o_rows() {
-  awk -F '\t' '$1 == "row" { k = $3; sub(/^key=/, "", k); l = $4; sub(/^col=/, "", l); v = $5; sub(/^col=/, "", v); t = $6; sub(/^col=/, "", t); print k "|" l "|" v "|" t "|" $2 "|" NF }' "${1:-$C_EV}" |
+  awk -F '\t' '$1 == "row" { k = $3; sub(/^key=/, "", k); l = $4; sub(/^col=/, "", l); v = $5; sub(/^col=/, "", v); t = $6; sub(/^col=/, "", t); print k "|" l "|" v "|" t "|" $2 "|" NF }' "$C_EV" |
     awk -F '|' '$5 != "kind=operation" || $6 != 6 { print "BAD ROW: " $0; next } { print $1 "|" $2 "|" $3 "|" $4 }' | o_dec
 }
 # o_fact SPOOL — the operation fact, VALUE|STATE (and its scope and label).
@@ -429,7 +429,7 @@ unr 'torn: eof' eof
 o_save unreadable
 TORN_ROWS=$O_ROWS
 o_texts 'DIA-04 unreadable (torn)' "$TORN_ROWS"
-assert_eq "$(printf '%s\n' "$O_OUT" | sed -n 10p)" "   Fingerprint        $(o_hash "$OPS") - $FP_TEXT" 'DIA-04 (text): the fingerprint line, exactly'
+assert_eq "$(printf '%s\n' "$O_OUT" | sed -n 10p)" "   Fingerprint         $(o_hash "$OPS") - $FP_TEXT" 'DIA-04 (text): the fingerprint line, exactly'
 : | o_raw
 unr 'empty' eof
 printf 'omb-op 1\n\302\240\n' | o_raw
@@ -640,12 +640,14 @@ size|Size|$SIZE|"
 o_tool head "$R_ARG" short
 undet 'DIA-06(b) the copy is shorter than the size read' read "$ST_READ" "$N_READ" "$ENTRY
 size|Size|$SIZE|"
+# A record that ends with a line end reaches the format's awk pass (a torn
+# one is refused, eof, before it runs).
+o_rec running $$ "$LIVE_START" "$BOOT"
+SIZE=$(o_size "$OPS")
 o_tool awk "$COPY_ARG" fail
 undet "DIA-06(c) a check's tool fails" check "$ST_CHECK" "$N_CHECK" "$ENTRY
 size|Size|$SIZE|"
 # DIA-07(a): the seal's own tools fail, where today's helper answers `seal`.
-o_rec running $$ "$LIVE_START" "$BOOT"
-SIZE=$(o_size "$OPS")
 o_tool tail "*\"-n 1 \"$COPY_ARG" fail
 undet 'DIA-07(a) the seal check cannot read its last line' check "$ST_CHECK" "$N_CHECK" "$ENTRY
 size|Size|$SIZE|"
