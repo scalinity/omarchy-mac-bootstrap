@@ -138,17 +138,20 @@ normal "$REPO" "$T/runs/cand-$N" >"$T/runs/cand-$N.norm"
 if cmp -s "$T/runs/base-$N.norm" "$T/runs/cand-$N.norm"; then fail "the comparison cannot tell --version from --help"; else ok; fi
 
 # --- Everywhere: the command surface -------------------------------------------------------
-# --help: the one listed delta, frontend-check's row (docs/FRONTEND.md → Help),
-# and nothing else, against each earlier tree.
+# --help: the two listed deltas, frontend-check's row (docs/FRONTEND.md →
+# Help) and the read command operation SCOPE's (docs/PROTOCOL.md → The
+# operation-record diagnostic), and nothing else, against each earlier tree.
 N=$((N + 1))
 run_one "$REPO" "$T/runs/cand-$N" "" "" --help
 help_row='     frontend-check       check that the interface starts: downloads it once, changes nothing else'
+op_row="     operation SCOPE      what a scope's operation record shows and what stays unknown (read-only)"
 assert_eq "$(grep -cxF -- "$help_row" "$T/runs/cand-$N/out")" 1 "--help lists frontend-check with its one line"
-grep -vxF -- "$help_row" "$T/runs/cand-$N/out" >"$T/runs/cand-$N/out.less"
+assert_eq "$(grep -cxF -- "$op_row" "$T/runs/cand-$N/out")" 1 "--help lists operation SCOPE with its one line"
+grep -vxF -e "$help_row" -e "$op_row" "$T/runs/cand-$N/out" >"$T/runs/cand-$N/out.less"
 for tree in base pre; do
   run_one "$T/$tree" "$T/runs/$tree-$N" "" "" --help
   cmp -s "$T/runs/$tree-$N/out" "$T/runs/cand-$N/out.less" && [ "$(cat "$T/runs/$tree-$N/rc")" = "$(cat "$T/runs/cand-$N/rc")" ] && ok ||
-    fail "--help: the candidate's differs from the $tree tree's by more than frontend-check's row"
+    fail "--help: the candidate's differs from the $tree tree's by more than the frontend-check and operation SCOPE rows"
 done
 same "--version" "" "" --version
 same "an unknown flag" "" "" --frobnicate
