@@ -600,7 +600,8 @@ jobs:
   # FULL: the completeness guard over every shard's evidence. FAST: a summary
   # that says it is not acceptance evidence. Both: one automatic retry, by a
   # dispatched run (GitHub re-runs a job only once its run has completed),
-  # when the only things that went wrong are runners never acquired.
+  # when the only things that went wrong are runners never acquired and this
+  # job's red follows from them alone; it leaves that signal on itself.
   verdict:
     name: ${{ needs.plan.outputs.mode == 'full' && 'FULL acceptance · completeness guard' || 'FAST · not acceptance evidence' }}
     needs: [plan, fast, macos-bash32, linux-bash5, target-bash53, frontend, frontend-linux-arm64, frontend-macos-arm64]
@@ -644,14 +645,18 @@ jobs:
           jq -e '[.[].result] | all(. == "success" or . == "skipped")' <<<"$NEEDS" >/dev/null
       - name: One automatic retry when a runner was never acquired
         if: always() && github.run_attempt == '1' && github.event_name != 'pull_request'
+        env:
+          MODE: ${{ needs.plan.outputs.mode }}
         run: |
-          if tests/ci.sh retry-eligible "$RUNNER_TEMP/jobs.tsv"; then
+          if tests/ci.sh retry-signal "$RUNNER_TEMP/jobs.tsv" "$GITHUB_SHA" "$MODE" "$RUNNER_TEMP/guard.txt"; then
             gh workflow run ci.yml --ref "$GITHUB_REF_NAME" -f retry_of="$GITHUB_RUN_ID" -f retry_sha="$GITHUB_SHA"
           fi
 
   # Dispatched by the verdict job only. It waits for that run to complete,
-  # reads its first attempt again, and re-runs its failed jobs once when every
-  # one of them never had a runner (tests/ci.sh retry).
+  # holds it to this repository's ci.yml, a push or a dispatch, the SHA and
+  # attempt 1, reads that attempt again, and re-runs its failed jobs once when
+  # every one of them never had a runner and the verdict job ended red from
+  # them alone, carrying its signal for exactly those jobs (tests/ci.sh retry).
   retry:
     name: retry controller · run ${{ inputs.retry_of }}
     needs: plan

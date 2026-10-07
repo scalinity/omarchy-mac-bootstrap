@@ -3,11 +3,13 @@
 # (tests/ci-manifest.tsv) and the GNU Bash source acquisition
 # (tests/ci-bash.sh), all offline: FAST never stands in for FULL; the
 # manifest is the repository's suites; the guard refuses a missing shard or
-# unit, a duplicate, another SHA, an undeclared skip, another shell or
-# platform, FAST evidence and an executed failure, and tells a runner never
-# acquired and an exhausted source download from a failure; only runners never
-# acquired are retried; and a Bash source is used only with its pinned digest,
-# from an origin or from the cache.
+# unit, a duplicate, another SHA, an undeclared skip or a skipped count its
+# skip rows do not match, another shell or platform, FAST evidence and an
+# executed failure, and tells a runner never acquired and an exhausted source
+# download from a failure; only runners never acquired are retried, once,
+# when the verdict's red follows from them alone, on this repository's ci.yml
+# run at the SHA; and a Bash source is used only with its pinned digest, from
+# an origin or from the cache.
 # shellcheck disable=SC2015 # ok/fail always return 0
 # shellcheck disable=SC2016 # awk programs, expanded by awk
 # shellcheck source=tests/lib.sh
@@ -167,9 +169,11 @@ guard "$v"
 assert_rc "$rc" 1 "ci-guard-missing-shard: a shard with no evidence"
 assert_contains "$out" "missing · missing shard: target-bash53 · t3 left no evidence" "ci-guard-missing-shard: is named"
 printf '1\ttarget-bash53 · t3\tcompleted\tcancelled\t0\t0\t%s\n' "$NOTACQ" >"$T/notacq.tsv"
+assert_not_contains "$out" "retry:" "ci-guard-missing-shard: is not a runner never acquired"
 guard "$v" "$T/notacq.tsv"
 assert_contains "$out" "infrastructure · runner never acquired (infrastructure non-run): target-bash53 · t3" "ci-guard-not-acquired: a runner never acquired is infrastructure"
 assert_contains "$out" "executed failures 0 · infrastructure 1 · missing 0" "ci-guard-not-acquired: not an executed failure"
+assert_contains "$out" "retry: every problem is a runner never acquired (1)" "ci-guard-not-acquired: and, when it is every problem, says so"
 v=$(variant failure)
 edit "$v/linux-bash5-l2.tsv" '$1 == "unit" && $2 == "suite:dev" { $3 = "fail"; $4 = 1 } 1'
 guard "$v"
@@ -186,6 +190,7 @@ guard "$v"
 assert_contains "$out" "infrastructure · source acquisition / external infrastructure: target-bash53 · t1 · bash-5.3.15 exhausted every origin (exit 75)" "ci-guard-source: an exhausted Bash source download is infrastructure"
 assert_contains "$out" "missing · not executed: target-bash53 · t1 · diag:children" "ci-guard-source: and its units did not run"
 assert_contains "$out" "executed failures 0 · infrastructure 1" "ci-guard-source: not an executed failure"
+assert_not_contains "$out" "retry:" "ci-guard-source: nor a runner never acquired"
 v=$(variant unit)
 edit "$v/macos-bash32-m2.tsv" '!($1 == "unit" && $2 == "suite:core")'
 guard "$v"
@@ -211,18 +216,70 @@ guard "$v"
 assert_contains "$out" "wrong SHA: frontend · f1 ran for eeee" "ci-guard-sha: a shard of another run's commit"
 out=$(ci guard "$G" ffffffffffffffffffffffffffffffffffffffff)
 assert_rc "$?" 1 "ci-guard-sha: evidence for one commit is not evidence for another"
+# skips FILE UNIT SUMMARIES [REASON...] — UNIT's summary lines, and a skip row
+# for each REASON.
+skips() {
+  local f=$1 u=$2 s=$3 r
+  shift 3
+  awk -F'\t' -v OFS='\t' -v u="$u" -v s="$s" '$1 == "unit" && $2 == u { $7 = s } 1' "$f" >"$f.new" && mv "$f.new" "$f"
+  for r in "$@"; do printf 'skip\t%s\t%s\n' "$u" "$r" >>"$f"; done
+}
+PL="macOS plist checks in test-core.sh (no plutil)"
+CORE1="test-core: 506 passed, 0 failed, 1 skipped"
 v=$(variant skip)
-printf 'skip\tsuite:core\tmacOS plist checks in test-core.sh (no plutil)\n' >>"$v/macos-bash32-m2.tsv"
+skips "$v/macos-bash32-m2.tsv" suite:core "$CORE1" "$PL"
 guard "$v"
 assert_rc "$rc" 1 "ci-guard-skip: a skip the macOS lane does not allow"
 assert_contains "$out" "undeclared skip: macos-bash32 · m2 · suite:core: macOS plist checks in test-core.sh (no plutil)" "ci-guard-skip: is named"
-v=$(variant allowed)
-printf 'skip\tsuite:core\tmacOS plist checks in test-core.sh (no plutil)\n' >>"$v/linux-bash5-l3.tsv"
+v=$(variant skip-hidden)
+skips "$v/macos-bash32-m2.tsv" suite:core "$CORE1"
 guard "$v"
-assert_rc "$rc" 0 "ci-guard-skip-allowed: a plutil skip on Linux is the lane's policy"
-printf 'skip\tsuite:core\tthe storm (no reason)\n' >>"$v/linux-bash5-l3.tsv"
+assert_rc "$rc" 1 "ci-guard-skip-hidden: 1 skipped on a lane that allows none, and no skip row (R2-A)"
+assert_contains "$out" "integrity · skipped where no skip is allowed: macos-bash32 · m2 · suite:core reports 1 skipped" "ci-guard-skip-hidden: is named"
+assert_contains "$out" "integrity · skip count: macos-bash32 · m2 · suite:core reports 1 skipped and gives 0 skip reasons" "ci-guard-skip-hidden: with the reasons it did not give"
+v=$(variant skip-unreasoned)
+skips "$v/linux-bash5-l3.tsv" suite:core "$CORE1"
 guard "$v"
+assert_rc "$rc" 1 "ci-guard-skip-count: an allowed lane's skip with no reason (R2-B)"
+assert_contains "$out" "skip count: linux-bash5 · l3 · suite:core reports 1 skipped and gives 0 skip reasons" "ci-guard-skip-count: is named"
+assert_not_contains "$out" "skipped where no skip is allowed" "ci-guard-skip-count: Linux allows its skips"
+v=$(variant skip-few)
+skips "$v/linux-bash5-l3.tsv" suite:core "test-core: 505 passed, 0 failed, 2 skipped" "$PL"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-skip-count: 2 skipped, 1 reason (R2-C)"
+assert_contains "$out" "skip count: linux-bash5 · l3 · suite:core reports 2 skipped and gives 1 skip reasons" "ci-guard-skip-count: too few reasons"
+v=$(variant skip-many)
+skips "$v/linux-bash5-l3.tsv" suite:core "$CORE1" "$PL" "$PL"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-skip-count: 1 skipped, 2 reasons (R2-D)"
+assert_contains "$out" "skip count: linux-bash5 · l3 · suite:core reports 1 skipped and gives 2 skip reasons" "ci-guard-skip-count: too many reasons"
+v=$(variant skip-reason)
+skips "$v/linux-bash5-l3.tsv" suite:core "$CORE1" "the storm (no reason)"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-skip: a reason the lane does not allow, counts agreeing (R2-E)"
 assert_contains "$out" "undeclared skip: linux-bash5 · l3 · suite:core: the storm (no reason)" "ci-guard-skip: any other skip on Linux"
+assert_not_contains "$out" "skip count:" "ci-guard-skip: the counts agree"
+v=$(variant allowed)
+skips "$v/linux-bash5-l3.tsv" suite:core "$CORE1" "$PL"
+guard "$v"
+assert_rc "$rc" 0 "ci-guard-skip-allowed: a plutil skip on Linux, counted and given its reason, is the lane's policy (R2-F)"
+assert_eq "$(printf '%s\n' "$out" | grep -c '^  ok       linux-bash5 · l3 · .* · 1 skips$')" 1 "ci-guard-skip-allowed: and is shown"
+TWO="test-diag-temp: 6 passed, 0 failed, 1 skipped; test-diag: 4 passed, 0 failed, 2 skipped"
+v=$(variant skip-summaries)
+skips "$v/linux-bash5-l2.tsv" diag:temp "$TWO" "a fixture (no plutil)" "a fixture (no plutil)" "the storm (Bash 5.2 upstream)"
+guard "$v"
+assert_rc "$rc" 0 "ci-guard-skip-summaries: 1 + 2 skipped over two summary lines, 3 reasons (R2-G)"
+v=$(variant skip-summaries-short)
+skips "$v/linux-bash5-l2.tsv" diag:temp "$TWO" "a fixture (no plutil)" "a fixture (no plutil)"
+guard "$v"
+assert_rc "$rc" 1 "ci-guard-skip-summaries: one reason fewer (R2-G)"
+assert_contains "$out" "skip count: linux-bash5 · l2 · diag:temp reports 3 skipped and gives 2 skip reasons" "ci-guard-skip-summaries: every summary line counts"
+guard "$G"
+assert_rc "$rc" 0 "ci-guard-skip-none: 0 skipped and no skip row (R2-H)"
+v=$(variant summary-unreadable)
+skips "$v/linux-bash5-l3.tsv" suite:core "test-core: 506 passed, 0 failed"
+guard "$v"
+assert_contains "$out" "integrity · unreadable summary: linux-bash5 · l3 · suite:core reports test-core: 506 passed, 0 failed" "ci-guard-skip-count: a summary without its skipped count is not read as 0"
 v=$(variant shell)
 edit "$v/target-bash53-t2.tsv" '$1 == "unit" { $5 = "5.2.21(1)-release" } 1'
 guard "$v"
@@ -252,32 +309,300 @@ assert_rc "$?" 1 "ci-guard-manifest: a manifest that does not hold"
 assert_contains "$out" "verdict: RED · the manifest does not hold" "ci-guard-manifest: is named"
 
 # --- ci-retry-*: one retry, only for runners never acquired ------------------
-# The jobs of run 37371989145's first attempt: two never acquired a runner.
+# A run's first attempt as tests/ci.sh jobs lists it: id, name, status,
+# conclusion, runner, steps, annotations, the steps that did not pass. Run
+# 37371989145's: two jobs never acquired a runner (cancelled, runner 0, no
+# step, GitHub's annotation); here its verdict job is at its end, running.
+jobrow() { local IFS="$TAB"; printf '%s\n' "$*"; }
+GSTEP=$(sed -n 's/^      - name: \(FULL completeness guard .*\)$/\1/p' "$W")
+FSTEP=$(sed -n 's/^      - name: \(FAST is not acceptance evidence\)$/\1/p' "$W")
+RSTEP=$(sed -n 's/^      - name: \(One automatic retry .*\)$/\1/p' "$W")
+assert_eq "$(printf '%s\n' "$GSTEP" "$FSTEP" "$RSTEP" | grep -c .)" 3 "ci-workflow-verdict: one guard, one FAST and one retry step, as the controller reads them"
+assert_contains "$(sed -n '/^  verdict:/,/^  retry:/p' "$W")" 'if tests/ci.sh retry-signal "$RUNNER_TEMP/jobs.tsv" "$GITHUB_SHA" "$MODE" "$RUNNER_TEMP/guard.txt"; then' "ci-workflow-verdict: the controller is dispatched only on the verdict's signal"
 J=$T/jobs.tsv
 {
-  printf '11\tfrontend-macos-arm64 · x1 · build\tcompleted\tsuccess\t1000001760\t15\t-\n'
-  printf '12\ttarget-bash53 · t4\tcompleted\tsuccess\t1000001757\t10\t-\n'
-  printf '13\tfrontend · f1 · fmt, clippy\tcompleted\tcancelled\t0\t0\t%s\n' "$NOTACQ"
-  printf '14\tlinux-bash5 · l0\tcompleted\tcancelled\t0\t0\t%s\n' "$NOTACQ"
-  printf '15\tFULL acceptance · completeness guard\tcompleted\tfailure\t1000001790\t7\tProcess completed with exit code 1.\n'
+  jobrow 11 "frontend-macos-arm64 · x1 · build" completed success 1000001760 15 - -
+  jobrow 12 "target-bash53 · t4" completed success 1000001757 10 - -
+  jobrow 13 "frontend · f1 · fmt, clippy" completed cancelled 0 0 "$NOTACQ" -
+  jobrow 14 "linux-bash5 · l0" completed cancelled 0 0 "$NOTACQ" -
+  jobrow 15 "FULL acceptance · completeness guard" in_progress - 1000001790 3 - "The run's jobs=-"
 } >"$J"
-out=$(ci retry-eligible "$J")
-assert_rc "$?" 0 "ci-retry-not-acquired: jobs that never had a runner are retried"
-assert_contains "$out" "runner never acquired: linux-bash5 · l0" "ci-retry-not-acquired: each is named"
+v=$(variant not-acquired)
+rm "$v/frontend-f1.tsv" "$v/linux-bash5-l0.tsv"
+ci guard "$v" "$SHA" "$J" >"$T/guard.txt"
+assert_contains "$(cat "$T/guard.txt")" "retry: every problem is a runner never acquired (2)" "ci-retry-signal: the guard finds the runners never acquired, and nothing else"
+out=$(ci retry-signal "$J" "$SHA" full "$T/guard.txt")
+assert_rc "$?" 0 "ci-retry-signal: the verdict's red is the runners never acquired alone"
+assert_contains "$out" "runner never acquired: linux-bash5 · l0" "ci-retry-signal: each is named"
+assert_contains "$out" "::notice::retry: red only from runners never acquired · full · $SHA · jobs 13,14" "ci-retry-signal: the notice it leaves on the verdict job names the mode, the SHA and those jobs"
+skips "$v/macos-bash32-m2.tsv" suite:core "$CORE1"
+ci guard "$v" "$SHA" "$J" >"$T/guard-more.txt"
+out=$(ci retry-signal "$J" "$SHA" full "$T/guard-more.txt")
+assert_rc "$?" 1 "ci-retry-signal-guard: no signal when the guard found more than the runners never acquired"
+assert_contains "$out" "the guard found more than the runners never acquired, or did not finish" "ci-retry-signal-guard: is named"
+assert_not_contains "$out" "::notice::" "ci-retry-signal-guard: and nothing is left on the verdict job"
+out=$(ci retry-signal "$J" "$SHA" full "$T/no-guard.txt")
+assert_rc "$?" 1 "ci-retry-signal-guard: no signal in FULL without the guard's output"
 cp "$J" "$T/executed.tsv"
-printf '16\tmacos-bash32 · m1\tcompleted\tfailure\t1000001761\t9\tProcess completed with exit code 1.\n' >>"$T/executed.tsv"
-out=$(ci retry-eligible "$T/executed.tsv")
+jobrow 16 "macos-bash32 · m1" completed failure 1000001761 9 "Process completed with exit code 1." "The shard's units=failure" >>"$T/executed.tsv"
+out=$(ci retry-signal "$T/executed.tsv" "$SHA" full "$T/guard.txt")
 assert_rc "$?" 1 "ci-retry-executed: no retry beside an executed failure"
-assert_contains "$out" "not a runner-acquisition non-run: macos-bash32 · m1 (failure)" "ci-retry-executed: is named"
-printf '16\ttarget-bash53 · t1\tcompleted\tfailure\t1000001762\t6\tProcess completed with exit code 75.\n' >"$T/source.tsv"
-out=$(ci retry-eligible "$T/source.tsv")
+assert_contains "$out" "not a runner-acquisition non-run: macos-bash32 · m1 (completed/failure)" "ci-retry-executed: is named"
+cp "$J" "$T/source.tsv"
+jobrow 16 "target-bash53 · t1" completed failure 1000001762 6 "Process completed with exit code 75." "GNU Bash 5.3.15=failure" >>"$T/source.tsv"
+out=$(ci retry-signal "$T/source.tsv" "$SHA" full "$T/guard.txt")
 assert_rc "$?" 1 "ci-retry-source: a source download that failed on a runner is not a non-run"
-printf '17\tlinux-bash5 · l1\tcompleted\tcancelled\t0\t0\t-\n' >"$T/cancelled.tsv"
-out=$(ci retry-eligible "$T/cancelled.tsv")
+{
+  head -2 "$J"
+  jobrow 17 "linux-bash5 · l1" completed cancelled 0 0 - -
+  tail -1 "$J"
+} >"$T/cancelled.tsv"
+out=$(ci retry-signal "$T/cancelled.tsv" "$SHA" fast)
 assert_rc "$?" 1 "ci-retry-cancelled: a job cancelled before it started is not a non-run"
-head -2 "$J" >"$T/green.tsv"
-out=$(ci retry-eligible "$T/green.tsv")
+{
+  head -2 "$J"
+  tail -1 "$J"
+} >"$T/green.tsv"
+out=$(ci retry-signal "$T/green.tsv" "$SHA" fast)
 assert_rc "$?" 1 "ci-retry-green: nothing to retry"
+
+# The controller (tests/ci.sh retry) over recorded runs: a gh on PATH answers
+# each request from $GH_FIXTURE, in the shapes GitHub's API answered (run
+# 37371989145 for runners never acquired, run 36687583425 for jobs cancelled
+# by hand), and records each write instead of making it. The verdict job's
+# signal comes from tests/ci.sh retry-signal over the jobs tests/ci.sh jobs
+# read, and the guard's own output.
+if command -v jq >/dev/null 2>&1; then
+  mkdir -p "$T/bin"
+  printf '%s\n' '#!/bin/sh' \
+    '[ "$1" = api ] || exit 2' \
+    'shift' \
+    "m=GET q='' p=''" \
+    'while [ $# -gt 0 ]; do' \
+    '  case $1 in' \
+    '    --paginate) ;;' \
+    '    -X) m=$2; shift ;;' \
+    '    --jq) q=$2; shift ;;' \
+    '    *) p=$1 ;;' \
+    '  esac' \
+    '  shift' \
+    'done' \
+    'if [ "$m" != GET ]; then echo "$m $p" >>"$GH_FIXTURE/writes"; exit 0; fi' \
+    'f=$GH_FIXTURE/$(printf "%s" "${p%%\?*}" | tr / _).json' \
+    'if [ ! -f "$f" ]; then echo "gh: no recorded response for $p" >&2; exit 1; fi' \
+    'if [ -n "$q" ]; then jq -r "$q" "$f"; else cat "$f"; fi' >"$T/bin/gh"
+  chmod +x "$T/bin/gh"
+  GR=o/r
+  POST="POST repos/o/r/actions/runs/7/rerun-failed-jobs"
+  # api DIR REPO HEAD WORKFLOW EVENT BRANCH SHA ATTEMPT — run 7 of o/r as
+  # DIR records it, and its first attempt's jobs from $T/rows: id, name,
+  # status, conclusion (- while running), runner, steps (NAME=CONCLUSION;...
+  # or -), annotations (A | B or -).
+  api() {
+    local d=$1 id notes
+    rm -rf "$d"
+    mkdir -p "$d"
+    jq -n --arg r "$2" --arg h "$3" --arg p "$4" --arg e "$5" --arg b "$6" --arg s "$7" --argjson a "$8" \
+      '{id: 7, status: "completed", repository: {full_name: $r}, head_repository: {full_name: $h}, path: $p, event: $e, head_branch: $b, head_sha: $s, run_attempt: $a}' >"$d/repos_o_r_actions_runs_7.json"
+    jq -R -s '[split("\n")[] | select(length > 0) | split("\t") | {id: (.[0] | tonumber), name: .[1], status: .[2], conclusion: (if .[3] == "-" then null else .[3] end), runner_id: (.[4] | tonumber), steps: (if .[5] == "-" then [] else [.[5] | split(";")[] | split("=") | {name: .[0], status: (if .[1] == "-" then "in_progress" else "completed" end), conclusion: (if .[1] == "-" then null else .[1] end)}] end)}] | {total_count: length, jobs: .}' "$T/rows" >"$d/repos_o_r_actions_runs_7_attempts_1_jobs.json"
+    while IFS="$TAB" read -r id _ _ _ _ _ notes; do
+      [ "$notes" = - ] || printf '%s' "$notes" | jq -R -s 'split(" | ") | map({annotation_level: (if startswith("retry: ") then "notice" else "failure" end), message: .})' >"$d/repos_o_r_check-runs_${id}_annotations.json"
+    done <"$T/rows"
+  }
+  # ctl NAME [REPO HEAD WORKFLOW EVENT BRANCH SHA ATTEMPT] — tests/ci.sh retry
+  # o/r 7 $SHA over that run, by default this repository's ci.yml dispatched
+  # at $SHA, attempt 1; sets out, rc and posts (the writes it asked for).
+  ctl() {
+    local d=$T/api/$1
+    shift
+    [ $# -gt 0 ] || set -- "$GR" "$GR" .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 1
+    api "$d" "$@"
+    out=$(PATH="$T/bin:$PATH" GH_FIXTURE=$d ci retry "$GR" 7 "$SHA" 2>&1)
+    rc=$?
+    posts=$(cat "$d/writes" 2>/dev/null)
+  }
+  ran="Set up job=success;Complete job=success"
+  workload() {
+    jobrow 100 plan completed success 1000001750 "$ran" -
+    jobrow 101 "fast · syntax, fixtures, docs, static, safety, CI, the suites a change touched" completed skipped 0 - -
+    jobrow 102 "macos-bash32 · m1 · stock /bin/bash 3.2 · BSD userland" completed success 1000001751 "$ran" -
+    jobrow 103 "linux-bash5 · l0 · bash 5 · ShellCheck 0.9.0" completed cancelled 0 - "$NOTACQ"
+    jobrow 104 "frontend · f1 · fmt · clippy · layers A–F and H · build inputs" completed cancelled 0 - "$NOTACQ"
+    jobrow 105 "target-bash53 · t1 · GNU Bash 5.3.15 from pinned sources · aarch64" completed success 1000001752 "$ran" -
+    jobrow 107 "retry controller · run" completed skipped 0 - -
+  }
+  # vsteps CHECKOUT EVIDENCE GUARD FAST RETRY — the verdict job's steps, so ended
+  vsteps() { printf '%s' "Set up job=success;Run actions/checkout@v7=$1;The run's jobs=success;Every shard's evidence=$2;$GSTEP=$3;$FSTEP=$4;$RSTEP=$5;Post Run actions/checkout@v7=success;Complete job=success"; }
+  # verdict STATUS CONCLUSION STEPS ANNOTATIONS — the FULL verdict job
+  verdict() { jobrow 106 "FULL acceptance · completeness guard" "$@"; }
+
+  # R1-A: at its end the verdict job reads the jobs, the guard has run, and
+  # the signal it leaves is the controller's evidence.
+  {
+    workload
+    jobrow 106 "FULL acceptance · completeness guard" in_progress - 1000001790 "Set up job=success;Run actions/checkout@v7=success;The run's jobs=-" -
+  } >"$T/rows"
+  api "$T/api/at-verdict" "$GR" "$GR" .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 1
+  PATH="$T/bin:$PATH" GH_FIXTURE=$T/api/at-verdict ci jobs "$GR" 7 1 >"$T/jobs-at-verdict.tsv"
+  assert_eq "$(awk -F'\t' '$1 == 103 { print $3, $4, $5, $6, $8 }' "$T/jobs-at-verdict.tsv")" "completed cancelled 0 0 -" "ci-jobs: a job never acquired, as GitHub records it"
+  assert_contains "$(awk -F'\t' '$1 == 103 { print $7 }' "$T/jobs-at-verdict.tsv")" "$NOTACQ" "ci-jobs: with GitHub's annotation"
+  assert_eq "$(awk -F'\t' '$1 == 106 { print $3, $4, $8 }' "$T/jobs-at-verdict.tsv")" "in_progress - The run's jobs=-" "ci-jobs: the verdict job still running"
+  v=$(variant at-verdict)
+  rm "$v/frontend-f1.tsv" "$v/linux-bash5-l0.tsv"
+  ci guard "$v" "$SHA" "$T/jobs-at-verdict.tsv" >"$T/guard-at-verdict.txt"
+  sig=$(ci retry-signal "$T/jobs-at-verdict.tsv" "$SHA" full "$T/guard-at-verdict.txt" | sed -n 's/^::notice:://p')
+  assert_eq "$sig" "retry: red only from runners never acquired · full · $SHA · jobs 103,104" "ci-retry-signal: from the jobs GitHub lists and the guard's own output"
+  ok_verdict() { verdict completed failure 1000001790 "$(vsteps success success failure skipped success)" "Process completed with exit code 1. | $sig"; }
+  {
+    workload
+    ok_verdict
+  } >"$T/rows"
+  ctl eligible
+  assert_rc "$rc" 0 "ci-retry-eligible: the controller over the completed run"
+  assert_eq "$posts" "$POST" "ci-retry-eligible: exactly one rerun-failed-jobs POST when runners never acquired are every cause (R1-A)"
+  assert_contains "$out" "runner never acquired: frontend · f1 · fmt · clippy · layers A–F and H · build inputs" "ci-retry-eligible: each job is named"
+
+  # FAST too: a push to a branch, its fast job never acquired.
+  fast_jobs() {
+    jobrow 100 plan completed success 1000001750 "$ran" -
+    jobrow 101 "fast · syntax, fixtures, docs, static, safety, CI, the suites a change touched" completed cancelled 0 - "$NOTACQ"
+    jobrow 102 "macos-bash32 · m1 · stock /bin/bash 3.2 · BSD userland" completed skipped 0 - -
+    jobrow 103 "linux-bash5 · l0 · bash 5 · ShellCheck 0.9.0" completed success 1000001751 "$ran" -
+  }
+  {
+    fast_jobs
+    jobrow 106 "FAST · not acceptance evidence" in_progress - 1000001790 "Set up job=success;The run's jobs=-" -
+  } >"$T/rows"
+  api "$T/api/at-fast-verdict" "$GR" "$GR" .github/workflows/ci.yml push ci-throughput "$SHA" 1
+  PATH="$T/bin:$PATH" GH_FIXTURE=$T/api/at-fast-verdict ci jobs "$GR" 7 1 >"$T/jobs-at-fast-verdict.tsv"
+  fsig=$(ci retry-signal "$T/jobs-at-fast-verdict.tsv" "$SHA" fast | sed -n 's/^::notice:://p')
+  assert_eq "$fsig" "retry: red only from runners never acquired · fast · $SHA · jobs 101" "ci-retry-signal-fast: FAST needs no guard"
+  {
+    fast_jobs
+    jobrow 106 "FAST · not acceptance evidence" completed failure 1000001790 "$(vsteps success skipped skipped failure success)" "Process completed with exit code 1. | $fsig"
+  } >"$T/rows"
+  ctl fast "$GR" "$GR" .github/workflows/ci.yml push ci-throughput "$SHA" 1
+  assert_eq "$posts" "$POST" "ci-retry-eligible-fast: one POST for a FAST run's runner never acquired"
+  ctl fast-as-full "$GR" "$GR" .github/workflows/ci.yml push main "$SHA" 1
+  assert_eq "$posts" "" "ci-retry-mode: a FAST signal on a run its event makes FULL"
+  assert_contains "$out" "the verdict job went wrong in $FSTEP=failure, not in its own verdict step alone" "ci-retry-mode: is named"
+
+  # R1-B, R1-C: the verdict job ended otherwise than from those jobs alone.
+  CANCEL="The run was canceled by @owner. | The operation was canceled."
+  {
+    workload
+    verdict completed cancelled 1000001790 "$(vsteps success success failure skipped cancelled)" "$CANCEL | Process completed with exit code 1. | $sig"
+  } >"$T/rows"
+  ctl verdict-cancelled
+  assert_eq "$posts" "" "ci-retry-verdict-cancelled: a verdict cancelled by hand after its steps ran, its signal left: no POST (R1-B)"
+  assert_contains "$out" "the verdict job ended completed/cancelled, not failed on a runner of its own" "ci-retry-verdict-cancelled: is named"
+  {
+    workload
+    verdict completed timed_out 1000001790 "$(vsteps success success failure skipped cancelled)" "The job has exceeded the maximum execution time of 15m0s | $sig"
+  } >"$T/rows"
+  ctl verdict-timed-out
+  assert_eq "$posts" "" "ci-retry-verdict-timed-out: a verdict that timed out: no POST (R1-B)"
+  {
+    workload
+    verdict completed failure 1000001790 "$(vsteps success success failure skipped cancelled)" "The job has exceeded the maximum execution time of 15m0s | $sig"
+  } >"$T/rows"
+  ctl verdict-stopped
+  assert_eq "$posts" "" "ci-retry-verdict-stopped: a verdict failed with a step stopped: no POST (R1-B)"
+  assert_contains "$out" "the verdict job went wrong in $GSTEP=failure | $RSTEP=cancelled, not in its own verdict step alone" "ci-retry-verdict-stopped: is named"
+  {
+    workload
+    verdict completed failure 1000001790 "$(vsteps success failure failure skipped success)" "Unable to download artifact(s): Artifact not found for name: evidence-macos-bash32-m1 | Process completed with exit code 1. | $sig"
+  } >"$T/rows"
+  ctl verdict-download
+  assert_eq "$posts" "" "ci-retry-verdict-download: the verdict's own artifact download failed: no POST (R1-C)"
+  assert_contains "$out" "the verdict job went wrong in Every shard's evidence=failure | $GSTEP=failure" "ci-retry-verdict-download: is named"
+  {
+    workload
+    verdict completed failure 1000001790 "$(vsteps failure skipped failure skipped failure)" "Process completed with exit code 128."
+  } >"$T/rows"
+  ctl verdict-checkout
+  assert_eq "$posts" "" "ci-retry-verdict-checkout: the verdict's checkout failed: no POST (R1-C)"
+  {
+    workload
+    verdict completed failure 1000001790 "$(vsteps success success failure skipped success)" "Process completed with exit code 1."
+  } >"$T/rows"
+  ctl verdict-red
+  assert_eq "$posts" "" "ci-retry-verdict-red: the guard red for a reason of its own, so no signal: no POST (R1-C)"
+  assert_contains "$out" "the verdict job carries 0 retry signals, not one" "ci-retry-verdict-red: is named"
+  {
+    workload
+    verdict completed failure 1000001790 "$(vsteps success success failure skipped success)" "Process completed with exit code 1. | ${sig%,104}"
+  } >"$T/rows"
+  ctl verdict-other-jobs
+  assert_eq "$posts" "" "ci-retry-verdict-signal: a signal naming other jobs than those never acquired: no POST"
+  assert_contains "$out" "the verdict job signals full · $SHA · jobs 103, not full · $SHA · jobs 103,104" "ci-retry-verdict-signal: is named"
+
+  # R1-D, R1-E, R1-F: another job went wrong, the verdict job as in R1-A.
+  {
+    workload
+    jobrow 108 "macos-bash32 · m2 · stock /bin/bash 3.2 · BSD userland" completed failure 1000001753 "Set up job=success;The shard's units=failure" "Process completed with exit code 1."
+    ok_verdict
+  } >"$T/rows"
+  ctl executed
+  assert_eq "$posts" "" "ci-retry-executed: an executed test failure beside them: no POST (R1-D)"
+  assert_contains "$out" "not a runner-acquisition non-run: macos-bash32 · m2 · stock /bin/bash 3.2 · BSD userland (completed/failure)" "ci-retry-executed: is named"
+  {
+    workload
+    jobrow 108 "target-bash53 · t2 · GNU Bash 5.3.15 from pinned sources · aarch64" completed failure 1000001753 "Set up job=success;GNU Bash 5.3.15, built from the sources tests/bash-5.3.15.sha256 pins=failure" "Process completed with exit code 75."
+    ok_verdict
+  } >"$T/rows"
+  ctl source
+  assert_eq "$posts" "" "ci-retry-source: sources exhausted on a runner it acquired: no POST (R1-E)"
+  {
+    workload
+    jobrow 108 "macos-bash32 · m2 · stock /bin/bash 3.2 · BSD userland" completed cancelled 1000001753 "Set up job=success;The shard's units=cancelled" "$CANCEL"
+    ok_verdict
+  } >"$T/rows"
+  ctl job-cancelled
+  assert_eq "$posts" "" "ci-retry-job-cancelled: a job cancelled by hand: no POST (R1-F)"
+  assert_contains "$out" "not a runner-acquisition non-run: macos-bash32 · m2 · stock /bin/bash 3.2 · BSD userland (completed/cancelled)" "ci-retry-job-cancelled: is named"
+
+  # R1-G to R1-K: the run is not the one the controller was dispatched for.
+  {
+    workload
+    ok_verdict
+  } >"$T/rows"
+  ctl wrong-sha "$GR" "$GR" .github/workflows/ci.yml workflow_dispatch ci-throughput ffffffffffffffffffffffffffffffffffffffff 1
+  assert_eq "$rc $posts" "1 " "ci-retry-identity: another SHA: no POST (R1-G)"
+  assert_contains "$out" "run 7 is at ffffffffffffffffffffffffffffffffffffffff, not $SHA; nothing re-run" "ci-retry-identity: is named"
+  ctl wrong-workflow "$GR" "$GR" .github/workflows/release.yml workflow_dispatch ci-throughput "$SHA" 1
+  assert_eq "$rc $posts" "1 " "ci-retry-identity: another workflow: no POST (R1-H)"
+  assert_contains "$out" "run 7 is of .github/workflows/release.yml, not .github/workflows/ci.yml" "ci-retry-identity: is named"
+  ctl wrong-event "$GR" "$GR" .github/workflows/ci.yml pull_request ci-throughput "$SHA" 1
+  assert_eq "$rc $posts" "1 " "ci-retry-identity: a pull request: no POST (R1-I)"
+  assert_contains "$out" "run 7 came from pull_request; only a push or a dispatch is retried" "ci-retry-identity: is named"
+  ctl wrong-event-schedule "$GR" "$GR" .github/workflows/ci.yml schedule ci-throughput "$SHA" 1
+  assert_eq "$rc $posts" "1 " "ci-retry-identity: any other event: no POST (R1-I)"
+  ctl wrong-head "$GR" someone/fork .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 1
+  assert_eq "$rc $posts" "1 " "ci-retry-identity: a head repository of another: no POST (R1-J)"
+  assert_contains "$out" "run 7 is o/r's run 7, from someone/fork, not o/r's" "ci-retry-identity: is named"
+  ctl wrong-repository other/r other/r .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 1
+  assert_eq "$rc $posts" "1 " "ci-retry-identity: another repository's run: no POST (R1-J)"
+  ctl attempt-2 "$GR" "$GR" .github/workflows/ci.yml workflow_dispatch ci-throughput "$SHA" 2
+  assert_eq "$rc $posts" "0 " "ci-retry-spent: attempt 2: no POST (R1-K)"
+  assert_contains "$out" "run 7 is at attempt 2: its one automatic retry is spent" "ci-retry-spent: is named"
+
+  # R1-L: no runner went unacquired.
+  {
+    workload | grep -v "$NOTACQ"
+    verdict completed failure 1000001790 "$(vsteps success success failure skipped success)" "Process completed with exit code 1."
+  } >"$T/rows"
+  ctl no-non-run
+  assert_eq "$posts" "" "ci-retry-none: a red verdict with no runner never acquired: no POST (R1-L)"
+  {
+    workload | grep -v "$NOTACQ"
+    verdict completed success 1000001790 "$(vsteps success success success skipped success)" -
+  } >"$T/rows"
+  ctl green
+  assert_eq "$rc $posts" "0 " "ci-retry-none: a green run: no POST (R1-L)"
+else
+  skip "the retry controller reads GitHub's API through gh --jq (no jq)"
+fi
 
 # --- ci-evidence-*: what a shard records ------------------------------------
 F=$T/repo

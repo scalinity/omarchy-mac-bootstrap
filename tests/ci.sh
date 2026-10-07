@@ -12,7 +12,7 @@
 #   tests/ci.sh steps                      the job's step:NAME units, from $OMB_STEPS
 #   tests/ci.sh guard DIR SHA [JOBS]       FULL's completeness guard over DIR's evidence
 #   tests/ci.sh jobs REPO RUN ATTEMPT      a run attempt's jobs, as the guard reads them
-#   tests/ci.sh retry-eligible JOBS        only runners never acquired went wrong
+#   tests/ci.sh retry-signal JOBS SHA MODE GUARD  the verdict's red is runners never acquired alone
 #   tests/ci.sh retry REPO RUN SHA         re-run those jobs, once
 #
 # Evidence is one tab-separated file a shard: header rows (mode, lane, shard,
@@ -361,37 +361,106 @@ ci_steps() {
     done
 }
 
+# A run attempt's jobs, a line each: id, name, status, conclusion, runner,
+# steps, GitHub's annotations on a job that did not pass, and the steps that
+# did not pass (NAME=CONCLUSION).
 ci_jobs() {
   gh api --paginate "repos/$1/actions/runs/$2/attempts/$3/jobs?per_page=100" \
-    --jq '.jobs[] | [.id, .name, .status, (.conclusion // "-"), (.runner_id // 0), (.steps | length)] | @tsv' |
-    while IFS="$TAB" read -r id name status concl rid steps; do
+    --jq '.jobs[] | [.id, .name, .status, (.conclusion // "-"), (.runner_id // 0), (.steps // [] | length), ([.steps // [] | .[] | select(.conclusion != "success" and .conclusion != "skipped") | "\(.name)=\(.conclusion // "-")"] | join(" | ") | if . == "" then "-" else . end)] | @tsv' |
+    while IFS="$TAB" read -r id name status concl rid steps bad; do
       note=-
       case $concl in
         success | skipped | -) ;;
         *) note=$(gh api "repos/$1/check-runs/$id/annotations" --jq '[.[].message] | join(" | ")' 2>/dev/null | tr '\t\n' '  ') ;;
       esac
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$name" "$status" "$concl" "$rid" "$steps" "${note:--}"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$name" "$status" "$concl" "$rid" "$steps" "${note:--}" "$bad"
     done
 }
 
-# A runner never acquired: the job ended cancelled or failed with no runner,
-# no step, and GitHub's own annotation saying so (seen on run 37371989145).
-# The verdict job's red is derived from the jobs before it.
-ci_retry_eligible() {
-  awk -F'\t' '
-    $4 == "success" || $4 == "skipped" || $4 == "-" { next }
-    ($4 == "cancelled" || $4 == "failure") && $5 == 0 && $6 == 0 && $7 ~ /was not acquired by Runner/ { acq++; print "runner never acquired: " $2; next }
-    $2 ~ /^(FULL acceptance|FAST) · / { print "follows from the jobs before it: " $2; next }
-    { other++; print "not a runner-acquisition non-run: " $2 " (" $4 ")" }
+# The verdict job's own verdict step in each mode, as ci.yml names it, and the
+# signal it leaves on itself when its red is runners never acquired alone.
+CI_GUARD_STEP='FULL completeness guard (tests/ci-manifest.tsv)'
+CI_FAST_STEP='FAST is not acceptance evidence'
+CI_SIGNAL='retry: red only from runners never acquired'
+
+# ci_judge WHO JOBS SHA MODE [NR] — the one automatic retry's rule over a
+# run's first attempt (JOBS, from tests/ci.sh jobs). A runner never acquired:
+# the job ended cancelled or failed with no runner, no step, and GitHub's own
+# annotation saying so (run 37371989145). Every job that did not pass must be
+# one, but the verdict job, whose red must follow from them alone.
+# WHO verdict: the verdict job asks at its end, still running; in FULL its
+# guard found nothing else (NR, the guard's count of them). Its answer, the
+# signal, names MODE, SHA and those jobs. WHO controller: the run has
+# completed, and the verdict job ended failed on a runner of its own, in its
+# own verdict step alone, carrying that signal for exactly these jobs.
+ci_judge() {
+  awk -F'\t' -v who="$1" -v sha="$3" -v mode="$4" -v nr="${5:-}" \
+    -v gstep="$CI_GUARD_STEP" -v fstep="$CI_FAST_STEP" -v sig="$CI_SIGNAL" '
+    function no(m) { other++; print m }
+    $2 ~ /^(FULL acceptance|FAST) · / { nv++; vs = $3; vc = $4; vr = $5; vk = $6; va = $7; vb = $8; next }
+    $4 == "success" || $4 == "skipped" { next }
+    $3 == "completed" && ($4 == "cancelled" || $4 == "failure") && $5 == 0 && $6 == 0 && $7 ~ /was not acquired by Runner/ {
+      acq++; got[$1] = 1; ids = ids (ids == "" ? "" : ",") $1
+      print "runner never acquired: " $2
+      next
+    }
+    { no("not a runner-acquisition non-run: " $2 " (" $3 "/" $4 ")") }
     END {
-      if (acq > 0 && other == 0) { print "eligible for the one automatic retry"; exit 0 }
+      if (mode != "full" && mode != "fast") no("no mode " mode)
+      if (nv != 1) no("the attempt has " nv + 0 " verdict jobs, not one")
+      else if (who == "verdict") {
+        if (vc != "-") no("the verdict job has already ended " vc)
+        if (mode == "full" && nr != acq) no("the guard found more than the runners never acquired, or did not finish")
+      } else if (vs != "completed" || vc != "failure" || vr == 0 || vk == 0) {
+        no("the verdict job ended " vs "/" vc ", not failed on a runner of its own")
+      } else if (vb != (mode == "full" ? gstep : fstep) "=failure") {
+        no("the verdict job went wrong in " vb ", not in its own verdict step alone")
+      } else {
+        n = split(va, M, " [|] ")
+        for (i = 1; i <= n; i++) {
+          sub(/ +$/, "", M[i])
+          if (index(M[i], sig " · ") == 1) { ns++; s = substr(M[i], length(sig " · ") + 1) }
+        }
+        if (ns != 1) no("the verdict job carries " ns + 0 " retry signals, not one")
+        else {
+          k = split(s, P, " · ")
+          same = (k == 3 && P[1] == mode && P[2] == sha && substr(P[3], 1, 5) == "jobs ")
+          if (same) {
+            m = split(substr(P[3], 6), Q, ",")
+            same = (m == acq)
+            for (j = 1; j <= m; j++) { if (!(Q[j] in got) || (Q[j] in dup)) same = 0; dup[Q[j]] = 1 }
+          }
+          if (!same) no("the verdict job signals " s ", not " mode " · " sha " · jobs " ids)
+        }
+      }
+      if (acq > 0 && other == 0) {
+        print "eligible for the one automatic retry"
+        if (who == "verdict") print "::notice::" sig " · " mode " · " sha " · jobs " ids
+        exit 0
+      }
       print "not eligible for an automatic retry"
       exit 1
-    }' "$1"
+    }' "$2"
 }
 
+# The verdict job's half, its last step: succeeds, having left the signal on
+# the verdict job as a notice, only when its red is runners never acquired
+# alone; the workflow then dispatches the controller. GUARD is the FULL
+# guard's output.
+ci_retry_signal() {
+  local nr=''
+  if [ "$3" = full ]; then
+    nr=$(sed -n 's/^retry: every problem is a runner never acquired (\([0-9][0-9]*\))$/\1/p' "$4" 2>/dev/null)
+  fi
+  ci_judge verdict "$1" "$2" "$3" "$nr"
+}
+
+# The controller, in a run of its own: GitHub re-runs a job only once its run
+# has completed. RUN must be this repository's ci.yml, from a push or a
+# dispatch (never a pull request), at SHA, in its first attempt; its mode is
+# the one its event and branch give.
 ci_retry() {
-  local repo=$1 run=$2 sha=$3 n=0 info attempt head jobs
+  local repo=$1 run=$2 sha=$3 n=0 info id of from path event branch head attempt jobs
   while [ "$(gh api "repos/$repo/actions/runs/$run" --jq .status)" != completed ]; do
     n=$((n + 1))
     if [ "$n" -gt 160 ]; then
@@ -400,19 +469,36 @@ ci_retry() {
     fi
     sleep 15
   done
-  info=$(gh api "repos/$repo/actions/runs/$run" --jq '"\(.run_attempt) \(.head_sha)"') || return 1
-  attempt=${info%% *} head=${info#* }
-  if [ "$attempt" != 1 ]; then
-    echo "run $run is at attempt $attempt: its one automatic retry is spent; nothing re-run"
-    return 0
+  info=$(gh api "repos/$repo/actions/runs/$run" --jq '[.id, .repository.full_name, .head_repository.full_name, .path, .event, .head_branch, .head_sha, .run_attempt] | map(. // "-") | @tsv') || return 1
+  IFS="$TAB" read -r id of from path event branch head attempt <<EOF
+$info
+EOF
+  if [ "$id" != "$run" ] || [ "$of" != "$repo" ] || [ "$from" != "$repo" ]; then
+    echo "run $run is $of's run $id, from $from, not $repo's; nothing re-run"
+    return 1
   fi
+  if [ "$path" != .github/workflows/ci.yml ]; then
+    echo "run $run is of $path, not .github/workflows/ci.yml; nothing re-run"
+    return 1
+  fi
+  case $event in
+    push | workflow_dispatch) ;;
+    *)
+      echo "run $run came from $event; only a push or a dispatch is retried; nothing re-run"
+      return 1
+      ;;
+  esac
   if [ "$head" != "$sha" ]; then
     echo "run $run is at $head, not $sha; nothing re-run"
     return 1
   fi
+  if [ "$attempt" != 1 ]; then
+    echo "run $run is at attempt $attempt: its one automatic retry is spent; nothing re-run"
+    return 0
+  fi
   jobs=$(mktemp) || return 1
   ci_jobs "$repo" "$run" 1 >"$jobs" || return 1
-  if ! ci_retry_eligible "$jobs"; then
+  if ! ci_judge controller "$jobs" "$sha" "$(ci_mode "$event" "refs/heads/$branch")"; then
     echo "nothing re-run"
     return 0
   fi
@@ -421,7 +507,10 @@ ci_retry() {
 }
 
 # FULL's completeness guard: DIR's evidence files against the manifest, at
-# SHA. JOBS (tests/ci.sh jobs) names why a shard left no evidence.
+# SHA. JOBS (tests/ci.sh jobs) names why a shard left no evidence. A suite or
+# diagnostics unit's skipped count, summed over its summary lines, is its
+# number of skip rows, and is 0 where its lane allows no skip. When runners
+# never acquired are every problem, it says so (tests/ci.sh retry-signal).
 ci_guard() {
   local dir=$1 sha=$2 jobs=${3:-/dev/null} f
   ci_lint || {
@@ -454,7 +543,7 @@ EOF
     FILENAME == ARGV[2] {
       jk = jobkey($2); if (jk == "") next
       Jc[jk] = $4; Js[jk] = $3
-      Jacq[jk] = (($4 == "cancelled" || $4 == "failure") && $5 == 0 && $6 == 0 && $7 ~ /was not acquired by Runner/)
+      Jacq[jk] = ($3 == "completed" && ($4 == "cancelled" || $4 == "failure") && $5 == 0 && $6 == 0 && $7 ~ /was not acquired by Runner/)
       next
     }
     FNR == 1 { nf++; Fn[nf] = FILENAME }
@@ -481,15 +570,27 @@ EOF
       } else Fp[nf]++
       if ($5 !~ Lsh[lane]) problem("integrity", "wrong shell: " at " · " $2 " ran under bash " $5 "; " lane " needs " Lsh[lane])
       if ($2 ~ /^(suite|diag):/) {
+        uk = nf SUBSEP $2
+        if (!(uk in Rep)) { ro[++nro] = uk; Rat[uk] = at; Rl[uk] = lane; Rep[uk] = 0 }
         if ($7 == "" || $7 == "-") problem("integrity", "no summary: " at " · " $2 " printed no \"N passed, N failed, N skipped\" line")
         n = split($7, sm, "; ")
-        for (i = 1; i <= n; i++) if (sm[i] !~ / 0 failed, /) problem("failure", "executed failure: " at " · " $2 " reports " sm[i])
+        for (i = 1; i <= n; i++) {
+          if (sm[i] !~ / 0 failed, /) problem("failure", "executed failure: " at " · " $2 " reports " sm[i])
+          if (sm[i] ~ /^[A-Za-z0-9-]+: [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped$/) {
+            sv = sm[i]; sub(/ skipped$/, "", sv); sub(/.* /, "", sv); Rep[uk] += sv
+          } else if ($7 != "" && $7 != "-") problem("integrity", "unreadable summary: " at " · " $2 " reports " sm[i])
+        }
       }
       next
     }
     $1 == "skip" {
       Fs[nf]++
       if (Lsk[lane] == "none" || Lsk[lane] == "" || $3 !~ Lsk[lane]) problem("integrity", "undeclared skip: " at " · " $2 ": " $3)
+      if ($2 ~ /^(suite|diag):/) {
+        uk = nf SUBSEP $2
+        if (!(uk in Rep)) { ro[++nro] = uk; Rat[uk] = at; Rl[uk] = lane; Rep[uk] = 0 }
+        Rows[uk]++
+      }
       next
     }
     $1 == "setup" {
@@ -516,12 +617,17 @@ EOF
         if ((k in Seen) || !(sk in Have)) continue
         problem("missing", "not executed: " x[1] " · " Ush[k] " · " x[2])
       }
+      for (i = 1; i <= nro; i++) {
+        uk = ro[i]; split(uk, x, SUBSEP); l = Rl[uk]
+        if ((Lsk[l] == "none" || Lsk[l] == "") && Rep[uk] > 0) problem("integrity", "skipped where no skip is allowed: " Rat[uk] " · " x[2] " reports " Rep[uk] " skipped")
+        if (Rep[uk] != Rows[uk] + 0) problem("integrity", "skip count: " Rat[uk] " · " x[2] " reports " Rep[uk] " skipped and gives " Rows[uk] + 0 " skip reasons")
+      }
       printf "FULL acceptance guard · candidate %s\n", sha
       printf "manifest: %d lanes · %d shards · %d units\n", nl, ns, nu
       for (i = 1; i <= ns; i++) {
         sk = so[i]; split(sk, x, SUBSEP); at = x[1] " · " x[2]
         if (!(sk in Have)) {
-          if (Jacq[sk]) problem("infrastructure", "runner never acquired (infrastructure non-run): " at " left no evidence")
+          if (Jacq[sk]) { problem("infrastructure", "runner never acquired (infrastructure non-run): " at " left no evidence"); nrun++ }
           else if (sk in Jc) problem("missing", "missing shard: " at " left no evidence (job " Js[sk] "/" Jc[sk] ")")
           else problem("missing", "missing shard: " at " left no evidence")
           printf "  MISSING  %s · 0/%d units\n", at, Sn[sk]
@@ -536,6 +642,7 @@ EOF
       }
       print "problems:"
       for (i = 1; i <= np; i++) print "  " P[i]
+      if (nrun == np) print "retry: every problem is a runner never acquired (" nrun ")"
       printf "verdict: RED · %d problems · executed failures %d · infrastructure %d · missing %d · integrity %d\n", np, K["failure"], K["infrastructure"], K["missing"], K["integrity"]
       exit 1
     }' "$MANIFEST" "$jobs" "$@"
@@ -559,7 +666,7 @@ case $cmd in
   steps) ci_steps ;;
   guard) ci_guard "$@" ;;
   jobs) ci_jobs "$@" ;;
-  retry-eligible) ci_retry_eligible "$@" ;;
+  retry-signal) ci_retry_signal "$@" ;;
   retry) ci_retry "$@" ;;
   *)
     sed -n '5,16p' "$0" | sed 's/^# \{0,1\}//'
