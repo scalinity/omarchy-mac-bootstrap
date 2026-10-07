@@ -761,7 +761,8 @@ c_exec test.mutate test
 assert_eq "$(c_result)" "refused unsupervised" "an unreadable operation record refuses act in its scope"
 assert_contains "$C_OUT" "cannot%20be%20read" "and says the record cannot be read"
 c_run snapshot "scope	name=journey"
-assert_contains "$C_OUT" "blocker	id=unsupervised	text=The%20operation%20record" "the snapshot names the record"
+assert_contains "$C_OUT" "blocker	id=unreadable	text=The%20operation%20record%20of%20this%20scope%20exists%20and%20cannot%20be%20read" \
+  "the snapshot shows the barrier as an unreadable record (D55), its path left to the operation record check"
 rm -f "$OPS"
 
 # --- Lost supervision: the barrier ----------------------------------------------------------

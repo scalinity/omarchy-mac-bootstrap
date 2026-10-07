@@ -64,13 +64,14 @@ c_run() {
 # with the request FILE on fd 3 and only the environment below. C_ENV adds
 # assignments; C_UNSET drops names; C_PATH replaces PATH; C_HOME runs
 # another copy of the tool (one with a lock of its own); C_WRAP is a command
-# the core is started by (its parent).
+# the core is started by (its parent); C_STATE names another state folder
+# (any bytes, a TAB included, which C_ENV's split would break).
 c_run_raw() {
   local op=$1 req=$2 v name
   local -a envs=(
     "PATH=${C_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" "HOME=$T/home" "TMPDIR=$T" "LANG=en_US.UTF-8" "TERM=dumb"
     "OMB_HOME=${C_HOME:-$REPO}" "OMB_SESSION_INTENT=act" "OMB_SESSION_SCOPES=journey" "OMB_DRY_RUN=0"
-    "OMB_SESSION_DIR=$SESS" "OMB_EVENTS=${C_EVENTS:-$C_EV}" "OMB_FIXTURE=$C_FIX" "OMB_STATE_DIR=$T/state"
+    "OMB_SESSION_DIR=$SESS" "OMB_EVENTS=${C_EVENTS:-$C_EV}" "OMB_FIXTURE=$C_FIX" "OMB_STATE_DIR=${C_STATE:-$T/state}"
     "OMB_FRONTEND_DEV=1"
   )
   local -a final=()
