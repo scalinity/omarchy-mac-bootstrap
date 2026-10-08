@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2015 # ok/fail always return 0
+# shellcheck disable=SC2015,SC2016 # ok/fail always return 0; literal $ in shims and stand-in functions
 # The operation-record diagnostic (docs/PROTOCOL.md → *The operation-record
 # diagnostic*, D55; docs/TESTING.md → *Gate 3 operation-record diagnostic
 # tests*): DIA-01 to DIA-15 through the actual core, as the frontend drives
@@ -190,13 +190,13 @@ COPY_ARG='*"/operation/record "*'
 
 # o_text ARG... — the launcher's text interface as a person runs it: O_RC,
 # O_OUT (stdout), O_ERR (stderr). Fixture mode unless O_PROD=1; O_STATE,
-# O_HOME (another checkout) and O_PATH as for the core.
+# O_HOME (another checkout), O_PATH and O_BASH as for the core.
 o_text() {
   local -a env=("PATH=${O_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" "HOME=$T/home" "TMPDIR=$T/text-tmp" "LANG=en_US.UTF-8" "TERM=dumb"
     "OMB_STATE_DIR=${O_STATE:-$T/state}")
   [ "${O_PROD:-0}" = 1 ] || env+=("OMB_FIXTURE=$C_FIX")
   mkdir -p "$T/text-tmp"
-  env -i "${env[@]}" "$T_BASH" "${O_HOME:-$REPO}/omarchy-bootstrap" "$@" >"$T/text.out" 2>"$T/text.err" </dev/null
+  env -i "${env[@]}" "${O_BASH:-$T_BASH}" "${O_HOME:-$REPO}/omarchy-bootstrap" "$@" >"$T/text.out" 2>"$T/text.err" </dev/null
   O_RC=$?
   O_OUT=$(cat "$T/text.out")
   O_ERR=$(cat "$T/text.err")
@@ -661,12 +661,12 @@ O_PATH=''
 # io NAME — the diagnostic's own failure: error io, the empty generation, no row.
 io() {
   o_before
-  C_PATH=$O_PATH c_run snapshot "scope	name=journey"
+  C_BASH=${F_BASH:-} C_PATH=$O_PATH c_run snapshot "scope	name=journey"
   assert_eq "$(o_res "$C_EV") $(o_gen "$C_EV") $(o_total "$C_EV") $(c_admits snapshot)" "error io|$IO_TEXT $EMPTY 0 ok" "$1: the snapshot is error io"
   assert_eq "$(grep -cE '^(fact|blocker|action|row)	' "$C_EV")" 0 "$1: with no fact, blocker, action or row"
-  C_PATH=$O_PATH o_detail 0 20 "$EMPTY"
+  C_BASH=${F_BASH:-} C_PATH=$O_PATH o_detail 0 20 "$EMPTY"
   assert_eq "$(o_res "$C_EV") $(o_gen "$C_EV") $(o_total "$C_EV") $(o_nrows "$C_EV") $(c_admits detail)" "error io|$IO_TEXT $EMPTY 0 0 ok" "$1: the detail is error io, no row"
-  O_PATH=$O_PATH o_text operation journey
+  O_BASH=${F_BASH:-} O_PATH=$O_PATH o_text operation journey
   assert_eq "$O_RC" 1 "$1 (text): exit status 1"
   assert_eq "$(printf '%s\n' "$O_OUT" | grep -c .)" 1 "$1 (text): one line, no row"
   assert_contains "$O_OUT" "$IO_TEXT" "$1 (text): the fixed text"
@@ -701,6 +701,11 @@ chmod 700 "$T/text-tmp"
 TAB_STATE=$T/st$(printf '\t')ate
 mkdir -p "$TAB_STATE/ops"
 printf 'omb-op 1\ntorn' >"$TAB_STATE/ops/journey.omb"
+# What the representation path must leave as it is: the state tree (its
+# record, log and lock), HOME (its cache), and the scratch of every run.
+cp "$TAB_STATE/ops/journey.omb" "$T/tab.before"
+TAB_B_STATE=$(t_snapshot "$TAB_STATE")
+TAB_B_HOME=$(t_snapshot "$T/home")
 C_STATE=$TAB_STATE c_run snapshot "scope	name=journey"
 O_SNAP=$T/snap-tab
 cp "$C_EV" "$O_SNAP"
@@ -717,6 +722,12 @@ C_STATE=$TAB_STATE o_detail 0 20 "$(printf '%064d' 0)"
 assert_eq "$(o_res "$C_EV")" "error representation|$REP_TEXT" 'DIA-09: before a stale generation'
 O_STATE=$TAB_STATE o_text --ascii operation journey
 assert_eq "$O_RC|$O_OUT" "1|$(printf '   x %s' "$REP_TEXT")" 'DIA-09 (text): exit 1, the fixed text, no escaped or shortened path'
+assert_not_contains "$(cat "$O_SNAP")" 'st%09ate' 'DIA-09: the snapshot carries the path in no form'
+assert_eq "$(t_snapshot "$TAB_STATE")" "$TAB_B_STATE" 'DIA-09: the state tree is as it was'
+cmp -s "$T/tab.before" "$TAB_STATE/ops/journey.omb" && ok || fail 'DIA-09: the record is unchanged, byte for byte'
+[ ! -e "$TAB_STATE/logs" ] && [ ! -e "$TAB_STATE/lock" ] && ok || fail 'DIA-09: no log and no lock'
+assert_eq "$(t_snapshot "$T/home")" "$TAB_B_HOME" 'DIA-09: HOME, its cache included, is as it was'
+assert_eq "$(find "$T" "$T/text-tmp" -maxdepth 1 -name 'omarchy-bootstrap.*' 2>/dev/null)" '' 'DIA-09: no scratch is left by the core or the text interface'
 # A path in valid UTF-8 is a path like any other.
 UTF_STATE=$T/état
 mkdir -p "$UTF_STATE/ops"
@@ -814,6 +825,318 @@ o_texts 'DIA-15 hostile bytes' "$HOSTILE"
 assert_eq "$(printf '%s' "$O_OUT" | grep -c -e 7f3a -e HOSTILE -e test.handoff)" 0 'DIA-15 (text): nor the terminal'
 assert_eq "$(printf '%s' "$O_OUT$O_ERR" | LC_ALL=C tr -d '\011\012\040-\176' | wc -c | tr -d ' ')" 0 'DIA-15 (text): only printable ASCII is written'
 o_pure 'DIA-15 hostile bytes'
+
+# === The review's findings, F-01 to F-04 =================================================
+# Each fault reaches the actual launcher at one call site: a PATH shim, or a
+# bash whose exported functions stand in for the command or builtin they
+# name (the Gate 2 proofs' faults, with no seam in the tool).
+FB=0
+F_BASH=''
+# f_bash BODY — F_BASH: the bash under test with BODY run first (functions
+# and their export -f).
+f_bash() {
+  local real
+  real=$(command -v "$T_BASH")
+  FB=$((FB + 1))
+  F_BASH=$T/fault-bash-$FB
+  printf '#!%s\n%s\nexec "%s" "$@"\n' "$real" "$1" "$real" >"$F_BASH"
+  chmod +x "$F_BASH"
+}
+# f_case NAME ROWS FACT BLOCKERS — the finding under F_BASH and O_PATH: the
+# snapshot and its detail, then the text interface, each a read.
+f_case() {
+  o_before
+  C_BASH=$F_BASH C_PATH=$O_PATH o_look
+  o_rowset "$1" "$2"
+  o_snapset "$1" "$3" "$4" 'test.read '
+  o_pure "$1"
+  O_BASH=$F_BASH O_PATH=$O_PATH o_texts "$1" "$2"
+}
+# f_sealed NAME — of a record whose admission did not complete, nothing it
+# says reaches the snapshot, the detail or the terminal: no recorded row,
+# no action it names, no value of its own.
+f_sealed() {
+  assert_eq "$(grep -c -e 'key=recorded\.' -e 'key=boot' "$C_EV")" 0 "$1: no recorded field in the detail"
+  assert_eq "$(cat "$O_SNAP" "$C_EV" | grep -c -e test.mutate -e test.handoff -e unexpected -e HOSTILE)" 0 "$1: no action or value of the record in the snapshot or the detail"
+  assert_eq "$(printf '%s' "$O_OUT" | grep -c -e Recorded -e test.mutate -e test.handoff -e unexpected -e HOSTILE)" 0 "$1 (text): nor on the terminal"
+}
+
+# --- F-01: the record replaced between its status and its read ----------------------------
+# f_swap — O_PATH with a find that, once the status step's last check (the
+# mode) has run, renames $T/f01-next (a link, a FIFO) over the record: the
+# read meets the replacement, whatever it uses.
+f_swap() {
+  local real="" d
+  for d in /usr/bin /bin; do
+    if [ -x "$d/find" ]; then real=$d/find && break; fi
+  done
+  SN=$((SN + 1))
+  mkdir -p "$SHIMS/$SN"
+  printf '#!/bin/sh\ncase " $* " in\n  *"/ops/journey.omb -maxdepth 0 ( -perm"*)\n    "%s" "$@"\n    st=$?\n    if [ -e "%s" ] || [ -L "%s" ]; then mv -f "%s" "%s"; fi\n    exit $st\n    ;;\nesac\nexec "%s" "$@"\n' \
+    "$real" "$T/f01-next" "$T/f01-next" "$T/f01-next" "$OPS" "$real" >"$SHIMS/$SN/find"
+  chmod +x "$SHIMS/$SN/find"
+  O_PATH="$SHIMS/$SN:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+# f01_set KIND [TARGET] — record A in place, a plain file of yours, and its
+# replacement ready: a link to TARGET, or a FIFO.
+f01_set() {
+  rm -f "$OPS" "$T/f01-next"
+  cp -p "$T/f01-a" "$OPS"
+  case $1 in
+    link) ln -s "$2" "$T/f01-next" ;;
+    fifo) mkfifo "$T/f01-next" ;;
+  esac
+}
+# f_release_start / f_release_stop — in the background: from 10 s on, any
+# open of the record that waits for a writer is given one ($T/f-released
+# says so), until stopped. A read that never waits never needs it.
+f_release_start() {
+  rm -f "$T/f-stop"
+  (
+    i=0
+    while [ ! -e "$T/f-stop" ]; do
+      if [ "$i" -ge 50 ] && [ -p "$OPS" ]; then
+        : >>"$T/f-released"
+        { sleep 0.3; } 9<>"$OPS"
+      fi
+      sleep 0.2
+      i=$((i + 1))
+    done
+  ) </dev/null >/dev/null 2>&1 &
+  # shellcheck disable=SC2031 # $! is this shell's own background job
+  F_REL=$!
+}
+f_release_stop() {
+  : >"$T/f-stop"
+  wait "$F_REL" 2>/dev/null
+}
+F01_ROWS="$(o_head undetermined "$TX_UNDET")
+stage|Failed step|read|$ST_READ
+$ENTRY
+$UNDET_TAIL
+next|Next||$N_READ"
+# f01 NAME KIND [TARGET] — A replaced by KIND after its status, in the
+# snapshot, in the detail from its generation (A replaced the same way
+# again) and in the text interface: each undetermined at the read, none
+# waiting, none showing anything of the replacement, which stays as it was.
+f01() {
+  local name=$1 h
+  rm -f "$T/f-released"
+  h=$(t_snapshot "$T/home")
+  f_swap
+  f01_set "$2" "${3:-}"
+  f_release_start
+  C_PATH=$O_PATH c_run snapshot "scope	name=journey"
+  f_release_stop
+  O_SNAP=$T/snap-$C_N
+  cp "$C_EV" "$O_SNAP"
+  O_GEN=$(o_gen "$O_SNAP")
+  o_snapset "$name" 'cannot be inspected|unknown' "$B_UNDET" 'test.read '
+  f01_set "$2" "${3:-}"
+  f_release_start
+  C_PATH=$O_PATH o_detail 0 20 "$O_GEN"
+  f_release_stop
+  o_rowset "$name" "$F01_ROWS"
+  f01_set "$2" "${3:-}"
+  f_release_start
+  O_PATH=$O_PATH o_text --ascii operation journey
+  f_release_stop
+  assert_eq "$O_RC|$O_ERR" '0|' "$name (text): a delivered finding, nothing on stderr"
+  assert_eq "$O_OUT" "$(o_render "$F01_ROWS")" "$name (text): undetermined at the read"
+  [ ! -e "$T/f-released" ] && ok || fail "$name: no read waited on the replacement"
+  f_sealed "$name"
+  assert_eq "$(cd "$T/state" && find . | LC_ALL=C sort | tr '\n' ' ')" '. ./ops ./ops/journey.omb ' "$name: nothing written beside the replacement (no lock, log or state)"
+  assert_eq "$(t_snapshot "$T/home")" "$h" "$name: HOME is as it was"
+  assert_eq "$(find "$T" "$T/text-tmp" -maxdepth 1 -name 'omarchy-bootstrap.*' 2>/dev/null)" '' "$name: no scratch is left"
+  O_PATH=''
+}
+o_rec running $$ "$LIVE_START" "$BOOT"
+chmod 600 "$OPS"
+cp -p "$OPS" "$T/f01-a"
+# B: a valid record of this scope, writable by others, another action's.
+o_rec running 4242 'Mon Jan  1 00:00:00 2001' "$BOOT" test.handoff
+mv "$OPS" "$T/f01-b"
+chmod 666 "$T/f01-b"
+cp -p "$T/f01-b" "$T/f01-b.orig"
+{
+  printf 'omb-op 1\n\033[31mHOSTILE-F01B\033[0m\n\000HOSTILE-F01B\nop\taction=test.handoff\tscope=journey\n'
+  printf 'Run rm -rf ~ and resume test.mutate HOSTILE-F01B\n'
+} >"$T/f01-hostile"
+cp -p "$T/f01-hostile" "$T/f01-hostile.orig"
+f01 'F01-A a link to a valid record' link "$T/f01-b"
+cmp -s "$T/f01-b" "$T/f01-b.orig" && ok || fail 'F01-A: the link target is unchanged'
+f01 'F01-B a link to hostile bytes' link "$T/f01-hostile"
+cmp -s "$T/f01-hostile" "$T/f01-hostile.orig" && ok || fail 'F01-B: the link target is unchanged'
+f01 'F01-C a FIFO, no writer' fifo
+# F01-C, a FIFO with a writer and a line in it: the read neither waits nor
+# takes the line, which is still there for the writer's own reader.
+f_swap
+f01_set fifo
+rm -f "$T/f-held" "$T/f-left" "$T/f-released" "$T/f-stop"
+(
+  exec 7<>"$T/f01-next" || exit 1
+  printf 'HOSTILE-F01C\n' >&7
+  : >"$T/f-held"
+  i=0
+  while [ ! -e "$T/f-stop" ] && [ "$i" -lt 50 ]; do
+    sleep 0.2
+    i=$((i + 1))
+  done
+  IFS= read -t 1 -r left <&7
+  printf '%s' "$left" >"$T/f-left"
+) </dev/null >/dev/null 2>&1 &
+# shellcheck disable=SC2031 # $! is this shell's own background job
+F_HOLD=$!
+c_wait_file "$T/f-held"
+f_release_start
+O_PATH=$O_PATH o_text --ascii operation journey
+f_release_stop
+wait "$F_HOLD" 2>/dev/null
+assert_eq "$O_RC|$O_OUT" "0|$(o_render "$F01_ROWS")" 'F01-C a FIFO with a writer (text): undetermined at the read'
+assert_eq "$(cat "$T/f-left" 2>/dev/null)" HOSTILE-F01C 'F01-C: the line in the FIFO was not taken'
+[ ! -e "$T/f-released" ] && ok || fail 'F01-C: no read waited on it'
+assert_eq "$(printf '%s' "$O_OUT$O_ERR" | grep -c HOSTILE)" 0 'F01-C (text): nothing of it on the terminal'
+O_PATH=''
+# F01-D: the same seam with nothing to swap in: the record reads as before.
+rm -f "$OPS" "$T/f01-next"
+cp -p "$T/f01-a" "$OPS"
+f_swap
+f_case 'F01-D the seam, nothing replaced' "$ALIVE_ROWS" 'test.mutate running|info' ''
+O_PATH=''
+# F01-E: the 65536- and 65537-byte boundaries are DIA-04's, through the same read.
+
+# --- F-02: a schema check whose read stops short ------------------------------------------
+# f_schema MARK — F_BASH, where the schema check's read of a line holding
+# MARK reads it and then fails, as a read a signal interrupts does.
+F_READ='read() {
+  builtin read "$@" || return
+  if [ "${FUNCNAME[1]:-}" = _rec_schema ]; then
+    eval "__f_v=\${$#}"
+    eval "__f_v=\${$__f_v-}"
+    case $__f_v in *"$F_MARK"*) return 1 ;; esac
+  fi
+  return 0
+}
+export -f read'
+f_schema() {
+  f_bash "F_MARK='$1'
+export F_MARK
+$F_READ"
+}
+# f02_rows — undetermined at the check, the entry and its size read.
+f02_rows() {
+  printf '%s\nstage|Failed step|check|%s\n%s\nsize|Size|%s|\n%s\nnext|Next||%s' \
+    "$(o_head undetermined "$TX_UNDET")" "$ST_CHECK" "$ENTRY" "$(o_size "$OPS")" "$UNDET_TAIL" "$N_CHECK"
+}
+# o_dup — a sealed record with two op records: this scope's own, then
+# another with values of its own (test.handoff, failed, unexpected).
+o_dup() (
+  t_load >/dev/null 2>&1
+  # shellcheck source=lib/records.sh
+  . "$REPO/lib/records.sh"
+  mkdir -p "$T/state/ops"
+  {
+    printf 'omb-op 1\n'
+    rec_line op action test.mutate scope journey basis "$(printf '%064d' 7)" session "$SESS" state running \
+      finding '' pid "$$" start "$LIVE_START" boot "$BOOT" at 2026-09-26T00:00:00Z
+    rec_line op action test.handoff scope journey basis "$(printf '%064d' 9)" session "$SESS" state failed \
+      finding unexpected pid 4242 start 'Mon Jan  1 00:00:00 2001' boot "$BOOT" at 2026-09-27T00:00:00Z
+  } >"$OPS"
+  rec_seal_write "$OPS"
+  omb_cleanup
+)
+rm -f "$OPS"
+o_rec running $$ "$LIVE_START" "$BOOT"
+f_schema "op	action="
+f_case 'F02-A a valid record, the read of its op record fails' "$(f02_rows)" 'cannot be inspected|unknown' "$B_UNDET"
+f_sealed 'F02-A a valid record, the read of its op record fails'
+f_schema 'omb-op 1'
+f_case 'F02-A a valid record, the read of its header fails' "$(f02_rows)" 'cannot be inspected|unknown' "$B_UNDET"
+f_sealed 'F02-A a valid record, the read of its header fails'
+f_schema "seal	sha256="
+f_case 'F02-A a valid record, the read of its seal line fails' "$(f02_rows)" 'cannot be inspected|unknown' "$B_UNDET"
+f_sealed 'F02-A a valid record, the read of its seal line fails'
+f_schema 'F02-NEVER-PRESENT'
+f_case 'F02-D the same seam, no read fails: readable' "$ALIVE_ROWS" 'test.mutate running|info' ''
+o_dup
+F_BASH=''
+f_case 'F02-B two op records, checked to the end' "$(unr_rows "$(o_size "$OPS")" "$(o_hash "$OPS")" "$FP_TEXT" schema 3)" \
+  'a record that cannot be read|fail' "$B_UNREADABLE"
+f_sealed 'F02-B two op records, checked to the end'
+f_schema 'action=test.handoff'
+f_case 'F02-C two op records, the read of the second fails' "$(f02_rows)" 'cannot be inspected|unknown' "$B_UNDET"
+f_sealed 'F02-C two op records, the read of the second fails'
+f_schema 'action=test.mutate'
+f_case 'F02-E the read fails before a second record of its own' "$(f02_rows)" 'cannot be inspected|unknown' "$B_UNDET"
+f_sealed 'F02-E the read fails before a second record of its own'
+F_BASH=''
+
+# --- F-03: the snapshot's own answer staged, admitted, kept, then published --------------
+printf 'omb-op 1\ntorn' | o_raw
+f_bash "F_KEEP='$T/f03-kept'
+export F_KEEP
+cp() {
+  command cp \"\$@\" || return
+  case \"\${2:-}\" in */journey.admitted) command cp \"\$2\" \"\$F_KEEP\" ;; esac
+}
+export -f cp"
+rm -f "$T/f03-kept"
+o_before
+C_BASH=$F_BASH c_run snapshot "scope	name=journey"
+assert_eq "$(cut -f1 "$C_EV" | tr '\n' ' ')" 'omb-res 1 hello generation fact fact fact blocker action result ' 'F03-D the snapshot: its records, in order'
+assert_eq "$(c_admits snapshot) $(c_result)" 'ok done ok' 'F03-D: a whole, admitted answer'
+cmp -s "$T/f03-kept" "$C_EV" && ok || fail 'F03-D: what is published is the admitted copy, byte for byte'
+o_pure 'F03-D the snapshot'
+f_bash 'cp() { case "${2:-}" in */journey.admitted) return 1 ;; esac; command cp "$@"; }
+export -f cp'
+io 'F03-A the admitted copy cannot be kept'
+f_bash 'cat() { case "${1:-}" in */journey.prefix) return 1 ;; esac; command cat "$@"; }
+export -f cat'
+io 'F03-B the response cannot be staged'
+f_bash 'awk() { case "$*" in *"hdr=omb-res 1"*) return 127 ;; esac; command awk "$@"; }
+export -f awk'
+io 'F03-C the admission cannot run: io'
+F_BASH=''
+# F03-C: a value of the snapshot's own the format cannot carry (a fixture
+# named with a TAB): error representation, nothing partial.
+TAB_FIX="$T/fix$(printf '\t')ture"
+cp -R "$C_FIX" "$TAB_FIX"
+o_before
+C_FIX=$TAB_FIX c_run snapshot "scope	name=journey"
+assert_eq "$(o_res "$C_EV") $(o_gen "$C_EV") $(o_total "$C_EV") $(c_admits snapshot)" "error representation|$REP_TEXT $EMPTY 0 ok" 'F03-C a value the format cannot carry: error representation'
+assert_eq "$(grep -cE '^(fact|blocker|action|row)	' "$C_EV")" 0 'F03-C: with no fact, blocker, action or row'
+o_pure 'F03-C representation'
+rm -rf "$TAB_FIX"
+# F03-F: a publication cut short stays incomplete: nothing is appended after it.
+c_run snapshot "scope	name=journey"
+G=$(o_gen "$C_EV")
+f_bash 'cat() { case "${1:-}" in */operation.suffix) command head -n 1 "$1"; return 1 ;; esac; command cat "$@"; }
+export -f cat'
+C_BASH=$F_BASH c_run snapshot "scope	name=journey"
+assert_eq "$(cut -f1 "$C_EV" | tr '\n' ' ')" 'omb-res 1 hello generation ' 'F03-F the snapshot: its publication cut short is left as it is'
+assert_eq "$(grep -c '^result	' "$C_EV")" 0 'F03-F the snapshot: no second result after it'
+C_BASH=$F_BASH o_detail 0 20 "$G"
+assert_eq "$(cut -f1 "$C_EV" | tr '\n' ' ')" 'omb-res 1 hello generation ' 'F03-F the detail: its publication cut short is left as it is'
+assert_eq "$(grep -c '^result	' "$C_EV")" 0 'F03-F the detail: no second result after it'
+F_BASH=''
+
+# --- F-04: the process table read for this process, not for the recorded one -------------
+o_rec running $$ "$LIVE_START" "$BOOT"
+o_tool ps "*\" $$ \"*|*\" $$,\"*|*\",$$ \"*|*\",$$,\"*" fail
+f_case 'F04-A ps reads this process, not the recorded core' "$LIVE_ROWS" \
+  'test.mutate recorded as running; whether its core runs is unknown|warn' ''
+# F04-B (ps reads nothing: DIA-03), F04-C (its core alive: DIA-02) and F04-D
+# (another start time: DIA-10(a)) are above. F04-E: the act path reads the
+# process table as it did, and answers as it did.
+o_before
+C_PATH=$O_PATH c_exec test.mutate test
+assert_eq "$(o_res "$C_EV")" 'refused unsupervised|The outcome of test.mutate is unknown and it may still be running: restart this Mac (or this Linux system), then run the tool again.' \
+  'F04-E: under the same fault the act path answers as before'
+cmp -s "$T/rec.before" "$OPS" && ok || fail 'F04-E: and leaves the record as it was'
+O_PATH=''
+c_exec test.mutate test
+assert_eq "$(o_res "$C_EV")" 'refused busy|test.mutate is still running under a live core.' 'F04-E: with ps whole, its live core is busy, as before'
+cmp -s "$T/rec.before" "$OPS" && ok || fail 'F04-E: the record is as it was'
 
 # === The act path and the other surfaces are unchanged ===================================
 printf 'omb-op 1\ntorn' | o_raw

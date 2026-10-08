@@ -122,5 +122,77 @@ printf 'x' >>"$d"
 rec_admit_file children - "$d"
 assert_eq "$REC_REASON" eof "a byte appended after the seal: termination first"
 
+# --- proto-admit-io: the schema check reads to its end, or refuses with io ---------
+# Bash's `read` ends a loop on a failure as on end of file. A check that
+# stopped there would answer from the lines it had read: an admission the
+# whole document does not earn, or a refusal (schema, result) it never
+# established. Cut short at any line, each family's check refuses with io;
+# uncut, it answers as before.
+# p_cut_read — in this subshell, the schema check's Nth line read ($P_N)
+# reads its line and then fails, as a read a signal interrupts does.
+p_cut_read() {
+  P_I=0
+  # shellcheck disable=SC2162,SC2317,SC2329 # stands in for the builtin, which the code under test calls
+  read() {
+    builtin read "$@" || return
+    if [ "${FUNCNAME[1]:-}" = _rec_schema ]; then
+      P_I=$((P_I + 1))
+      if [ "$P_I" = "$P_N" ]; then return 1; fi
+    fi
+    return 0
+  }
+}
+# p_cut N FAMILY OP FILE — REASON:LINE (ok:0 when admitted), the Nth read cut
+# (0: none).
+p_cut() (
+  P_N=$1
+  p_cut_read
+  rec_admit_file "$2" "$3" "$4"
+  printf '%s:%s' "${REC_REASON:-ok}" "${REC_AT:-0}"
+)
+# p_cuts NAME FAMILY OP FILE LINES WANT — WANT uncut; io with any of the
+# first LINES reads cut.
+p_cuts() {
+  local i=1
+  assert_eq "$(p_cut 0 "$2" "$3" "$4")" "$6" "$1: read to its end, $6"
+  while [ "$i" -le "$5" ]; do
+    assert_eq "$(p_cut "$i" "$2" "$3" "$4")" io:0 "$1: the read of line $i fails: io"
+    i=$((i + 1))
+  done
+}
+cut=$(t_tmp)
+hello=$corpus/proto-golden-hello.req.doc
+{ cat "$hello" && sed -n 2p "$hello"; } >"$cut/two-req.doc"
+snap=$corpus/proto-golden-snapshot.res.doc
+{
+  printf 'omb-op 1\n'
+  rec_line op action test.mutate scope journey basis "$(printf '%064d' 7)" session s state running finding '' \
+    pid 1 start 'Mon Jan  1 00:00:00 2001' boot b at 2026-09-26T00:00:00Z
+} >"$cut/op.doc"
+cp "$cut/op.doc" "$cut/op-two.doc"
+rec_line op action test.handoff scope journey basis "$(printf '%064d' 9)" session s state failed finding unexpected \
+  pid 2 start 'Mon Jan  1 00:00:00 2001' boot b at 2026-09-27T00:00:00Z >>"$cut/op-two.doc"
+rec_seal_write "$cut/op.doc"
+rec_seal_write "$cut/op-two.doc"
+p_cuts 'a request' req - "$hello" 2 ok:0
+p_cuts 'a request of two records' req - "$corpus/proto-golden-detail.req.doc" 3 ok:0
+p_cuts 'a request with its req record twice' req - "$cut/two-req.doc" 3 schema:3
+p_cuts 'a response' res snapshot "$snap" "$(($(wc -l <"$snap")))" ok:0
+p_cuts 'an operation record (sealed)' op - "$cut/op.doc" 3 ok:0
+p_cuts 'an operation record with two op records' op - "$cut/op-two.doc" 3 schema:3
+# The core's response gate (lib/read.sh) maps that io to a failure of its
+# machinery (1), never to representation (2): the result line it did not
+# read is no established refusal.
+# shellcheck source=lib/read.sh
+. "$REPO/lib/read.sh"
+p_admit() (
+  P_N=$1
+  p_cut_read
+  core_read_admit snapshot "$2"
+  printf '%s' "$?"
+)
+assert_eq "$(p_admit 0 "$snap")" 0 'core_read_admit: a response read to its end is admitted (0)'
+assert_eq "$(p_admit "$(($(wc -l <"$snap")))" "$snap")" 1 'core_read_admit: one whose result line could not be read is io (1), never representation (2)'
+
 omb_cleanup
 t_done test-records
