@@ -1012,6 +1012,133 @@ f_case 'F01-D the seam, nothing replaced' "$ALIVE_ROWS" 'test.mutate running|inf
 O_PATH=''
 # F01-E: the 65536- and 65537-byte boundaries are DIA-04's, through the same read.
 
+# --- F-01: one status, of one object ------------------------------------------------------
+# Two plain files of yours, distinct objects: A at the record's path, B at
+# $T/f-ab-b. Every move below is a rename, so each keeps its identity, and
+# A is held by a second name ($T/f-ab-a) while B stands in for it.
+# f_id FILE — FILE's device and inode, from its own status.
+# shellcheck disable=SC2016 # Perl source: perl expands its own variables
+f_id() { perl -e '@s = lstat($ARGV[0]) or exit 1; print "$s[0]:$s[1]\n"' "$1"; }
+# f_ab_set AMODE BMODE — A, a copy of $T/fab-a.src, mode AMODE, at the
+# record's path; B, a copy of $T/fab-b.src, mode BMODE; F_IA and F_IB.
+f_ab_set() {
+  rm -f "$OPS" "$T/f-ab-a" "$T/f-ab-b"
+  cp "$T/fab-a.src" "$OPS" && chmod "$1" "$OPS"
+  cp "$T/fab-b.src" "$T/f-ab-b" && chmod "$2" "$T/f-ab-b"
+  F_IA=$(f_id "$OPS")
+  F_IB=$(f_id "$T/f-ab-b")
+  [ -n "$F_IA" ] && [ -n "$F_IB" ] && [ "$F_IA" != "$F_IB" ] && ok || fail "A ($F_IA) and B ($F_IB) are distinct objects"
+}
+# f_ab_kept NAME — A at the record's path and B beside it, each the same
+# object with its own bytes, as f_ab_set left them.
+f_ab_kept() {
+  assert_eq "$(f_id "$OPS") $(f_id "$T/f-ab-b")" "$F_IA $F_IB" "$1: A and B are where they were, each the same object"
+  cmp -s "$OPS" "$T/fab-a.src" && cmp -s "$T/f-ab-b" "$T/fab-b.src" && ok || fail "$1: A and B hold their own bytes"
+  [ ! -e "$T/f-ab-a" ] && ok || fail "$1: no second name of A is left"
+}
+# f_abA MODE — O_PATH with a perl that moves A and B around the
+# inspection's own perl runs, the status's and the read's:
+#   after   B over the record once the status's perl has run, and A back
+#           just before the read's: the status meets A, anything after it
+#           in the step meets B, and the read opens A again (A->B->A);
+#   around  B over the record just before the status's perl, and A back
+#           right after it: the status meets B, the read A.
+f_abA() {
+  local real="" d in out pre=: post=: rd=:
+  for d in /usr/bin /bin; do
+    if [ -x "$d/perl" ]; then real=$d/perl && break; fi
+  done
+  in="if [ -e \"$T/f-ab-b\" ]; then ln \"$OPS\" \"$T/f-ab-a\" && mv -f \"$T/f-ab-b\" \"$OPS\"; fi"
+  out="if [ -e \"$T/f-ab-a\" ]; then ln \"$OPS\" \"$T/f-ab-b\" && mv -f \"$T/f-ab-a\" \"$OPS\"; fi"
+  case $1 in
+    after) post=$in rd=$out ;;
+    around) pre=$in post=$out ;;
+  esac
+  SN=$((SN + 1))
+  mkdir -p "$SHIMS/$SN"
+  printf '#!/bin/sh\ncase " $* " in\n  *" -- read "*"/ops/journey.omb "*)\n    %s\n    exec "%s" "$@"\n    ;;\n  *"/ops/journey.omb "*)\n    %s\n    "%s" "$@"\n    st=$?\n    %s\n    exit $st\n    ;;\nesac\nexec "%s" "$@"\n' \
+    "$rd" "$real" "$pre" "$real" "$post" "$real" >"$SHIMS/$SN/perl"
+  chmod +x "$SHIMS/$SN/perl"
+  O_PATH="$SHIMS/$SN:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+# f_ab NAME MODE ROWS FACT BLOCKERS — A and B moved by f_abA MODE in the
+# snapshot, the detail from its generation and the text interface: each a
+# read whose finding is ROWS, after which A and B are as they were.
+f_ab() {
+  f_abA "$2"
+  o_before
+  C_PATH=$O_PATH o_look
+  o_rowset "$1" "$3"
+  o_snapset "$1" "$4" "$5" 'test.read '
+  o_pure "$1"
+  f_ab_kept "$1"
+  O_PATH=$O_PATH o_texts "$1" "$3"
+  f_ab_kept "$1 (text)"
+  O_PATH=''
+}
+# f_wr FILE — unreadable, writable by others: FILE's size and fingerprint.
+f_wr() {
+  printf '%s\nkind|Entry|file|a plain file\nowner|Owner|this-user|you\nwritable|Writable by others|yes|group or others may write it\nsize|Size|%s|\nfingerprint|Fingerprint|%s|%s\nreason|Refused by|writable|%s\nworker|Workers|unknown|%s\neffect|Effect|unknown|%s\nunknown|Still unknown||%s\nnext|Next||%s' \
+    "$(o_head unreadable "$TX_UNREADABLE")" "$(o_size "$1")" "$(o_hash "$1")" "$FP_TEXT" "$(reason writable)" \
+    "$W_UNREADABLE" "$E_UNREADABLE" "$U_UNREADABLE" "$N_UNREADABLE"
+}
+# f_wr_unread — the same, of a file whose bytes could not be read.
+f_wr_unread() {
+  f_wr "$OPS" | sed -e '/^size|/d' -e "s/^fingerprint|Fingerprint|[0-9a-f]*|.*/fingerprint|Fingerprint|unknown|$FP_UNKNOWN/"
+}
+# f_b_unseen NAME — nothing of B's record (test.handoff) in any answer.
+f_b_unseen() {
+  assert_eq "$(cat "$O_SNAP" "$C_EV" | grep -c test.handoff)" 0 "$1: nothing of B in the snapshot or the detail"
+  assert_eq "$(printf '%s' "$O_OUT" | grep -c test.handoff)" 0 "$1 (text): nor on the terminal"
+}
+# A: this scope's record, its core alive. B: a valid record of another
+# action (test.handoff), whose bytes would show if they were ever read.
+o_rec running $$ "$LIVE_START" "$BOOT"
+mv "$OPS" "$T/fab-a.src"
+o_rec running 4242 'Mon Jan  1 00:00:00 2001' "$BOOT" test.handoff
+mv "$OPS" "$T/fab-b.src"
+# F01-F1: A writable by others, B by you alone. The status that met A
+# refuses A, by A's own mode, whatever its later steps would have met; a
+# status that met B is held to B, and the read that opens A instead
+# cannot complete. A is never admitted on B's mode.
+f_ab_set 666 600
+f_ab 'F01-F1 A->B->A, the status meets A' after "$(f_wr "$OPS")" 'a record that cannot be read|fail' "$B_UNREADABLE"
+f_sealed 'F01-F1 A->B->A, the status meets A'
+f_b_unseen 'F01-F1 A->B->A, the status meets A'
+f_ab_set 666 600
+f_ab 'F01-F1 the status meets B, the read A' around "$F01_ROWS" 'cannot be inspected|unknown' "$B_UNDET"
+f_sealed 'F01-F1 the status meets B, the read A'
+f_b_unseen 'F01-F1 the status meets B, the read A'
+# F01-F2: A by you alone, B writable by others. The status that met A
+# admits A by A's own mode, and only A's bytes are read; a status that
+# met B refuses by B's mode, and nothing of A is read under B's identity.
+f_ab_set 600 666
+f_ab 'F01-F2 A->B->A, the status meets A' after "$ALIVE_ROWS" 'test.mutate running|info' ''
+f_b_unseen 'F01-F2 A->B->A, the status meets A'
+f_ab_set 600 666
+f_ab 'F01-F2 the status meets B, the read A' around "$(f_wr_unread)" 'a record that cannot be read|fail' "$B_UNREADABLE"
+f_sealed 'F01-F2 the status meets B, the read A'
+f_b_unseen 'F01-F2 the status meets B, the read A'
+# F01-F3 and F01-F4: a record nothing moves, its mode its own: writable by
+# group and others, by others alone, or by you alone.
+# f_still NAME MODE ROWS FACT BLOCKERS — A, mode MODE, in place throughout.
+f_still() {
+  rm -f "$OPS"
+  cp "$T/fab-a.src" "$OPS" && chmod "$2" "$OPS"
+  o_before
+  o_look
+  o_rowset "$1" "$3"
+  o_snapset "$1" "$4" "$5" 'test.read '
+  o_pure "$1"
+  o_texts "$1" "$3"
+}
+f_still 'F01-F3 a stable record, mode 0666' 666 "$(f_wr "$T/fab-a.src")" 'a record that cannot be read|fail' "$B_UNREADABLE"
+f_sealed 'F01-F3 a stable record, mode 0666'
+f_still 'F01-F3 a stable record, mode 0602' 602 "$(f_wr "$T/fab-a.src")" 'a record that cannot be read|fail' "$B_UNREADABLE"
+f_sealed 'F01-F3 a stable record, mode 0602'
+f_still 'F01-F4 a stable record, mode 0600' 600 "$ALIVE_ROWS" 'test.mutate running|info' ''
+rm -f "$T/f-ab-b"
+
 # --- F-02: a schema check whose read stops short ------------------------------------------
 # f_schema MARK — F_BASH, where the schema check's read of a line holding
 # MARK reads it and then fails, as a read a signal interrupts does.
