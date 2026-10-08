@@ -530,11 +530,12 @@ _rec_count() { eval "REC_CNT=\$REC_C_$1"; }
 # _rec_schema FAMILY OP FILE — step 6: order, cardinality, fields and types;
 # for a response, exactly one result, the last record.
 _rec_schema() {
-  local family=$1 op=$2 f=$3 line t no=1 lastidx=0 result=0 rest
+  local family=$1 op=$2 f=$3 line t no=0 lastidx=0 result=0 rest
   REC_N=0
   _rec_counts_reset
   {
-    IFS= read -r line
+    IFS= read -r line || { _rec_refuse io; return 1; }
+    no=1
     while IFS= read -r line; do
       no=$((no + 1))
       t=${line%%	*}
@@ -570,6 +571,11 @@ _rec_schema() {
       [ "$t" = result ] && result=1
     done
   } <"$f"
+  # `read` ends the loop on a failure as on end of file. The check ran to its
+  # end only when it reached the document's last line (a sealed one's seal,
+  # where it stops): short of it, or never begun, it established nothing,
+  # whatever the lines it did read would answer.
+  [ "$no" = "$REC_LINES" ] || { _rec_refuse io; return 1; }
   REC_OP=$op
   if [ "$family" = res ] && [ "$result" = 0 ]; then
     _rec_refuse result 0

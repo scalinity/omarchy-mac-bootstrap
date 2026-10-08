@@ -16,6 +16,45 @@ OP_EMPTY=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 OP_IO_TEXT='The operation record response could not be prepared.'
 OP_REP_TEXT='The required operation record response cannot be represented in Protocol 1.'
 
+# The one primitive the read needs and neither the shell nor its standard
+# tools have: a path opened without following a link and without waiting on
+# a FIFO, and the object it opened checked before a byte of it is read.
+# Perl ships with stock macOS and, through man-db's groff, with the Asahi
+# Alarm image (docs/UPSTREAM.md). `-- id PATH`: the entry's own status,
+# never followed; its device and inode when it is a plain file, else 1.
+# `-- read PATH ID MAX SIZE`: PATH opened once (no link, no wait, no
+# controlling terminal) and held to a plain file of identity ID; its size
+# written to SIZE; then, unless it is over MAX (2, nothing read), at most
+# MAX + 1 of its bytes to stdout (0). Anything else is 3: nothing read, or
+# not all of it.
+# shellcheck disable=SC2016 # Perl source: perl expands its own variables
+OP_PL='use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK O_NOCTTY S_ISREG);
+my ($m, $p, $id, $max, $sz) = @ARGV;
+if ($m eq "id") {
+  my @s = lstat($p) or exit 1;
+  S_ISREG($s[2]) or exit 1;
+  print("$s[0]:$s[1]\n") and close(STDOUT) or exit 1;
+  exit 0;
+}
+$m eq "read" or exit 3;
+sysopen(my $f, $p, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_NOCTTY) or exit 3;
+my @s = stat($f) or exit 3;
+S_ISREG($s[2]) and "$s[0]:$s[1]" eq $id or exit 3;
+my $z;
+open($z, ">", $sz) and print($z "$s[7]\n") and close($z) or exit 3;
+$s[7] <= $max or exit 2;
+binmode(STDOUT);
+my ($b, $n, $t) = ("", 0, 0);
+while ($t <= $max) {
+  $n = sysread($f, $b, $max + 1 - $t);
+  defined($n) or exit 3;
+  last if $n == 0;
+  print(STDOUT $b) or exit 3;
+  $t += $n;
+}
+close(STDOUT) or exit 3;
+exit 0;'
+
 # ---------------------------------------------------------------------------
 # Tools, each status counted
 # ---------------------------------------------------------------------------
@@ -57,6 +96,18 @@ _op_hash() {
   [ "$st" = 0 ] || return 1
   read -r OP_HASH _ <"$OP_DIR/hash" || return 1
   _whole "$OP_HASH" '^[0-9a-f]{64}$'
+}
+
+# _op_id — OP_ID: the plain file's device and inode, from its own status
+# (OP_PL); 1 when they cannot be read, or the entry is no plain file now.
+_op_id() {
+  local st
+  OP_ID=""
+  LC_ALL=C perl -e "$OP_PL" -- id "$OP_PATH" 2>/dev/null >"$OP_DIR/id"
+  st=$?
+  [ "$st" = 0 ] || return 1
+  read -r OP_ID <"$OP_DIR/id" || return 1
+  _whole "$OP_ID" '^-?[0-9]+:[0-9]+$'
 }
 
 # ---------------------------------------------------------------------------
@@ -107,6 +158,9 @@ _op_status() {
   else
     return 1
   fi
+  # A plain file's identity first: the read opens that object or nothing,
+  # whatever the path names by then.
+  if [ "$OP_KIND" = file ]; then _op_id || return 1; fi
   # The user this process runs as, from the machine, as _state_owned_safe
   # reads it: a fixture's own user id says nothing about these files.
   uid=$(id -u) || return 1
@@ -127,15 +181,18 @@ _op_status() {
 
 # _op_read — 0 the bounded copy ($OP_DIR/record) holds the whole file, of
 # OP_SIZE bytes; 1 the size cannot be read; 2 over the stored-document limit,
-# nothing read; 3 no copy, or a copy of another length.
+# nothing read; 3 no copy, or a copy of another length. The file is opened
+# once (OP_PL): a link is never followed, a FIFO never waited on, and no
+# byte is read unless what opened is the plain file the status identified.
 _op_read() {
-  local st
-  _op_size "$OP_PATH" || return 1
-  OP_SIZE=$OP_N
-  [ "$OP_SIZE" -le "$OP_DOC_MAX" ] || return 2
-  head -c "$((OP_DOC_MAX + 1))" "$OP_PATH" 2>/dev/null >"$OP_DIR/record"
+  local st n
+  LC_ALL=C perl -e "$OP_PL" -- read "$OP_PATH" "$OP_ID" "$OP_DOC_MAX" "$OP_DIR/size" 2>/dev/null >"$OP_DIR/record"
   st=$?
-  [ "$st" = 0 ] || return 3
+  case $st in 0 | 2) ;; *) return 3 ;; esac
+  read -r n <"$OP_DIR/size" || return 1
+  _whole "$n" '^[0-9]+$' || return 1
+  OP_SIZE=$n
+  [ "$st" = 0 ] || return 2
   _op_size "$OP_DIR/record" || return 3
   [ "$OP_N" = "$OP_SIZE" ] || return 3
 }
@@ -233,6 +290,32 @@ _op_check() {
   _op_same || return 2
 }
 
+# _op_alive PID START — the recorded core's liveness, by core_alive's method
+# (its start time in the C locale, whitespace squeezed): 0 alive; 1
+# established not alive (absent from the reading, or another start time);
+# 2 unknown. The reading is one ps that must also list this process: a PID
+# missing from a reading that completed is gone, but a query that failed
+# says nothing of it, so the diagnostic never takes one for an ended core.
+# The act path keeps core_alive.
+_op_alive() {
+  local pid=$1 st m f now
+  case "$pid" in '' | *[!0-9]*) return 2 ;; esac
+  [ -n "$CORE_BOOT" ] || return 2
+  LC_ALL=C ps -p "$$,$pid" -o pid= -o lstart= 2>/dev/null >"$OP_DIR/ps"
+  st=$?
+  [ "$st" = 0 ] || return 2
+  LC_ALL=C awk -v me="$$" -v it="$pid" '
+    $1 == me { m = 1 }
+    $1 == it { f = 1; $1 = ""; sub(/^ +/, ""); s = $0 }
+    END { printf "%d %d %s\n", m, f, s }' "$OP_DIR/ps" 2>/dev/null >"$OP_DIR/alive"
+  st=$?
+  [ "$st" = 0 ] || return 2
+  read -r m f now <"$OP_DIR/alive" || return 2
+  [ "$m" = 1 ] || return 2
+  [ "$f" = 1 ] || return 1
+  [ "$now" = "$2" ]
+}
+
 # _op_case — a readable record's case, as core_barrier decides it: OP_BOOT
 # this, earlier or unknown; OP_CASE alive, unknown, unsupervised, failed or
 # earlier.
@@ -247,7 +330,7 @@ _op_case() {
   fi
   case "$OP_RSTATE" in
     running)
-      core_alive "$OP_RPID" "$OP_RSTART" "$OP_RBOOT"
+      _op_alive "$OP_RPID" "$OP_RSTART"
       case $? in
         0) OP_CASE=alive ;;
         2) OP_CASE=unknown ;;
@@ -267,7 +350,7 @@ _op_case() {
 # and writes no clear row.
 op_inspect() {
   local st=1
-  OP_STATE="" OP_STAGE="" OP_KIND="" OP_OWNER="" OP_WRITABLE="" OP_SIZE="" OP_FP="" OP_REASON="" OP_LINE=""
+  OP_STATE="" OP_STAGE="" OP_KIND="" OP_ID="" OP_OWNER="" OP_WRITABLE="" OP_SIZE="" OP_FP="" OP_REASON="" OP_LINE=""
   OP_RACTION="" OP_RSTATE="" OP_RFINDING="" OP_RPID="" OP_RSTART="" OP_RBOOT="" OP_BOOT="" OP_CASE=""
   OP_PATH=$(core_op_path "$1")
   # 0. The per-run scratch, made and shown writable before the record is

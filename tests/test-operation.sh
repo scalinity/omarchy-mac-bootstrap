@@ -160,8 +160,10 @@ o_raw() { mkdir -p "$T/state/ops" && cat >"$OPS"; }
 
 # o_shim DIR NAME GLOB ACTION — DIR/NAME runs the real NAME, except for an
 # invocation whose arguments, joined by spaces, match the sh glob GLOB:
-# that one fails (fail), answers nothing (none), or prints the first 10
-# bytes of its last argument (short). A tool this system lacks gets no shim.
+# that one fails (fail), answers nothing (none), prints the first 10 bytes
+# of its last argument (short), runs and keeps only the first 10 bytes of
+# its output (trunc), or runs and then empties its last argument, a file
+# (nosize). A tool this system lacks gets no shim.
 o_shim() {
   local real="" d act
   for d in /usr/bin /bin /usr/sbin /sbin; do
@@ -173,6 +175,8 @@ o_shim() {
     fail) act='exit 1' ;;
     none) act='exit 0' ;;
     short) act="eval \"last=\\\${\$#}\"; \"$real\" -c 10 \"\$last\"; exit 0" ;;
+    trunc) act="\"$real\" \"\$@\" | head -c 10; exit 0" ;;
+    nosize) act="\"$real\" \"\$@\"; st=\$?; eval \"last=\\\${\$#}\"; : >\"\$last\"; exit \$st" ;;
   esac
   printf '#!/bin/sh\ncase " $* " in\n  %s) %s ;;\nesac\nexec "%s" "$@"\n' "$3" "$act" "$real" >"$1/$2"
   chmod +x "$1/$2"
@@ -187,6 +191,8 @@ o_tool() {
 }
 R_ARG='*"/ops/journey.omb "*'
 COPY_ARG='*"/operation/record "*'
+# The read of the record itself, the one tool that opens it (OP_PL).
+P_READ='*" -- read "*"/ops/journey.omb "*'
 
 # o_text ARG... — the launcher's text interface as a person runs it: O_RC,
 # O_OUT (stdout), O_ERR (stderr). Fixture mode unless O_PROD=1; O_STATE,
@@ -535,9 +541,9 @@ o_before
 o_look
 o_rowset 'writable by group' "$WR"
 o_pure 'writable by group'
-# The size cannot be read of a file its status already refused: its
+# The bytes cannot be read of a file its status already refused: its
 # fingerprint is unknown and the state stands.
-o_tool wc "$R_ARG" fail
+o_tool perl "$P_READ" fail
 C_PATH=$O_PATH o_look
 o_rowset 'writable by group, its size unread' "$(printf '%s\n' "$WR" | sed -e '/^size|/d' -e "s/^fingerprint|Fingerprint|[0-9a-f]*|.*/fingerprint|Fingerprint|unknown|$FP_UNKNOWN/")"
 chmod 600 "$OPS"
@@ -632,12 +638,13 @@ o_tool find '*"/ops/journey.omb -maxdepth 0 "*' fail
 undet 'DIA-06(a) the status cannot be read' status "$ST_STATUS" "$N_STATUS"
 O_PATH=$O_PATH o_texts 'DIA-06(a) the status cannot be read' "$U_ROWS"
 undet 'DIA-07(b) the ownership check cannot run (a lossy owner check)' status "$ST_STATUS" "$N_STATUS"
-o_tool wc "$R_ARG" fail
+o_tool perl '*" -- id "*"/ops/journey.omb "*' fail
+undet "DIA-06(a) the entry's identity cannot be read" status "$ST_STATUS" "$N_STATUS"
+o_tool perl "$P_READ" nosize
 undet 'DIA-06(b) the size cannot be read' read "$ST_READ" "$N_READ" "$ENTRY"
-o_tool head "$R_ARG" fail
-undet 'DIA-06(b) the copy fails' read "$ST_READ" "$N_READ" "$ENTRY
-size|Size|$SIZE|"
-o_tool head "$R_ARG" short
+o_tool perl "$P_READ" fail
+undet 'DIA-06(b) the read fails' read "$ST_READ" "$N_READ" "$ENTRY"
+o_tool perl "$P_READ" trunc
 undet 'DIA-06(b) the copy is shorter than the size read' read "$ST_READ" "$N_READ" "$ENTRY
 size|Size|$SIZE|"
 # A record that ends with a line end reaches the format's awk pass (a torn

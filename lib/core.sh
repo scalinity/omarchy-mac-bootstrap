@@ -1235,9 +1235,10 @@ EOF
 # data set whose generation the record's whole finding shares
 # (docs/PROTOCOL.md → *The operation-record diagnostic*). The record's path
 # is in no record of it, so a path the format cannot carry never hides the
-# barrier.
+# barrier. The answer is staged, admitted whole, and published as its
+# admitted copy, as the detail's is (core_op_detail).
 core_op_snapshot() {
-  local scope body
+  local scope st
   scope=$CORE_REQ_SCOPE
   if ! core_in_scopes "$scope"; then
     core_result refused scope "This session does not include the $scope scope."
@@ -1252,13 +1253,13 @@ core_op_snapshot() {
     op_failure 1
     return
   fi
-  if ! body=$(cat "$OP_DIR/body"); then
-    op_failure 1
-    return
-  fi
-  core_emit generation id "$OP_GEN" total 0
-  _core_emit_body "$body" || return 1
-  core_result "done" ok
+  core_read_prefix || { op_failure 1; return; }
+  core_read_stage snapshot "$OP_GEN" 0 "$OP_DIR/body"
+  st=$?
+  case $st in 0) ;; 2) op_failure 2; return ;; *) op_failure 1; return ;; esac
+  op_publish
+  st=$?
+  if [ "$st" = 2 ]; then op_failure 1; else return "$st"; fi
 }
 
 # core_op_operation — `detail kind=operation` of the foundation's journey.
