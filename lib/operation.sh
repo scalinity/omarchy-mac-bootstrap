@@ -16,24 +16,26 @@ OP_EMPTY=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 OP_IO_TEXT='The operation record response could not be prepared.'
 OP_REP_TEXT='The required operation record response cannot be represented in Protocol 1.'
 
-# The one primitive the read needs and neither the shell nor its standard
-# tools have: a path opened without following a link and without waiting on
-# a FIFO, and the object it opened checked before a byte of it is read.
-# Perl ships with stock macOS and, through man-db's groff, with the Asahi
-# Alarm image (docs/UPSTREAM.md). `-- id PATH`: the entry's own status,
-# never followed; its device and inode when it is a plain file, else 1.
-# `-- read PATH ID MAX SIZE`: PATH opened once (no link, no wait, no
-# controlling terminal) and held to a plain file of identity ID; its size
-# written to SIZE; then, unless it is over MAX (2, nothing read), at most
-# MAX + 1 of its bytes to stdout (0). Anything else is 3: nothing read, or
-# not all of it.
+# The two primitives the inspection needs and neither the shell nor its
+# standard tools have: an entry's status read once, so that every field of
+# it is of the same object; and a path opened without following a link and
+# without waiting on a FIFO, the object it opened checked before a byte of
+# it is read. Perl ships with stock macOS and, through man-db's groff, with
+# the Asahi Alarm image (docs/UPSTREAM.md). `-- status PATH`: the entry's
+# own status, never followed, from one lstat, on one line: its kind (file,
+# link, folder or other), device:inode, owner's user id and permission
+# bits (decimal); 1 when it cannot be read. `-- read PATH ID MAX SIZE`:
+# PATH opened once (no link, no wait, no controlling terminal) and held to
+# a plain file of identity ID; its size written to SIZE; then, unless it is
+# over MAX (2, nothing read), at most MAX + 1 of its bytes to stdout (0).
+# Anything else is 3: nothing read, or not all of it.
 # shellcheck disable=SC2016 # Perl source: perl expands its own variables
-OP_PL='use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK O_NOCTTY S_ISREG);
+OP_PL='use Fcntl qw(O_RDONLY O_NOFOLLOW O_NONBLOCK O_NOCTTY S_ISREG S_ISDIR S_ISLNK);
 my ($m, $p, $id, $max, $sz) = @ARGV;
-if ($m eq "id") {
+if ($m eq "status") {
   my @s = lstat($p) or exit 1;
-  S_ISREG($s[2]) or exit 1;
-  print("$s[0]:$s[1]\n") and close(STDOUT) or exit 1;
+  my $k = S_ISLNK($s[2]) ? "link" : S_ISREG($s[2]) ? "file" : S_ISDIR($s[2]) ? "folder" : "other";
+  print("$k $s[0]:$s[1] $s[4] ", $s[2] & 07777, "\n") and close(STDOUT) or exit 1;
   exit 0;
 }
 $m eq "read" or exit 3;
@@ -58,18 +60,6 @@ exit 0;'
 # ---------------------------------------------------------------------------
 # Tools, each status counted
 # ---------------------------------------------------------------------------
-
-# _op_find PATH PREDICATE... — OP_HIT 1 when find, given PATH alone and never
-# following it, matches PREDICATE, else 0; 1 when find fails.
-_op_find() {
-  local p=$1 st
-  shift
-  find "$p" -maxdepth 0 "$@" -print 2>/dev/null >"$OP_DIR/find"
-  st=$?
-  [ "$st" = 0 ] || return 1
-  OP_HIT=0
-  if [ -s "$OP_DIR/find" ]; then OP_HIT=1; fi
-}
 
 # _op_size FILE — OP_N: FILE's size in bytes, by wc -c; 1 when it cannot be read.
 _op_size() {
@@ -96,18 +86,6 @@ _op_hash() {
   [ "$st" = 0 ] || return 1
   read -r OP_HASH _ <"$OP_DIR/hash" || return 1
   _whole "$OP_HASH" '^[0-9a-f]{64}$'
-}
-
-# _op_id — OP_ID: the plain file's device and inode, from its own status
-# (OP_PL); 1 when they cannot be read, or the entry is no plain file now.
-_op_id() {
-  local st
-  OP_ID=""
-  LC_ALL=C perl -e "$OP_PL" -- id "$OP_PATH" 2>/dev/null >"$OP_DIR/id"
-  st=$?
-  [ "$st" = 0 ] || return 1
-  read -r OP_ID <"$OP_DIR/id" || return 1
-  _whole "$OP_ID" '^-?[0-9]+:[0-9]+$'
 }
 
 # ---------------------------------------------------------------------------
@@ -142,41 +120,40 @@ _op_lookup() {
   return 1
 }
 
-# _op_status — the entry's own status, never followed: OP_KIND, OP_OWNER and,
-# but for a link, whose own mode means nothing, OP_WRITABLE. 1 when it cannot
-# be read (the entry gone since the lookup included).
+# _op_status — the entry's own status, never followed, read once (OP_PL):
+# OP_KIND, OP_ID, OP_OWNER and, but for a link, whose own mode means
+# nothing, OP_WRITABLE, each of the one object that status met; the path is
+# not looked at again for any of them, and the read opens that object or
+# nothing, whatever the path names by then. 1, none of them set, when it
+# cannot be read (the entry gone since the lookup included) or holds
+# anything but a status's fields.
 _op_status() {
-  local f=$OP_PATH uid
-  if [ -L "$f" ]; then
-    OP_KIND='link'
-  elif [ -f "$f" ]; then
-    OP_KIND='file'
-  elif [ -d "$f" ]; then
-    OP_KIND='folder'
-  elif [ -e "$f" ]; then
-    OP_KIND='other'
-  else
-    return 1
-  fi
-  # A plain file's identity first: the read opens that object or nothing,
-  # whatever the path names by then.
-  if [ "$OP_KIND" = file ]; then _op_id || return 1; fi
+  local st k i u m x uid
+  LC_ALL=C perl -e "$OP_PL" -- status "$OP_PATH" 2>/dev/null >"$OP_DIR/status"
+  st=$?
+  [ "$st" = 0 ] || return 1
+  read -r k i u m x <"$OP_DIR/status" || return 1
+  case $k in file | link | folder | other) ;; *) return 1 ;; esac
+  _whole "$i" '^-?[0-9]+:[0-9]+$' || return 1
+  _whole "$u" '^(0|[1-9][0-9]*)$' || return 1
+  _whole "$m" '^(0|[1-9][0-9]{0,3})$' || return 1
+  [ -z "$x" ] || return 1
   # The user this process runs as, from the machine, as _state_owned_safe
   # reads it: a fixture's own user id says nothing about these files.
   uid=$(id -u) || return 1
   _whole "$uid" '^[0-9]+$' || return 1
-  _op_find "$f" -user "$uid" || return 1
-  if [ "$OP_HIT" = 1 ]; then
+  OP_KIND=$k OP_ID=$i
+  if [ "$u" = "$uid" ]; then
     OP_OWNER=this-user
+  elif [ "$u" = 0 ]; then
+    OP_OWNER=root
   else
-    _op_find "$f" -user 0 || return 1
     OP_OWNER=other-user
-    if [ "$OP_HIT" = 1 ]; then OP_OWNER=root; fi
   fi
-  [ "$OP_KIND" != link ] || return 0
-  _op_find "$f" \( -perm -020 -o -perm -002 \) || return 1
+  [ "$k" != link ] || return 0
+  # Writable by group or others: the 020 or the 002 bit.
   OP_WRITABLE=no
-  if [ "$OP_HIT" = 1 ]; then OP_WRITABLE=yes; fi
+  if [ $((m & 022)) != 0 ]; then OP_WRITABLE=yes; fi
 }
 
 # _op_read — 0 the bounded copy ($OP_DIR/record) holds the whole file, of

@@ -162,10 +162,12 @@ o_raw() { mkdir -p "$T/state/ops" && cat >"$OPS"; }
 # invocation whose arguments, joined by spaces, match the sh glob GLOB:
 # that one fails (fail), answers nothing (none), prints the first 10 bytes
 # of its last argument (short), runs and keeps only the first 10 bytes of
-# its output (trunc), or runs and then empties its last argument, a file
-# (nosize). A tool this system lacks gets no shim.
+# its output (trunc), runs and then empties its last argument, a file
+# (nosize), or runs and answers its output with field N of its one line
+# replaced by V, every other field as the machine gave it (set:N:V). A tool
+# this system lacks gets no shim.
 o_shim() {
-  local real="" d act
+  local real="" d act n
   for d in /usr/bin /bin /usr/sbin /sbin; do
     if [ -x "$d/$2" ]; then real=$d/$2 && break; fi
   done
@@ -177,6 +179,10 @@ o_shim() {
     short) act="eval \"last=\\\${\$#}\"; \"$real\" -c 10 \"\$last\"; exit 0" ;;
     trunc) act="\"$real\" \"\$@\" | head -c 10; exit 0" ;;
     nosize) act="\"$real\" \"\$@\"; st=\$?; eval \"last=\\\${\$#}\"; : >\"\$last\"; exit \$st" ;;
+    set:*)
+      n=${4#set:}
+      act="out=\$(\"$real\" \"\$@\") || exit 1; printf '%s\\n' \"\$out\" | awk -v v='${n#*:}' '{ \$${n%%:*} = v; print }'; exit 0"
+      ;;
   esac
   printf '#!/bin/sh\ncase " $* " in\n  %s) %s ;;\nesac\nexec "%s" "$@"\n' "$3" "$act" "$real" >"$1/$2"
   chmod +x "$1/$2"
@@ -193,6 +199,9 @@ R_ARG='*"/ops/journey.omb "*'
 COPY_ARG='*"/operation/record "*'
 # The read of the record itself, the one tool that opens it (OP_PL).
 P_READ='*" -- read "*"/ops/journey.omb "*'
+# The record's status, read once (OP_PL): kind, device:inode, owner's user
+# id, mode.
+P_STATUS='*" -- status "*"/ops/journey.omb "*'
 
 # o_text ARG... — the launcher's text interface as a person runs it: O_RC,
 # O_OUT (stdout), O_ERR (stderr). Fixture mode unless O_PROD=1; O_STATE,
@@ -547,10 +556,32 @@ o_tool perl "$P_READ" fail
 C_PATH=$O_PATH o_look
 o_rowset 'writable by group, its size unread' "$(printf '%s\n' "$WR" | sed -e '/^size|/d' -e "s/^fingerprint|Fingerprint|[0-9a-f]*|.*/fingerprint|Fingerprint|unknown|$FP_UNKNOWN/")"
 chmod 600 "$OPS"
-# Another user's file, as find reports it (a test cannot give one away).
-o_tool find '*"/ops/journey.omb -maxdepth 0 -user "*' none
+# Another user's file, and root's. Only root can give a file away, so the
+# status's own answer names the owner (its third field); its kind,
+# identity and mode stay the file's own, from the same lstat.
+OTHER_UID=4242
+[ "$(id -u)" != 4242 ] || OTHER_UID=4243
+o_tool perl "$P_STATUS" "set:3:$OTHER_UID"
+OWN_ROWS=$(printf '%s\n' "$TORN_ROWS" | sed -e 's/^owner|Owner|this-user|you$/owner|Owner|other-user|another user/' -e "s/^reason|Refused by|eof|.*/reason|Refused by|owner|$(reason owner)/")
+o_before
 C_PATH=$O_PATH o_look
-o_rowset "another user's" "$(printf '%s\n' "$TORN_ROWS" | sed -e 's/^owner|Owner|this-user|you$/owner|Owner|other-user|another user/' -e "s/^reason|Refused by|eof|.*/reason|Refused by|owner|$(reason owner)/")"
+o_rowset "another user's" "$OWN_ROWS"
+o_snapset "another user's" 'a record that cannot be read|fail' "$B_UNREADABLE" 'test.read '
+o_pure "another user's"
+O_PATH=$O_PATH o_texts "another user's" "$OWN_ROWS"
+# Root's is root (not refused by its owner) when this tool runs as another
+# user; running as root, it is this user's.
+o_tool perl "$P_STATUS" set:3:0
+OWN_ROWS=$TORN_ROWS
+[ "$ROOT" = 1 ] || OWN_ROWS=$(printf '%s\n' "$TORN_ROWS" | sed -e 's/^owner|Owner|this-user|you$/owner|Owner|root|root/')
+C_PATH=$O_PATH o_look
+o_rowset "root's" "$OWN_ROWS"
+O_PATH=$O_PATH o_texts "root's" "$OWN_ROWS"
+# This user's, the same answer with nothing replaced.
+o_tool perl "$P_STATUS" "set:3:$(id -u)"
+C_PATH=$O_PATH o_look
+o_rowset "this user's, its owner as the status gave it" "$TORN_ROWS"
+O_PATH=''
 
 # === DIA-05 undetermined at lookup =======================================================
 LOOKUP_TAIL="stage|Failed step|lookup|$ST_LOOKUP
@@ -634,12 +665,34 @@ next|Next||$4"
 }
 printf 'omb-op 1\ntorn' | o_raw
 SIZE=$(o_size "$OPS")
-o_tool find '*"/ops/journey.omb -maxdepth 0 "*' fail
-undet 'DIA-06(a) the status cannot be read' status "$ST_STATUS" "$N_STATUS"
-O_PATH=$O_PATH o_texts 'DIA-06(a) the status cannot be read' "$U_ROWS"
-undet 'DIA-07(b) the ownership check cannot run (a lossy owner check)' status "$ST_STATUS" "$N_STATUS"
-o_tool perl '*" -- id "*"/ops/journey.omb "*' fail
+# F01-F5: the one status fails, answers nothing, or is cut short.
+o_tool perl "$P_STATUS" fail
+undet 'DIA-06(a) F01-F5 the status cannot be read' status "$ST_STATUS" "$N_STATUS"
+O_PATH=$O_PATH o_texts 'DIA-06(a) F01-F5 the status cannot be read' "$U_ROWS"
+o_tool perl "$P_STATUS" none
+undet 'DIA-06(a) the status answers nothing' status "$ST_STATUS" "$N_STATUS"
+o_tool perl "$P_STATUS" trunc
+undet 'DIA-06(a) the status is cut short' status "$ST_STATUS" "$N_STATUS"
+# Every field must be a status's: a kind, an identity, an owner or a mode
+# that is not one, or a field beyond them, is a status that could not be
+# read, never a default (this user's, not writable).
+o_tool perl "$P_STATUS" set:1:pipe
+undet "DIA-06(a) the entry's kind is none of the four" status "$ST_STATUS" "$N_STATUS"
+o_tool perl "$P_STATUS" 'set:2:?'
 undet "DIA-06(a) the entry's identity cannot be read" status "$ST_STATUS" "$N_STATUS"
+o_tool perl "$P_STATUS" 'set:3:?'
+undet 'DIA-07(b) F01-F6 the owner cannot be established' status "$ST_STATUS" "$N_STATUS"
+O_PATH=$O_PATH o_texts 'DIA-07(b) F01-F6 the owner cannot be established' "$U_ROWS"
+o_tool perl "$P_STATUS" 'set:4:?'
+undet 'DIA-06(a) the mode cannot be read' status "$ST_STATUS" "$N_STATUS"
+o_tool perl "$P_STATUS" set:4:0644
+undet 'DIA-06(a) a mode not in decimal' status "$ST_STATUS" "$N_STATUS"
+o_tool perl "$P_STATUS" set:5:x
+undet 'DIA-06(a) the status holds a fifth field' status "$ST_STATUS" "$N_STATUS"
+# The user this tool runs as cannot be read: no owner is established.
+o_tool id '*" -u "*' fail
+undet 'DIA-07(b) F01-F6 the user this tool runs as cannot be read (a lossy owner check)' status "$ST_STATUS" "$N_STATUS"
+O_PATH=$O_PATH o_texts 'DIA-07(b) F01-F6 the user this tool runs as cannot be read' "$U_ROWS"
 o_tool perl "$P_READ" nosize
 undet 'DIA-06(b) the size cannot be read' read "$ST_READ" "$N_READ" "$ENTRY"
 o_tool perl "$P_READ" fail
@@ -869,19 +922,19 @@ f_sealed() {
 }
 
 # --- F-01: the record replaced between its status and its read ----------------------------
-# f_swap — O_PATH with a find that, once the status step's last check (the
-# mode) has run, renames $T/f01-next (a link, a FIFO) over the record: the
-# read meets the replacement, whatever it uses.
+# f_swap — O_PATH with a perl that, once the status step has run and just
+# before the read's own perl starts, renames $T/f01-next (a link, a FIFO)
+# over the record: the read meets the replacement.
 f_swap() {
   local real="" d
   for d in /usr/bin /bin; do
-    if [ -x "$d/find" ]; then real=$d/find && break; fi
+    if [ -x "$d/perl" ]; then real=$d/perl && break; fi
   done
   SN=$((SN + 1))
   mkdir -p "$SHIMS/$SN"
-  printf '#!/bin/sh\ncase " $* " in\n  *"/ops/journey.omb -maxdepth 0 ( -perm"*)\n    "%s" "$@"\n    st=$?\n    if [ -e "%s" ] || [ -L "%s" ]; then mv -f "%s" "%s"; fi\n    exit $st\n    ;;\nesac\nexec "%s" "$@"\n' \
-    "$real" "$T/f01-next" "$T/f01-next" "$T/f01-next" "$OPS" "$real" >"$SHIMS/$SN/find"
-  chmod +x "$SHIMS/$SN/find"
+  printf '#!/bin/sh\ncase " $* " in\n  *" -- read "*"/ops/journey.omb "*)\n    if [ -e "%s" ] || [ -L "%s" ]; then mv -f "%s" "%s"; fi\n    ;;\nesac\nexec "%s" "$@"\n' \
+    "$T/f01-next" "$T/f01-next" "$T/f01-next" "$OPS" "$real" >"$SHIMS/$SN/perl"
+  chmod +x "$SHIMS/$SN/perl"
   O_PATH="$SHIMS/$SN:/usr/bin:/bin:/usr/sbin:/sbin"
 }
 # f01_set KIND [TARGET] — record A in place, a plain file of yours, and its
