@@ -755,10 +755,22 @@ of docs/TESTING.md.
   code; docs/TESTING.md → *Gate 3 operation-record diagnostic tests* maps
   each case, the clear's DIA-10(b), DIA-11(b) and DIA-12 deferred to UR-Q1.
   No frontend source, act refusal, startup check or Gate 2 read changes.
-  Disposition: **GATE 3 CORE + TEXT READ-ONLY DIAGNOSTIC IMPLEMENTED —
-  AWAITING FOCUSED INDEPENDENT IMPLEMENTATION ACCEPTANCE REVIEW** (**OMB M14
-  GATE 3 — CORE + TEXT READ-ONLY OPERATION-RECORD DIAGNOSTIC IMPLEMENTATION
-  REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
+  The implementation review of `b52f3fd` required remediation of F-01 to
+  F-04: the record replaced between its status and its read, a schema check
+  that stopped short taken for a finished one, the snapshot published
+  outside the response gate, and a failed `ps` query for the recorded core
+  taken for an ended core. The forward remediation from `b52f3fd` opens the
+  record once, following no link and waiting on no FIFO, and reads nothing
+  unless it is the plain file the status identified (perl: docs/UPSTREAM.md).
+  `_rec_schema` answers `io` unless it reached the document's last line, and
+  every caller of the admission answers a document that failed that way as
+  a failed tool; nothing else about them changes. The snapshot's own answer
+  is staged, admitted, kept and published as the detail's is. The
+  diagnostic reads the recorded core's liveness from one `ps` that also
+  lists the core itself; the act path keeps `core_alive`. Disposition:
+  **GATE 3 CORE + TEXT DIAGNOSTIC F-01..F-04 REMEDIATED — AWAITING FOCUSED
+  INDEPENDENT RE-REVIEW** (**OMB M14 GATE 3 — CORE + TEXT READ-ONLY
+  DIAGNOSTIC F-01 / F-02 / F-03 / F-04 CLOSURE RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
   `0.2.0` stays **UNRELEASED**; the rest of Gate 3's implementation is **NOT
   STARTED**. No recovery, clear, sighting, reconciliation, execute or action
   exposure is implemented or authorized.

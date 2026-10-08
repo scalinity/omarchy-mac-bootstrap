@@ -1134,21 +1134,23 @@ and empty stderr. Every case is also held to a read: the state folder and
 HOME as they were, the record byte for byte, no lock, log or scratch left.
 A tool fails only where a test puts a shim on `PATH` that fails for that
 one invocation (the record's path, or the private copy's, among its
-arguments). Its directory argument saves the nine foundation findings for
-DIA-14.
+arguments), or runs the launcher under a bash whose exported functions
+stand in for one command or builtin at one call site (`f_bash`, as the
+Gate 2 proofs inject theirs). Its directory argument saves the nine
+foundation findings for DIA-14.
 
 | Case | Permanent test | What it depends on |
 | --- | --- | --- |
 | DIA-01 none | no state folder under a searchable one, no `ops`, no record; the deterministic text | `_op_lookup` |
-| DIA-02 readable, supervised | a running record whose PID and start are the test shell's | `rec_admit_copied`, `core_alive` (0) |
-| DIA-03 readable, liveness unknown | `ps` failing; the boot session unreadable | `core_alive` (2), `core_boot_read` |
+| DIA-02 readable, supervised | a running record whose PID and start are the test shell's | `rec_admit_copied`, `_op_alive` (0) |
+| DIA-03 readable, liveness unknown | `ps` failing; the boot session unreadable | `_op_alive` (2), `core_boot_read` |
 | DIA-04 unreadable | torn, empty, a non-ASCII byte, a header, a key, a value, no seal, a hand edit under the seal, a type, another kind of record, another scope, another scope's action, exactly 65536 bytes, 65537; a link, a dangling link, a folder, a FIFO (never opened), group-writable, another user's (a `find` that matches no owner) | `_op_status`, `_op_read`, `_op_check`, `_op_owns` |
 | DIA-05 undetermined at lookup | `ops` or the state folder a link or a file; `ops` not searchable or not listable; the state folder not searchable; no state folder under one that cannot be searched | `_op_lookup` |
-| DIA-06 undetermined at status, read or check | `find` failing on the entry; `wc` on it; `head` failing or short; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
+| DIA-06 undetermined at status, read or check | `find` failing on the entry; the identity's `perl` failing; the read's `perl` failing, losing the size, or keeping 10 bytes; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
 | DIA-07 a lossy `seal` or owner check | the seal's `tail` or `awk` failing where `_rec_seal_ok` answers `seal`; the owner `find` failing | `_op_seal`, `_op_status` |
 | DIA-08 the machinery fails | the scratch folder not made; the fingerprint's hash; the generation's hash; an unwritable `TMPDIR` for the text | `op_inspect` step 0, `_op_hash`, `op_failure` |
 | DIA-09 a value cannot be represented | a state folder whose path holds a TAB: the snapshot keeps its fact and blocker, the detail is `error representation` whatever its page or generation; a UTF-8 path is carried | `core_read_stage` over every row before any page |
-| DIA-10(a) a confirmed mismatch | the test shell's PID with another start time; recorded `unsupervised` and `failed` | `core_alive` (1), `op_barrier` |
+| DIA-10(a) a confirmed mismatch | the test shell's PID with another start time; recorded `unsupervised` and `failed` | `_op_alive` (1), `op_barrier` |
 | DIA-11(a) an identity unconfirmed | as DIA-03 | as DIA-03 |
 | DIA-13 a new client, an old core | the accepted prerequisite `152c8f6`, extracted with `git archive`: its foundation, ordinary journey and production cores refuse `kind=operation` with their own texts and no row; its launcher stops `operation journey` at `unexpected argument` and writes nothing, and takes the bare word for an act command | the old checkout alone |
 | DIA-14 an old client, a new core | `frontend/tests/proto_diff.rs` builds the released `0.1.0` from its own sources at `54c3770` and runs its parser, `snapshot_of`, model and request builder over the saved answers; the candidate's parser, `snapshot_of` and closed detail kinds over the same | the saved answers |
@@ -1163,6 +1165,36 @@ snapshot and the detail; the unchanged act refusal of an unreadable
 record, the foundation's refusal of every other kind and of `validate`, the
 ordinary journey and the startup check; and the command's argument check
 for every scope name, none, two, another case, a path and a flag.
+
+The implementation review's findings each have permanent cases, through
+the snapshot, the detail and the text interface:
+
+- **F-01**, the record replaced between its status and its read: a `find`
+  that renames a prepared entry over the record once the status step's
+  last check has run. A link to a valid record of another action, a link
+  to hostile bytes, a FIFO with no writer and a FIFO whose writer holds a
+  line: each is `undetermined` at `read`, nothing of the replacement shows,
+  no read waits (a background releaser would mark one that did), the
+  FIFO's line is still there afterwards, and the link targets are
+  unchanged. The same seam with nothing to swap reads as before.
+- **F-02**, a schema check whose `read` fails after reading a line: the
+  op line, the header, the seal line, the second of two op records, and
+  the first of them, each `undetermined` at `check` with no `recorded`
+  row, no action and no value of the record anywhere; the two-op record
+  read to its end stays `unreadable`, `schema`, line 3. `test-records.sh`
+  cuts each family's check (requests, responses, sealed records) at every
+  line: `io`, never an admission or a refusal; and the core's response gate
+  answers that `io` as a failure of its machinery, never as representation.
+- **F-03**, the foundation snapshot's own answer: published byte for byte
+  as its admitted copy; that copy not kept, its staging read failing, or
+  its admission unable to run, each `error io` with nothing partial; a
+  fixture name with a TAB, `error representation`; a publication cut
+  short, left incomplete with no second result. DIA-09 also holds the
+  state tree, the record, HOME, the log, the lock and every run's scratch
+  as they were on the representation path.
+- **F-04**, `ps` failing only for a query that names the recorded core:
+  `unknown`, the liveness warning, never `unsupervised`; the act path's
+  answer under the same fault, and with `ps` whole, as before.
 
 ## Equivalence with the accepted baseline
 

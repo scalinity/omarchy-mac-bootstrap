@@ -1,7 +1,11 @@
 # Architecture
 
 Bash only, bash 3.2 compatible, no dependencies beyond what stock macOS and the
-minimal Asahi Alarm image ship. One entrypoint sources eleven small modules.
+minimal Asahi Alarm image ship. One step is not Bash: the operation-record
+diagnostic opens the record with a few lines of perl, because no shell tool
+can open a path without following a link or waiting on a FIFO
+(`lib/operation.sh`, `OP_PL`; docs/UPSTREAM.md). One entrypoint sources
+eleven small modules.
 
 ```mermaid
 flowchart LR

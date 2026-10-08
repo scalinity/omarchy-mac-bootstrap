@@ -790,7 +790,7 @@ bytes:
 | the entry's kind | its status, never followed | plain file, link, folder, other |
 | its owner | its status | this user, root, another user |
 | whether group or others may write it | its status | yes or no |
-| its size | `wc -c`, plain files only | bytes |
+| its size | the read's one open of the identified file, plain files only | bytes |
 | its fingerprint | the SHA-256 of its bytes, plain files within the stored-document limit only | 64 hex digits, as a basis |
 | for C, why admission refused it | §2's reason code and line, from a check that ran to its end | one fixed code and a line number |
 | worker evidence | *Workers* | active, not observed, unknown or ended for these bytes, with which inspection failed |
@@ -1832,7 +1832,7 @@ read surface*).
 | `kind` | `Entry` | `file`, `link`, `folder`, `other` | `unreadable`; `undetermined` at `read` or `check` | the entry's own status, never followed | observed |
 | `owner` | `Owner` | `this-user`, `root`, `other-user` | with `kind` | the entry's status | observed |
 | `writable` | `Writable by others` | `yes`, `no` | with `kind`, except a `link`, whose own mode means nothing | the entry's status | observed |
-| `size` | `Size` | bytes, in decimal | with `kind=file`, once its size was read | `wc -c`, every tool's status counted | observed |
+| `size` | `Size` | bytes, in decimal | with `kind=file`, once its size was read | the read's one open of the identified file, every tool's status counted | observed |
 | `fingerprint` | `Fingerprint` | 64 lower-case hex digits; `none`; `unknown` | `unreadable` with `kind=file` | *The fingerprint*, below | observed; `none`: not eligible; `unknown`: eligible, and its bytes could not be read in full |
 | `reason` | `Refused by` | `kind`, `owner`, `writable`, `too-large`, `byte`, `eof`, `line`, `blank`, `tab`, `header`, `key`, `value`, `nul-escape`, `non-canonical`, `schema`, `type`, `seal`, `other-scope`, `other-action` | `unreadable` only | the first check that refused, having run to its end: the status, then §2's admission, then UR-Q9's | observed: which completed check refused; never provenance, and never `io` |
 | `line` | `At line` | a line number, in decimal | with `reason`, when that check names a line | admission's line | observed |
@@ -1878,17 +1878,21 @@ own failure, and `rec_admit_copied`'s `seal` (§3, *Today*) among them.
    entry, `-e` or `-L`. Whatever of this cannot be established:
    `undetermined` at `lookup`. No entry: `none`, unless step 5 finds a clear
    unsettled.
-2. **Status.** The entry's own status, never followed: its kind, owner and
-   mode. Cannot be read: `undetermined` at `status`. Not a plain file:
+2. **Status.** The entry's own status, never followed: its kind, a plain
+   file's identity (device and inode) first, its owner and mode. Cannot be
+   read: `undetermined` at `status`. Not a plain file:
    `unreadable`, reason `kind`, and it is never opened. Another user's:
    `unreadable`, `owner`. Writable by group or others: `unreadable`,
    `writable`.
-3. **Read**, for a plain file. Its size, by `wc -c`. Over 65536 bytes, the
-   stored-document limit of an `op` record: `unreadable`, `too-large`,
-   fingerprint `none`, nothing read. Otherwise the bounded copy, `head -c
-   65537`, into the per-run scratch, whose length must equal the size read.
-   A size that cannot be read, a copy not made, or a copy of another length:
-   for a file its status admitted, `undetermined` at `read`; for a file
+3. **Read**, for a plain file. One open of the entry that follows no link
+   and waits on no FIFO, and reads nothing until what it opened is shown to
+   be the plain file the status identified; anything else there now is a
+   read that could not complete. Its size, from that open. Over 65536 bytes,
+   the stored-document limit of an `op` record: `unreadable`, `too-large`,
+   fingerprint `none`, nothing read. Otherwise the bounded copy, at most
+   65537 bytes, into the per-run scratch, whose length must equal the size
+   read. A size that cannot be read, a copy not made, or a copy of another
+   length: for a file its status admitted, `undetermined` at `read`; for a file
    already `unreadable` by its status, fingerprint `unknown`, and the state
    stands.
 4. **Check**, for a file its status admitted. §2's admission on the copy,
@@ -2073,8 +2077,10 @@ each an `id` or an enum value its schema admitted.
 **Workers and effects.** The order of evidence stays §3's: no worker
 observed is less than the relevant workers proven ended, which is less than
 no unexpected effect remaining. This contract produces only what existing
-mechanisms establish: a readable record's core identity, by `core_alive`;
-a readable record's own `failed`; and a boot that differs from the
+mechanisms establish: a readable record's core identity, by `core_alive`'s
+method from one `ps` reading that also lists the core itself (a query that
+fails is unknown, never an ended core); a readable record's own `failed`;
+and a boot that differs from the
 record's. For `unreadable`, `undetermined` and `unsettled-clear`, workers
 and effect are `unknown`, and the texts say why. No recorded identity is
 read for an unreadable record, no scratch is read for it, no sighting is
