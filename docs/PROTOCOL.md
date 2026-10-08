@@ -1878,9 +1878,10 @@ own failure, and `rec_admit_copied`'s `seal` (§3, *Today*) among them.
    entry, `-e` or `-L`. Whatever of this cannot be established:
    `undetermined` at `lookup`. No entry: `none`, unless step 5 finds a clear
    unsettled.
-2. **Status.** The entry's own status, never followed: its kind, a plain
-   file's identity (device and inode) first, its owner and mode. Cannot be
-   read: `undetermined` at `status`. Not a plain file:
+2. **Status.** The entry's own status, never followed, read once: its
+   kind, a plain file's identity (device and inode), its owner and its
+   mode, every one of the same object. Cannot be read, or any of them not
+   what a status holds: `undetermined` at `status`. Not a plain file:
    `unreadable`, reason `kind`, and it is never opened. Another user's:
    `unreadable`, `owner`. Writable by group or others: `unreadable`,
    `writable`.

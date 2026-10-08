@@ -1144,10 +1144,10 @@ foundation findings for DIA-14.
 | DIA-01 none | no state folder under a searchable one, no `ops`, no record; the deterministic text | `_op_lookup` |
 | DIA-02 readable, supervised | a running record whose PID and start are the test shell's | `rec_admit_copied`, `_op_alive` (0) |
 | DIA-03 readable, liveness unknown | `ps` failing; the boot session unreadable | `_op_alive` (2), `core_boot_read` |
-| DIA-04 unreadable | torn, empty, a non-ASCII byte, a header, a key, a value, no seal, a hand edit under the seal, a type, another kind of record, another scope, another scope's action, exactly 65536 bytes, 65537; a link, a dangling link, a folder, a FIFO (never opened), group-writable, another user's (a `find` that matches no owner) | `_op_status`, `_op_read`, `_op_check`, `_op_owns` |
+| DIA-04 unreadable | torn, empty, a non-ASCII byte, a header, a key, a value, no seal, a hand edit under the seal, a type, another kind of record, another scope, another scope's action, exactly 65536 bytes, 65537; a link, a dangling link, a folder, a FIFO (never opened), group-writable, writable by others alone, another user's and root's (the status's owner field replaced: only root can give a file away) | `_op_status`, `_op_read`, `_op_check`, `_op_owns` |
 | DIA-05 undetermined at lookup | `ops` or the state folder a link or a file; `ops` not searchable or not listable; the state folder not searchable; no state folder under one that cannot be searched | `_op_lookup` |
-| DIA-06 undetermined at status, read or check | `find` failing on the entry; the identity's `perl` failing; the read's `perl` failing, losing the size, or keeping 10 bytes; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
-| DIA-07 a lossy `seal` or owner check | the seal's `tail` or `awk` failing where `_rec_seal_ok` answers `seal`; the owner `find` failing | `_op_seal`, `_op_status` |
+| DIA-06 undetermined at status, read or check | the status's `perl` failing, answering nothing or cut short; its kind, identity or mode not one, the mode not in decimal, or a fifth field; the read's `perl` failing, losing the size, or keeping 10 bytes; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
+| DIA-07 a lossy `seal` or owner check | the seal's `tail` or `awk` failing where `_rec_seal_ok` answers `seal`; the status's owner field not a user id, or `id -u` failing | `_op_seal`, `_op_status` |
 | DIA-08 the machinery fails | the scratch folder not made; the fingerprint's hash; the generation's hash; an unwritable `TMPDIR` for the text | `op_inspect` step 0, `_op_hash`, `op_failure` |
 | DIA-09 a value cannot be represented | a state folder whose path holds a TAB: the snapshot keeps its fact and blocker, the detail is `error representation` whatever its page or generation; a UTF-8 path is carried | `core_read_stage` over every row before any page |
 | DIA-10(a) a confirmed mismatch | the test shell's PID with another start time; recorded `unsupervised` and `failed` | `_op_alive` (1), `op_barrier` |
@@ -1169,14 +1169,23 @@ for every scope name, none, two, another case, a path and a flag.
 The implementation review's findings each have permanent cases, through
 the snapshot, the detail and the text interface:
 
-- **F-01**, the record replaced between its status and its read: a `find`
-  that renames a prepared entry over the record once the status step's
-  last check has run. A link to a valid record of another action, a link
-  to hostile bytes, a FIFO with no writer and a FIFO whose writer holds a
-  line: each is `undetermined` at `read`, nothing of the replacement shows,
-  no read waits (a background releaser would mark one that did), the
-  FIFO's line is still there afterwards, and the link targets are
-  unchanged. The same seam with nothing to swap reads as before.
+- **F-01**, the record replaced between its status and its read: a `perl`
+  that renames a prepared entry over the record once the status step has
+  run, just before the read's own `perl` starts. A link to a valid record
+  of another action, a link to hostile bytes, a FIFO with no writer and a
+  FIFO whose writer holds a line: each is `undetermined` at `read`,
+  nothing of the replacement shows, no read waits (a background releaser
+  would mark one that did), the FIFO's line is still there afterwards, and
+  the link targets are unchanged. The same seam with nothing to swap reads
+  as before. And the status read once: A at the record's path and B, two
+  plain files whose device and inode differ, renamed around the status's
+  and the read's `perl` — B in once the status has met A and A back
+  before the read (A→B→A), or B in for the status alone — with A writable
+  by others and B by its owner, and the reverse. The status that met A
+  refuses or admits A by A's own mode; the status that met B describes B,
+  and the read that then opens A cannot complete. Nothing of B shows, and
+  both are the same objects with the same bytes afterwards. Records of
+  mode 0666, 0602 and 0600 that nothing moves are the controls.
 - **F-02**, a schema check whose `read` fails after reading a line: the
   op line, the header, the seal line, the second of two op records, and
   the first of them, each `undetermined` at `check` with no `recorded`

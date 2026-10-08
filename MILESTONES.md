@@ -767,10 +767,16 @@ of docs/TESTING.md.
   a failed tool; nothing else about them changes. The snapshot's own answer
   is staged, admitted, kept and published as the detail's is. The
   diagnostic reads the recorded core's liveness from one `ps` that also
-  lists the core itself; the act path keeps `core_alive`. Disposition:
-  **GATE 3 CORE + TEXT DIAGNOSTIC F-01..F-04 REMEDIATED — AWAITING FOCUSED
-  INDEPENDENT RE-REVIEW** (**OMB M14 GATE 3 — CORE + TEXT READ-ONLY
-  DIAGNOSTIC F-01 / F-02 / F-03 / F-04 CLOSURE RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
+  lists the core itself; the act path keeps `core_alive`. The closure
+  re-review of `679062c` closed F-02, F-03 and F-04 and kept F-01 open: the
+  status took the entry's kind, identity, owner and mode from separate
+  looks at the path, so one object's identity could stand with another's
+  owner and mode, and the read then admit the first. The forward F-01
+  closure from `679062c` reads the status once, one lstat whose every field
+  is of the same object; the read still opens that object or nothing.
+  Disposition: **GATE 3 CORE + TEXT DIAGNOSTIC F-01 COHERENT STATUS
+  REMEDIATED — AWAITING FOCUSED INDEPENDENT CLOSURE RE-REVIEW** (**OMB M14
+  GATE 3 — F-01 COHERENT STATUS / FILE-IDENTITY CLOSURE RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
   `0.2.0` stays **UNRELEASED**; the rest of Gate 3's implementation is **NOT
   STARTED**. No recovery, clear, sighting, reconciliation, execute or action
   exposure is implemented or authorized.
