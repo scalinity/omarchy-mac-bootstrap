@@ -164,8 +164,9 @@ o_raw() { mkdir -p "$T/state/ops" && cat >"$OPS"; }
 # of its last argument (short), runs and keeps only the first 10 bytes of
 # its output (trunc), runs and then empties its last argument, a file
 # (nosize), or runs and answers its output with field N of its one line
-# replaced by V, every other field as the machine gave it (set:N:V). A tool
-# this system lacks gets no shim.
+# replaced by V, every other field as the machine gave it (set:N:V), or
+# with its one line's LF replaced by TEXT, read with printf's %b
+# (end:TEXT). A tool this system lacks gets no shim.
 o_shim() {
   local real="" d act n
   for d in /usr/bin /bin /usr/sbin /sbin; do
@@ -183,6 +184,7 @@ o_shim() {
       n=${4#set:}
       act="out=\$(\"$real\" \"\$@\") || exit 1; printf '%s\\n' \"\$out\" | awk -v v='${n#*:}' '{ \$${n%%:*} = v; print }'; exit 0"
       ;;
+    end:*) act="out=\$(\"$real\" \"\$@\") || exit 1; printf '%s%b' \"\$out\" '${4#end:}'; exit 0" ;;
   esac
   printf '#!/bin/sh\ncase " $* " in\n  %s) %s ;;\nesac\nexec "%s" "$@"\n' "$3" "$act" "$real" >"$1/$2"
   chmod +x "$1/$2"
@@ -1191,6 +1193,97 @@ f_still 'F01-F3 a stable record, mode 0602' 602 "$(f_wr "$T/fab-a.src")" 'a reco
 f_sealed 'F01-F3 a stable record, mode 0602'
 f_still 'F01-F4 a stable record, mode 0600' 600 "$ALIVE_ROWS" 'test.mutate running|info' ''
 rm -f "$T/f-ab-b"
+
+# --- F-01: the status's whole answer, byte for byte ---------------------------------------
+# A status is admitted only as the one line its producer writes: kind,
+# device:inode, user id and a mode `& 07777` can give (0 to 4095, in
+# canonical decimal), one space apart, then an LF, and nothing after it.
+# Any other answer is a status that could not be read: never a finding of
+# the record's mode, never a record admitted beneath it. A (test.mutate,
+# its core alive) stands at the record's path, mode 0600 (readable) or
+# 0666 (refused by its mode); the status's real answer for A is changed by
+# one shim action, and the seam is held to changing only that.
+# f_answer — the status's answer for the record, as the inspection asks
+# for it, from the first perl on O_PATH.
+f_answer() (
+  # shellcheck source=lib/operation.sh
+  . "$REPO/lib/operation.sh" || exit 1
+  PATH=${O_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+  LC_ALL=C perl -e "$OP_PL" -- status "$OPS"
+)
+# f_resp NAME MODE ACTION ROWS FACT BLOCKERS — A of mode MODE, the status's
+# answer changed by the o_shim ACTION (none: as the machine gives it), in
+# the snapshot, the detail and the text interface.
+f_resp() {
+  local m
+  rm -f "$OPS"
+  cp "$T/fab-a.src" "$OPS" && chmod "$2" "$OPS"
+  O_PATH=''
+  [ -z "$3" ] || o_tool perl "$P_STATUS" "$3"
+  case $2 in 600) m=384 ;; 666) m=438 ;; esac
+  case $3 in set:4:*) m=${3#set:4:} ;; esac
+  case $3 in
+    end:*) printf 'file %s %s %s%b' "$(f_id "$OPS")" "$(id -u)" "$m" "${3#end:}" ;;
+    *) printf 'file %s %s %s\n' "$(f_id "$OPS")" "$(id -u)" "$m" ;;
+  esac >"$T/status.want"
+  f_answer >"$T/status.got"
+  cmp -s "$T/status.got" "$T/status.want" && ok || fail "$1: the status answers A's own fields, changed only as the case says"
+  o_before
+  C_PATH=$O_PATH o_look
+  o_rowset "$1" "$4"
+  o_snapset "$1" "$5" "$6" 'test.read '
+  o_pure "$1"
+  O_PATH=$O_PATH o_texts "$1" "$4"
+  O_PATH=''
+}
+F_ST_ROWS="$(o_head undetermined "$TX_UNDET")
+stage|Failed step|status|$ST_STATUS
+$UNDET_TAIL
+next|Next||$N_STATUS"
+F_WR=$(f_wr "$T/fab-a.src")
+# f_bad / f_wrote / f_alive NAME MODE ACTION — f_resp whose finding is
+# undetermined at the status, refused by a mode that lets others write A,
+# or readable; the first two admit nothing of A.
+f_bad() {
+  f_resp "$1" "$2" "$3" "$F_ST_ROWS" 'cannot be inspected|unknown' "$B_UNDET"
+  f_sealed "$1"
+}
+f_wrote() {
+  f_resp "$1" "$2" "$3" "$F_WR" 'a record that cannot be read|fail' "$B_UNREADABLE"
+  f_sealed "$1"
+}
+f_alive() { f_resp "$1" "$2" "$3" "$ALIVE_ROWS" 'test.mutate running|info' ''; }
+# V1-A and V2-E: the producer's own answer, one LF-ended line, the mode in
+# decimal (0666 is 438, 0600 is 384), as the machine gives it and through
+# the seam unchanged.
+f_wrote 'F01-V1-A mode 0666, the status as the machine gives it (438)' 666 ''
+f_alive 'F01-V1-A mode 0600, the status as the machine gives it (384)' 600 ''
+f_wrote 'F01-V2-E mode 0666, its one LF-ended line through the seam' 666 'end:\n'
+f_alive 'F01-V2-E mode 0600, its one LF-ended line through the seam' 600 'end:\n'
+for m in 600 666; do
+  # V1-E: 0 and 4095, the two ends of the domain, are modes; what follows
+  # is what that mode and the record's real read give.
+  f_alive "F01-V1-E mode 0$m, answered as 0" "$m" set:4:0
+  f_wrote "F01-V1-E mode 0$m, answered as 4095" "$m" set:4:4095
+  # V1-B to V1-D: past 4095, a number no mode is.
+  f_bad "F01-V1-B mode 0$m, answered as 4096" "$m" set:4:4096
+  f_bad "F01-V1-C mode 0$m, answered as 8192" "$m" set:4:8192
+  f_bad "F01-V1-D mode 0$m, answered as 9999" "$m" set:4:9999
+  # V2-A to V2-D: the line and then more of anything (another line, a blank
+  # line, bytes no LF ends, a NUL), or a space or a tab before its LF; and
+  # the line with no LF at all.
+  f_bad "F01-V2-A mode 0$m, a second line after it" "$m" 'end:\nfile 1:2 0 0\n'
+  f_bad "F01-V2-B mode 0$m, a blank line after it" "$m" 'end:\n\n'
+  f_bad "F01-V2-C mode 0$m, bytes no LF ends after it" "$m" 'end:\nx'
+  f_bad "F01-V2-C mode 0$m, a NUL after it" "$m" 'end:\n\0'
+  f_bad "F01-V2-D mode 0$m, a space before its LF" "$m" 'end: \n'
+  f_bad "F01-V2-D mode 0$m, a tab before its LF" "$m" 'end:\t\n'
+  f_bad "F01-V2 mode 0$m, no LF ends it" "$m" 'end:'
+done
+# V1-F: not a mode's canonical decimal at all.
+for v in 0644 00 04095 -1 -438 +438 0x1b6 1e3 438a; do
+  f_bad "F01-V1-F mode 0600, answered as $v" 600 "set:4:$v"
+done
 
 # --- F-02: a schema check whose read stops short ------------------------------------------
 # f_schema MARK — F_BASH, where the schema check's read of a line holding
