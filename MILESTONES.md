@@ -773,10 +773,16 @@ of docs/TESTING.md.
   looks at the path, so one object's identity could stand with another's
   owner and mode, and the read then admit the first. The forward F-01
   closure from `679062c` reads the status once, one lstat whose every field
-  is of the same object; the read still opens that object or nothing.
-  Disposition: **GATE 3 CORE + TEXT DIAGNOSTIC F-01 COHERENT STATUS
-  REMEDIATED — AWAITING FOCUSED INDEPENDENT CLOSURE RE-REVIEW** (**OMB M14
-  GATE 3 — F-01 COHERENT STATUS / FILE-IDENTITY CLOSURE RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
+  is of the same object; the read still opens that object or nothing. The
+  re-review of `0e3e8b1` confirmed that one observation and kept F-01 open
+  for the shell's check of its answer: a mode past 4095 was taken as a
+  mode, and bytes after the first line were never looked at. The forward
+  completion from `0e3e8b1` admits the status only as its one line, byte
+  for byte, its mode 0 to 4095 in canonical decimal.
+  Disposition: **GATE 3 CORE + TEXT DIAGNOSTIC F-01 STATUS-RESPONSE
+  COMPLETENESS REMEDIATED — AWAITING FOCUSED INDEPENDENT RE-REVIEW**
+  (**OMB M14 GATE 3 — F-01 STATUS-RESPONSE COMPLETENESS CLOSURE
+  RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
   `0.2.0` stays **UNRELEASED**; the rest of Gate 3's implementation is **NOT
   STARTED**. No recovery, clear, sighting, reconciliation, execute or action
   exposure is implemented or authorized.

@@ -1146,7 +1146,7 @@ foundation findings for DIA-14.
 | DIA-03 readable, liveness unknown | `ps` failing; the boot session unreadable | `_op_alive` (2), `core_boot_read` |
 | DIA-04 unreadable | torn, empty, a non-ASCII byte, a header, a key, a value, no seal, a hand edit under the seal, a type, another kind of record, another scope, another scope's action, exactly 65536 bytes, 65537; a link, a dangling link, a folder, a FIFO (never opened), group-writable, writable by others alone, another user's and root's (the status's owner field replaced: only root can give a file away) | `_op_status`, `_op_read`, `_op_check`, `_op_owns` |
 | DIA-05 undetermined at lookup | `ops` or the state folder a link or a file; `ops` not searchable or not listable; the state folder not searchable; no state folder under one that cannot be searched | `_op_lookup` |
-| DIA-06 undetermined at status, read or check | the status's `perl` failing, answering nothing or cut short; its kind, identity or mode not one, the mode not in decimal, or a fifth field; the read's `perl` failing, losing the size, or keeping 10 bytes; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
+| DIA-06 undetermined at status, read or check | the status's `perl` failing, answering nothing or cut short; its kind, identity or mode not one, the mode not in canonical decimal or past 4095, a fifth field, or its one line not the whole answer; the read's `perl` failing, losing the size, or keeping 10 bytes; `awk` failing on the copy | `_op_status`, `_op_read`, `_op_check` |
 | DIA-07 a lossy `seal` or owner check | the seal's `tail` or `awk` failing where `_rec_seal_ok` answers `seal`; the status's owner field not a user id, or `id -u` failing | `_op_seal`, `_op_status` |
 | DIA-08 the machinery fails | the scratch folder not made; the fingerprint's hash; the generation's hash; an unwritable `TMPDIR` for the text | `op_inspect` step 0, `_op_hash`, `op_failure` |
 | DIA-09 a value cannot be represented | a state folder whose path holds a TAB: the snapshot keeps its fact and blocker, the detail is `error representation` whatever its page or generation; a UTF-8 path is carried | `core_read_stage` over every row before any page |
@@ -1185,7 +1185,16 @@ the snapshot, the detail and the text interface:
   refuses or admits A by A's own mode; the status that met B describes B,
   and the read that then opens A cannot complete. Nothing of B shows, and
   both are the same objects with the same bytes afterwards. Records of
-  mode 0666, 0602 and 0600 that nothing moves are the controls.
+  mode 0666, 0602 and 0600 that nothing moves are the controls. And the
+  status's whole answer, byte for byte: A, a valid record whose core is
+  alive, at mode 0600 and 0666, the status's real answer for it changed
+  through a `perl` shim, and the seam held to A's own lstat fields with
+  only that change. A mode past 4095 (4096, 8192, 9999) or not in
+  canonical decimal (0644, 00, 04095, -1, -438, +438, 0x1b6, 1e3, 438a);
+  the line followed by another line, a blank line, unterminated bytes or
+  a NUL; a space or a tab before its LF; or no LF at all: each is
+  `undetermined` at `status`, nothing of A admitted. 0 and 4095 are modes,
+  and the answer passed through unchanged is the native finding.
 - **F-02**, a schema check whose `read` fails after reading a line: the
   op line, the header, the seal line, the second of two op records, and
   the first of them, each `undetermined` at `check` with no `recorded`
