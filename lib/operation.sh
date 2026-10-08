@@ -125,10 +125,10 @@ _op_lookup() {
 # nothing, OP_WRITABLE, each of the one object that status met; the path is
 # not looked at again for any of them, and the read opens that object or
 # nothing, whatever the path names by then. 1, none of them set, when it
-# cannot be read (the entry gone since the lookup included) or holds
-# anything but a status's fields.
+# cannot be read (the entry gone since the lookup included) or its answer
+# is anything but the one line of a status's fields.
 _op_status() {
-  local st k i u m x uid
+  local st k i u m x uid line
   LC_ALL=C perl -e "$OP_PL" -- status "$OP_PATH" 2>/dev/null >"$OP_DIR/status"
   st=$?
   [ "$st" = 0 ] || return 1
@@ -136,8 +136,18 @@ _op_status() {
   case $k in file | link | folder | other) ;; *) return 1 ;; esac
   _whole "$i" '^-?[0-9]+:[0-9]+$' || return 1
   _whole "$u" '^(0|[1-9][0-9]*)$' || return 1
+  # A mode is what `& 07777` gives: 0 to 4095, in decimal.
   _whole "$m" '^(0|[1-9][0-9]{0,3})$' || return 1
+  [ "$m" -le 4095 ] || return 1
   [ -z "$x" ] || return 1
+  # And the answer is that one line, byte for byte: its first line, read
+  # whole, is the four fields one space apart, and the answer is exactly
+  # that line's bytes and its LF, so no byte follows it and none was
+  # dropped from it (read drops a NUL).
+  IFS= read -r line <"$OP_DIR/status" || return 1
+  [ "$line" = "$k $i $u $m" ] || return 1
+  _op_size "$OP_DIR/status" || return 1
+  [ "$OP_N" = $((${#line} + 1)) ] || return 1
   # The user this process runs as, from the machine, as _state_owned_safe
   # reads it: a fixture's own user id says nothing about these files.
   uid=$(id -u) || return 1
