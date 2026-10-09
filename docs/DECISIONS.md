@@ -838,7 +838,7 @@ in every part the third column names.
 | UR-Q8 | open | the diagnostic's part, accepted: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
 | UR-Q9 | accepted: a record naming another scope, or an action its scope does not own, is C; a scope's own action merely unavailable now is not corruption | — | — |
 
-### Foundation journey effect-domain prerequisite — proposed
+### Foundation journey effect-domain prerequisite — accepted
 
 **UR-Q3 / UR-Q5 P5-20 PROOF BLOCKER — CONFIRMED** by independent review.
 The source counterexample is fake-handoff's `keys_out` overwrite with
@@ -850,8 +850,18 @@ mean a pre-action digest does not establish actual consumption. The
 external source-only blocker package remains historical evidence; no
 normative completion commit was made for that slice.
 
-**FJ-ED-1 — PROPOSED; INDEPENDENT REVIEW PENDING**, documentation only
-(docs/PROTOCOL.md → *Proposed foundation journey effect-domain contract*).
+**FJ-ED-1 — ACCEPTED AS A DOCUMENTATION CONTRACT**, documentation only
+(docs/PROTOCOL.md → *Foundation journey effect-domain contract*).
+Independent GPT-6 Pro review accepted source tree
+`29ac7b58502618a72295375ff68b9b326f765fd6` at the reported local checkpoint
+`f27ee84a4b28fe5ee3a93df53f79598192932468`, compared with `a3beb3c` / tree
+`8e483db6d078ad57cf0af7dac2c8a6e6a244a843`: no HIGH or MEDIUM findings,
+all 24 FED cases adequate and both future witnesses accepted. Acceptance
+attaches to source content; unpublished commit identity/parentage were
+verified locally for this continuation, not authenticated by that reviewer.
+The accepted branch remains an immutable historical checkpoint. This
+acceptance implements no mechanism and accepts none of UR-Q3, UR-Q5 or UR-Q4.
+
 The proposed boundary is the existing journey act pair `test.mutate` and
 `test.handoff`, with `test.read` kept read-class. Relevant writes are bounded
 synthetic effect files with independently retained prior and expected states.
@@ -889,8 +899,8 @@ capabilities or acceptance of P5-20. Legacy corrupted operations lacking
 historical destinations/inputs stay unknown; new records cannot reconstruct
 that missing history. The run lock is not external-writer exclusion.
 
-The dependency graph remains: this prerequisite's independent review, then
-separate UR-Q3/UR-Q5 reconciliation/evidence-contract review; runtime P4
+The dependency graph now begins with separate UR-Q3/UR-Q5
+reconciliation/evidence-contract review after accepted FJ-ED-1; runtime P4
 before P5; P1–P5 plus basis/word before a clear attempt; verified clear
 completion before anything may rely on that transaction. UR-Q4 remains
 independently **PROOF BLOCKED — OWNER DECISION REQUIRED**: earlier-boot
@@ -901,6 +911,62 @@ No recovery, clear, sighting, new diagnostic evidence reader, action
 implementation or later action-owner generalization is authorized here.
 Shared creation's transaction remains creation-specific; later Gate 3
 owners must supply their own independently reviewed domain/evidence rules.
+
+### Foundation journey P5 reconciliation continuation — proposed
+
+**FJ-P5-1 — PROPOSED; INDEPENDENT REVIEW PENDING**, documentation only
+(docs/PROTOCOL.md → *Proposed foundation journey P5 reconciliation contract*),
+on `m14-gate3-p5-reconciliation-contract` directly from accepted `f27ee84`.
+The semantic owner is the authoritative foundation Bash core under the
+reviewed journey fixture contract. The generic coordinator requires its
+complete positive finding; it cannot supply another scope's semantics.
+The complete roster is the journey act pair, test.mutate and test.handoff,
+with test.read preserved as read-class. Every applicable retained generation,
+consumed source/input, domain, prior and original-core evidence is admitted
+independently of C and checked against fresh scope-owned observations.
+
+| Question | Bounded proposed rule | Disposition and remaining dependency |
+| --- | --- | --- |
+| UR-Q3 | foundation journey owner judges every applicable act family and generation under FJ-ED-1; legal future internal assessment after separate P4, no repair/persistence | independent review pending; overall PARTIAL / REMAINING OPEN; other scopes require their own reviewed owners and domains |
+| UR-Q5 | each relevant item must be unchanged prior state or independently completed under authoritative original-core generation evidence, with complete fresh agreement and usable interval; otherwise retain observed and/or unknown reasons | independent review pending; overall PARTIAL / REMAINING OPEN; no plausible basis, missing lookup, partial coverage or old receipt can establish positive P5 |
+
+P5-01–P5-20 and additional adversarial cases preserve the two accepted future
+witnesses. G1's failed ordinary barrier is settled by separate readable
+D47/new-boot reconciliation before G2 admission. G2's no-effect control
+stops before ordinary failed-record replacement; its completion control stops
+before ordinary removal/result. The independent step-3 object binding cannot
+silently associate an unbound replacement or prove who wrote C. Known object
+mismatch differs from an unavailable comparison. Source/configuration is the
+retained consumed version, never today's mutable file as historical evidence.
+
+Complete aggregation includes both-family history and justified latest state
+for reused destinations, noninterference/lifecycle for every exclusion, and
+independently established provenance/continuity. Known unexpected or
+basis-dependent unjustified effects prevent positive P5; missing/failed
+authority or coverage remains unknown. An observed fact beside unknown
+coverage is retained without pretending the whole inspection completed.
+D54's meanings and D55's current read-only answers remain unchanged.
+
+Assessment findings exist only for their supported observation/use interval
+and decision point. Rechecks reject changes but equal endpoints cannot prove
+absence of intervening writes. The run lock is not external-writer exclusion.
+Future clear use must re-establish all P1–P5, basis/word and a separately
+reviewed continuity guard or equivalent atomic recheck-and-take over the
+entry and relevant evidence/effects. This proposal grants none of that
+authority and stores no durable reconciliation result. P4 precedes P5;
+eligibility is not verified clear completion.
+
+UR-Q4/P3/P4 remain unresolved; `b79bec9` stays unaccepted and uninherited.
+UR-Q1 and remaining UR-Q6/UR-Q8 stay open, including future assessment/clear
+entry, act vocabulary and any additional surface. No accepted diagnostic,
+read, refused act, reboot or frontend gains evaluator or write authority.
+For plan save, installer/network/Omarchy, each Shared lifecycle operation
+and backup, separate scope-owned domain/evidence/reconciliation contracts
+remain necessary; creation's topology authority is not activation/write-test
+coverage. No broader implementation, M15 restore or M16 qualification is
+required or authorized. Gate 3 remains incomplete, frontend 0.2.0 unreleased,
+and all FJ-ED-1/P5 mechanisms unimplemented. Independent review must decide
+the bounded foundation disposition before any acceptance is recorded.
 
 ## Where each design question is answered
 

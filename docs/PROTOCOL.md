@@ -1088,9 +1088,9 @@ it exists, keep working and change nothing; *refused* means refused at step
 | U32 | `done`, reporting D and that the clear's evidence cannot be inspected | refused | no (P1) | make the evidence inspectable, inspect again | as U20 |
 | U33 | the diagnostic reports the completed clear and the state it finds now | a new request decides from its own step 3, as U19 | as the state found | as U19 | existing |
 
-### Proposed foundation journey effect-domain contract
+### Foundation journey effect-domain contract
 
-**FJ-ED-1 — PROPOSED; INDEPENDENT REVIEW PENDING.** This documentation-only
+**FJ-ED-1 — ACCEPTED AS A DOCUMENTATION CONTRACT.** This documentation-only
 prerequisite concerns the foundation's existing `journey` actions, not the
 ordinary journey read dataset or other Gate 3 actions. Its mechanisms are
 **UNIMPLEMENTED**. The independently reviewed disposition **UR-Q3 / UR-Q5
@@ -1597,6 +1597,332 @@ require a separate authorization after independent review of this candidate.
 Other Gate 3 owners must supply their own contracts later; Shared creation's
 topology transaction does not cover activation or the write test, and no
 installer/storage authority is added here.
+
+### Proposed foundation journey P5 reconciliation contract
+
+**FJ-P5-1 — PROPOSED; INDEPENDENT REVIEW PENDING.** This continuation uses
+the independently accepted FJ-ED-1 source tree
+`29ac7b58502618a72295375ff68b9b326f765fd6`, locally verified at
+`f27ee84a4b28fe5ee3a93df53f79598192932468` directly after `a3beb3c`.
+That review accepted source content, FED-01–FED-24 and the future witnesses;
+it did not authenticate the unpublished commit object or implement anything.
+FJ-ED-1's normative body remains unchanged. Both its mechanisms and this
+evaluator are **UNIMPLEMENTED**. These rules propose the bounded foundation
+parts of UR-Q3/UR-Q5, not their acceptance or closure for all Gate 3 scopes.
+
+**Owner and authority.** The semantic owner is the authoritative foundation
+Bash core acting under the reviewed journey fixture contract. It judges
+`test.mutate` (act, managed) and `test.handoff` (act, handoff), with
+`test.read` kept read-class under FJ-ED-1. The common coordinator may enforce
+request/exclusion gates and require the owner's complete positive finding;
+it may not invent effects, choose a plausible basis, omit a family or
+transfer another scope's conclusion into journey. Another scope's records,
+unknown owner or unrecognized source/domain contract provide no authority.
+
+This is a source-only judgment rule, not authorization to run it. A future
+internal assessment requires a separately reviewed legal requesting context,
+the foundation owner and fixture authority, an independently inspectable C
+entry/target interval, no unsettled clear, and a separately established P4
+before it begins P5. It is read-only and keeps its observations/findings in
+memory. No durable P5 receipt, evidence repair, instrument cleanup, effect
+repair, operation rewrite/removal or new persistence is defined. Accepted
+FJ-ED-1 original-act publication remains a different authority.
+
+No current `snapshot`, `detail`, `operation SCOPE`, status, Doctor, Logs,
+startup check or frontend invokes this evaluator. D55's C/D/unsettled-clear
+workers/effects and zero-persistence rules remain exactly as accepted. No
+new public operation/action id, purpose, scope, record/response schema or
+result code is added; the protocol stays 1. The future clear-specific entry
+and any act/surface vocabulary or invocation authority remain UR-Q6/UR-Q8
+work. A refused act does not gain assessment or write authority; a reboot
+does not schedule it. If that future authority or P4 is absent, it does not
+run, P5 is not established and the barrier remains.
+
+**Admit the whole interval.** The owner starts from FJ-ED-1's independently
+admissible journey incarnation, owner/head and complete bounded catalog,
+never from any field decoded from C. It admits every applicable retained
+generation, prior-head predecessor, domain, retained actual source/input and
+prior object, prepared/launched and any required closed/completed evidence.
+It verifies scope, issuer/provenance, versions, counts, unique ordinals,
+object bindings and complete publication under FJ-ED-1's limits. A seal,
+timestamp or declared owner alone authenticates none of them. Failed lookup,
+enumeration, admission, unavailable raw object, torn frontier, duplicate,
+gap, conflicting history or unsupported provenance makes coverage unknown.
+
+The applicable roster includes both act families throughout the admitted
+history, whether or not an action is available now, every enabled/disabled
+output and covered read control. Present availability is not the inventory.
+The owner proves uninvoked/disabled possibilities from the admitted roster,
+consumed configuration and enforced write/launch constraints; absence of an
+operation or completion receipt alone never proves no execution. An unknown
+intervening/uncovered execution, legacy C before FJ-ED-1, unreviewed override,
+new act family/write site or incompatible domain version invalidates old
+coverage. It cannot be repaired by a new inception beside C. Historical
+source/configuration remains the retained consumed identity; a changed live
+fixture cannot replace it or retroactively alter its meaning.
+
+The target is the uniquely admitted active or latest closed frontier with
+FJ-ED-1's independent binding to this request's step-3 ordinary operation
+object. Fresh comparison uses the opened current entry and identified parent,
+not its undecodable action/basis. Positive association requires independently
+established object/namespace continuity; equal paths, inodes, timestamps,
+fingerprints or seals are insufficient. Complete comparison establishing a
+different object is a known mismatch and leaves target ownership unproved;
+a failed comparison is unknown, never a claimed mismatch. Both block P5.
+Ambiguous targets cannot be resolved by selecting an older successful
+receipt, even if union coverage appears convenient. This association selects
+the effect interval; it proves nothing about the writers of current C bytes.
+
+`core_op_write` creates a temporary file and renames it over the ordinary
+entry (`lib/core.sh`, including the failed-postcondition path); the earlier
+object binding does not automatically cover that replacement. The accepted
+G2 no-effect witness stops after independent closed/head publication and
+before ordinary failed-record replacement; the completion witness stops
+after independent closed/completed/head publication and before ordinary
+operation removal/result. Later C must still meet the accepted binding and
+separate continuity conditions. A replaced G2 ordinary entry is outside
+those positive controls; neither this proposal nor FJ-ED-1 supplies a new
+replacement-association record or proves UR-Q4/P4 for it.
+
+**Per-effect proof.** The owner builds complete semantic findings for each
+act family and generation, and a coherent sequence for each reused object.
+It checks each predecessor's outcome against the next admitted prior state.
+Historical original-core observations remain bound to their generation;
+fresh physical comparison is to the last justified state for a destination,
+not simultaneously to every older value that later covered work replaced.
+No intervening generation or unknown writer may be skipped. A disabled
+output with meaningful prior bytes still requires its prior-state comparison.
+
+| Finding in this internal judgment | Necessary positive facts | What it never proves |
+| --- | --- | --- |
+| No remaining effect | admitted prior absence or complete prior bytes/mode/object, complete fresh supported parent/object observation and FJ-ED-1 continuity; current state is exactly that prior state | no transient write ever occurred; deleting a formerly present object is not prior absence |
+| Independently completed effect | authoritative original-core completed publication under the exact domain/prepared/launched/generation, actual consumed-input/expected-state and supervised lifecycle bindings, consistent history and fresh physical agreement | matching a plausible basis, an exit status, a closed-only record, lost response or earlier receipt is not completion |
+| Established unexpected effect | complete admitted comparison positively shows remaining state outside the prior state and independently justified completed effects | a failed observation or missing prior object is not that comparison |
+| Basis-dependent unjustified effect | a remaining effect is positively established, but cannot be judged complete without original/independent expected-state authority; no valid completion supplies it | plausible present bytes are not safety or an assertion that a different basis was actually used |
+| Unknown/incomplete | required owner, association, provenance, historical input, coverage, representation, observation or freshness cannot be established | neither unchanged state nor a completed negative whole-scope finding |
+
+These are explanatory internal distinctions, not new public enum values.
+D54's `observed` includes an established unexpected effect and the
+basis-dependent effect it cannot judge. `no unexpected effect` requires
+complete justified dispositions; `unknown` retains unperformed/unavailable
+judgment. When an admitted prior establishes that an effect remains but
+completion authority is missing, preserve that observed effect and the
+missing authority. When even the prior/ownership cannot be admitted, do
+not invent an unexpected-effect comparison. Independently known observed
+facts survive beside other unknown checks without making coverage complete.
+
+FJ-ED-1's instrumentation exclusion requires complete noninterference and
+lifecycle admission, identified owned removal and full fresh absence; a
+diagnostic name or temporary path does not exclude a meaningful overwrite.
+Failed/interrupted cleanup is not cleanup and is not repaired here. Relevant
+terminal and controller/evidence alias/lifecycle protections remain those of
+FJ-ED-1. Missing required closed evidence cannot certify supervision or
+cleanup; a no-effect path without it still needs every independently proved
+writer/continuity/lifecycle premise that its fresh comparison requires.
+
+**Aggregate once complete.** The owner retains two separate things: the
+complete set of positively established observed findings, and whether the
+whole applicable scope was successfully covered. For every relevant item
+it must establish prior state or independent completion; every excluded
+output must meet its admitted noninterference/lifecycle. The roster, history,
+target binding, required source/prior/evidence, observations and usable
+interval must all be complete and agree. This nonempty both-family coverage
+is required even when one family never ran or is unavailable now.
+
+- Only complete coverage with no unjustified effect and every item justified
+  yields `no unexpected effect`, the conditional P5-positive conclusion.
+- An established unexpected or basis-dependent unjustified effect is
+  `observed` and prevents positive P5. If another check is incomplete, retain
+  both the known finding and incomplete coverage; do not call it a complete
+  whole-scope negative inspection or hide it behind a generic I/O failure.
+- Missing authority or incomplete coverage without an established observed
+  finding leaves the scope judgment `unknown`; positive P5 is withheld.
+
+The coordinator cannot convert any action's individual success, empty
+projection, incomplete assessment or delivered negative finding into the
+owner's complete positive P5. Delivery success is not semantic success.
+Operational I/O failure, completed admission rejection, representation
+failure, stale association and incomplete coverage retain their distinct
+reasons. Failure to deliver a finding does not certify effects or erase
+already established observations; a consumer without the complete positive
+owner finding must withhold P5. Later wire mapping is remaining UR-Q6 work;
+later presentation is UR-Q8. No D55 answer is changed here.
+
+**Freshness and the decision point.** The owner must establish a coherent
+observation/use interval, beginning with admitted target/incarnation/frontier
+and ending at its decision, under FJ-ED-1's actual reviewed writer, object
+and namespace-continuity boundary. P4 proves writers of C gone separately;
+it does not by itself exclude every writer of relevant effects. Applicable
+original-core supervision/lifecycle or other separately accepted writer-end
+authority must support the effect observations. The run lock excludes
+cooperating OMB runs, not unrelated owner/root writers. An unknown relevant
+external writer defeats the interval. No universal atomic snapshot is assumed.
+
+Within that established interval the owner obtains complete bounded fresh
+observations and revalidates the operation object/fingerprint, owner/head,
+whole catalog/source/domain versions, retained priors, destination parents
+and opened objects, contents/modes and exclusions before deciding. Changed
+observations invalidate the set; it may not combine earlier and later
+objects. Failed reread, source/domain incompatibility, interruption,
+unrepresentable required value or unsupported writer/alias leaves P5
+unproved. Repeated equal endpoint reads do not prove there was no intervening
+replacement/write/restoration. Continuity must be established independently,
+not manufactured by hashes. Supported historical consumed source may differ
+from an unconsumed current file only under the intact admitted history and
+roster; actual uncovered execution or a new roster is never ignored.
+
+A positive finding is usable only for that assessed decision point. It is
+not a reusable authorization or durable fact for a later request. Any change
+to the entry, frontier, roster/source/domain, required evidence or effects
+invalidates its use. A later clear eligibility/execute must freshly establish
+all accepted P1–P5, basis and word, after P4, and preserve a supported coherent
+association/effect interval through its binding take. That needs a separately
+reviewed continuity guard or equivalent atomic recheck-and-take mechanism
+covering the relevant evidence/effects as well as the entry; a fingerprint
+recheck alone is insufficient. No such mechanism or authority is supplied
+here. Without it a previously positive P5 cannot authorize clear. A take
+mismatch or unconfirmable identity follows U31; an interrupted/unverified
+clear follows U29–U33. Eligibility is an attempt's authority, never verified
+completion, and a completed clear gives no later request a safety shortcut.
+
+**Conditional positive witnesses.** Apply the two accepted FJ-ED-1 histories
+with its full independent evidence, not absent fixed filenames alone:
+
+1. **No remaining effect.** Trusted I starts with both fixed effects absent
+   and meaningful keys prior K/mode/object retained. G1 mutate consumes its
+   admitted `effect=none`, finishes owned instrumentation and publishes
+   closed/head; it has no completed receipt. Its ordinary failed barrier is
+   separately settled after a new boot by readable-record D47 reconciliation.
+   A fresh step 3 establishes A before G2 handoff is admitted; G2 retains that
+   predecessor and both-family domains/actual inputs. It uses `effect=none`,
+   disables relevant keys output, completes owned instrument lifecycle and
+   publishes closed/head. Stop before G2's ordinary failed-record replacement.
+   Its original bound entry later becomes C with independently established
+   binding/continuity and conditional P4. Complete discovery and fresh usable
+   observations show both fixed names absent, keys exactly K/mode/object,
+   every instrument slot absent with admitted lifecycle, and intact source,
+   prior/head/domain/evidence. Both families are unchanged; a covered read
+   control writes nothing. All possible writes are accounted for, and no
+   unexamined or unknown relevant item remains. P5 is conditionally positive.
+2. **Independent completion.** G1's absent mutate prior, actual W and original
+   core closed/completed/head establish W; its ordinary operation completes
+   before G2 admission. G2 retains W and the predecessor frontier, absent
+   handoff prior, meaningful keys prior K and synthetic input T; its receipt
+   proves actual T consumption. Its original core verifies H/T and all
+   supervised terminal/instrument lifecycles and publishes closed/completed/
+   head. Stop before ordinary operation removal/result. Lost result and
+   later C change neither that receipt nor the separately required target
+   binding, continuity and P4. Fresh usable observations agree with W/H/T,
+   modes/objects and complete lifecycle. The complete scope is independently
+   justified; P5 is conditionally positive, while request delivery remains
+   unknown. Matching bytes without those publications do not give this proof.
+
+Mixed histories use the same sequence: for example G1 independently completes
+W and its ordinary operation, then G2 leaves the admitted W/absent-handoff/K
+prior unchanged and closes before failed replacement. The latest state per
+destination agrees with that chain. No witness contains simultaneous
+unsettled G1/G2 operations or extends an unbound G2 ordinary replacement.
+These are future contractual witnesses, not executed evidence or P3/P4 proof.
+
+**Documentation cases P5-01–P5-20.** Every row is unexecuted. Unless a row
+states otherwise, its starting scope is journey with C and no unsettled
+clear; J is the complete applicable act roster `{test.mutate, test.handoff}`
+with read-class test.read under FJ-ED-1. I/G mean its independently admitted
+incarnation/generation interval. N/C/O/? abbreviate the internal unchanged,
+independently completed, observed and unknown findings above, not wire values.
+“Complete” includes actual consumed inputs, both-family history/domain and
+every fresh required observation under a usable interval, not a successful
+single read. Positive rows have no missing evidence, separate future P4 and
+authorized internal assessment; P5-17 explicitly lacks that authority.
+
+For **every** row, C's barrier remains (A01's existing readable barrier
+remains), clear cannot be offered by this contract and **no writing is
+permitted by this contract**. An independently reviewed future clear would
+still need all P1–P5, basis/word and supported use/take continuity; only its
+verified transaction could complete. Required failures withhold positive
+P5, preserve known findings/unknown checks separately and never repair data.
+The columns and these common rules specify starting state/roster, independent
+evidence and omissions, admitted facts, completeness, per-action and aggregate
+judgment, P5, barrier/clear/write authority, U/FED references and invariant.
+
+| Case | Independent generation/domain facts; missing/conflicting evidence | Observation and per-action finding | Aggregate / is P5 established? | U / FED; protected invariant |
+| --- | --- | --- | --- | --- |
+| P5-01 | J, full admitted I/G1/G2 no-effect history; no omissions | complete prior-state/lifecycle comparisons; mutate N, handoff N | no unexpected effect / conditional yes | U4,U17; FED-21,24; every relevant prior accounted for |
+| P5-02 | J, both original-core completed generations and actual W/H/T; no omissions | complete fresh agreement and lifecycle; mutate C, handoff C | no unexpected effect / conditional yes | U17; FED-11,24; completion has authoritative generation ownership |
+| P5-03 | J, completed G1 then unchanged G2 with retained G1 state; no omissions | complete sequence and latest-state observations; mutate C, handoff N | no unexpected effect / conditional yes | U17; FED-21,24; mixed outcomes still cover the whole scope |
+| P5-04 | J, admitted prior absence and present basis-dependent bytes; no authoritative completed/expected-state proof | physical observation complete; affected family O (unjustified basis-dependent), other family N | observed with missing completion authority / no | U8; FED-01,16; plausible basis is not independent completion |
+| P5-05 | J claimed, owner/source issuer unproved, unreviewed override or another scope's evidence | present bytes read, scope-owned admission incomplete; affected family ?, other evidence cannot substitute | unknown / no | U4,U8; FED-06,07,12; scope/name/seal/hash is not provenance or an enforceable domain |
+| P5-06 | J and admitted generations, handoff object read fails | required observation incomplete; mutate N, handoff ? | unknown coverage / no | U25–U27; FED-20; failed read is not absence |
+| P5-07 | J, required domain/prior/finding value unrepresentable under applicable bounds | admission/delivery cannot complete; affected family ?, known facts retained | unknown/incomplete / no | U25,U28; FED-08,20; representation failure is not a negative finding |
+| P5-08 | J claimed, enumeration failed before supposedly missing generation/record was found | lookup incomplete; affected family ?, no positively established absence | unknown / no | U20,U26; FED-14,20; failed lookup cannot project an empty domain |
+| P5-09 | J, required owner/head/domain/prior record malformed or unreadable | completed rejection or failed read distinguished; required admission incomplete; affected family ? | unknown authority / no | U27,U28; FED-08,20; no fields from refused records |
+| P5-10 | J, duplicate/gap/conflicting/replayed generations or predecessor | catalog/association incomplete; both families cannot be coherently judged | unknown coverage / no | U20,U22; FED-13,14; never choose a convenient candidate |
+| P5-11 | J, earlier completion offered for a superseding current interval whose binding/proof is missing | old bytes/receipt may admit historically; current family ? | unknown current ownership / no | U22,U24; FED-13; older success cannot certify a newer target |
+| P5-12 | J claimed, an owned write/effect is positively traced outside its admitted enforceable domain | known uncovered effect retained; full domain coverage invalid, affected family O and coverage ? | observed plus unknown coverage / no | U8,U22; FED-03,19; no omission or unbounded forensic scan |
+| P5-13 | J, one action unavailable now but admitted historical source/domain and all generations retained; no omissions | complete observations for both, not only available action; N/C as justified | no unexpected effect / conditional yes | U22,U28; FED-18,19,24; availability cannot erase history |
+| P5-14 | J required, handoff or a relevant generation/output omitted | available mutate proof N/C; handoff/roster ? | unknown coverage / no | U8; FED-18,19; a partial roster is never journey P5 |
+| P5-15 | J was positive; target/frontier/domain/evidence changed before reuse | former N/C facts are historical; current association/freshness ? | stale, current judgment unknown / no | U22; FED-15,19; positive P5 is not durable authority |
+| P5-16 | J positive at decision; external change before a later clear use/take | prior facts retained, use interval invalid; fresh unjustified effect O if established, otherwise ? | stale; observed facts and unknown current coverage retained / no at use | U22,U31; FED-15,20; clear cannot reuse stale P5 |
+| P5-17 | J/C, P3 established but P4 unknown; domains may be present | P5 assessment does not run; observations/receipts cannot prove P4 | unknown, P5 unestablished / no | U4,U6,U24; FED-21,24; P4 precedes P5 |
+| P5-18 | J/C, separate P3/P4 established; required prior/domain or lifecycle unavailable | mutate may be N/C, handoff ?; completeness fails | unknown / no | U8,U20; FED-18,20; worker-end proof cannot fill effect evidence |
+| P5-19 | J, admitted prior K and independent expected T; complete fresh Z is neither; no missing comparisons | affected family O (established unexpected); other N/C | observed, complete negative finding / no | U8; FED-16; proved unexpected effect stays distinct from failure |
+| P5-20 | J, either exact accepted G1/G2 witness above; complete I/frontier/operation binding/source/input/prior/lifecycle; no omissions or unbound replacement | separate P4, supported interval and every fresh observation complete; both N or both C | no unexpected effect / conditional positive full-scope control | U4,U17,U19,U29–U33; FED-21,24; no C fields, no inferred basis, no clear authority |
+
+**Additional adversarial documentation cases.** The same columns and common
+barrier/clear/no-writing rules apply; explicit exceptions name their starting
+state. These cases do not add runtime capability or stored/wire schemas.
+
+| Case | Independent generation/domain facts; missing/conflicting evidence | Observation and per-action finding | Aggregate / is P5 established? | U / FED; protected invariant |
+| --- | --- | --- | --- | --- |
+| P5-A01 | journey/J starts in B with G1's readable failed barrier unsettled; purported G2 admission | existing exclusion must refuse G2 before write; no legal G2 frontier | no authorized C assessment or valid two-generation proof / no | U3,U19; FED-14,24; closed frontier does not settle the ordinary barrier |
+| P5-A02 | J/C, G2 ordinary failed-record replacement happened after the recorded pre-write binding | complete comparison shows different object; target ownership ?, not inferred continuous | unknown association / no | U22,U31; FED-15,21; accepted positive witness stops before unbound replacement |
+| P5-A03 | J/C, valid seal but positively false or unknown core-origin publication | issuer/continuity not admitted; both-family authority ? | unknown authority / no | U4,U8; FED-12; integrity does not authenticate origin |
+| P5-A04 | J/C, crash left staging/partial publication and missing head/frontier | catalog admission incomplete; launch withholding alone is not full historical coverage | unknown / no | U20,U27; FED-09,10; no assumed complete journal |
+| P5-A05 | J/C, G1 success replayed for newer G2 whose completion is absent | present bytes may equal old/expected values; G2 completion unproved, observed basis-dependent effect if prior comparison establishes it | observed and/or unknown current authority, retained distinctly / no | U8,U22; FED-13; current generation cannot borrow old success |
+| P5-A06 | J/C, original live source/config changed after execution, retained actual consumed copies and recognized roster intact; no intervening execution | complete admitted historical N/C and fresh observations; missing/substituted copies instead ? | no unexpected effect / conditional yes only with intact historical authority | U22; FED-04,05; current configuration cannot rewrite history |
+| P5-A07 | J/C claimed, instrumentation aliases meaningful/evidence state | noninterference incomplete; affected family ?, or O where overwrite independently proved | unknown coverage with any known observed effect retained / no | U8,U22; FED-03,16; labels cannot justify aliasing |
+| P5-A08 | legacy journey/J C predates FJ-ED-1; historical domains/inputs absent | no admitted incarnation/complete historical priors; both families ? | unknown / no | U4,U8; FED-22; no retroactive inception or read persistence |
+| P5-A09 | J/C, current operation or destination object replaced during observation | old/new reads cannot be combined; known mismatch distinguished from failed comparison | stale/unknown association / no | U22,U31; FED-15; compare the opened object under proved continuity |
+| P5-A10 | J/C, independently established mutate unexpected effect plus unreadable handoff prior/unknown coverage | mutate O is known, handoff ?; scope inspection incomplete | observed fact plus unknown coverage / no | U8,U25–U27; FED-16,18,20; neither erase the known effect nor call all checks completed |
+| P5-A11 | J/C, complete original-core G2 publication before lost result and ordinary removal; bound current entry intact | complete W/H/T and lifecycle observations; both C; delivery outcome still unknown | no unexpected effect / conditional yes | U17; FED-11,24; effect completion is separate from request delivery |
+| P5-A12 | J/C, retained prior absent and present expected bytes, but no authoritative current completion | physical read complete, basis-dependent completion unjustified; affected family O | observed with missing completion authority / no | U8; FED-11,13,16; byte agreement alone is not receipt publication |
+| P5-A13 | journey/C roster now J plus a future unreviewed act family/output | old both-family records cannot cover the extension; new domain/roster ? | unknown coverage / no | U22; FED-19; future registration never inherits coverage automatically |
+| P5-A14 | J/C, equal endpoint bytes/inodes but unknown intervening external write/replacement/restoration | required usable interval not proved; sampled N/C cannot certify continuity | unknown freshness / no | U22,U31; FED-12,15,20; equal endpoints are not atomicity or writer exclusion |
+
+**Accepted-case cross-reference coverage.** The individual rows cite their
+direct contrasts; the whole accepted case sets retain these boundaries.
+
+| Accepted cases | Obligation carried into this proposal |
+| --- | --- |
+| U1–U3 | absence/readable history is not C proof; G1 readable settlement and G2 fresh admission remain separate |
+| U4–U8 | decode no C fields; keep worker uncertainty separate from observed/unknown effects |
+| U9–U10 | reboot, count and age are not P4/P5 or clear authority |
+| U11–U13 | diagnostic/read/refused-act/automatic surfaces gain no evaluator, writes or clear |
+| U14–U19 | explicit clear choice, P3/P4, full eligibility, verified completion and a new act's fresh inspection remain distinct |
+| U20–U24 | unsupported entry/lookup/size/freshness and process-identity cases supply no effect or writer-end shortcut |
+| U25–U28 | failed checks and completed admission rejection remain different; no fields or absence from rejected/unread bytes |
+| U29–U33 | unsettled clear, take mismatch/unconfirmed identity and verified completion keep their accepted transaction/barrier rules |
+| FED-01–FED-03 | meaningful configured overwrite, justified exclusive instrumentation and alias refusal remain different |
+| FED-04–FED-07 | retained actual consumption and individually reviewed overrides, never mutable config or arbitrary executable hashes |
+| FED-08–FED-10 | admission, publication failure and crashes cannot project a complete empty history |
+| FED-11–FED-14 | causal completion, origin, replay and conflicting frontier are independently admitted |
+| FED-15–FED-17 | object identity, justified bytes and owned cleanup remain mandatory observations |
+| FED-18–FED-22 | complete roster/generation discovery, fresh observations and historical coverage; legacy C stays unknown |
+| FED-23–FED-24 | unchanged read controls and conditional full positive witness, never present runtime P5 or clear authority |
+
+**Remaining boundaries.** Independent review must decide the foundation
+UR-Q3/UR-Q5 disposition; overall questions remain **PARTIAL / REMAINING OPEN**
+even if this bounded proposal is accepted. Each later scope needs its own
+reviewed owner, complete domain/consumption, independent generation evidence
+and fresh reconciliation proof. This foundation supplies none for plan save,
+Asahi fetch/launch, network, Omarchy start/resume, Shared creation/activation/
+write test or backup. Shared creation's limited topology transaction remains
+creation-specific; no broader disk, installer, restore or qualification
+authority or implementation is needed or granted here. UR-Q4/P3/P4 remain
+unresolved; `b79bec9` is unaccepted and not inherited. UR-Q1 and remaining
+UR-Q6/UR-Q8 stay open. Gate 3 is incomplete and frontend 0.2.0 unreleased.
+No reconciliation, recovery, clear, sighting, diagnostic evidence reader,
+FJ-ED-1 implementation or other action implementation is authorized.
 
 ### The Shared critical interval
 

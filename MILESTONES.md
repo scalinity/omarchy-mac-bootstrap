@@ -800,15 +800,37 @@ of docs/TESTING.md.
 - **P5 prerequisite checkpoint:** independent review confirmed **UR-Q3 /
   UR-Q5 P5-20 PROOF BLOCKER — CONFIRMED**. The preceding documentation
   slice stopped with no repository edits/commits because fixed-effect
-  absence did not account for configurable destinations. The next bounded
+  absence did not account for configurable destinations. Its bounded
   prerequisite is **FJ-ED-1 — FOUNDATION JOURNEY EFFECT-DOMAIN CONTRACT
-  PROPOSED; INDEPENDENT REVIEW PENDING**, on local branch
+  ACCEPTED AS A DOCUMENTATION CONTRACT**, on local branch
   `m14-gate3-ur-q3-q5-reconciliation-contract` directly from `a3beb3c`.
-  docs/PROTOCOL.md → *Proposed foundation journey effect-domain contract*
+  docs/PROTOCOL.md → *Foundation journey effect-domain contract*
   defines bounded relevant effects, enforced instrumentation exclusion,
   retained consumed inputs, independent generation/domain evidence,
   concrete future positive proofs and FED-01–FED-24. All enforcement is
   **UNIMPLEMENTED**; these cases are documentation, not executed tests.
+- **FJ-ED-1 independent acceptance:** GPT-6 Pro accepted source tree
+  `29ac7b58502618a72295375ff68b9b326f765fd6` at reported checkpoint
+  `f27ee84a4b28fe5ee3a93df53f79598192932468`, compared with `a3beb3c` / tree
+  `8e483db6d078ad57cf0af7dac2c8a6e6a244a843`. No HIGH or MEDIUM findings;
+  all 24 FED cases and both future contractual witnesses were accepted.
+  Source-content acceptance does not independently authenticate the
+  unpublished commit object/parentage; those were locally verified before
+  continuation. The original branch remains at that clean checkpoint.
+  No mechanism was implemented or executed and no UR-Q3/UR-Q5/UR-Q4 or
+  recovery/clear authority was accepted by FJ-ED-1.
+- **P5 continuation candidate:** **FJ-P5-1 — PROPOSED; INDEPENDENT REVIEW
+  PENDING**, documentation only, on new local branch
+  `m14-gate3-p5-reconciliation-contract` directly from `f27ee84` in a separate
+  worktree. docs/PROTOCOL.md → *Proposed foundation journey P5 reconciliation
+  contract* defines the foundation journey owner, complete generation/domain
+  aggregation, unchanged/independently completed versus observed/unknown
+  findings, P4 ordering and usable observation interval. P5-01–P5-20 and
+  additional cases are unexecuted. G1's ordinary barrier must be separately
+  settled before G2; G2's positive no-effect witness stops before unbound
+  ordinary failed replacement. Conditional positive P5 grants no clear.
+  Independent review must decide the bounded foundation disposition;
+  overall UR-Q3/UR-Q5 remain **PARTIAL / REMAINING OPEN** for other scopes.
 - **Remaining boundary:** UR-Q3/UR-Q5 await their separate reconciliation
   contract and are not resolved by this proposal. UR-Q4 independently
   remains **PROOF BLOCKED — OWNER DECISION REQUIRED**; the unaccepted
