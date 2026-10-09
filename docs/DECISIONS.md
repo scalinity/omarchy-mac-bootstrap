@@ -230,9 +230,9 @@ reads `ops/`; an automatic clear after reconciliation, which a readable
 record gets only because its action and basis are known.
 
 **D55. The operation-record diagnostic is a detail of the record's own
-scope** (accepted at `2840fe2`; its core and text implementation awaits its
-focused independent review: docs/PROTOCOL.md → *The operation-record
-diagnostic*). The
+scope** (accepted at `2840fe2`; its core and text implementation is
+independently accepted at `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd`:
+docs/PROTOCOL.md → *The operation-record diagnostic*). The
 scope that keeps `ops/<scope>.omb` must already show its barrier and
 withhold its act actions, so its snapshot already inspects the record; the
 diagnostic publishes that inspection whole, as `detail kind=operation`, a
@@ -837,6 +837,70 @@ in every part the third column names.
 | UR-Q7 | open | accepted: recommendation (a), made precise: the record's own scope; its `snapshot` carries the barrier and `detail kind=operation` the finding, from one inspection under one generation; no new operation, scope, purpose or protocol version | nothing of the transport |
 | UR-Q8 | open | the diagnostic's part, accepted: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
 | UR-Q9 | accepted: a record naming another scope, or an action its scope does not own, is C; a scope's own action merely unavailable now is not corruption | — | — |
+
+### Foundation journey effect-domain prerequisite — proposed
+
+**UR-Q3 / UR-Q5 P5-20 PROOF BLOCKER — CONFIRMED** by independent review.
+The source counterexample is fake-handoff's `keys_out` overwrite with
+`effect=none`: both fixed effect files may be absent while meaningful
+synthetic state changed. Other configured output destinations and the
+handoff-child override are not independently covered by the current basis,
+source digest or result records. Repeated mutable configuration reads also
+mean a pre-action digest does not establish actual consumption. The
+external source-only blocker package remains historical evidence; no
+normative completion commit was made for that slice.
+
+**FJ-ED-1 — PROPOSED; INDEPENDENT REVIEW PENDING**, documentation only
+(docs/PROTOCOL.md → *Proposed foundation journey effect-domain contract*).
+The proposed boundary is the existing journey act pair `test.mutate` and
+`test.handoff`, with `test.read` kept read-class. Relevant writes are bounded
+synthetic effect files with independently retained prior and expected states.
+Instrumentation may be excluded from meaningful payload comparison only
+through exclusive generation-owned slots, object/parent identity and
+non-alias enforcement, bounded output and verified lifecycle; neither its
+name nor a temporary-directory location supplies those guarantees.
+
+The proposed future mechanism is a reviewed adapter consuming latched
+retained source/configuration, plus a narrow object-bound filesystem helper.
+Arbitrary host destinations, unmanaged escape behavior and unidentified or
+unreviewed handoff overrides cannot inherit positive coverage. An override's
+digest alone supplies identity, not a complete effect-domain guarantee.
+The ordinary legacy testing seam is preserved as uncovered; the accepted
+code, fixtures and registry are unchanged by this candidate.
+
+An original act core that passed its existing exclusion/preflight/basis/word
+checks would commit an independently discoverable journey incarnation,
+complete bounded generation/domain/source/prior-state evidence and launch
+gate before the first child effect. It would later publish generation-bound
+completion only from its own supervision and verified postconditions.
+Complete discovery covers both act families and every retained generation;
+it does not decode C or select the latest convenient result. The proposed
+private stored-family constraints add no Protocol 1 response/request words.
+Seals supply integrity; core-origin publication, issuer/write-site separation
+and independently established incarnation/continuity must separately supply
+provenance. Their absence, replay, conflict or unknown external writer blocks.
+
+The contract gives concrete future no-effect and independently completed
+controls and FED-01–FED-24. They are unexecuted contract proofs conditional
+on the named **UNIMPLEMENTED** adapters, latched consumption/source closure,
+object helper, exclusive durable publisher, stored admission/catalog,
+original-core completion and instrument lifecycle. They are not current
+capabilities or acceptance of P5-20. Legacy corrupted operations lacking
+historical destinations/inputs stay unknown; new records cannot reconstruct
+that missing history. The run lock is not external-writer exclusion.
+
+The dependency graph remains: this prerequisite's independent review, then
+separate UR-Q3/UR-Q5 reconciliation/evidence-contract review; runtime P4
+before P5; P1–P5 plus basis/word before a clear attempt; verified clear
+completion before anything may rely on that transaction. UR-Q4 remains
+independently **PROOF BLOCKED — OWNER DECISION REQUIRED**: earlier-boot
+sighting plus equal later bytes does not prove continuity/writer exclusion
+for the current unreadable generation. The unaccepted local `b79bec9`
+candidate is not inherited. UR-Q1 and the remaining UR-Q6/UR-Q8 stay open.
+No recovery, clear, sighting, new diagnostic evidence reader, action
+implementation or later action-owner generalization is authorized here.
+Shared creation's transaction remains creation-specific; later Gate 3
+owners must supply their own independently reviewed domain/evidence rules.
 
 ## Where each design question is answered
 

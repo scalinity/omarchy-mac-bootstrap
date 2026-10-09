@@ -787,6 +787,40 @@ of docs/TESTING.md.
   STARTED**. No recovery, clear, sighting, reconciliation, execute or action
   exposure is implemented or authorized.
 
+- **Final diagnostic acceptance:** independent review concluded **GATE 3
+  CORE + TEXT READ-ONLY DIAGNOSTIC — ACCEPTED** at
+  `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd`, tree
+  `8e483db6d078ad57cf0af7dac2c8a6e6a244a843`. F-01, F-02, F-03 and F-04
+  are **CLOSED**. The earlier remediation/re-review entries above remain
+  historical. Retain two nonblocking observations without claiming repair:
+  the Bash 5.3.20 full-suite terminal-spinner equivalence mismatch (focused
+  rerun passed; original failure retained), and one unexplained empty
+  scratch-directory residue among 33 reviewer observations (32 matched
+  persistence receipts; one did not; cause remains unknown).
+- **P5 prerequisite checkpoint:** independent review confirmed **UR-Q3 /
+  UR-Q5 P5-20 PROOF BLOCKER — CONFIRMED**. The preceding documentation
+  slice stopped with no repository edits/commits because fixed-effect
+  absence did not account for configurable destinations. The next bounded
+  prerequisite is **FJ-ED-1 — FOUNDATION JOURNEY EFFECT-DOMAIN CONTRACT
+  PROPOSED; INDEPENDENT REVIEW PENDING**, on local branch
+  `m14-gate3-ur-q3-q5-reconciliation-contract` directly from `a3beb3c`.
+  docs/PROTOCOL.md → *Proposed foundation journey effect-domain contract*
+  defines bounded relevant effects, enforced instrumentation exclusion,
+  retained consumed inputs, independent generation/domain evidence,
+  concrete future positive proofs and FED-01–FED-24. All enforcement is
+  **UNIMPLEMENTED**; these cases are documentation, not executed tests.
+- **Remaining boundary:** UR-Q3/UR-Q5 await their separate reconciliation
+  contract and are not resolved by this proposal. UR-Q4 independently
+  remains **PROOF BLOCKED — OWNER DECISION REQUIRED**; the unaccepted
+  `b79bec92588a580f04c87fcdec2808344a058f87` candidate is not inherited.
+  P3/P4 remain unresolved; runtime P4 precedes P5. UR-Q1 and remaining
+  UR-Q6/UR-Q8 remain open. Gate 3 overall is **INCOMPLETE**; Gate 2 stays
+  **ACCEPTED / CLOSED** and frontend `0.2.0` **UNRELEASED**. No production
+  implementation, fixture/registry changes, reconciliation, recovery,
+  clear, sighting, broader action implementation or new D55 evidence
+  reader has begun or is authorized by this documentation slice. The
+  separate CI→Main workstream is outside it.
+
 ### Gate 4 — Scanner and profile
 
 - **Work:** the versioned scan adapters, the Zsh tracker, sensitivity and

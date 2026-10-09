@@ -1088,6 +1088,516 @@ it exists, keep working and change nothing; *refused* means refused at step
 | U32 | `done`, reporting D and that the clear's evidence cannot be inspected | refused | no (P1) | make the evidence inspectable, inspect again | as U20 |
 | U33 | the diagnostic reports the completed clear and the state it finds now | a new request decides from its own step 3, as U19 | as the state found | as U19 | existing |
 
+### Proposed foundation journey effect-domain contract
+
+**FJ-ED-1 — PROPOSED; INDEPENDENT REVIEW PENDING.** This documentation-only
+prerequisite concerns the foundation's existing `journey` actions, not the
+ordinary journey read dataset or other Gate 3 actions. Its mechanisms are
+**UNIMPLEMENTED**. The independently reviewed disposition **UR-Q3 / UR-Q5
+P5-20 PROOF BLOCKER — CONFIRMED** supplies its starting point: absence of
+`test/effect-mutate` and `test/effect-handoff` does not cover configured
+writes elsewhere. This proposal supplies future effect-domain premises;
+it neither accepts UR-Q3/UR-Q5 nor supplies P3/P4, a clear, or a new reader
+in D55. *An operation record that cannot be read*, P1–P5, U1–U33 and the
+accepted diagnostic remain unchanged. Runtime P4 must precede P5.
+
+**The bounded profile.** A future implementation may designate an execution
+as covered by FJ-ED-1 only through the constraints below. A digest of the
+current source, a fixture flag or a self-declared domain is not designation.
+The implemented foundation remains as accepted at `a3beb3c`; no existing
+fixture, registry entry or test seam is restricted by this document today.
+Later adoption must preserve the ordinary testing seam. An execution with
+unsupported behavior cannot silently fall back while retaining coverage:
+it is either refused before its effects in the bounded profile, or remains
+an explicitly uncovered legacy execution, outside a positive proof interval.
+
+The authoritative roster is `test.mutate` (act, managed), `test.handoff`
+(act, handoff), and `test.read` (read, managed), all in `journey`
+(`lib/core.sh::core_action_info`, `CORE_TEST_ACTIONS`; `data/children.omb`).
+Only the two act actions participate in the generation record below.
+`test.read` gains no act authority, operation record or evidence persistence.
+Within version 1's covered interval its optional instrumentation is disabled,
+through a reviewed latched read adapter included in the admitted closure;
+otherwise it is an uncovered legacy execution that invalidates that interval.
+No read provisions harness slots or records a generation. Its existing
+instrumented test seam remains unchanged today. Reads of snapshot, detail and operation
+remain zero-persistence and do not provision, adopt or repair coverage.
+
+**What source actually does.** The following is a complete inventory of the
+accepted children's direct filesystem output classes, not a claim that the
+accepted code enforces the proposed column. A future reviewed source closure
+must also account for its helpers, core-owned files and descendant writes.
+
+| Action / source | Output and actual operation | FJ-ED-1 proposed treatment |
+| --- | --- | --- |
+| `test.mutate`, fake-mutate | fixed effect: shell `>` creates or truncates/overwrites; `effect=none` skips it; `unexpected` writes different bytes | relevant, with prior state and expected `want` retained; deliberate unexpected output does not become completed merely because configuration requested it |
+| `test.handoff`, fake-handoff | fixed effect: `>` creates or truncates/overwrites, independently skipped by `effect=none` | relevant, same rule; its terminal input and terminal-state change are separate effects |
+| fake-handoff | `keys_out`: `>` creates or truncates/overwrites terminal-input bytes | relevant synthetic file only when independently declared with prior state and bounded consumed bytes; alternatively harmless instrumentation under the enforced lifecycle below; arbitrary meaningful paths are unsupported |
+| fake-read / fake-mutate / fake-handoff | `fds`: `>` creates or truncates/overwrites probe-fds output | act instrumentation only under the enforced lifecycle; read instrumentation disabled in version 1; otherwise unsupported for coverage |
+| fake-read / fake-mutate | `grandchild_fds`: descendant `>`; `pids`: `>>` creates or appends identity observations | act instrumentation under the same lifecycle, including descendant access and append identity; read instrumentation disabled in version 1; never a relevant-file overwrite disguised as a diagnostic |
+| fake-handoff | `report`: `>` writes selected `/proc` signal fields on Linux | instrumentation under the same lifecycle; platform omission is explicitly declared, not failed observation treated as absence |
+| fake-mutate | `escape_out`: detached descendant repeatedly opens `>>`, appending `x` | nonempty `escape` is unsupported in the bounded profile: the current registration is `detaches=no` and has no owned-detachment completion check; the legacy escape test remains outside coverage |
+| fake-handoff | `leave_raw`: changes terminal settings | bounded profile requires `leave_raw` disabled; an override needing it needs a separately reviewed terminal-effect owner/lifecycle, not silent exclusion |
+| core and helpers | state/test directory; ordinary operation/result/history/log/session writes; source/configuration and domain evidence; helper temporary files | controller/evidence outputs with explicitly enumerated destinations and lifecycle; not child-owned relevant files, never omitted from alias protection or completeness checks |
+
+For instrumentation, relevant-file removal and replacement are **not**
+equivalent to creation or overwrite. Version 1 permits relevant regular-file
+create and in-place truncate/overwrite only; it permits instrumentation
+create, append to the same owned object, and removal of that object. It does
+not permit a child to rename/replace, delete a relevant file, create a link,
+or recursively edit a directory. Core publication renames only its own
+staging objects. Any new operation or output requires a reviewed new domain
+version and new coverage; old records do not automatically cover it.
+
+**Namespaces, objects and enforcement.** The future core owns a synthetic
+effect arena under `OMB_STATE_DIR/test/`, and a distinct independently
+discoverable evidence root under `OMB_STATE_DIR/foundation/journey/`.
+Relevant destinations are exactly `test/effect-mutate`,
+`test/effect-handoff` and the optional `test/keys-out` leaf, each relative
+to the identified state directory. Disabled outputs still have an explicit
+disabled disposition in the both-family domain. They may hold meaningful
+synthetic fixture state, so pre-existing content is never assumed disposable.
+No relevant output may name an arbitrary host file. Instrumentation slots
+are core-generated exclusive names in a separate per-generation harness
+directory, not caller paths. A requested arbitrary `fds`, `grandchild_fds`,
+`pids`, `escape_out`, `report` or instrumentation `keys_out` path must not be
+silently rewritten: its bounded-profile execution refuses; the existing
+legacy seam keeps its explicitly uncovered meaning.
+
+The future mechanism is a **reviewed child adapter plus narrow filesystem
+helper**, not a general sandbox. The adapter consumes the admitted values
+once and routes every filesystem mutation through the helper. The helper
+holds identified parent-directory handles, admits each leaf without following
+links, and performs only the listed operations on identified objects. It
+uses exclusive creation for absence and an already opened, identity-checked
+regular file for overwrite or append; it never checks one object and opens
+another by an unguarded pathname. Ancestors must be real private directories;
+relevant files must have one link, the expected owner and supported mode.
+Directory, device, FIFO, symlink, hard-link alias, unexpected mount/device,
+changed parent or object identity, and a destination collision all refuse.
+Reads use the same open-and-status discipline. Relevant files, source/input
+objects, operation files, evidence, controller state and harness slots must
+be distinct objects; path spelling and a temporary-directory prefix do not
+establish that distinction. A present object's identity is committed before
+the first write. Prior absence instead binds the identified parent/leaf and
+exclusive-create operation, not an invented inode for a nonexistent file.
+The helper binds the newly created object's identity from its open handle
+before writing bytes; the original core retains that binding in its later
+closure/completion observation. An interrupted creation can leave an empty
+file, which differs from prior absence and is not a no-effect result. Every
+use and final read checks the applicable binding again.
+
+These constraints are enforced by the selected reviewed code's complete
+write-site inventory, its latched values, and the helper's bounded object
+authority. Hashing an arbitrary program does not give it this inventory.
+There is no claim that mode 0700 or the run lock excludes unrelated programs
+running as the owner or root. Such an external writer, unknown provenance,
+or unavailable object/namespace continuity defeats the proof; ownership and
+seals alone cannot discharge it. The proposed trust boundary is a
+core-origin, harness-owned synthetic arena/evidence incarnation whose sole
+semantic writers are the reviewed participating implementations. It is not
+tamper evidence against deliberate owner/root fabrication. Copied or adopted
+records without that origin and continuity are not authoritative. A later
+implementation review must demonstrate this boundary for its actual
+fixture and platform, not infer it from the record's declared owner.
+
+**Safe instrumentation exclusion.** The slot is exclusively created for one
+generation, absent beforehand, bounded, disjoint from meaningful state and
+evidence, and writable only through the reviewed writer paths above. Append
+uses that same admitted object; it cannot open a pre-existing arbitrary file.
+The generation names every slot and every permitted descendant writer.
+Lifetime is the generation's instrument/cleanup phases, not an age-based
+deletion rule. Normal supervised completion cleans up only identified slots,
+checks their absence and records the lifecycle outcome. Interrupted or failed
+cleanup retains the slot inventory and cannot claim that lifecycle completed;
+a later separately authorized act may perform that owned cleanup after the
+required writer-end checks. Reconciliation itself cleans up nothing.
+No fixed wall-clock expiry proves removal or writer termination.
+
+An output's payload need not be retained or compared as meaningful state
+once its noninterference is established. Its **existence and lifecycle still
+must be covered**. A positive trace below uses verified completed cleanup and
+fresh absence of the complete slot set. A remaining, replaced, inaccessible
+or unbound slot does not qualify for that exclusion. In particular,
+`keys_out` targeting a meaningful pre-existing file uses the relevant-file
+rule or refuses; it never inherits exclusion from its name. Probe failures
+may produce diagnostic content without becoming successful evidence probes.
+
+**Consumed source and configuration.** The bounded-profile adapter must
+retain the actual selected child, probe-fds, any descendant program text,
+filesystem helper and relevant core source identity, not only `core_source`
+(which currently excludes tests and fixtures). Required external interpreters
+and tools are named by a reviewed platform-specific closure, resolved to
+checked absolute identities with a controlled environment; PATH, shell
+startup, locale or helper-path substitution cannot add an unreviewed writer.
+Missing or substituted closure is uncovered, not guessed from the registry.
+
+Before publication the core reads the entire bounded configuration once,
+admits a closed key set, rejects duplicates/unknown keys, canonicalizes
+numbers and choices, and retains both input bytes and normalized values.
+Missing/empty/default meanings and platform branches are explicit. It
+records action arguments (`effect` destination and the actual 16-byte `want`),
+every enabled output, worker option and output bound. `escape` and `leave_raw`
+are disabled in version 1. Descendant duration/number and instrumentation
+byte limits are bounded. `test.handoff` terminal input is bounded synthetic
+test data; when relevant, the adapter reports the exact consumed bytes to
+the supervising core for completion publication. It is not a shell command.
+
+The future adapter latches admitted values and reads **no live fixture
+configuration thereafter**. The input/source objects actually used are the
+retained, verified copies; the selected execution path must consume those
+copies with an identity-preserving read, not verify a path and later reopen
+different bytes. Mid-run edits of the original fixture therefore cannot
+change its domain. If the selected child still calls mutable `get()` as
+today, this guarantee is absent and coverage must be refused. An updated
+source/configuration creates a new independently recorded generation; it
+cannot amend an earlier one.
+
+`OMB_TEST_HANDOFF_CHILD` remains an existing test seam. In a future bounded
+profile an override needs its **own independently reviewed domain adapter
+and source/helper closure**, admitted under a recognized domain version.
+The exact selected override bytes are retained and consumed by that adapter.
+Missing bytes, unidentified helpers, or an identified arbitrary executable
+with no enforceable write-site/domain guarantee cannot inherit this profile.
+The proposal does not extend its positive controls to arbitrary overrides.
+
+**Independent records and authority.** The original act core is the only
+publisher. Authority is an admitted execute of one of the two existing act
+actions, fixture-only, act intent, persistence enabled, not dry-run, with its
+existing `test` word and every normal exclusion/preflight/basis check passed.
+No read, refused preflight, frontend, child, cleanup reader or diagnostic
+may create a coverage record. The normal step-3 operation pre-write remains;
+after steps 4–7 succeed, the core prepares and commits independent domain
+evidence, and only then permits the first child/relevant effect. Controller
+pre-writes already permitted by the action contract are kept distinct from
+that effect boundary. This is a proposed future authority rule, not an
+exception implemented for an act already refused by C.
+Failure during that admitted action's preparation leaves its incomplete
+attempt/evidence inspectable and permits no child; it is not permission to
+persist after a request that failed preflight. Its eventual act answer is
+separate UR-Q6 work, not a new wire code here.
+
+The proposed layout below is a private stored-record contract, not Protocol
+1 request/response vocabulary. None of these families is implemented in
+`records.sh` today. A future implementation must add and review their exact
+stored schemas and admission, without widening public wire schemas.
+
+```text
+foundation/journey/owner.omb
+foundation/journey/head.omb
+foundation/journey/generations/000001/domain.omb
+foundation/journey/generations/000001/prior-head.omb
+foundation/journey/generations/000001/prepared.omb
+foundation/journey/generations/000001/launched.omb
+foundation/journey/generations/000001/closed.omb
+foundation/journey/generations/000001/completed.omb
+foundation/journey/generations/000001/inputs/<object>
+foundation/journey/generations/000001/before/<object>
+```
+
+| Record / object | Required content and binding |
+| --- | --- |
+| owner | core-origin evidence-incarnation id; journey scope; actor and physical state/arena/evidence directory identities; supported schema/domain/source-closure versions; both act families and the read control; complete initial relevant-object states; publication issuer and inception boundary |
+| head | incarnation; monotonically allocated ordinal and unique generation id; digest of the preceding head and committed domain; unique active generation or explicitly closed frontier; phase; core publisher identity; complete retained-generation count |
+| domain | incarnation, ordinal, generation, journey/action, prior frontier digest, core issuer/session/boot identity; independent object binding to this core's step-3 ordinary operation pre-write; registry entry, actually selected child/helpers/interpreters/override identities; retained input-object hashes/lengths; normalized config/arguments; both-family coverage and each relevant/instrument/controller destination; allowed operations, parent/object identities, prior state, expected rule/value and all bounds |
+| prior-head | retained admitted bytes of the preceding closed frontier, including its identity/count and referenced closure; G1 retains the initial zero-generation head bound to owner; a digest alone does not preserve the chain |
+| prepared | binds the complete domain and every retained input/prior object; records a verified, durable publication and the launch gate it enables; no child may start without it and its matching active head |
+| launched | immutable generation/domain-bound core receipt before the first effect; its absence never proves no effect unless the completed publication/launch-gate inspection independently establishes launch was impossible |
+| closed | original supervising core's immutable end-of-generation observations after wait/quiescence; binds domain/prepared/launched, actual created-object/consumed-input identities, every prior-state or postcondition finding, terminal and instrument lifecycle; records complete or failed observations explicitly, never converts a failed action postcondition into successful completion |
+| completed | original supervising core only, after wait/quiescence and the owned lifecycle/postcondition checks; same generation/domain/prepared/launched digests; per-destination actual consumed-input/expected-state bindings, postcondition findings, terminal and instrument lifecycle; it cannot be reconstructed later merely from matching files |
+| inputs / before | retained actual source/configuration/expected input and complete bounded prior regular-file bytes plus mode/identity, or positively observed absence; raw functional objects with their own bounds, referenced by exact relative object id/size/hash, never a digest pointing to unavailable data |
+
+For these proposed stored families, incarnation/generation/digests are full
+64-digit hex identities; ordinal/count/size are canonical bounded unsigned
+integers; scope is literally `journey`; action is one of the two act ids;
+issuer is the actor UID plus the existing method's core/session/boot identity.
+Objects bind filesystem device/inode and identified parent/leaf, kind,
+owner/mode/link count and content length/hash where applicable. Each domain
+has one header/identity, one complete roster, one input/source entry per
+retained object, and one destination entry per declared slot, with a unique
+slot id and explicit enabled/disabled, prior-kind, allowed-operation and
+expected-rule fields. Prepared/launched/closed/completed have one identity/binding
+and the complete phase-specific destination findings; a missing slot,
+duplicate slot, unknown field or noncanonical value fails admission.
+Completion binds actual consumed terminal data through a bounded functional
+receipt in an identified harness slot produced by the reviewed adapter;
+only the core admits/copies it into retained input/completion evidence after
+checking the selected adapter and postconditions. The child gains neither
+an evidence-writer handle nor a protocol descriptor. These are private
+family constraints for implementation review, not additions to §4's public
+request/response schemas or today's `omb-op 1`.
+
+The initial head has ordinal/count zero, no active generation and a closed
+frontier bound to owner; subsequent nonzero ordinals carry full generation
+identities. A closed frontier references the current generation's admitted
+closed record and, only for independently complete effects, its completed
+record. A supervised `effect=none` can have complete prior-state/lifecycle
+observations in closed while its ordinary action postcondition fails and
+no completed record exists. Closure is observation and writer-end evidence
+for that generation, never an operation clear or a successful action result.
+After a crash without closed, fresh prior-state comparison may still prove
+no remaining relevant change after separate P4; missing closure cannot prove
+an unverified instrumentation cleanup. No next generation is admitted until
+the prior frontier is independently closed and the ordinary barrier is
+separately settled under its existing contract.
+
+The ordinary operation binding is the independently captured parent/leaf,
+device/inode and creation observation of this request's admitted step-3
+pre-write, not a field later decoded from C. Recovery checks the opened
+current entry against that binding and the latest uniquely admitted active
+or closed frontier. Equal filenames or a reused inode alone do not establish
+continuity. Missing binding, an intervening request, unexplained replacement
+or unknown continuity leaves target ownership unknown; no older successful
+receipt can be selected instead. This binding selects the effect generation,
+not the identities or termination of whoever wrote current unreadable bytes.
+It supplies no UR-Q4/P4 writer proof.
+
+The schema must separate absent, regular-file prior state and unsupported
+kind. Expected completion values are retained from actual admitted/consumed
+inputs, not recomputed from a plausible current basis. Overwrite compares
+against the complete prior bytes/mode; absence after deleting an originally
+present file is an unexpected effect. Restoration to prior bytes can prove
+no **remaining** relevant change, never that no transient write occurred.
+
+For a concrete bounded version 1, there are at most 64 retained generations,
+16 relevant/instrument leaves per generation, 32 retained input/prior objects,
+1 MiB per raw object and 32 MiB aggregate raw objects per generation. Each
+stored document is at most 64 KiB, 512 records, with §1's line/value limits.
+Controller/evidence destinations are separately enumerated by the fixed
+stored families, bounded input/prior objects and reviewed core write-site
+inventory; the leaf limit is not permission to omit them. Their staging
+namespace is also bounded and fully enumerated after interruption.
+These are proposed ceilings for complete bounded discovery, not existing
+fixture limits: an execution exceeding them cannot claim this profile.
+No pruning, name reuse or evidence-root reinitialization is permitted by
+version 1. Reaching a ceiling refuses another covered execution. A later
+retention/compaction authority needs its own review; it cannot erase an
+unsettled generation or turn a legacy corrupted record into covered history.
+
+**Publication, provenance and generation.** This is a specified sequence,
+not an assumed complete journal. The future core first establishes a fresh
+incarnation only from a positively inspected, exclusively created,
+harness-owned synthetic fixture boundary with no prior unresolved operation
+or unknown legacy effect history. The preserved step-3 inspection must have
+established A before this request wrote its own ordinary operation record;
+that current request's pre-write is not mistaken for a prior operation.
+Inception cannot be retrofitted onto C or a reused legacy arena. It preserves
+the both-family baseline and all identities in owner, through the checked
+publisher. All participating act entries thereafter require that same
+incarnation and its complete frontier; uncovered code cannot execute inside
+its positive interval. A separately run legacy seam invalidates that
+interval rather than becoming a new trusted inception.
+
+Under the run lock, the publisher chooses a never-used generation id and
+ordinal, retains verified input/prior objects in private staging, writes
+the sealed domain and the admitted prior-head bytes, flushes objects and
+containing directories, publishes
+without replacing a committed generation, re-admits the published bundle,
+and commits prepared and the unique active head before launched/child start.
+An unsupported platform durability primitive fails publication. Staging is
+never launch authority. Two publishers, an ordinal gap, duplicate generation,
+unexplained object, head/domain mismatch or failed directory enumeration
+make discovery incomplete. A head rename alone is not multi-file atomicity:
+every referenced object must be admitted and the complete committed sequence
+must agree; torn head/prepared publication blocks and launches nothing.
+
+The original core alone publishes closed and any completed record, and then
+advances the head to that verified closed frontier using the same checked
+durable sequence. A partial close/head transition cannot authorize a next
+generation; recovery must admit every reference and phase or remain unknown.
+Completion is required only for the independent completed-effect path.
+The original core alone advances that frontier and publishes completion;
+children/helpers can mutate only admitted effect/instrument objects and
+cannot publish or overwrite evidence, source or controller records. This
+issuer/write-site separation and independently established incarnation are
+the provenance premise; `scope=journey`, a timestamp, ownership or a valid
+seal asserted by an otherwise untrusted record is not that premise. The
+implementation must preserve it across crash/reopen. If issuer continuity
+or the retained frontier cannot be established, the reader must refuse
+positive evidence rather than authenticate it by self-declaration.
+
+Recovery discovery starts from that independently admissible owner/head,
+never the fields of `ops/journey.omb`. It enumerates the bounded namespace
+completely, validates every ordinal/generation and referenced object, and
+accounts for **all retained generations of both act families**, including
+failed, completed and active generations. It never picks the newest
+convenient successful result. The independently bound active or latest
+closed generation identifies the effect interval under investigation;
+unresolvable target-incarnation, operation-object binding or frontier
+ambiguity blocks. It does not identify the writers of
+current unreadable bytes or prove their end: that remains UR-Q4/P4.
+An externally replaced/recreated operation entry cannot inherit writer proof
+from this catalog. Conservative union coverage of all possible generations
+does not relax P4 or justify an unknown evidence origin.
+
+Completed older generations contribute only their independently verified
+baseline/effects in sequence. Reused destination objects require every
+intervening generation's prior and outcome to agree. Replay, rollback,
+conflicting historical state or an unknown intervening writer cannot be
+hidden by a matching final file. Retained evidence is never removed while
+its operation, effect judgement or clear is unresolved. After any clear,
+its separate verified transaction and fresh scope inspection remain
+mandatory; this proposal defines no evidence cleanup or clear storage rule.
+
+Crash before prepared/head publication cannot start the child. Without a
+complete independently admitted frontier, recovery still reports unknown;
+absence of prepared alone is not historical proof. Crash after prepared or
+launched leaves a covered possible effect interval, to observe after P4.
+Crash after child writes but before completed leaves no independent
+completion claim: full prior-state/no-effect comparison may succeed, but
+present expected bytes alone are insufficient. A fully published original
+core completion with a lost terminal result remains independently inspectable
+under its exact generation; the request outcome still obeys *The terminal
+result*. Loss of a response never supplies missing completion publication.
+
+**Fresh observation and findings.** Future P5 may use these premises only
+after P4. The scope owner obtains complete bounded observations for every
+relevant object, every enabled instrument slot/lifecycle and the controller
+namespace relevant to alias/coverage protection. It checks identities and
+canonical evidence again, includes the domain/source roster versions, and
+rejects changed observations. A link replacement, failed reread, inaccessible
+parent, partial enumeration, unrepresentable required value, unknown source
+or missing authoritative object is incomplete evidence, never positive
+absence. Unknown provenance/generation and a valid but conflicting record
+are also incomplete authority. A completely inspected effect unjustified
+by its admitted prior state or independent completion is an established
+unexpected finding. Preserve those distinctions without adding wire words.
+
+Participating act writes use the same scope/object guards; version 1's
+covered `test.read` control writes nothing. Guards do not assert an atomic machine
+snapshot or exclude external owner/root writers. The later P5/clear contracts
+must prove the usable observation interval and continuity through clear,
+with fresh rejection/recomputation on any stale generation or unsupported
+writer. This prerequisite supplies a complete enforceable **action domain**,
+not a universal external-writer exclusion or P4 mechanism.
+
+**Concrete future no-effect control.** Begin a fresh trusted incarnation
+I with both fixed effect files positively absent, a declared relevant
+`keys_out` file containing retained synthetic bytes K, and no legacy
+generation. The complete catalog contains exactly G1 (`test.mutate`) and G2
+(`test.handoff`), in that order. Their committed domains contain both-family
+coverage, the same unchanged arena identities, prior absence for both fixed
+files, K/mode/object for `keys_out`, source/helper copies and latched
+configurations selecting `effect=none`; G2's relevant keys output is disabled.
+Both operations execute only those reviewed adapters. Their enabled probe
+slots use exclusive instrument objects, finish and are removed with verified
+lifecycle receipts. G1's independently recorded closed observations and
+matching closed head advance the frontier before G2; there is no G1 completed
+receipt. G1's absent postcondition does not remove its ordinary failed
+operation record: G2 waits until that readable operation is separately
+settled under the existing D47/new-boot reconciliation rules. The domain
+frontier itself clears no barrier. G2 retains G1's closed head, then publishes
+its own closed prior-state/lifecycle observations and matching head. The
+independent head identifies G2 even when its operation entry subsequently
+becomes C. Its independently retained operation-object binding still matches
+the opened current entry under separately established continuity; an unknown
+or replaced entry instead blocks target ownership. No field is decoded from
+C. No other covered or uncovered execution intervenes. A covered test.read
+control consumes its retained disabled-output configuration and writes nothing.
+
+After independent P4, complete fresh observations find both fixed names
+absent, the same `keys_out` object with exactly K/mode, every named instrument
+slot absent with valid noninterference/lifecycle evidence, and the complete
+unchanged owner/frontier/source/domain records. G1 and G2 each leave no
+remaining relevant change; uninvoked options of **both** families are excluded
+by the closed roster, committed disabled config and enforced launch rule,
+not by today's config or absent operation marker. The domain bounds include
+every permitted write site; undeclared paths are impossible for those
+selected adapters. This is a concrete future positive no-unexpected-effect
+premise for P5-20, conditional on implementing and verifying those controls.
+One failed lookup, alias check, input read, catalog admission or lifecycle
+observation instead leaves it unknown. It does not prove historical no writes.
+
+**Concrete future completion control.** In a fresh trusted I, G1's domain
+records an absent mutate effect and actual `want=W` from the admitted action
+input; G2's handoff domain retains G1's verified W as the mutate prior,
+absent handoff effect, relevant `keys_out` prior K, and bounded synthetic
+terminal input T retained before launch with the rule that keys output must
+equal actual consumed input. Its later adapter receipt confirms exactly T
+was consumed. The reviewed
+G1 adapter writes W only to its admitted effect object; its original core
+waits, establishes quiescence, checks W/identity and instrument cleanup,
+and publishes closed/completed bound to G1's prepared/launched/domain, then
+the closed head. G2 retains that prior-head and likewise
+writes its admitted handoff want H and T to its admitted destinations; its
+original core verifies those objects/bytes, terminal lifecycle and cleanup,
+and publishes G2 closed/completed and its matching closed head. G1's normal
+operation completion separately
+allows G2 to start. G2 stops after independent completion publication and
+before ordinary operation removal/terminal result. The final result is lost
+and the operation entry is later unreadable. Complete independent discovery
+recovers both distinct generations, their prior-head chain and actual
+input/prior/closed/completed objects, including G2's independently captured
+operation-object binding and separately established continuity. After independent
+P4, fresh observations still match W, H, T, identities/modes and both completed
+lifecycles. Those effects are independently proved complete; no basis or
+action is decoded from C. A replayed G1 receipt cannot certify G2, and a new
+file merely matching T cannot replace G2's causal completion publication.
+
+**Full-scope aggregation and limits.** Only a complete applicable roster,
+provenance interval, all-generation/domain discovery and fresh dispositions
+for both act families can supply a positive premise. Every relevant family
+must be returned to its admitted prior state or independently complete;
+every exclusion must have established noninterference and lifecycle. Mixed
+no-effect/completed generations are permitted under the same requirements.
+Any observed unjustified effect blocks; any unknown required inspection or
+authority also blocks, with its distinct meaning. A future action or new
+write site invalidates old roster coverage; a read control never fills an
+act-family gap. UR-Q3/UR-Q5 still must independently accept the reconciliation
+owner and aggregation contract. No trace here is executed, accepted P5-20,
+or clear eligibility. Legacy C without historical destination/input coverage
+stays unknown; new evidence cannot reconstruct it.
+
+**Documentation acceptance cases FED-01–FED-24.** These are future contract
+cases, not executed tests. In every row the starting operation is C unless
+otherwise stated. `J` means both act families plus all applicable retained
+generations and declared effects; the read control retains its separate
+class. Positive rows are conditional future proofs, not current results.
+The barrier remains in every row and **no clear is offered by this slice**.
+Even a future P5-positive row needs independently established P1–P4, matching
+basis/word and the accepted clear transaction (U17, U29–U33). Negative rows
+must withhold positive P5; no new protocol failure/refusal vocabulary is
+specified. Missing/failed authority is unknown/incomplete, distinct from a
+completed inspection's established unexpected effect. Reads persist nothing.
+
+| Case / starting domain | Admitted vs missing/contradictory evidence; observation | Classification / positive premise | Required failure behavior; invariant / related U cases |
+| --- | --- | --- | --- |
+| FED-01 legacy J, arbitrary meaningful keys_out | fixed names absent; former keys_out written/truncated, no independent prior/destination evidence | incomplete authority; discovered unjustified effect is observed; no positive P5 | never infer absence from fixed files; U4, U8 |
+| FED-02 bounded J, instrument keys_out | trusted G, exclusive disjoint slot, complete lifecycle receipt and fresh absence | justified exclusion; positive only if rest of J complete | label/path alone insufficient; U8, U17 |
+| FED-03 bounded J, instrument aliases protected state | attempted shared inode/link/parent with meaningful state or evidence | admission/enforcement refuses before write; if found later, incomplete or established unjustified effect | no harmless exclusion; U8, U22 |
+| FED-04 bounded J, original config edited | retained consumed config admitted; current fixture differs; fresh domain observations complete | use retained consumed identity; conditional positive, not current config | without consumed copies unknown; U22 |
+| FED-05 J, mid-run configuration change | latched retained values used, or legacy mutable get still reads changed bytes | first cannot change admitted domain; second is uncovered/unknown | no pre-action hash as consumption proof; U8, U22 |
+| FED-06 J, missing/unidentified override | no selected override/closure can be admitted | preflight refuses covered launch; later discovery unknown | no fallback with coverage; U20, U27 |
+| FED-07 J, hashed arbitrary override | bytes identified but reviewed enforceable domain absent | unsupported; no positive evidence | hash proves identity, not behavior; U8 |
+| FED-08 J, complete domain bytes fail admission | lookup completed, schema/seal refused, or admission tool failed | unknown authority; distinguish completed rejection from failed check | no domain projection or absence; U25, U28 |
+| FED-09 new admitted act, publication fails | no fully committed prepared/head; child launch withheld | no child effect by enforced gate, but recovered P5 unknown unless complete frontier proves all J | stop before effect; no success from failed publication; U20, U27 |
+| FED-10 new act, crash before publication | staging only; operation may become C; trusted frontier not established | unknown recovery evidence; no current positive P5 | incomplete bundle is never launch/completion authority; U4, U20 |
+| FED-11 J, committed completion then lost result | original-core completed publication bound to G and fresh effects/lifecycles admitted | independent completion supports conditional positive J; request outcome remains unknown | lost result never substitutes for receipt; U17, terminal-result rule |
+| FED-12 J, valid seal without proven issuer/incarnation | bytes admit but origin, writer separation or continuity unavailable | unknown authority; no positive P5 | do not authenticate self-declared provenance; U4, U8 |
+| FED-13 J, older completed receipt replayed | G1 receipt does not bind active G2/prepared/domain/frontier | stale/conflicting authority; no positive P5 | never choose convenient successful generation; U22, U24 |
+| FED-14 J, conflicting records/frontiers | multiple active generations, duplicate/gap or disagreeing prior state | incomplete authority; no positive P5 | preserve all candidates, do not repair/deduplicate; U20, U22 |
+| FED-15 J, object replaced/aliased during read | opened-object status or parent/fresh reread disagrees | observation invalidated/unknown; positively unjustified replacement separately observed | recompute/refuse, never combine different objects; U22, U31 |
+| FED-16 J, relevant overwrite leaves unexpected bytes | trusted prior K and expected T; complete read shows neither | established unexpected effect; no positive P5 | no repair or reinterpretation as some plausible basis; U8 |
+| FED-17 J, instrument removed under owned lifecycle | exclusive object/non-alias evidence, checked removal receipt and full fresh absence | justified exclusion, conditional positive for complete J | absent overwritten meaningful file is not this case; U8, U17 |
+| FED-18 J, mutate covered, handoff unknown | admitted mutate proof; handoff domain/input/observation unavailable | scope unknown/incomplete; no positive P5 | one family cannot stand for J; U8 |
+| FED-19 J roster changed | old records complete for v1, additional action/output/operation not covered | stale roster; no positive P5 | require reviewed new domain/coverage, not automatic inheritance; U22 |
+| FED-20 J, mandatory observation partial/fails | enumerate/read/status/hash/representation not complete | unknown/incomplete, never no effect | retain failure distinction; no partial positive finding; U20, U25–U27 |
+| FED-21 C with independent complete J evidence | trusted owner/frontier, both-family domains/prior/inputs, complete fresh dispositions | conditional future positive no-unexpected-effect premise | C's fields remain unused; P4 separately mandatory; U4, U17 |
+| FED-22 legacy C predates profile | no complete authentic historical domain/input/destination inventory | unknown; no positive P5 | new inception cannot retrofit legacy history; U4, U8 |
+| FED-23 read snapshot/detail/operation or test.read control | existing read authority; any required existing D55 inspection only | no new evidence, unchanged worker/effect semantics | zero new persistence and no adoption/repair; U11, U13 |
+| FED-24 bounded complete J positive control | exact no-effect or completion trace above, with independent P4 only as runtime prerequisite and every mandatory observation complete | defensible future positive foundation premise; no current/accepted P5-20 claim | retain barrier until separately eligible and verified clear; U17, U19, U29–U33 |
+
+The future implementation dependencies are the versioned reviewed adapters,
+latched retained inputs and selected-source closure, narrow object-bound
+mutation/observation helper, checked durable exclusive publication, complete
+stored-family admission and catalog discovery, both-family source/write-site
+coverage, original-core completion and verified instrument lifecycle. All
+are **UNIMPLEMENTED**. Additional runtime tests and implementation authority
+require a separate authorization after independent review of this candidate.
+Other Gate 3 owners must supply their own contracts later; Shared creation's
+topology transaction does not cover activation or the write test, and no
+installer/storage authority is added here.
+
 ### The Shared critical interval
 
 Between the accepted final topology validation and `sudo -n diskutil
@@ -1700,9 +2210,10 @@ incomplete transport follow Health.
 the diagnostic needs and the part of UR-Q8 that carries it (D55;
 docs/DECISIONS.md → *Open review questions*). Its core and text
 implementation (`lib/operation.sh`; docs/TESTING.md → *Gate 3
-operation-record diagnostic tests*) awaits its focused independent
-implementation review (MILESTONES.md → *Gate 3 — The action contract under
-fixtures*); no frontend presents it yet. The rest of UR-Q6 and UR-Q8, and
+operation-record diagnostic tests*) is independently accepted at
+`a3beb3cba82681fc949ac35d4edf0c132d2cb0fd` (MILESTONES.md → *Gate 3 — The
+action contract under fixtures*); no frontend presents it yet. The rest of
+UR-Q6 and UR-Q8, and
 UR-Q1, UR-Q3, UR-Q4 and UR-Q5, stay open, so no clear exists and the
 `clear` rows are written by no core.**
 
