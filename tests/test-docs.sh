@@ -264,7 +264,32 @@ bad=$(where 'sudo -k' | awk -F'\t' '!($1 == "docs/DECISIONS.md" && $2 ~ /^Reject
 [ -z "$bad" ] && ok || fail "docs-sudo-k: sudo -k outside docs/DECISIONS.md → *Rejected*: $bad"
 
 # --- docs-sessions: agent sessions and histories only as not carried in v1 ----------------
-bad=$(units | awk -F'\t' '{ t = tolower($2) } t ~ /agent sessions?|histories/ && t !~ /not in v1|no sessions or histories in v1|not carried/ { print $1 ": " substr($2, 1, 100) }')
+# One classifier for documentation units and the permanent controls below.
+docs_sessions_bad() {
+  # Histories need an agent/session/prompt/shell qualifier; FJ histories do not.
+  awk -F'\t' '{ t = tolower($2) } t ~ /(^|[^[:alnum:]_])(agent[[:space:]-]+sessions?|((agent[[:space:]-]+)?sessions?|agents?|prompt|shell)[[:space:]-]+histor(y|ies))([^[:alnum:]_]|$)/ && t !~ /not in v1|no sessions or histories in v1|not carried/ { print $1 ": " substr($2, 1, 100) }'
+}
+
+docs_sessions_control() {
+  local found observed
+  found=$(printf '%s\t%s\n' "$1" "$3" | docs_sessions_bad)
+  observed=allow
+  [ -z "$found" ] || observed=reject
+  printf '  docs-sessions control %s: expected %s, observed %s\n' "$1" "$2" "$observed"
+  [ "$observed" = "$2" ] && ok || fail "docs-sessions control $1: expected $2, observed $observed: $found"
+}
+
+# A/B are the accepted FJ-ED-1 witness paragraphs, joined as units() joins them.
+docs_sessions_control A allow ' **Conditional positive witnesses.** Apply the two accepted FJ-ED-1 histories with its full independent evidence, not absent fixed filenames alone:'
+docs_sessions_control B allow ' Mixed histories use the same sequence: for example G1 independently completes W and its ordinary operation, then G2 leaves the admitted W/absent-handoff/K prior unchanged and closes before failed replacement. The latest state per destination agrees with that chain. No witness contains simultaneous unsettled G1/G2 operations or extends an unbound G2 ordinary replacement. These are future contractual witnesses, not executed evidence or P3/P4 proof.'
+docs_sessions_control C allow 'Agent sessions and their histories are not carried in v1.'
+docs_sessions_control D-supported reject 'Agent sessions are supported in v1.'
+docs_sessions_control D-migrated reject 'Agent sessions are migrated in v1.'
+docs_sessions_control E reject 'Prompt histories are carried in v1.'
+docs_sessions_control F reject 'Shell history is migrated in v1.'
+docs_sessions_control G reject 'Agent-session histories are available.'
+
+bad=$(units | docs_sessions_bad)
 [ -z "$bad" ] && ok || fail "docs-sessions: agent sessions or histories not marked as not carried in v1: $bad"
 
 # --- docs-backdrop: the backdrop token is a blue of the colour cube, never a grey ----------
