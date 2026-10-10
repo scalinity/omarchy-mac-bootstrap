@@ -583,8 +583,26 @@ re-review (MILESTONES.md → *Gate 3 — The action contract under fixtures*):
 nothing below beyond *Today* is implemented or authorized. Of its open
 questions (docs/DECISIONS.md → *Open review questions*), the review accepted
 UR-Q2 and UR-Q9; UR-Q1 and UR-Q3 to UR-Q8 are not settled here. The
-diagnostic's interface is proposed, as a candidate awaiting its own review,
-in *The operation-record diagnostic* (§4).**
+diagnostic's interface and core/text implementation were subsequently
+accepted in *The operation-record diagnostic* (§4). The later FJ contracts
+below record foundation documentation acceptance only. UR-Q4's later owner
+disposition is DECISION RESOLVED — CONSERVATIVE LEGACY-C POLICY
+(docs/DECISIONS.md → *UR-Q4 owner disposition — conservative legacy-C
+policy*); positive P3/P4 proof remains unsupported.**
+
+For legacy C whose writer-end history cannot be independently established,
+the refusal/barrier remains authoritative and no automatic clear is
+permitted. Matching fingerprints, a reboot alone, absent recorded processes,
+timestamps, inode equality, seals or self-declared provenance establish no
+P4. No retrospective sighting, privileged custody, generalized process
+tracker or refused-act persistence exception is added. The conditional
+writer-end statements below require independently established history for
+the current unreadable generation; endpoint agreement does not establish
+that premise. This policy satisfies no P1–P5 proof, implements no recovery
+or clear, and does not prohibit future independently evidenced designs.
+Manual recovery outside this mechanism requires separate authorization;
+none is granted here. The historical investigation remains recorded in
+docs/DECISIONS.md.
 
 Every judgement in *Operations and exclusion* starts from the record's
 fields: the core's identity decides `busy` or `unsupervised`, the boot
@@ -1598,17 +1616,22 @@ Other Gate 3 owners must supply their own contracts later; Shared creation's
 topology transaction does not cover activation or the write test, and no
 installer/storage authority is added here.
 
-### Proposed foundation journey P5 reconciliation contract
+### Foundation journey P5 reconciliation contract
 
-**FJ-P5-1 — PROPOSED; INDEPENDENT REVIEW PENDING.** This continuation uses
-the independently accepted FJ-ED-1 source tree
+**FJ-P5-1 — ACCEPTED AS A DOCUMENTATION CONTRACT.** Independent acceptance
+attaches to reconstructed source tree
+`a84298a315e54edfe985a81e858f423839c1c007`; its local commit association
+`c85470b2c973001c9df692eb04e17628d5c7f7f0`, tree and parent were verified
+separately before continuation, not authenticated by source-tree acceptance.
+This continuation uses the independently accepted FJ-ED-1 source tree
 `29ac7b58502618a72295375ff68b9b326f765fd6`, locally verified at
 `f27ee84a4b28fe5ee3a93df53f79598192932468` directly after `a3beb3c`.
 That review accepted source content, FED-01–FED-24 and the future witnesses;
 it did not authenticate the unpublished commit object or implement anything.
 FJ-ED-1's normative body remains unchanged. Both its mechanisms and this
-evaluator are **UNIMPLEMENTED**. These rules propose the bounded foundation
-parts of UR-Q3/UR-Q5, not their acceptance or closure for all Gate 3 scopes.
+evaluator are **UNIMPLEMENTED**. The bounded foundation documentation parts
+of UR-Q3/UR-Q5 are accepted; the overall questions remain **PARTIAL /
+REMAINING OPEN** for other Gate 3 scopes. No runtime proof is claimed.
 
 **Owner and authority.** The semantic owner is the authoritative foundation
 Bash core acting under the reviewed journey fixture contract. It judges
@@ -1910,16 +1933,16 @@ direct contrasts; the whole accepted case sets retain these boundaries.
 | FED-18–FED-22 | complete roster/generation discovery, fresh observations and historical coverage; legacy C stays unknown |
 | FED-23–FED-24 | unchanged read controls and conditional full positive witness, never present runtime P5 or clear authority |
 
-**Remaining boundaries.** Independent review must decide the foundation
-UR-Q3/UR-Q5 disposition; overall questions remain **PARTIAL / REMAINING OPEN**
-even if this bounded proposal is accepted. Each later scope needs its own
-reviewed owner, complete domain/consumption, independent generation evidence
+**Remaining boundaries.** Foundation UR-Q3/UR-Q5 documentation is accepted;
+overall questions remain **PARTIAL / REMAINING OPEN**. Each later scope
+needs its own reviewed owner, complete domain/consumption, independent generation evidence
 and fresh reconciliation proof. This foundation supplies none for plan save,
 Asahi fetch/launch, network, Omarchy start/resume, Shared creation/activation/
 write test or backup. Shared creation's limited topology transaction remains
 creation-specific; no broader disk, installer, restore or qualification
-authority or implementation is needed or granted here. UR-Q4/P3/P4 remain
-unresolved; `b79bec9` is unaccepted and not inherited. UR-Q1 and remaining
+authority or implementation is needed or granted here. UR-Q4's conservative
+legacy-C policy is resolved; positive P3/P4 proof remains unsupported, and
+`b79bec9` is unaccepted and not inherited. UR-Q1 and remaining
 UR-Q6/UR-Q8 stay open. Gate 3 is incomplete and frontend 0.2.0 unreleased.
 No reconciliation, recovery, clear, sighting, diagnostic evidence reader,
 FJ-ED-1 implementation or other action implementation is authorized.
@@ -2540,8 +2563,9 @@ operation-record diagnostic tests*) is independently accepted at
 `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd` (MILESTONES.md → *Gate 3 — The
 action contract under fixtures*); no frontend presents it yet. The rest of
 UR-Q6 and UR-Q8, and
-UR-Q1, UR-Q3, UR-Q4 and UR-Q5, stay open, so no clear exists and the
-`clear` rows are written by no core.**
+UR-Q1 and the parts of UR-Q3/UR-Q5 beyond the accepted foundation contracts
+stay open. UR-Q4's policy is resolved conservatively; no positive P3/P4
+mechanism or clear exists, and the `clear` rows are written by no core.**
 
 This is the diagnostic of *An operation record that cannot be read* (§3),
 made exact: how it is asked for, what it answers, with which words, and

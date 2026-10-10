@@ -792,10 +792,12 @@ O1-LOGS-P01 recorded; the frontend read-surface integration is authorized
 which closes Gate 2; S5+ remain unauthorized (MILESTONES.md → *Gate 2 —
 Read-only equivalence*).
 
-Raised by the Gate 3 prerequisite contract (D54; docs/PROTOCOL.md → *An
-operation record that cannot be read*), for its independent review. None is
-settled by the contract; each blocks only the work named beside it, and no
-code exists that depends on one.
+Historical questions, options and recommendations raised by the Gate 3
+prerequisite contract (D54; docs/PROTOCOL.md → *An operation record that
+cannot be read*), for its independent review. They were not settled by that
+contract; each blocked only the work named beside it. The subsequent
+dispositions below govern continuation; the historical UR-Q4 sighting
+recommendation is not accepted writer-end authority.
 
 | # | Question | Why it matters, and the evidence | Options | Recommendation | What it blocks |
 | --- | --- | --- | --- | --- | --- |
@@ -837,6 +839,38 @@ in every part the third column names.
 | UR-Q7 | open | accepted: recommendation (a), made precise: the record's own scope; its `snapshot` carries the barrier and `detail kind=operation` the finding, from one inspection under one generation; no new operation, scope, purpose or protocol version | nothing of the transport |
 | UR-Q8 | open | the diagnostic's part, accepted: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
 | UR-Q9 | accepted: a record naming another scope, or an action its scope does not own, is C; a scope's own action merely unavailable now is not corruption | — | — |
+
+### UR-Q4 owner disposition — conservative legacy-C policy
+
+**DECISION RESOLVED — CONSERVATIVE LEGACY-C POLICY.** For unreadable
+operation record C whose writer-end history cannot be independently
+established, the existing refusal/barrier remains authoritative and no
+automatic clear is permitted. Matching fingerprints, a reboot alone,
+absent recorded processes, timestamps, inode equality, seals and
+self-declared provenance cannot establish P4. No retrospective sighting,
+privileged custody machinery, generalized process tracker or refused-act
+persistence exception is introduced.
+
+This resolves the policy decision, not **P3/P4 POSITIVE PROOF IMPLEMENTED**:
+that capability is unsupported. P1–P5 have not been satisfied. D54's
+conditional clear eligibility and U1–U33 remain intact; unknown writer-end
+history cannot satisfy their prerequisites. The conditional writer-end
+statements require independently established history for the current
+unreadable generation, not equality of observations before and after a
+restart. D55 still reports C's workers/effects as unknown, reads no recorded
+identity or scratch for C, and writes no sighting.
+
+The earlier UR-Q4 feasibility investigation and unaccepted local candidate
+`b79bec92588a580f04c87fcdec2808344a058f87` remain historical; the candidate
+is not inherited. The proof failure was that an earlier-boot sighting and
+equal later bytes do not establish continuity/writer exclusion for the
+current unreadable generation. This decision neither supplies that proof
+nor prohibits every future independently evidenced recovery design.
+Separately authorized manual recovery may occur outside this proposed
+automatic-clear mechanism; no manual recovery implementation or execution
+authority is granted here. UR-Q1 and the remaining UR-Q6/UR-Q8 stay open for
+recovery/clear. Non-destructive D55 presentation does not depend on them
+(MILESTONES.md → *Gate 3 critical path after the legacy-C decision*).
 
 ### Foundation journey effect-domain prerequisite — accepted
 
@@ -899,24 +933,34 @@ capabilities or acceptance of P5-20. Legacy corrupted operations lacking
 historical destinations/inputs stay unknown; new records cannot reconstruct
 that missing history. The run lock is not external-writer exclusion.
 
-The dependency graph now begins with separate UR-Q3/UR-Q5
-reconciliation/evidence-contract review after accepted FJ-ED-1; runtime P4
-before P5; P1–P5 plus basis/word before a clear attempt; verified clear
-completion before anything may rely on that transaction. UR-Q4 remains
-independently **PROOF BLOCKED — OWNER DECISION REQUIRED**: earlier-boot
-sighting plus equal later bytes does not prove continuity/writer exclusion
-for the current unreadable generation. The unaccepted local `b79bec9`
-candidate is not inherited. UR-Q1 and the remaining UR-Q6/UR-Q8 stay open.
+The foundation UR-Q3/UR-Q5 documentation prerequisite is accepted as
+FJ-P5-1 below. Runtime P4 still precedes P5; P1–P5 plus basis/word precede
+a clear attempt; verified clear completion precedes reliance on that
+transaction. UR-Q4's policy is resolved above; positive P3/P4 capability
+remains unsupported for legacy C with unknown writer-end history. The
+unaccepted local `b79bec9` candidate is not inherited. UR-Q1 and the
+remaining UR-Q6/UR-Q8 stay open for recovery/clear.
 No recovery, clear, sighting, new diagnostic evidence reader, action
 implementation or later action-owner generalization is authorized here.
 Shared creation's transaction remains creation-specific; later Gate 3
 owners must supply their own independently reviewed domain/evidence rules.
 
-### Foundation journey P5 reconciliation continuation — proposed
+### Foundation journey P5 reconciliation continuation — accepted
 
-**FJ-P5-1 — PROPOSED; INDEPENDENT REVIEW PENDING**, documentation only
-(docs/PROTOCOL.md → *Proposed foundation journey P5 reconciliation contract*),
-on `m14-gate3-p5-reconciliation-contract` directly from accepted `f27ee84`.
+**FJ-P5-1 — ACCEPTED AS A DOCUMENTATION CONTRACT**, documentation only
+(docs/PROTOCOL.md → *Foundation journey P5 reconciliation contract*).
+Independent acceptance attaches to reconstructed source tree
+`a84298a315e54edfe985a81e858f423839c1c007`, not authentication of its
+unpublished commit object. The local association was verified separately:
+`c85470b2c973001c9df692eb04e17628d5c7f7f0`, parent
+`f27ee84a4b28fe5ee3a93df53f79598192932468`, on the clean unchanged
+`m14-gate3-p5-reconciliation-contract` checkpoint. That parent's tree is
+the independently accepted FJ-ED-1 tree
+`29ac7b58502618a72295375ff68b9b326f765fd6`, directly after accepted
+diagnostic `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd` / tree
+`8e483db6d078ad57cf0af7dac2c8a6e6a244a843`. Both FJ mechanisms remain
+**UNIMPLEMENTED**; acceptance changes no normative rule, matrix, witness
+or implementation limitation.
 The semantic owner is the authoritative foundation Bash core under the
 reviewed journey fixture contract. The generic coordinator requires its
 complete positive finding; it cannot supply another scope's semantics.
@@ -925,10 +969,10 @@ with test.read preserved as read-class. Every applicable retained generation,
 consumed source/input, domain, prior and original-core evidence is admitted
 independently of C and checked against fresh scope-owned observations.
 
-| Question | Bounded proposed rule | Disposition and remaining dependency |
+| Question | Accepted bounded rule | Disposition and remaining dependency |
 | --- | --- | --- |
-| UR-Q3 | foundation journey owner judges every applicable act family and generation under FJ-ED-1; legal future internal assessment after separate P4, no repair/persistence | independent review pending; overall PARTIAL / REMAINING OPEN; other scopes require their own reviewed owners and domains |
-| UR-Q5 | each relevant item must be unchanged prior state or independently completed under authoritative original-core generation evidence, with complete fresh agreement and usable interval; otherwise retain observed and/or unknown reasons | independent review pending; overall PARTIAL / REMAINING OPEN; no plausible basis, missing lookup, partial coverage or old receipt can establish positive P5 |
+| UR-Q3 | foundation journey owner judges every applicable act family and generation under FJ-ED-1; legal future internal assessment after separate P4, no repair/persistence | foundation documentation ACCEPTED; overall PARTIAL / REMAINING OPEN; other scopes require their own reviewed owners and domains |
+| UR-Q5 | each relevant item must be unchanged prior state or independently completed under authoritative original-core generation evidence, with complete fresh agreement and usable interval; otherwise retain observed and/or unknown reasons | foundation documentation ACCEPTED; overall PARTIAL / REMAINING OPEN; no plausible basis, missing lookup, partial coverage or old receipt can establish positive P5 |
 
 P5-01–P5-20 and additional adversarial cases preserve the two accepted future
 witnesses. G1's failed ordinary barrier is settled by separate readable
@@ -956,7 +1000,8 @@ entry and relevant evidence/effects. This proposal grants none of that
 authority and stores no durable reconciliation result. P4 precedes P5;
 eligibility is not verified clear completion.
 
-UR-Q4/P3/P4 remain unresolved; `b79bec9` stays unaccepted and uninherited.
+UR-Q4's conservative legacy-C policy is resolved; positive P3/P4 proof
+remains unsupported, and `b79bec9` stays unaccepted and uninherited.
 UR-Q1 and remaining UR-Q6/UR-Q8 stay open, including future assessment/clear
 entry, act vocabulary and any additional surface. No accepted diagnostic,
 read, refused act, reboot or frontend gains evaluator or write authority.
@@ -965,8 +1010,9 @@ and backup, separate scope-owned domain/evidence/reconciliation contracts
 remain necessary; creation's topology authority is not activation/write-test
 coverage. No broader implementation, M15 restore or M16 qualification is
 required or authorized. Gate 3 remains incomplete, frontend 0.2.0 unreleased,
-and all FJ-ED-1/P5 mechanisms unimplemented. Independent review must decide
-the bounded foundation disposition before any acceptance is recorded.
+and all FJ-ED-1/P5 mechanisms unimplemented. Foundation documentation
+acceptance is recorded; execution and implementation require separate
+authorization, tests, CI and independent review of the resulting slice.
 
 ## Where each design question is answered
 

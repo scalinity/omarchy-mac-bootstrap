@@ -819,29 +819,115 @@ of docs/TESTING.md.
   continuation. The original branch remains at that clean checkpoint.
   No mechanism was implemented or executed and no UR-Q3/UR-Q5/UR-Q4 or
   recovery/clear authority was accepted by FJ-ED-1.
-- **P5 continuation candidate:** **FJ-P5-1 — PROPOSED; INDEPENDENT REVIEW
-  PENDING**, documentation only, on new local branch
-  `m14-gate3-p5-reconciliation-contract` directly from `f27ee84` in a separate
-  worktree. docs/PROTOCOL.md → *Proposed foundation journey P5 reconciliation
-  contract* defines the foundation journey owner, complete generation/domain
+- **FJ-P5-1 independent acceptance:** **FJ-P5-1 — ACCEPTED AS A
+  DOCUMENTATION CONTRACT**, independently reconstructed source tree
+  `a84298a315e54edfe985a81e858f423839c1c007`. The unpublished local
+  commit-object association was separately verified before continuation:
+  `c85470b2c973001c9df692eb04e17628d5c7f7f0`, parent
+  `f27ee84a4b28fe5ee3a93df53f79598192932468`, tree exactly as accepted,
+  clean worktree on `m14-gate3-p5-reconciliation-contract`. Source-tree
+  acceptance does not authenticate the commit object. The original
+  checkpoint stays unchanged. docs/PROTOCOL.md → *Foundation journey P5
+  reconciliation contract* defines the foundation journey owner, complete generation/domain
   aggregation, unchanged/independently completed versus observed/unknown
   findings, P4 ordering and usable observation interval. P5-01–P5-20 and
   additional cases are unexecuted. G1's ordinary barrier must be separately
   settled before G2; G2's positive no-effect witness stops before unbound
   ordinary failed replacement. Conditional positive P5 grants no clear.
-  Independent review must decide the bounded foundation disposition;
-  overall UR-Q3/UR-Q5 remain **PARTIAL / REMAINING OPEN** for other scopes.
-- **Remaining boundary:** UR-Q3/UR-Q5 await their separate reconciliation
-  contract and are not resolved by this proposal. UR-Q4 independently
-  remains **PROOF BLOCKED — OWNER DECISION REQUIRED**; the unaccepted
+  The normative body, complete matrices, positive witnesses and limitations
+  are preserved; all runtime mechanisms remain **UNIMPLEMENTED**.
+  Overall UR-Q3/UR-Q5 remain **PARTIAL / REMAINING OPEN** for other scopes.
+- **UR-Q4 owner decision:** **DECISION RESOLVED — CONSERVATIVE LEGACY-C
+  POLICY** (docs/DECISIONS.md → *UR-Q4 owner disposition — conservative
+  legacy-C policy*). Unknown writer-end history retains the refusal/barrier:
+  no inferred P4, retrospective sighting, automatic clear, privileged custody,
+  generalized process tracker or refused-act persistence exception. This is
+  not **P3/P4 POSITIVE PROOF IMPLEMENTED**, and satisfies no P1–P5 proof.
+  The historical feasibility investigation is retained; the unaccepted
   `b79bec92588a580f04c87fcdec2808344a058f87` candidate is not inherited.
-  P3/P4 remain unresolved; runtime P4 precedes P5. UR-Q1 and remaining
+  Positive P3/P4 proof remains unsupported; runtime P4 precedes P5. Future
+  independently evidenced designs are not universally prohibited. Manual
+  recovery outside this mechanism requires separate authorization; none is
+  granted here.
+- **Remaining boundary:** foundation FJ-ED-1 and FJ-P5-1 documentation is
+  accepted; both mechanisms are **UNIMPLEMENTED**. UR-Q1 and remaining
   UR-Q6/UR-Q8 remain open. Gate 3 overall is **INCOMPLETE**; Gate 2 stays
   **ACCEPTED / CLOSED** and frontend `0.2.0` **UNRELEASED**. No production
   implementation, fixture/registry changes, reconciliation, recovery,
   clear, sighting, broader action implementation or new D55 evidence
   reader has begun or is authorized by this documentation slice. The
   separate CI→Main workstream is outside it.
+
+#### Gate 3 critical path after the legacy-C decision
+
+The graph remains the ordered gates in *The product expansion: M14–M18*:
+Gate 3 → Gate 4 → Gate 5 → M15 → M16 → M17 → M18. This disposition does
+not waive any exit or make Gate 4 eligible. Within Gate 3, D55 presentation
+uses the accepted diagnostic and does not require FJ enforcement, a P5
+evaluator or positive legacy-C clear. The existing text diagnostic already
+works across scopes; the protocol diagnostic is fixture-only and currently
+has a producer only for the foundation journey scope (docs/PROTOCOL.md →
+*The operation-record diagnostic*, *Surfaces* and *The text interface*).
+
+| Class | Remaining work and dependency boundary |
+| --- | --- |
+| A — next non-destructive capability | Bounded D55 frontend presentation: accepted `a3beb3c` core/text diagnostic and D55 generation/row/compatibility contract are sufficient prerequisites. Its implementation, permanent tests, CI and independent review are still required. No new recovery architecture is needed. |
+| B — independent of legacy-C clear | D55 presentation may proceed under separate authorization within Gate 3. The remaining fixture action families still need their own accepted owner/domain/basis and applicable vocabulary contracts, tests and review; FJ evidence cannot be generalized to them. Gate 4 scan/profile and Gate 5 resolver/bundle remain in order after full Gate 3 exit, despite their non-installer work. |
+| C — defer recovery/clear work | Legacy-C positive P3/P4, UR-Q1's clear transaction, remaining clear-specific UR-Q6/UR-Q8, FJ-ED-1 enforcement and FJ-P5-1 runtime evaluation are not prerequisites for D55 presentation. P5 remains conditional on independently established P4 and legal assessment authority. No new general feasibility campaign is recommended. |
+| D — hardware gated | M16 real action-family moves require their separate baseline safety reviews and simulation/qualification exits; M17 first install requires finished M14–M16; M18 requires M17's valid hardware report. No hardware or release authority follows from this decision. |
+| E — separate CI→Main | `aa7d5cccfdff88e310513d26750bb6930e566234` is a separate integration candidate, not this accepted base or a Gate 3 acceptance. Its integration and SUP-EINTR work remain outside this branch. No workflow changes or integration are prerequisites for writing/reviewing the D55 source slice; required CI acceptance must still be obtained separately. |
+
+**Next bounded implementation recommendation, not authorization:** add
+only the frontend presentation of the accepted D55 finding for an already
+admitted record-owning scope, initially the foundation fixture's journey.
+
+- **Contract/prerequisite:** D55 at `2840fe2` and accepted implementation
+  `a3beb3c` / tree `8e483db6d078ad57cf0af7dac2c8a6e6a244a843`, with
+  docs/PROTOCOL.md → *The operation-record diagnostic*, *The frontend* and
+  *Compatibility*. Open the detail from that scope's snapshot generation;
+  preserve every row's label/value/text and the core's unknown/refusal/error
+  distinctions. No new production scope producer or public protocol change.
+- **Necessary production scope:** `frontend/src/read.rs` (the detail kind),
+  `frontend/src/app.rs` (view state and navigation),
+  `frontend/src/screens/mod.rs`, `frontend/src/screens/table.rs` and
+  `frontend/src/keys.rs` (rendering and keyboard access). Existing generic
+  request serialization in `frontend/src/core.rs` already carries the kind;
+  change it only if a demonstrated presentation requirement needs it. No
+  Bash, record schema, launcher, installer or release-lock changes.
+- **Permanent regression coverage:** extend `frontend/tests/contract.rs`,
+  `frontend/tests/proto_diff.rs`, the existing read-surface/frame tests and
+  their snapshots; keep the Bash DIA tests unchanged. Cover C/D/readable/none,
+  missing data never becoming `none`, changed generation and fresh snapshot,
+  unavailable old-core responses with no fallback, io/representation with no
+  finding, hostile text, ordered full rows, no actions inferred from findings,
+  and no direct `ops/` access or persistence. Check 80×24, 60×24, 59×20,
+  ASCII/no-colour, keyboard navigation and PTY terminal restoration; retain
+  startup-check and ordinary Gate 2 read equivalence (docs/TESTING.md →
+  *Layers*, DIA-01–DIA-15, with clear-only DIA-10(b)/11(b)/12 still deferred).
+- **CI/review checkpoint:** CI is required at the exact implementation SHA,
+  including the complete Bash and frontend lanes and macOS `/bin/bash` 3.2.
+  Under the separate FAST/FULL CI design, only a green exact-SHA FULL guard
+  is acceptance evidence; FAST is feedback. This accepted checkpoint
+  predates that CI split, so do not import CI→Main to manufacture the check.
+  Coordinate CI acceptance separately when authorized. Independently review
+  the bounded frontend delta against D55 and `a3beb3c` before accepting it.
+- **Usable afterward / still blocked:** an unreleased development frontend
+  can show the same foundation-fixture diagnostic and barriers as the core
+  and text interface, with truthful old-core failure. It adds no production
+  snapshot producer: real-machine cross-scope inspection remains the existing
+  text command. Gate 3 overall stays incomplete; Gate 4+, FJ runtime proof,
+  recovery/clear, installer exposure, frontend 0.2.0 release and hardware
+  qualification remain blocked by their existing prerequisites.
+
+GitHub identity refresh for this documentation candidate (2026-10-09):
+`main` remains `7fe99801277d6699350a5e20ad89fd80c559140b`; the diagnostic
+branch remains `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd`;
+`ci-throughput` is `8c7b1297a2fbbf3db5043b80f2e4ba7b5bb2b28c`.
+The separate `aa7d5cccfdff88e310513d26750bb6930e566234` commit was verified
+on GitHub with parents `7fe9980` and `c933ba4`; none substitutes for the
+accepted FJ starting tree. Refresh mutable refs before reuse. This session
+runs static documentation/Git checks only; no tests, diagnostics, builds,
+CI dispatch, release, installation or hardware action is authorized.
 
 ### Gate 4 — Scanner and profile
 
