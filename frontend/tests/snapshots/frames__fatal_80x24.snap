@@ -13,7 +13,7 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Health      ││   ./omarchy-bootstrap status shows where the machine is.     │
 │  Logs        ││                                                              │
 │  Plan        ││                                                              │
-│              ││                                                              │
+│  Op          ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

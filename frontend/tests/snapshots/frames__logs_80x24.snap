@@ -13,7 +13,7 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Health      ││   fake read child: a line of diagnostics                     │
 │▍ Logs        ││                                                              │
 │  Plan        ││                                                              │
-│              ││                                                              │
+│  Op          ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

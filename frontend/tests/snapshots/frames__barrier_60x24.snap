@@ -5,7 +5,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 ---
  ◒ Journey ───────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
-  Welcome ▍Journey  Machine  Status  Health  Logs  Plan
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan  Op
 ┌ Journey ─────────────────────────────────────────────────┐
 │ · · · · · · · · · ·                                      │
 │ No stage is derived yet: every station is later.         │

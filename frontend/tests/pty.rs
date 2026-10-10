@@ -1530,3 +1530,89 @@ fn pty_gate2_reads_through_the_launcher() {
     }
     assert!(!trace.contains("send Execute"), "no execute: {trace}");
 }
+
+#[test]
+fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
+    for width in [80, 60] {
+        let mut p = Pty::start(
+            &format!("d55-{width}"),
+            Opts {
+                cols: width,
+                ..Opts::default()
+            },
+        );
+        p.dashboard();
+        p.idle();
+        let startup = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+        let sent: Vec<_> = startup.lines().filter(|l| l.starts_with("send ")).collect();
+        assert_eq!(sent, ["send Hello", "send Snapshot"]);
+        assert!(!p.dir.join("state").exists());
+        p.send(b"\x1b[D");
+        for _ in 0..8 {
+            p.send(b"\x1b[A");
+        }
+        for _ in 0..7 {
+            p.send(b"\x1b[B");
+        }
+        p.send(b"\r");
+        p.wait_for("rows 1–");
+        p.wait_for("State");
+        p.idle();
+        assert!(p.contents().contains("none"), "{}", p.contents());
+        assert!(!p.dir.join("state").exists());
+
+        // Only this test writes the hostile record. The read preserves it.
+        let ops = p.dir.join("state/ops");
+        std::fs::create_dir_all(&ops).unwrap();
+        let record = ops.join("journey.omb");
+        let hostile = b"omb-op 1\ntorn\0\x1b[2J\nHOSTILE_OPERATOR_CLEAR";
+        std::fs::write(&record, hostile).unwrap();
+        p.keys("r");
+        p.wait_for("unreadable");
+        p.idle();
+        assert!(!p.contents().contains("HOSTILE_OPERATOR_CLEAR"));
+        p.keys("/Worker");
+        p.send(b"\r");
+        p.wait_for("filter");
+        p.send(b"\r");
+        p.wait_for("value lines");
+        assert!(p.contents().contains("unknown"), "{}", p.contents());
+        p.master
+            .resize(PtySize {
+                rows: 20,
+                cols: 59,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        p.wait_for("terminal too small");
+        p.master
+            .resize(PtySize {
+                rows: 24,
+                cols: width,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        p.wait_for("value lines");
+        p.send(b"\x1b");
+        p.keys("q");
+        assert_eq!(p.wait_exit(), 0);
+        assert!(p.restored());
+        assert_eq!(p.termios(), p.initial);
+        assert_eq!(std::fs::read(&record).unwrap(), hostile);
+        assert_eq!(std::fs::read_dir(p.dir.join("state")).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(&ops).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(p.dir.join("home")).unwrap().count(), 0);
+        let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+        assert!(!trace.contains("send Execute") && !trace.contains("send Validate"));
+        for line in trace.lines().filter(|l| l.starts_with("send Detail")) {
+            assert!(
+                line.contains("kind: Operation")
+                    && line.contains("offset: 0")
+                    && line.contains("limit: 500"),
+                "{line}"
+            );
+        }
+    }
+}

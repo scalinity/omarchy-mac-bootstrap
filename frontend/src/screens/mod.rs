@@ -103,7 +103,7 @@ fn workspace(f: &mut Frame, work: Rect, body: Rect, m: &Model, t: &Theme, tier: 
         Screen::Connecting => notes::connecting(f, work, t),
         Screen::Welcome => welcome::draw(f, work, m, t),
         Screen::Dashboard => dashboard::draw(f, work, m, t, tier),
-        Screen::Machine | Screen::Status | Screen::Health | Screen::Logs => {
+        Screen::Machine | Screen::Status | Screen::Health | Screen::Logs | Screen::Operation => {
             table::draw(f, work, m, t, tier)
         }
         Screen::Plan => plan::draw(f, work, m, t),

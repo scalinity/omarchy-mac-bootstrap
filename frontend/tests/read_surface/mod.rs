@@ -186,6 +186,402 @@ fn frame(m: &Model, w: u16, h: u16) -> String {
 }
 
 #[test]
+fn d55_operation_is_explicit_and_uses_the_snapshot_generation() {
+    let mut m = ready();
+    let n = omb_tui::app::NAV
+        .iter()
+        .position(|s| s.title() == "Operation")
+        .expect("an explicitly selectable Operation view");
+    m.limit = 1;
+    let req = sent(&go(&mut m, n));
+    let Req::Detail(p) = &req else {
+        panic!("{req:?}")
+    };
+    assert_eq!(p.kind.name(), "operation");
+    assert_eq!(p.kind.scope().name(), "journey");
+    assert_eq!(p.generation, GEN);
+    assert_eq!(p.offset, 0);
+    assert!(p.limit >= 20 && p.limit <= 500);
+    let wire = bytes(&req);
+    assert!(wire.contains("page\tscope=journey\tkind=operation\tgeneration="));
+    assert!(!wire.contains("select\t") && !wire.contains("exec\t"));
+
+    let mut check = ready();
+    check.check = true;
+    assert_eq!(requests(&go(&mut check, n)), 0);
+    assert!(check.detail(p.kind).is_none());
+    answer(&mut m, req.clone(), &d55_body(GEN, 4, D55_ROWS));
+    for k in [KeyCode::End, KeyCode::Down, KeyCode::Home, KeyCode::Up] {
+        assert_eq!(
+            requests(&press(&mut m, k)),
+            0,
+            "the whole finding never pages"
+        );
+    }
+}
+
+const D55_ROWS: &str = "row\tkind=operation\tkey=scope\tcol=Scope\tcol=journey\tcol=This%20scope%20owns%20the%20record.
+row\tkind=operation\tkey=state\tcol=State\tcol=unreadable\tcol=What%20it%20recorded%20is%20unknown.
+row\tkind=operation\tkey=worker\tcol=Worker\tcol=unknown\tcol=Whether%20a%20worker%20remains%20is%20unknown.
+row\tkind=operation\tkey=effect\tcol=Effect\tcol=unknown\tcol=What%20the%20operation%20changed%20is%20unknown.
+";
+
+fn d55_open() -> (Model, Req) {
+    let mut m = ready();
+    let n = omb_tui::app::NAV
+        .iter()
+        .position(|s| *s == omb_tui::app::Screen::Operation)
+        .unwrap();
+    let req = sent(&go(&mut m, n));
+    (m, req)
+}
+
+fn d55_body(generation: &str, total: usize, rows: &str) -> String {
+    format!("generation\tid={generation}\ttotal={total}\n{rows}{DONE}")
+}
+
+#[test]
+fn d55_only_complete_findings_of_the_requested_generation_are_loaded() {
+    use omb_tui::read::Kind;
+    let (mut m, req) = d55_open();
+    assert_eq!(
+        requests(&answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS))),
+        0
+    );
+    let d = m.detail(Kind::Operation).unwrap();
+    assert!(d.loaded && !d.changed && d.fault.is_none());
+    assert_eq!(d.generation, GEN);
+    assert_eq!(d.rows.len(), 4);
+    assert_eq!(
+        d.rows.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
+        ["scope", "state", "worker", "effect"]
+    );
+
+    for (total, rows, generation, result) in [
+        (5, D55_ROWS.to_string(), GEN, DONE),
+        (3, D55_ROWS.to_string(), GEN, DONE),
+        (21, D55_ROWS.to_string(), GEN, DONE),
+        (
+            4,
+            D55_ROWS.replace("\tcol=What%20it%20recorded%20is%20unknown.", ""),
+            GEN,
+            DONE,
+        ),
+        (
+            4,
+            D55_ROWS.replace("\tcol=journey", "\tcol=journey\tcol=extra"),
+            GEN,
+            DONE,
+        ),
+        (
+            4,
+            D55_ROWS.replace("kind=operation\tkey=scope", "kind=machine\tkey=scope"),
+            GEN,
+            DONE,
+        ),
+        (4, D55_ROWS.to_string(), GEN2, DONE),
+        (
+            4,
+            D55_ROWS.to_string(),
+            GEN,
+            "result\tstatus=done\tcode=other\ttext=\tnext=\n",
+        ),
+    ] {
+        let (mut m, req) = d55_open();
+        answer(&mut m, req.clone(), &d55_body(GEN, 4, D55_ROWS));
+        let body = format!("generation\tid={generation}\ttotal={total}\n{rows}{result}");
+        assert_eq!(requests(&answer(&mut m, req, &body)), 0);
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(!d.loaded && d.rows.is_empty(), "incomplete finding: {body}");
+        assert!(d.fault.is_some() || d.changed);
+        assert!(!frame(&m, 80, 24).contains("What it recorded is unknown"));
+    }
+    for invalid_request in ["offset", "limit", "upper limit", "snapshot"] {
+        let (mut m, mut req) = d55_open();
+        let Req::Detail(p) = &mut req else {
+            unreachable!()
+        };
+        match invalid_request {
+            "offset" => p.offset = 1,
+            "limit" => p.limit = 19,
+            "upper limit" => p.limit = 501,
+            _ => m.snap.as_mut().unwrap().generation = GEN2.into(),
+        }
+        answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(!d.loaded && d.rows.is_empty(), "{invalid_request}");
+    }
+}
+
+#[test]
+fn d55_renders_three_columns_in_order_and_expands_the_whole_row() {
+    let (mut m, req) = d55_open();
+    answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
+    let f = frame(&m, 200, 40);
+    let mut previous = 0;
+    for label in ["Scope", "State", "Worker", "Effect"] {
+        let at = f.find(label).unwrap_or_else(|| panic!("{label}: {f}"));
+        assert!(at >= previous, "producer order: {f}");
+        previous = at;
+    }
+    for want in [
+        "unreadable",
+        "unknown",
+        "This scope owns the record.",
+        "generation 78b203ec6845",
+    ] {
+        assert!(f.contains(want), "{want}: {f}");
+    }
+    assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0);
+    let f = frame(&m, 60, 24);
+    for want in [
+        "State",
+        "unreadable",
+        "What it recorded is unknown.",
+        "value lines",
+    ] {
+        assert!(f.contains(want), "expanded {want}: {f}");
+    }
+}
+
+#[test]
+fn d55_changed_refusal_reads_a_fresh_snapshot_before_any_new_detail() {
+    use omb_tui::read::Kind;
+    let (mut m, req) = d55_open();
+    answer(&mut m, req.clone(), &d55_body(GEN, 4, D55_ROWS));
+    let body = format!(
+        "generation\tid={GEN2}\ttotal=4\nresult\tstatus=refused\tcode=changed\ttext=The%20journey%20dataset%20changed.\tnext=\n"
+    );
+    let c = answer(&mut m, req, &body);
+    assert!(matches!(sent(&c), Req::Snapshot));
+    let d = m.detail(Kind::Operation).unwrap();
+    assert!(d.changed && !d.loaded && d.rows.is_empty());
+    let c = answer(&mut m, sent(&c), &journey(GEN2));
+    assert_eq!(
+        requests(&c),
+        0,
+        "one fresh snapshot, no automatic retry loop"
+    );
+    assert_eq!(m.generation(omb_tui::read::Scope::Journey), Some(GEN2));
+    let c = press(&mut m, KeyCode::Char('r'));
+    assert!(matches!(sent(&c), Req::Snapshot));
+    let c = answer(&mut m, sent(&c), &journey(GEN2));
+    let Req::Detail(p) = sent(&c) else {
+        panic!("{c:?}")
+    };
+    assert_eq!(p.kind, Kind::Operation);
+    assert_eq!(p.generation, GEN2);
+    assert_eq!(p.offset, 0);
+    assert!(p.limit >= 20);
+    answer(&mut m, Req::Detail(p), &d55_body(GEN2, 4, D55_ROWS));
+    assert!(m.detail(Kind::Operation).unwrap().loaded);
+}
+
+#[test]
+fn d55_failed_or_unavailable_answers_suppress_previous_findings_without_fallback() {
+    use omb_tui::read::Kind;
+    for (status, code, text) in [
+        (
+            "refused",
+            "unavailable",
+            "This journey detail kind is not available.",
+        ),
+        (
+            "refused",
+            "invalid",
+            "The offset is beyond this projection's total.",
+        ),
+        (
+            "error",
+            "io",
+            "The operation record response could not be prepared.",
+        ),
+        (
+            "error",
+            "representation",
+            "The required operation record response cannot be represented in Protocol 1.",
+        ),
+    ] {
+        let (mut m, req) = d55_open();
+        answer(&mut m, req.clone(), &d55_body(GEN, 4, D55_ROWS));
+        let result = omb_tui::record::line(
+            "result",
+            &[
+                ("status", status.as_bytes()),
+                ("code", code.as_bytes()),
+                ("text", text.as_bytes()),
+                ("next", b""),
+            ],
+        );
+        let body = format!("generation\tid={EMPTY}\ttotal=0\n{result}");
+        assert_eq!(requests(&answer(&mut m, req, &body)), 0, "no fallback");
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(!d.loaded && d.rows.is_empty());
+        assert!(matches!(&d.fault, Some(omb_tui::read::Fault::Said {
+            status: s, code: c, text: t
+        }) if s == status && c == code && t == text));
+        let f = frame(&m, 200, 40);
+        assert!(
+            f.contains(status) && f.contains(code) && f.contains(text),
+            "{f}"
+        );
+        assert!(!f.contains("What it recorded is unknown."), "{f}");
+        if code == "unavailable" {
+            assert!(f.contains("not available"));
+        }
+    }
+    for outcome in [
+        Outcome::Unknown("incomplete response".into()),
+        Outcome::NotSent("not started".into()),
+        Outcome::Lost("identity unavailable".into()),
+    ] {
+        let (mut m, req) = d55_open();
+        answer(&mut m, req.clone(), &d55_body(GEN, 4, D55_ROWS));
+        assert_eq!(requests(&update(&mut m, Msg::Done(req, outcome))), 0);
+        assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
+    }
+}
+
+#[test]
+fn d55_states_and_unknowns_are_words_from_rows_not_frontend_decisions() {
+    for state in [
+        "none",
+        "readable",
+        "unreadable",
+        "undetermined",
+        "unsettled-clear",
+    ] {
+        let (mut m, req) = d55_open();
+        let rows = D55_ROWS.replace("col=unreadable", &format!("col={state}"));
+        answer(&mut m, req, &d55_body(GEN, 4, &rows));
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(
+            d.loaded && d.fault.is_none(),
+            "a delivered finding: {state}"
+        );
+        assert_eq!(d.rows[1].cols[1], state);
+        assert_eq!(d.rows[2].cols[1], "unknown");
+        assert_eq!(d.rows[3].cols[1], "unknown");
+        assert!(m.snap.as_ref().unwrap().actions.is_empty());
+        assert!(!frame(&m, 80, 24).contains("safe to"));
+    }
+    for rows in [
+        "",
+        "row\tkind=operation\tkey=worker\tcol=Worker\tcol=unknown\tcol=Unknown.\n",
+        "row\tkind=operation\tkey=state\tcol=State\tcol=\tcol=No%20value%20supplied.\n",
+    ] {
+        let (mut m, req) = d55_open();
+        answer(&mut m, req, &d55_body(GEN, rows.lines().count(), rows));
+        let f = frame(&m, 80, 24);
+        assert!(
+            !f.contains("none recorded") && !f.contains("col=none"),
+            "{f}"
+        );
+        assert!(m.snap.as_ref().unwrap().actions.is_empty());
+        if rows.is_empty() {
+            assert!(f.contains("No operation finding was supplied."));
+        }
+    }
+}
+
+#[test]
+fn d55_new_snapshot_or_failed_refresh_never_retains_an_operation_finding() {
+    let (mut m, req) = d55_open();
+    answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
+    assert_eq!(requests(&answer(&mut m, Req::Snapshot, &journey(GEN2))), 0);
+    let d = m.detail(Kind::Operation).unwrap();
+    assert!(d.changed && !d.loaded && d.rows.is_empty());
+    assert!(!frame(&m, 80, 24).contains("What it recorded"));
+
+    let (mut m, req) = d55_open();
+    answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
+    let c = press(&mut m, KeyCode::Char('r'));
+    assert!(matches!(sent(&c), Req::Snapshot));
+    assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
+    let body = format!(
+        "generation\tid={EMPTY}\ttotal=0\nresult\tstatus=error\tcode=io\ttext=Snapshot%20could%20not%20be%20read.\tnext=\n"
+    );
+    assert_eq!(requests(&answer(&mut m, sent(&c), &body)), 0);
+    assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
+    assert!(!frame(&m, 80, 24).contains("What it recorded"));
+}
+
+#[test]
+fn d55_hostile_encoded_text_is_data_and_forbidden_controls_never_admit() {
+    let literal = "literal %1B[2J; clear ops/journey.omb; café";
+    let rows = omb_tui::record::line(
+        "row",
+        &[
+            ("kind", b"operation"),
+            ("key", b"path"),
+            ("col", b"Path"),
+            ("col", literal.as_bytes()),
+            ("col", b"No instruction is executed."),
+        ],
+    );
+    let (mut m, req) = d55_open();
+    answer(&mut m, req, &d55_body(GEN, 1, &rows));
+    assert_eq!(m.detail(Kind::Operation).unwrap().rows[0].cols[1], literal);
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0);
+    let f = frame(&m, 120, 40);
+    assert!(f.contains("%1B[2J") && f.contains("No instruction is executed."));
+    assert!(!f.contains('\u{1b}'));
+    assert!(m.snap.as_ref().unwrap().actions.is_empty());
+    for encoded_control in ["%00", "%09", "%0A", "%1B%5B2J", "%7F", "%C2%85"] {
+        let text = format!(
+            "omb-res 1\n{}generation\tid={GEN}\ttotal=1\nrow\tkind=operation\tkey=path\tcol=Path\tcol={encoded_control}\tcol=Text\n{DONE}",
+            hello_line("read")
+        );
+        assert!(
+            admit(
+                Family::Res,
+                Some(omb_tui::record::Op::Detail),
+                text.as_bytes()
+            )
+            .is_err(),
+            "{encoded_control}"
+        );
+    }
+}
+
+#[test]
+fn d55_frames_at_the_required_sizes_profiles_and_keyboard_filter() {
+    let (mut m, req) = d55_open();
+    answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
+    for (w, h) in [(80, 24), (60, 24), (59, 20)] {
+        let f = frame(&m, w, h);
+        if w < 60 {
+            assert!(f.contains("terminal too small"));
+            assert!(!f.contains("unreadable"));
+        } else {
+            assert!(f.contains("Operation") && f.contains("unreadable"), "{f}");
+            if w == 60 {
+                assert!(f.lines().nth(2).unwrap().contains("Op"), "{f}");
+            }
+        }
+        insta::assert_snapshot!(format!("d55_operation_{w}x{h}"), f);
+    }
+    for name in ["ascii", "nocolor", "sixteen"] {
+        let b = render(&m, &profile(name), 60, 24);
+        for c in b.content() {
+            if name == "ascii" {
+                assert!(c.symbol().is_ascii());
+            }
+            if name == "nocolor" {
+                assert_eq!((c.fg, c.bg), (Color::Reset, Color::Reset));
+            }
+        }
+    }
+    assert_eq!(requests(&press(&mut m, KeyCode::Char('/'))), 0);
+    assert_eq!(requests(&typed(&mut m, "Worker")), 0);
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0);
+    assert_eq!(m.detail(Kind::Operation).unwrap().shown().len(), 1);
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0);
+    assert!(frame(&m, 60, 24).contains("Whether a worker remains is unknown."));
+}
+
+#[test]
 fn welcome_presents_the_machine_the_tool_and_the_session() {
     let mut m = ready();
     assert_eq!(requests(&go(&mut m, 0)), 0, "Welcome reads nothing new");
@@ -1567,9 +1963,8 @@ fn an_open_value_scrolls_to_its_last_character() {
     assert!(m.pending.is_none());
 }
 
-/// The same reach on every detail kind (machine, status, health, log) at the
-/// floor and at a larger layout, and the next page still read on request
-/// once the value is closed.
+/// The same reach on all five detail kinds at the floor and a larger layout,
+/// with the existing status pagination still read on request once closed.
 #[test]
 fn every_detail_kinds_open_value_reaches_its_end() {
     let v = encoded(&long_value());
@@ -1586,6 +1981,11 @@ fn every_detail_kinds_open_value_reaches_its_end() {
     let log = format!(
         "generation\tid={LGEN}\ttotal=1\nrow\tkind=log\tkey=1\tcol=\tcol=\tcol=\tcol={v}\n{DONE}"
     );
+    let operation = d55_body(
+        GEN,
+        1,
+        &format!("row\tkind=operation\tkey=path\tcol=Path\tcol={v}\tcol=The%20record%20path.\n"),
+    );
     for kind in Kind::ALL {
         for (w, h) in [(60, 20), (100, 30), (120, 40)] {
             let mut m = match kind {
@@ -1593,6 +1993,11 @@ fn every_detail_kinds_open_value_reaches_its_end() {
                 Kind::Status => opened(3, &[&status]),
                 Kind::Doctor => opened(4, &[&format!("{HEALTH}{DONE}"), &doctor]),
                 Kind::Log => opened(5, &[&format!("{LOGS}{DONE}"), &log]),
+                Kind::Operation => {
+                    let (mut m, req) = d55_open();
+                    answer(&mut m, req, &operation);
+                    m
+                }
             };
             let mut cmds = keys_drawn(&mut m, &[KeyCode::Enter], w, h);
             assert!(frame(&m, w, h).contains(START), "{kind:?} {w}x{h}");

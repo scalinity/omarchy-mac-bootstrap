@@ -4,7 +4,7 @@ assertion_line: 1051
 expression: f
 ---
  ◒ Logs ──────────────────────────────────────────── v0.2.0
-  Welcome  Journey  Machine  Status  Health ▍Logs  Plan
+  Welcome  Journey  Machine  Status  Health ▍Logs  Plan  Op
 ┌ Logs ────────────────────────────────────────────────────┐
 │ ▍Tool log    Diagnostics                                 │
 │   State   /Users/alex/.local/state/omarchy-mac-bootstrap │

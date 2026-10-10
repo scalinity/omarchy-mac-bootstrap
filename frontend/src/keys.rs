@@ -184,7 +184,7 @@ pub fn place(screen: Screen, region: Region, logs: LogsTab) -> Place {
         Screen::Plan => Place::Plan,
         Screen::Logs if logs == LogsTab::Diagnostics => Place::Diagnostics,
         Screen::Logs => Place::Logs,
-        Screen::Machine | Screen::Status | Screen::Health => Place::Table,
+        Screen::Machine | Screen::Status | Screen::Health | Screen::Operation => Place::Table,
     }
 }
 

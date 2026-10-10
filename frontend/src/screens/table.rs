@@ -178,7 +178,11 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                 head.push(line);
             }
             if let Some(fault) = &d.fault {
-                let lines = fault_lines(fault, t, width);
+                let lines = if kind == Kind::Operation {
+                    operation_fault_lines(fault, t, width)
+                } else {
+                    fault_lines(fault, t, width)
+                };
                 notes.extend(lines.first().cloned());
                 head.extend(lines);
             }
@@ -193,6 +197,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                     Kind::Machine => "The journey's read holds no machine rows.",
                     Kind::Status => "The journey's read holds no status lines.",
                     Kind::Doctor => "The doctor reported no findings.",
+                    Kind::Operation => "No operation finding was supplied.",
                     Kind::Log => {
                         let said = facts.is_some_and(|s| !s.messages.is_empty());
                         if said {
@@ -240,6 +245,42 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     tl.extend(footed.map(|d| foot(d, seen, t)));
     tl.extend(edit);
     f.render_widget(Paragraph::new(tl), tail);
+}
+
+/// D55 refusals and failures never stand in for an operation finding. Keep
+/// the core's status, code and text without generic log or recovery hints.
+fn operation_fault_lines<'a>(fault: &Fault, t: &Theme, width: usize) -> Vec<Line<'a>> {
+    if let Fault::NoAnswer(why) = fault {
+        let mut lines = vec![Line::styled(
+            format!(" {} no complete answer", t.g.fail),
+            t.style(Token::Danger),
+        )];
+        lines.extend(
+            wrap(&t.say(why), width.saturating_sub(4))
+                .into_iter()
+                .map(|l| Line::styled(format!("   {l}"), t.style(Token::Text))),
+        );
+        lines.push(Line::styled(
+            "   No current operation finding.",
+            t.style(Token::Muted),
+        ));
+        return lines;
+    }
+    let mut lines = fault_lines(fault, t, width);
+    lines.pop();
+    let unavailable = matches!(fault, Fault::Said { status, code, .. }
+        if status == "refused" && code == "unavailable");
+    let text = if unavailable {
+        "This operation detail is not available from this core."
+    } else {
+        "No current operation finding."
+    };
+    lines.extend(
+        wrap(text, width.saturating_sub(4))
+            .into_iter()
+            .map(|l| Line::styled(format!("   {l}"), t.style(Token::Muted))),
+    );
+    lines
 }
 
 /// The Logs screen's two sources, the current one marked.
@@ -417,6 +458,11 @@ fn cells_of(
     let muted = t.style(Token::Muted);
     match kind {
         Kind::Machine => vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)],
+        Kind::Operation => vec![
+            (r.col(0).into(), muted, lw),
+            (r.col(1).into(), text, 0),
+            (r.col(2).into(), muted, usize::MAX),
+        ],
         Kind::Status => {
             let mut v = Vec::new();
             if c.section {
@@ -481,7 +527,7 @@ fn rows(
     }
     let c = cols(d.kind, width);
     let label = |r: &Row| match d.kind {
-        Kind::Machine => cells(r.col(0)),
+        Kind::Machine | Kind::Operation => cells(r.col(0)),
         Kind::Status | Kind::Doctor => cells(r.col(1)),
         Kind::Log => 0,
     };
@@ -532,7 +578,7 @@ fn rows(
         let n = parts.len();
         // The cell that carries the focus: the row's name, or a line's text.
         let focus_at = match d.kind {
-            Kind::Machine => 0,
+            Kind::Machine | Kind::Operation => 0,
             Kind::Status => usize::from(c.section),
             Kind::Doctor => 1,
             Kind::Log => n - 1,

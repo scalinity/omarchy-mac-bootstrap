@@ -13,7 +13,7 @@ expression: f
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   Run ./omarchy-bootstrap to survey this Mac and plan        │
-│              ││   storage.                                                   │
+│  Op          ││   storage.                                                   │
 │              ││                                                              │
 │              ││ ▍Facts                                                       │
 │              ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)       ↓│

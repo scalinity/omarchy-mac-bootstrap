@@ -13,7 +13,7 @@ expression: a
 |  Health      ||                                                              |
 |  Logs        || |Where it stands                                             |
 |  Plan        ||   The core gave no next step for this session.               |
-|              ||                                                              |
+|  Op          ||                                                              |
 |              || |Facts                                                       |
 |              ||   Interface  the foundation: test actions over fixtures      |
 |              ||   Fixture    mac-m1pro-1tb-roomy                             |

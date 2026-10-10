@@ -137,6 +137,8 @@ pub enum Screen {
     Logs,
     /// A read-only check of the plan's sizes.
     Plan,
+    /// The Bash-owned operation-record diagnostic of the foundation journey.
+    Operation,
     Gate,
     Help,
     /// The core could not be reached or answered with an error.
@@ -144,7 +146,7 @@ pub enum Screen {
 }
 
 /// The navigation rail's screens, in order.
-pub const NAV: [Screen; 7] = [
+pub const NAV: [Screen; 8] = [
     Screen::Welcome,
     Screen::Dashboard,
     Screen::Machine,
@@ -152,6 +154,7 @@ pub const NAV: [Screen; 7] = [
     Screen::Health,
     Screen::Logs,
     Screen::Plan,
+    Screen::Operation,
 ];
 
 impl Screen {
@@ -166,6 +169,7 @@ impl Screen {
             Screen::Health => "Health",
             Screen::Logs => "Logs",
             Screen::Plan => "Plan check",
+            Screen::Operation => "Operation",
             Screen::Gate => "Gate",
             Screen::Help => "Keys",
             Screen::Fatal => "No answer",
@@ -179,6 +183,7 @@ impl Screen {
             Screen::Status => Some(Kind::Status),
             Screen::Health => Some(Kind::Doctor),
             Screen::Logs => Some(Kind::Log),
+            Screen::Operation => Some(Kind::Operation),
             _ => None,
         }
     }
@@ -273,7 +278,7 @@ pub struct Model {
     /// The sidebar's panels shown in place of the workspace (narrow widths).
     pub side: bool,
     /// The details opened, by kind.
-    pub details: [Option<Detail>; 4],
+    pub details: [Option<Detail>; 5],
     pub health: ScopeRead,
     pub logread: ScopeRead,
     pub logs_tab: LogsTab,
@@ -343,7 +348,7 @@ impl Default for Model {
             region: Region::Work,
             nav: 1,
             side: false,
-            details: [None, None, None, None],
+            details: [None, None, None, None, None],
             health: ScopeRead::default(),
             logread: ScopeRead::default(),
             logs_tab: LogsTab::Tool,
@@ -592,7 +597,7 @@ fn demand(m: &mut Model) -> Vec<Cmd> {
         return Vec::new();
     };
     let d = Detail::new(kind, &id);
-    let p = d.page(0, m.limit);
+    let p = d.page(0, detail_limit(kind, m.limit));
     m.details[kind.index()] = Some(d);
     m.page(p, Land::First)
 }
@@ -606,6 +611,26 @@ fn settle(m: &mut Model, cmds: Vec<Cmd>) -> Vec<Cmd> {
         return demand(m);
     }
     cmds
+}
+
+fn detail_limit(kind: Kind, limit: u64) -> u64 {
+    if kind == Kind::Operation {
+        limit.clamp(20, 500)
+    } else {
+        limit
+    }
+}
+
+/// A failed or superseded operation read supplies no finding. Other detail
+/// kinds keep their accepted retained-generation behavior.
+fn discard_operation(d: &mut Detail) {
+    if d.kind == Kind::Operation {
+        d.rows.clear();
+        d.total = 0;
+        d.loaded = false;
+        d.cursor = 0;
+        close_value(d);
+    }
 }
 
 /// A fresh snapshot of SCOPE arrived with generation ID: a detail opened
@@ -625,10 +650,13 @@ fn regenerated(m: &mut Model, scope: Scope, id: &str) -> Vec<Cmd> {
                 kind: k,
                 generation: id.to_string(),
                 offset: 0,
-                limit,
+                limit: detail_limit(k, limit),
             });
         } else if moved {
             d.changed = true;
+        }
+        if moved {
+            discard_operation(d);
         }
     }
     match fresh {
@@ -643,6 +671,11 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
     let records = match outcome {
         Outcome::Answer(r) => r,
         Outcome::Lost(why) => {
+            if let Req::Detail(p) = &req {
+                if let Some(d) = m.detail_mut(p.kind) {
+                    discard_operation(d);
+                }
+            }
             // No request starts again in this session: the launcher, which
             // reads the recorded identities itself, decides what is safe.
             m.lost = true;
@@ -732,6 +765,53 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             let kind = p.kind;
             if m.detail(kind).is_none() {
                 m.details[kind.index()] = Some(Detail::new(kind, &p.generation));
+            }
+            if kind == Kind::Operation {
+                let generation = crate::read::generation(&records);
+                let rows = crate::read::rows(&records, kind);
+                let matches_snapshot = generation.as_ref().is_some_and(|(id, _)| {
+                    id == &p.generation && m.generation(Scope::Journey) == Some(id.as_str())
+                });
+                // D55 is a whole finding, never a generic partial page. This
+                // checks its shape only: keys and values remain Bash's words.
+                let complete = p.offset == 0
+                    && (20..=500).contains(&p.limit)
+                    && matches_snapshot
+                    && generation
+                        .as_ref()
+                        .is_some_and(|(_, total)| *total <= 20 && *total == rows.len() as u64)
+                    && records.iter().filter(|r| r.ty == "row").count() == rows.len()
+                    && rows.iter().all(|r| r.cols.len() == 3);
+                let changed = status == "refused" && code == "changed";
+                let d = m.detail_mut(kind).expect("made above");
+                discard_operation(d);
+                if status == "done" && code == "ok" && complete {
+                    d.total = rows.len() as u64;
+                    d.rows = rows;
+                    d.offset = 0;
+                    d.generation = p.generation;
+                    d.loaded = true;
+                    d.changed = false;
+                    d.fault = None;
+                } else if status == "done" {
+                    d.changed = !matches_snapshot;
+                    d.fault = Some(Fault::NoAnswer(if matches_snapshot {
+                        "the operation detail did not supply a complete D55 finding".into()
+                    } else {
+                        "the operation detail generation does not match its snapshot".into()
+                    }));
+                } else {
+                    d.changed = changed;
+                    d.fault = Some(Fault::Said { status, code, text });
+                }
+                if changed {
+                    // Learn the new generation once. A later explicit refresh
+                    // reopens the detail; a moving record cannot cause a loop.
+                    m.reopen = None;
+                    let c = m.refresh();
+                    return settle(m, c);
+                }
+                return settle(m, Vec::new());
             }
             let d = m.detail_mut(kind).expect("made above");
             match (status.as_str(), code.as_str()) {
@@ -847,6 +927,7 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
         }
         Req::Detail(p) => {
             if let Some(d) = m.detail_mut(p.kind) {
+                discard_operation(d);
                 d.fault = Some(fault);
             }
             settle(m, Vec::new())
@@ -881,6 +962,7 @@ fn not_sent(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
         }
         Req::Detail(p) => {
             if let Some(d) = m.detail_mut(p.kind) {
+                discard_operation(d);
                 d.fault = Some(fault);
             }
         }
@@ -1183,6 +1265,9 @@ fn refresh(m: &mut Model) -> Vec<Cmd> {
         },
         s => match s.kind() {
             Some(k) if !m.check => {
+                if let Some(d) = m.detail_mut(k) {
+                    discard_operation(d);
+                }
                 m.reopen = Some(k);
                 match k.scope() {
                     Scope::Journey => m.refresh(),
@@ -1285,7 +1370,7 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
 /// The keys of a detail table: the cursor over the rows shown, a page past
 /// either end of the loaded one, a filter, and the levels of the log.
 fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
-    let limit = m.limit;
+    let limit = detail_limit(kind, m.limit);
     let Some(d) = m.detail_mut(kind) else {
         return Vec::new();
     };

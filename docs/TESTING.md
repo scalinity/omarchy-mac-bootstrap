@@ -1153,7 +1153,7 @@ foundation findings for DIA-14.
 | DIA-10(a) a confirmed mismatch | the test shell's PID with another start time; recorded `unsupervised` and `failed` | `_op_alive` (1), `op_barrier` |
 | DIA-11(a) an identity unconfirmed | as DIA-03 | as DIA-03 |
 | DIA-13 a new client, an old core | the accepted prerequisite `152c8f6`, extracted with `git archive`: its foundation, ordinary journey and production cores refuse `kind=operation` with their own texts and no row; its launcher stops `operation journey` at `unexpected argument` and writes nothing, and takes the bare word for an act command | the old checkout alone |
-| DIA-14 an old client, a new core | `frontend/tests/proto_diff.rs` builds the released `0.1.0` from its own sources at `54c3770` and runs its parser, `snapshot_of`, model and request builder over the saved answers; the candidate's parser, `snapshot_of` and closed detail kinds over the same | the saved answers |
+| DIA-14 an old client, a new core | `frontend/tests/proto_diff.rs` builds the released `0.1.0` from its own sources at `54c3770` and runs its parser, `snapshot_of`, model and request builder over the saved answers; the candidate admits the same answers, its four legacy detail kinds ignore operation rows, and its Operation kind retains their order and columns | the saved answers |
 | DIA-15 hostile bytes | escape sequences, NUL, UTF-8, TABs, record-shaped lines and instructions: none reaches an answer or the terminal | `_op_check`, `op_rows` |
 | DIA-10(b), DIA-11(b), DIA-12 | **deferred**: no core implements a clear, so none writes or reads its evidence or a `clear` row | an accepted clear (UR-Q1) |
 
@@ -1165,6 +1165,36 @@ snapshot and the detail; the unchanged act refusal of an unreadable
 record, the foundation's refusal of every other kind and of `validate`, the
 ordinary journey and the startup check; and the command's argument check
 for every scope name, none, two, another case, a path and a flag.
+
+#### D55 frontend candidate regressions (unreleased)
+
+The foundation journey's Operation view sends only the existing read
+requests. These cases qualify presentation; they implement no clear or
+foundation proof mechanism. `unsettled-clear` is synthetic presentation
+only, and DIA-10(b), DIA-11(b) and DIA-12 stay deferred.
+
+| Permanent frontend case | Coverage |
+| --- | --- |
+| `frames`: `d55_operation_is_explicit_and_uses_the_snapshot_generation` | explicit selection, exact scope/kind/generation, whole-finding request bounds, no startup-check detail, no partial paging |
+| `frames`: `d55_only_complete_findings_of_the_requested_generation_are_loaded` | done/ok, matching snapshot generation, at most 20 rows, exact row count and three columns; malformed or incomplete finding suppression |
+| `frames`: remaining `d55_*` cases | ordered label/value/text; changed refusal and one fresh snapshot before explicit reopening; exact errors/unavailable with no fallback; no retained finding; missing values never imply none; unknown worker/effect and synthetic future state; hostile encoded text and control admission; 80x24, 60x24, 59x20, ASCII/no-colour, filtering and expansion |
+| `frames`: `every_detail_kinds_open_value_reaches_its_end` | all five kinds reach the end of long values; existing status pagination remains unchanged |
+| `contract`: `d55_foundation_journey_reads_the_bash_owned_finding` | actual Bash none/readable/unreadable/undetermined and changed-generation responses, unchanged snapshot action authority, exact old-core unavailable text, startup-check inventory, zero HOME/state/record persistence and presentation file-I/O boundary |
+| `proto_diff`: `dia14_released_and_candidate_clients_against_the_operation_vocabulary` | frozen released client compatibility; candidate operation-row fidelity and legacy-kind isolation |
+| `pty`: `pty_d55_operation_navigation_refresh_degradation_and_restoration` | real launcher/frontend/core at 80x24 and 60x24, read-only detail, hostile record preserved, filtering/expansion, resize to 59x20 and back, exit/cursor/termios restoration |
+
+From `frontend/`, with `CARGO_TARGET_DIR` outside the checkout and
+`OMB_TEST_BASH=/bin/bash` for native macOS qualification:
+
+```bash
+cargo test --locked --offline --test frames
+cargo test --locked --offline --features test-hooks --test contract --test proto_diff
+cargo test --locked --offline --features test-hooks --test pty -- --test-threads=1
+```
+
+Local results do not replace exact-candidate CI or independent acceptance.
+The accepted Gate 3 checkpoint predates the separate FULL CI design; its
+qualification route remains separately authorized.
 
 The implementation review's findings each have permanent cases, through
 the snapshot, the detail and the text interface:

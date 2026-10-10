@@ -449,3 +449,336 @@ mod benchmark;
 
 /// Layer H for the Gate 2 read surface, in a process of its own.
 mod gate2_read;
+
+/// D55 through the existing real-session harness, isolated like the other
+/// environment-owning contract. Only read requests are sent.
+#[test]
+fn d55_foundation_journey_reads_the_bash_owned_finding() {
+    use omb_tui::app::{Cmd, Model, Msg, Screen, update};
+    use omb_tui::read::{Fault, Kind};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    if std::env::var_os("OMB_D55_CONTRACT_CHILD").is_none() {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "d55_foundation_journey_reads_the_bash_owned_finding",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("OMB_D55_CONTRACT_CHILD", "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "isolated D55 contract: {status}");
+        return;
+    }
+    seal_inherited_descriptors().unwrap();
+    let t = scratch();
+    let fix = t.join("fixture");
+    let fixture = if cfg!(target_os = "macos") {
+        "mac-m1pro-1tb-roomy"
+    } else {
+        "linux-omarchy-installed"
+    };
+    assert!(
+        Command::new("cp")
+            .arg("-R")
+            .arg(repo().join("tests/fixtures").join(fixture))
+            .arg(&fix)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::create_dir_all(fix.join("test-children")).unwrap();
+    let sess = t.join("omb-session.d55");
+    std::fs::create_dir(&sess).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&sess, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::create_dir(t.join("home")).unwrap();
+    std::fs::write(t.join("home/keep"), b"unchanged HOME").unwrap();
+    let state = t.join("state");
+    let bash_path = std::env::var("OMB_TEST_BASH").unwrap_or_else(|_| "/bin/bash".into());
+    let path = format!(
+        "{}:/usr/bin:/bin:/usr/sbin:/sbin",
+        Path::new(&bash_path).parent().unwrap().display()
+    );
+    // SAFETY: this is the isolated child test's environment, before readers start.
+    unsafe {
+        for (k, _) in std::env::vars() {
+            if k.starts_with("OMB_") {
+                std::env::remove_var(k);
+            }
+        }
+        for (k, v) in [
+            ("OMB_HOME", repo().display().to_string()),
+            ("OMB_SESSION_INTENT", "read".into()),
+            ("OMB_SESSION_SCOPES", "journey".into()),
+            ("OMB_DRY_RUN", "0".into()),
+            ("OMB_SESSION_DIR", sess.display().to_string()),
+            ("OMB_FIXTURE", fix.display().to_string()),
+            ("OMB_TEST_FOUNDATION", "1".into()),
+            ("OMB_STATE_DIR", state.display().to_string()),
+            ("OMB_FRONTEND_DEV", "1".into()),
+            ("TMPDIR", t.display().to_string()),
+            ("HOME", t.join("home").display().to_string()),
+            ("PATH", path),
+        ] {
+            std::env::set_var(k, v);
+        }
+    }
+    let request = |cmds: Vec<Cmd>| {
+        assert_eq!(cmds.len(), 1, "one read command: {cmds:?}");
+        let Cmd::Send(req) = cmds.into_iter().next().unwrap() else {
+            panic!("only Send")
+        };
+        assert!(matches!(req, Req::Hello | Req::Snapshot | Req::Detail(_)));
+        req
+    };
+    let press = |m: &mut Model, code| update(m, Msg::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+    let mut s = Session::new(sess.clone(), repo(), true);
+    for expected in ["none", "readable", "unreadable", "undetermined"] {
+        if expected == "readable" {
+            std::fs::create_dir_all(state.join("ops")).unwrap();
+            let op = record::line(
+                "op",
+                &[
+                    ("action", b"test.mutate"),
+                    ("scope", b"journey"),
+                    ("basis", "7".repeat(64).as_bytes()),
+                    ("session", b"d55-test"),
+                    ("state", b"failed"),
+                    ("finding", b"absent"),
+                    ("pid", b"0"),
+                    ("start", b"unknown"),
+                    ("boot", b"earlier-test-boot"),
+                    ("at", b"2026-10-10T00:00:00Z"),
+                ],
+            );
+            let content = format!("omb-op 1\n{op}");
+            let sealed = format!(
+                "{content}seal\tsha256={}\n",
+                record::sha256_hex(content.as_bytes())
+            );
+            std::fs::write(state.join("ops/journey.omb"), sealed).unwrap();
+        } else if expected == "unreadable" {
+            std::fs::write(
+                state.join("ops/journey.omb"),
+                b"omb-op 1\ntorn\0\x1b[2J\naction=clear",
+            )
+            .unwrap();
+        } else if expected == "undetermined" {
+            std::fs::rename(&state, t.join("held-state")).unwrap();
+            std::os::unix::fs::symlink(t.join("held-state"), &state).unwrap();
+        }
+        let before = std::fs::read(state.join("ops/journey.omb")).ok();
+        let mut m = Model::default();
+        let hello = request(m.start());
+        assert!(matches!(hello, Req::Hello));
+        let (o, _) = run(&mut s, &hello);
+        let snapshot = request(update(&mut m, Msg::Done(hello, o)));
+        assert!(matches!(snapshot, Req::Snapshot));
+        let (o, _) = run(&mut s, &snapshot);
+        assert!(
+            update(&mut m, Msg::Done(snapshot, o)).is_empty(),
+            "startup asks no operation detail"
+        );
+        assert!(m.detail(Kind::Operation).is_none());
+        let generation = m.snap.as_ref().unwrap().generation.clone();
+        let actions = m.snap.as_ref().unwrap().actions.clone();
+        assert!(press(&mut m, KeyCode::Left).is_empty());
+        let n = omb_tui::app::NAV
+            .iter()
+            .position(|s| *s == Screen::Operation)
+            .unwrap();
+        for _ in 0..8 {
+            assert!(press(&mut m, KeyCode::Up).is_empty());
+        }
+        for _ in 0..n {
+            assert!(press(&mut m, KeyCode::Down).is_empty());
+        }
+        let detail = request(press(&mut m, KeyCode::Enter));
+        let wire = String::from_utf8(s.request(&detail)).unwrap();
+        assert!(wire.contains(&format!("page\tscope=journey\tkind=operation\tgeneration={generation}\toffset=0\tlimit=500\n")), "{wire}");
+        let (o, _) = run(&mut s, &detail);
+        assert_eq!(result(&o), ("done".into(), "ok".into()));
+        let Outcome::Answer(recs) = &o else {
+            unreachable!()
+        };
+        let producer_rows = omb_tui::read::rows(recs, Kind::Operation);
+        assert!(update(&mut m, Msg::Done(detail, o)).is_empty());
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(d.loaded && d.fault.is_none());
+        assert_eq!(d.generation, generation);
+        assert_eq!(d.rows, producer_rows);
+        assert_eq!(
+            m.snap.as_ref().unwrap().actions,
+            actions,
+            "only snapshot action records supply authority"
+        );
+        assert!(d.rows.len() <= 20);
+        assert_eq!(
+            d.rows.iter().find(|r| r.key == "state").unwrap().col(1),
+            expected
+        );
+        if expected == "unreadable" || expected == "undetermined" {
+            for key in ["worker", "effect"] {
+                assert_eq!(
+                    d.rows.iter().find(|r| r.key == key).unwrap().col(1),
+                    "unknown"
+                );
+            }
+            assert!(
+                m.snap
+                    .as_ref()
+                    .unwrap()
+                    .actions
+                    .iter()
+                    .all(|a| a.intent == "read")
+            );
+        }
+        assert_eq!(std::fs::read(state.join("ops/journey.omb")).ok(), before);
+        assert!(!state.join("logs").exists() && !state.join("run.lock").exists());
+        if expected != "none" {
+            assert_eq!(std::fs::read_dir(&state).unwrap().count(), 1);
+            assert_eq!(std::fs::read_dir(state.join("ops")).unwrap().count(), 1);
+        }
+        assert_eq!(std::fs::read_dir(t.join("home")).unwrap().count(), 1);
+        assert_eq!(
+            std::fs::read(t.join("home/keep")).unwrap(),
+            b"unchanged HOME"
+        );
+        if expected == "none" {
+            assert!(!state.exists());
+        }
+        if expected == "unreadable" {
+            let changed_bytes = b"omb-op 1\na different torn record";
+            std::fs::write(state.join("ops/journey.omb"), changed_bytes).unwrap();
+            let req = Req::Detail(omb_tui::read::Page {
+                kind: Kind::Operation,
+                generation,
+                offset: 0,
+                limit: 20,
+            });
+            let (o, _) = run(&mut s, &req);
+            assert_eq!(result(&o), ("refused".into(), "changed".into()));
+            let fresh = request(update(&mut m, Msg::Done(req, o)));
+            assert!(matches!(fresh, Req::Snapshot));
+            assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
+            let (o, _) = run(&mut s, &fresh);
+            assert!(update(&mut m, Msg::Done(fresh, o)).is_empty());
+            let fresh = request(press(&mut m, KeyCode::Char('r')));
+            let (o, _) = run(&mut s, &fresh);
+            let detail = request(update(&mut m, Msg::Done(fresh, o)));
+            let Req::Detail(p) = &detail else {
+                unreachable!()
+            };
+            assert_eq!(p.generation, m.snap.as_ref().unwrap().generation);
+            let (o, _) = run(&mut s, &detail);
+            assert!(update(&mut m, Msg::Done(detail, o)).is_empty());
+            assert!(m.detail(Kind::Operation).unwrap().loaded);
+            assert_eq!(
+                std::fs::read(state.join("ops/journey.omb")).unwrap(),
+                changed_bytes
+            );
+        }
+    }
+
+    // DIA-13's exact accepted old core, without changing any repository ref.
+    let old = t.join("old-core");
+    std::fs::create_dir(&old).unwrap();
+    let archive = Command::new("git")
+        .arg("-C")
+        .arg(repo())
+        .args(["archive", "152c8f68854368025816b926494dbec0e94bc903"])
+        .output()
+        .unwrap();
+    assert!(archive.status.success());
+    use std::io::Write;
+    let mut tar = Command::new("tar")
+        .args(["-x", "-C"])
+        .arg(&old)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    tar.stdin
+        .take()
+        .unwrap()
+        .write_all(&archive.stdout)
+        .unwrap();
+    assert!(tar.wait().unwrap().success());
+    let old = std::fs::canonicalize(old).unwrap();
+    let mut old_session = Session::new(sess.clone(), old.clone(), true);
+    unsafe {
+        std::env::set_var("OMB_HOME", &old);
+    }
+    let (snapshot, _) = run(&mut old_session, &Req::Snapshot);
+    assert_eq!(result(&snapshot), ("done".into(), "ok".into()));
+    let Outcome::Answer(recs) = &snapshot else {
+        panic!("{snapshot:?}")
+    };
+    let generation = omb_tui::read::generation(recs).unwrap().0;
+    let req = Req::Detail(omb_tui::read::Page {
+        kind: Kind::Operation,
+        generation,
+        offset: 0,
+        limit: 20,
+    });
+    let (o, _) = run(&mut old_session, &req);
+    assert_eq!(result(&o), ("refused".into(), "unavailable".into()));
+    let mut m = Model {
+        screen: Screen::Operation,
+        ..Model::default()
+    };
+    assert!(
+        update(&mut m, Msg::Done(req, o)).is_empty(),
+        "no fallback request"
+    );
+    assert!(
+        matches!(&m.detail(Kind::Operation).unwrap().fault, Some(Fault::Said { text, .. }) if text == "Nothing in this gate pages details or validates parameters.")
+    );
+    assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
+    assert_eq!(std::fs::read_dir(&state).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(state.join("ops")).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(t.join("home")).unwrap().count(), 1);
+    assert_eq!(
+        std::fs::read(t.join("home/keep")).unwrap(),
+        b"unchanged HOME"
+    );
+
+    // The model's startup-check guard keeps the two-request inventory over
+    // the same real fixture transport. Production check sessions reject seams;
+    // tests/test-frontend-check.sh holds that separate core contract.
+    unsafe {
+        std::env::set_var("OMB_HOME", repo());
+    }
+    let mut check = Model {
+        check: true,
+        ..Model::default()
+    };
+    let hello = request(check.start());
+    let (o, _) = run(&mut s, &hello);
+    let snapshot = request(update(&mut check, Msg::Done(hello, o)));
+    assert!(check.check && matches!(snapshot, Req::Snapshot));
+    let (o, _) = run(&mut s, &snapshot);
+    assert!(update(&mut check, Msg::Done(snapshot, o)).is_empty());
+    check.screen = Screen::Operation;
+    assert!(press(&mut check, KeyCode::Char('r')).is_empty());
+    assert!(check.detail(Kind::Operation).is_none());
+
+    // Frontend presentation modules have no file-I/O path. Transport and
+    // terminal modules retain their separate, already accepted responsibilities.
+    for file in [
+        "read.rs",
+        "app.rs",
+        "screens/mod.rs",
+        "screens/table.rs",
+        "keys.rs",
+        "widgets/mod.rs",
+    ] {
+        let source = std::fs::read_to_string(repo().join("frontend/src").join(file)).unwrap();
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        for forbidden in ["std::fs", "OpenOptions", "File::", "read_dir(", "ops/"] {
+            assert!(!production.contains(forbidden), "{file}: {forbidden}");
+        }
+    }
+    std::fs::remove_dir_all(t).unwrap();
+}

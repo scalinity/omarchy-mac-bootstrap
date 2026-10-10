@@ -1,19 +1,18 @@
 ---
-source: tests/frames.rs
-assertion_line: 285
-expression: "text(&render(&m, &t, 80, 24))"
+source: tests/read_surface/mod.rs
+expression: f
 ---
- ◒ Connecting ────────────────────────────────────────────────────────── v0.2.0
+ ◒ Operation ─────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
-┌ Screens ─────┐┌ Connecting ──────────────────────────────────────────────────┐
-│  Welcome     ││                                                              │
-│  Journey     ││   Asking the core who it is and what this session may do.    │
-│  Machine     ││                                                              │
-│  Status      ││                                                              │
+┌ Screens ─────┐┌ Operation ───────────────────────────────────────────────────┐
+│  Welcome     ││ ❯ Scope   journey                            This scope ow…  │
+│  Journey     ││   State   unreadable                         What it recor…  │
+│  Machine     ││   Worker  unknown                            Whether a wor…  │
+│  Status      ││   Effect  unknown                            What the oper…  │
 │  Health      ││                                                              │
 │  Logs        ││                                                              │
 │  Plan        ││                                                              │
-│  Op          ││                                                              │
+│▍ Op          ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
@@ -24,6 +23,6 @@ expression: "text(&render(&m, &t, 80, 24))"
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
+│              ││ rows 1–4 of 4 · generation 78b203ec6845                      │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
-                                                                     connecting
- q quit
+ ↑↓ move  / filter  r refresh  ? help   read-only · no system changes · fixture

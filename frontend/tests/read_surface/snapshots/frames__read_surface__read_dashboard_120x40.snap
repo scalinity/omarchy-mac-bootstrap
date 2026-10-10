@@ -20,7 +20,7 @@ expression: f
 │  Health              ││                                                              ││ Memory        17179869184    │
 │  Logs                ││ ▍Where it stands                                             ││ macOS         14.6           │
 │  Plan check          ││   Run ./omarchy-bootstrap to survey this Mac and plan        │└──────────────────────────────┘
-│                      ││   storage.                                                   │
+│  Operation           ││   storage.                                                   │
 │                      ││                                                              │
 │                      ││ ▍Facts                                                       │
 │                      ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │

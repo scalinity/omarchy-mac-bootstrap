@@ -13,7 +13,7 @@ expression: f
 │  Health      ││ ▍Where it stands                                                                 │
 │  Logs        ││   Run ./omarchy-bootstrap to survey this Mac and plan storage.                   │
 │  Plan        ││                                                                                  │
-│              ││ ▍Facts                                                                           │
+│  Op          ││ ▍Facts                                                                           │
 │              ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
 │              ││   Asahi install   none                                                           │
 │              ││   Safe Linux max  654 GB                                                         │

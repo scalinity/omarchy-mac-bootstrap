@@ -20,7 +20,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Health              ││                                                              │
 │  Logs                ││ ▍Where it stands                                             │
 │  Plan check          ││   The core gave no next step for this session.               │
-│                      ││                                                              │
+│  Operation           ││                                                              │
 │                      ││ ▍Facts                                                       │
 │                 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                 │ ▍Change the fixture (test)                                                       │

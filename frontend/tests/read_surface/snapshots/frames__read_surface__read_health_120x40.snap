@@ -20,7 +20,7 @@ expression: f
 │▍ Health              ││   ! warn   Backup confirmed  not yet; asked before the ins…  ││ Memory        17179869184    │
 │  Logs                ││                                                              ││ macOS         14.6           │
 │  Plan check          ││                                                              │└──────────────────────────────┘
-│                      ││                                                              │┌ Next ────────────────────────┐
+│  Operation           ││                                                              │┌ Next ────────────────────────┐
 │                      ││                                                              ││ Run ./omarchy-bootstrap to   │
 │                      ││                                                              ││ survey this Mac and plan     │
 │                      ││                                                              ││ storage.                     │

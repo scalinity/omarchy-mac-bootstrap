@@ -13,7 +13,7 @@ expression: f
 │  Health      ││   Linux size   250GB                                         │
 │  Logs        ││ ❯ Shared size  100GB▏                                        │
 │▍ Plan        ││   as 250GB, 1.5TB or 30%; a size left empty is not sent      │
-│              ││                                                              │
+│  Op          ││                                                              │
 │              ││   For Linux 250GB · Shared 100GB                             │
 │              ││ ✓ checked                                                    │
 │              ││                                                              │

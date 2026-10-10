@@ -20,7 +20,7 @@ expression: text(&b)
 │  Health              ││                                                              │
 │  Logs                ││ ▍Where it stands                                             │
 │  Plan check          ││   The core gave no next step for this session.               │
-│                      ││                                                              │
+│  Operation           ││                                                              │
 │                      ││ ▍Facts                                                       │
 │                      ││   Interface  the foundation: test actions over fixtures      │
 │                      ││   Fixture    mac-m1pro-1tb-roomy                             │

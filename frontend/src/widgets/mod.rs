@@ -260,6 +260,7 @@ pub fn banner(f: &mut Frame, area: Rect, t: &Theme) {
 fn nav_label(s: Screen, short: bool) -> &'static str {
     match s {
         Screen::Plan if short => "Plan",
+        Screen::Operation if short => "Op",
         s => s.title(),
     }
 }

@@ -20,7 +20,7 @@ expression: f
 │  Health              ││   Chip          Apple M1 Pro                                                                 │
 │  Logs                ││   Memory        17179869184                                                                  │
 │  Plan check          ││   macOS         14.6                                                                         │
-│                      ││                                                                                              │
+│  Operation           ││                                                                                              │
 │                      ││ ▍The tool and the core                                                                       │
 │                      ││   Interface     frontend 0.2.0, protocol 1                                                   │
 │                      ││   Core          core 0.2.0, commit 0123456789ab                                              │

@@ -34,14 +34,21 @@ pub enum Kind {
     Status,
     Doctor,
     Log,
+    Operation,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 4] = [Kind::Machine, Kind::Status, Kind::Doctor, Kind::Log];
+    pub const ALL: [Kind; 5] = [
+        Kind::Machine,
+        Kind::Status,
+        Kind::Doctor,
+        Kind::Log,
+        Kind::Operation,
+    ];
 
     pub fn scope(self) -> Scope {
         match self {
-            Kind::Machine | Kind::Status => Scope::Journey,
+            Kind::Machine | Kind::Status | Kind::Operation => Scope::Journey,
             Kind::Doctor => Scope::Health,
             Kind::Log => Scope::Logs,
         }
@@ -53,6 +60,7 @@ impl Kind {
             Kind::Status => "status",
             Kind::Doctor => "doctor",
             Kind::Log => "log",
+            Kind::Operation => "operation",
         }
     }
 
@@ -67,6 +75,7 @@ impl Kind {
             Kind::Status => "reading status details",
             Kind::Doctor => "reading health findings",
             Kind::Log => "reading log lines",
+            Kind::Operation => "reading the operation record diagnostic",
         }
     }
 }

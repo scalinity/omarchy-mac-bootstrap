@@ -1,17 +1,15 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
- ◒ Health ────────────────────────────────────────── v0.2.0
+ ◒ Operation ─────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
-  Welcome  Journey  Machine  Status ▍Health  Logs  Plan  Op
-┌ Health ──────────────────────────────────────────────────┐
-│   Passed 10    Warnings 1    Failures 0                  │
-│ ❯ ✓ pass   Apple Silicon     arm64                       │
-│   ✓ pass   Supported model   MacBook Pro (16-inch, M1 …  │
-│   · info   FileVault         on — the installer asks f…  │
-│   ! warn   Backup confirmed  not yet; asked before the…  │
+  Welcome  Journey  Machine  Status  Health  Logs  Plan ▍Op
+┌ Operation ───────────────────────────────────────────────┐
+│ ❯ Scope   journey                         This scope o…  │
+│   State   unreadable                      What it reco…  │
+│   Worker  unknown                         Whether a wo…  │
+│   Effect  unknown                         What the ope…  │
 │                                                          │
 │                                                          │
 │                                                          │
@@ -24,6 +22,7 @@ expression: f
 │                                                          │
 │                                                          │
 │                                                          │
-│ rows 1–4 of 4 · generation 2620e0230283                  │
+│                                                          │
+│ rows 1–4 of 4 · generation 78b203ec6845                  │
 └──────────────────────────────────────────────────────────┘
  ↑↓ move  / filter  r refresh  ? help   read-only · fixture

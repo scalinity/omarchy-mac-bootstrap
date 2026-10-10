@@ -3,7 +3,7 @@ source: tests/read_surface/mod.rs
 expression: f
 ---
  ◒ Logs ──────────────────────────────────────────── v0.2.0
-  Welcome  Journey  Machine  Status  Health ▍Logs  Plan
+  Welcome  Journey  Machine  Status  Health ▍Logs  Plan  Op
 ┌ Logs ────────────────────────────────────────────────────┐
 │ ! shown: an earlier read, generation a1a1a1a1a1a1; the   │
 │   newest read is b2b2b2b2b2b2, not shown                 │

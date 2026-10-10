@@ -13,7 +13,7 @@ expression: f
 │  Health      ││   Lines   3                                                  │
 │▍ Logs        ││   the selected log's last lines, as `logs` shows them        │
 │  Plan        ││ ❯ info   [SURVEY]  reading the disk                          │
-│              ││   warn   [PLAN]    Linux below recommended                   │
+│  Op          ││   warn   [PLAN]    Linux below recommended                   │
 │              ││                    not a log-shaped line                     │
 │              ││                                                              │
 │              ││                                                              │

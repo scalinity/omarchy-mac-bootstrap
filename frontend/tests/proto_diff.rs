@@ -695,7 +695,8 @@ fn dia14_frozen_client() {
 /// candidate's. Both admit the new fact values and the blocker ids
 /// `unreadable` and `undetermined` as words, keep a blocker's text and fix,
 /// take actions only from `action` records, and never ask for
-/// `kind=operation`; the candidate's closed detail kinds keep no operation row.
+/// `kind=operation`; the candidate's four legacy kinds keep no operation row,
+/// while its Operation kind retains the producer's ordered columns.
 #[test]
 fn dia14_released_and_candidate_clients_against_the_operation_vocabulary() {
     const S: &str = "54c3770f99c2affdf63ceaf2d46990cb3d9fd94b";
@@ -741,13 +742,27 @@ fn dia14_released_and_candidate_clients_against_the_operation_vocabulary() {
             assert_eq!(snap.blockers.len(), sent("blocker"), "{name}");
             assert_eq!(snap.actions.len(), sent("action"), "{name}");
         } else {
-            for kind in omb_tui::read::Kind::ALL {
-                assert_ne!(kind.name(), "operation");
+            for kind in [
+                omb_tui::read::Kind::Machine,
+                omb_tui::read::Kind::Status,
+                omb_tui::read::Kind::Doctor,
+                omb_tui::read::Kind::Log,
+            ] {
                 assert!(
                     omb_tui::read::rows(&recs, kind).is_empty(),
                     "{name}: an operation row read as {}",
                     kind.name()
                 );
+            }
+            let rows = omb_tui::read::rows(&recs, omb_tui::read::Kind::Operation);
+            let sent: Vec<_> = recs.iter().filter(|r| r.ty == "row").collect();
+            assert_eq!(rows.len(), sent.len(), "{name}: complete operation rows");
+            for (row, original) in rows.iter().zip(sent) {
+                assert_eq!(row.cols.len(), 3);
+                assert_eq!(row.key, record::display(original.get("key").unwrap(), 8192));
+                for (col, bytes) in row.cols.iter().zip(original.list("col")) {
+                    assert_eq!(col, &record::display(bytes, 8192), "{name}: row fidelity");
+                }
             }
         }
     }

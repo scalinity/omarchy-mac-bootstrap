@@ -13,7 +13,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   The core gave no next step for this session.               │
-│              ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
+│  Op          ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
 │              ││              process it started may still be running.        │
 │              ││              Restart this Mac (or this Linux system), then   │
 │              ││              run the tool again.                             │
