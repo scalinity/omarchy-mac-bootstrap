@@ -1502,7 +1502,7 @@ decides which, plans the run and keeps its evidence.
 | Lane or job | Runs |
 | --- | --- |
 | `macos-bash32` | `macos-latest`, `/bin/bash` 3.2, plutil and BSD tools, no skip: every Bash test, fixture freshness, syntax, and the entrypoint starting under `sh` and `/bin/bash` with nothing on stderr, recording nothing; four shards |
-| `linux-bash5` | `ubuntu-24.04` x86_64, Bash 5, every Bash test, fixture freshness, syntax, ShellCheck 0.9.0 over every file and through the entrypoint (`-x`), `docs-*`, `persist-full-real`; only the plutil-bound checks and the Bash 5.2 storm case skip; four shards, ShellCheck in its own |
+| `linux-bash5` | `ubuntu-24.04` x86_64, Bash 5, every Bash test, fixture freshness, syntax, ShellCheck 0.9.0 over every file and through the entrypoint (`-x`), `docs-*`, `persist-full-real`; only the plutil-bound checks and the Bash 5.2 storm case skip; four shards, ShellCheck and the operation suite in `l0` |
 | `target-bash53` | `ubuntu-24.04-arm`: GNU Bash 5.3.15, the Linux root's, built in every shard from GNU's sources held to `tests/bash-5.3.15.sha256`; `tests/bash-trap-comsub.sh` under it; the records, core (the signal storm with no skip), diagnostics, launcher, static, CP1 and Gate 2 read suites, layer H and layer G under it; only the plutil-bound checks skip; four shards |
 | equivalence | both systems: the baseline worktree and `equiv-*` |
 | `frontend` | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's, and either the exact lock check or the named unreleased candidate's (the job checks out the full history for it); only the plutil-bound checks skip |
@@ -1523,6 +1523,14 @@ it, and `test-ci` holds the workflow to the manifest. Shards are balanced on
 hosted times; a shard runs its units one after another in one checkout, in
 the order an unsharded job runs them, and runs none under another bash than
 its lane's.
+
+The Gate 3 operation suite runs exactly once in `macos-bash32` (`m2`) and
+`linux-bash5` (`l0`), as both lanes require every Bash suite. Its placement
+uses the available capacity measured in accepted FULL run `38028703694`
+and its execution time in serial source run `38155507027`. All other unit
+placements stay fixed. Required units are counted from the current manifest;
+adding a suite increases that population rather than excluding it from a
+lane's coverage.
 
 **The guard.** Every shard writes evidence, uploaded even when it fails: the
 SHA it checked out and the SHA its run is for, its lane, shard, platform and

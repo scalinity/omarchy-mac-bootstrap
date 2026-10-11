@@ -17,6 +17,8 @@
 # Shards are balanced on the hosted times of run 37409491379 (and 37276081880
 # for the target shell); within a shard units keep the order the
 # unsharded jobs ran them in.
+# Gate 3 operation uses m2 and l0's capacity in accepted FULL run 38028703694;
+# its added cost is measured by the serial source run 38155507027.
 
 lane	macos-bash32	macos-latest	Darwin	arm64	^3\.2\.	none	*
 lane	linux-bash5	ubuntu-24.04	Linux	x86_64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	*
@@ -45,6 +47,7 @@ unit	macos-bash32	m2	suite:frontend
 unit	macos-bash32	m2	suite:gate2-probes
 unit	macos-bash32	m2	suite:gate2-read
 unit	macos-bash32	m2	suite:lifecycle
+unit	macos-bash32	m2	suite:operation
 unit	macos-bash32	m3	suite:dev
 unit	macos-bash32	m3	diag:bounds
 unit	macos-bash32	m3	diag:session
@@ -74,6 +77,7 @@ unit	macos-bash32	m4	suite:shared
 unit	linux-bash5	l0	check:fixtures
 unit	linux-bash5	l0	check:syntax
 unit	linux-bash5	l0	check:shellcheck
+unit	linux-bash5	l0	suite:operation
 unit	linux-bash5	l1	suite:ci
 unit	linux-bash5	l1	suite:cli
 unit	linux-bash5	l1	diag:bounds
