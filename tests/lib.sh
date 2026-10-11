@@ -162,6 +162,22 @@ t_plan_answers() {
 # whitespace squeezed); empty when there is no such process.
 t_started() { LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1 = $1; print}'; }
 
+# t_wait_gone PID SECONDS — wait until no process has PID, read with ps and
+# never signalled, for at most SECONDS: the fixed wait it replaces, so it is
+# never longer and ends as soon as the process has. With no PID to watch, the
+# whole fixed wait.
+t_wait_gone() {
+  local i=0 n=$(($2 * 20))
+  if [ -z "$1" ]; then
+    sleep "$2"
+    return
+  fi
+  while [ -n "$(ps -p "$1" -o pid= 2>/dev/null)" ] && [ "$i" -lt "$n" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+}
+
 # t_signal SIG PID START — signal PID while it is still the process that
 # started at START; 1 when it is not (gone, or its PID now another's).
 t_signal() {

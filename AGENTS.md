@@ -130,6 +130,10 @@ afterwards, and records.
 - Tests signal only processes they own â€” a PID recorded at its start and held
   to its start time (`t_signal`), or a group they made; never `pkill`,
   `pgrep` or `killall`, which reach the developer's own programs too.
+- A new `tests/test-*.sh` or diagnostics unit goes into
+  `tests/ci-manifest.tsv` in the same commit: `test-ci` fails until each lane
+  that runs every suite runs it, and the FULL guard accepts only what the
+  manifest names.
 - Test seams `OMB_FIXTURE`, `OMB_TEST_RECORD`, `OMB_TEST_AFTER` (the machine
   after a recorded command) and `OMB_TEST_RC` (that command's exit status) are
   refused as root and never execute anything. A recorded `sudo -v` changes
@@ -150,7 +154,11 @@ OMB_TEST_BASH=/bin/bash cargo test --locked --features test-hooks   # layers Aâ€
 tests/frontend-inputs.sh clean | digest | closure DIR BUILD | compat-macos FILE   # the build-input and artifact rules CI and the release apply (BUILD: the build's --message-format=json output)
 ```
 
-Report an unrun check as unrun. `.github/workflows/ci.yml` runs Linux (bash
-5, ShellCheck) and macOS (`/bin/bash` 3.2) jobs, and the frontend on Linux
-x86_64 and on both arm64 runners; `release.yml` runs only for a
+Report an unrun check as unrun. `.github/workflows/ci.yml` runs FAST on a
+push (feedback, never acceptance evidence) and FULL when dispatched
+(`gh workflow run ci.yml --ref BRANCH -f candidate=SHA`) or on main: every
+shard of `tests/ci-manifest.tsv` (macOS `/bin/bash` 3.2, Linux bash 5 with
+ShellCheck, GNU Bash 5.3.15 on aarch64, the frontend on Linux x86_64 and both
+arm64 runners), then a completeness guard. Only a green FULL guard at the
+exact SHA is acceptance evidence. `release.yml` runs only for a
 `frontend-v*` tag.

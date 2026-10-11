@@ -3,8 +3,10 @@
 # On macOS the suite runs under /bin/bash (3.2) to prove stock compatibility;
 # set OMB_TEST_BASH to use another bash.
 #
-#   tests/run.sh            everything
-#   tests/run.sh storage    one file (tests/test-storage.sh)
+#   tests/run.sh               everything
+#   tests/run.sh storage       one file (tests/test-storage.sh)
+#   tests/run.sh --syntax      the syntax check alone
+#   tests/run.sh --shellcheck  ShellCheck alone, required
 cd "$(dirname "$0")/.." || exit 1
 # shellcheck source=tests/lib.sh
 . tests/lib.sh
@@ -13,7 +15,7 @@ status=0
 # shellcheck disable=SC2016 # expanded by the child bash
 printf 'bash under test: %s (%s)\n\n' "$T_BASH" "$("$T_BASH" -c 'echo $BASH_VERSION')"
 
-if [ -z "${1:-}" ]; then
+syntax() {
   echo "syntax"
   for f in omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/generate.sh tests/proto/corpus.sh tests/children/*; do
     "$T_BASH" -n "$f" || {
@@ -22,7 +24,9 @@ if [ -z "${1:-}" ]; then
     }
   done
   echo "  ok"
+}
 
+lint() {
   sc=${SHELLCHECK:-$(command -v shellcheck || true)}
   if [ -n "$sc" ]; then
     echo "shellcheck"
@@ -38,11 +42,21 @@ if [ -z "${1:-}" ]; then
     echo "shellcheck: not installed, skipped (set SHELLCHECK=/path/to/shellcheck)"
   fi
   echo
-fi
+}
 
-for t in tests/test-${1:-*}.sh; do
-  "$T_BASH" "$t" || status=1
-done
+case ${1:-} in
+  --syntax) syntax ;;
+  --shellcheck) OMB_REQUIRE_SHELLCHECK=1 lint ;;
+  *)
+    if [ -z "${1:-}" ]; then
+      syntax
+      lint
+    fi
+    for t in tests/test-${1:-*}.sh; do
+      "$T_BASH" "$t" || status=1
+    done
+    ;;
+esac
 
 rm -rf tests/.tmp
 echo

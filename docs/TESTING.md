@@ -1479,17 +1479,102 @@ A validator, `tests/test-docs.sh` (M14 gate 1), runs in CI over `SPEC.md`,
 
 ## CI
 
-| Job | Runs |
+One workflow, `.github/workflows/ci.yml`, in two modes; `tests/ci.sh`
+decides which, plans the run and keeps its evidence.
+
+- **FULL** runs when the workflow is dispatched
+  (`gh workflow run ci.yml --ref BRANCH -f candidate=SHA`, which stops when
+  the branch is not at SHA) and on a push to main. It runs every shard of
+  `tests/ci-manifest.tsv` at one SHA, then the completeness guard. A green
+  FULL guard at a candidate's exact SHA is the acceptance evidence; nothing
+  else is.
+- **FAST** runs on any other push, and on a pull request from a fork (one
+  from this repository is its branch's push run again, so it does not run).
+  It runs what the changed paths call for: always syntax, fixture freshness,
+  `docs-*`, the static and safety suites and `test-ci`; every `linux-bash5`
+  shard for product code (with the `frontend` lane for `lib/` and the
+  frontend's test scripts); a changed suite or diagnostics unit by itself,
+  with ShellCheck; the `frontend` lane for `frontend/` and `release/`;
+  ShellCheck for the workflow and its helpers; every tier for a path none of
+  these names. Its verdict says it is not acceptance evidence, and its
+  evidence says mode fast, which the guard refuses.
+
+| Lane or job | Runs |
 | --- | --- |
-| Linux (existing) | Bash 5, ShellCheck 0.9.0, every Bash test, fixture freshness, `docs-*`, `persist-full-real` |
-| macOS (existing) | `/bin/bash` 3.2, every Bash test, the launcher step, fixture freshness |
+| `macos-bash32` | `macos-latest`, `/bin/bash` 3.2, plutil and BSD tools, no skip: every Bash test, fixture freshness, syntax, and the entrypoint starting under `sh` and `/bin/bash` with nothing on stderr, recording nothing; four shards |
+| `linux-bash5` | `ubuntu-24.04` x86_64, Bash 5, every Bash test, fixture freshness, syntax, ShellCheck 0.9.0 over every file and through the entrypoint (`-x`), `docs-*`, `persist-full-real`; only the plutil-bound checks and the Bash 5.2 storm case skip; four shards, ShellCheck in its own |
+| `target-bash53` | `ubuntu-24.04-arm`: GNU Bash 5.3.15, the Linux root's, built in every shard from GNU's sources held to `tests/bash-5.3.15.sha256`; `tests/bash-trap-comsub.sh` under it; the records, core (the signal storm with no skip), diagnostics, launcher, static, CP1 and Gate 2 read suites, layer H and layer G under it; only the plutil-bound checks skip; four shards |
 | equivalence | both systems: the baseline worktree and `equiv-*` |
-| frontend | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's, and either the exact lock check or the named unreleased candidate's (the job checks out the full history for it) |
-| frontend on Linux aarch64 | `ubuntu-24.04-arm`: build, layer G, the unit tests (the process table included), H, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-linux` |
-| frontend on macOS arm64 | build, layers G and H with the `/bin/bash` 3.2 core, the unit tests, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-macos` |
-| Linux target shell | `ubuntu-24.04-arm`: GNU Bash 5.3.15, the Linux root's, built from GNU's sources held to `tests/bash-5.3.15.sha256`; `tests/bash-trap-comsub.sh` under it; the records, core (the signal storm with no skip), diagnostics, launcher and static suites, layer H and layer G under it |
+| `frontend` | `cargo fmt --check`, `clippy -D warnings`, layers A–F and H against the Bash 5 core, the panic gate, `proto-diff-*`, no pending snapshots, the closure over a release build, `frontend-input-*` and `frontend-lock-not-input`, the lock's protocol equals the core's, and either the exact lock check or the named unreleased candidate's (the job checks out the full history for it); only the plutil-bound checks skip |
+| `frontend-linux-arm64` | `ubuntu-24.04-arm`: build, layer G, the unit tests (the process table included), H, the panic gate, `sup-*`, `diag-*`, `frontend-check-*` but the production case, `frontend-compat-linux`; three shards, the diagnostics units in two of them |
+| `frontend-macos-arm64` | build, layers G and H with the `/bin/bash` 3.2 core, the unit tests, the panic gate, `sup-*`, `frontend-check-*` but the production case, `frontend-compat-macos`; no skip |
 | release | on a `frontend-v*` tag: native builds, the checks above, `SHA256SUMS`, artifact attestations, no `test-hooks` feature |
 | benchmark | by hand (`workflow_dispatch`) on both arm64 runners: `bench-*`; its numbers are recorded in MILESTONES.md → *Gate 2 — Read-only equivalence* |
+
+**The manifest.** `tests/ci-manifest.tsv` gives each lane its runner,
+platform, the bash it must run under (an ERE on `$BASH_VERSION`), the skips
+it allows and the suites it must run, and puts every unit in exactly one
+shard: a suite, a diagnostics unit (`tests/test-diag.sh` with
+`OMB_DIAG_UNITS`, so its listing checks run in every shard), a check
+`tests/ci.sh` runs, or a step of the lane's job. Each lane is one job of the
+workflow and its shards a matrix. `tests/ci.sh lint` holds the manifest to
+the repository, so a new `tests/test-*.sh` fails `test-ci` until a lane runs
+it, and `test-ci` holds the workflow to the manifest. Shards are balanced on
+hosted times; a shard runs its units one after another in one checkout, in
+the order an unsharded job runs them, and runs none under another bash than
+its lane's.
+
+**The guard.** Every shard writes evidence, uploaded even when it fails: the
+SHA it checked out and the SHA its run is for, its lane, shard, platform and
+mode, and each unit's result, exit status, bash version, summary lines and
+skips. The FULL guard (`tests/ci.sh guard`) runs after every shard, whatever
+became of them, and is green only when every unit of the manifest executed
+and passed exactly once, on its lane's platform and bash, at the run's SHA,
+with no skip its lane does not allow, and with each suite and diagnostics
+unit's skipped count, summed over every summary line it printed, equal to its
+skip rows: 0 on a lane that allows no skip. Otherwise it names each problem:
+a missing shard or unit, a duplicate, another SHA, another platform or bash,
+an undeclared skip, a skipped count its skip rows do not match, FAST
+evidence, an executed failure; and it counts a runner never acquired and an
+exhausted source download as infrastructure, apart from executed failures.
+When runners never acquired are every problem, it says so on a line of its
+own.
+
+**GNU Bash 5.3.15.** `tests/ci-bash.sh` fetches each file
+`tests/bash-5.3.15.sha256` pins from GNU's mirror redirector
+(`ftpmirror.gnu.org`), then `ftp.gnu.org`, then the kernel.org GNU mirror,
+and uses it only when its SHA-256 is the pinned one; an origin it cannot
+reach is not tried again. The whole pinned set is then checked strictly, as
+before any extraction, patching or build, and the built shell must report
+`5.3.15(1)-release`. A cache holds the pinned files only, keyed on the pin
+and the helper, and a restored file is held to its digest like a download: a
+missing, short or different one is fetched again. When no origin delivers a
+file, the step exits 75, which the guard reports as external infrastructure.
+
+**One automatic retry.** A job that never acquired a runner ends cancelled
+with `runner_id` the number 0, an empty list of steps, and GitHub's
+annotation *The job was not acquired by Runner*. A field GitHub left out,
+null or of another type proves nothing (a skipped job's runner is null), and
+`tests/ci.sh jobs` reads every page of the job list and every annotation
+whole before printing a line: a read that fails, or fewer jobs than GitHub
+counts, prints none, and nothing is retried from it. The run's own record is
+held to the same rule. When everything that went wrong in a run's first
+attempt is such a job, and in FULL the guard found nothing else, the verdict
+job's last step leaves a notice on the verdict job naming the mode, the SHA
+and those jobs (`tests/ci.sh retry-signal`) and dispatches the workflow in
+retry mode. The controller waits for the run to complete and holds it to this
+repository's `ci.yml`, a push or a dispatch, the SHA and its first attempt.
+It reads the attempt again and re-runs its failed jobs once only when every
+job that did not pass is such a job but the verdict job, and the verdict job
+ended failed on a runner of its own that ran its steps, in its own verdict
+step alone, carrying that notice for exactly those jobs
+(`tests/ci.sh retry`). An executed failure, a failed download, a job or
+verdict cancelled by hand or timed out, a verdict that went wrong in any
+other step, a pull request or a second attempt is never retried.
+
+**Caches.** Only the Bash source files. Cargo's registry and the Rust
+toolchain are fetched each time (`cargo fetch` takes under two seconds on
+these runners), and no build output is cached.
 
 ## What only the real Mac can show
 

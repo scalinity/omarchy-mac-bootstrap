@@ -11,10 +11,11 @@
 //! there the same flows run over a Linux fixture, and the plan check shows
 //! the core's own refusal for that platform. Nothing is skipped.
 //!
-//! One test function, in a process of its own: the session's environment is
-//! set for the whole process and changed only between its parts, with
-//! nothing running beside it (the contract target's other tests run in
-//! theirs).
+//! Each part is a test function in a process and a process group of its own
+//! (`own_process`): the session's environment is set for that whole process,
+//! with nothing running beside it in it, so the parts — and the contract
+//! target's other tests, in theirs — can run side by side. The fixtures are
+//! read in `FIXTURE_PARTS` parts at once, which together read each one once.
 
 use omb_tui::app::{Cmd, Model, Msg, Outcome, Req, Screen, update};
 use omb_tui::core::{Running, Session, seal_inherited_descriptors};
@@ -199,27 +200,57 @@ fn page(kind: Kind, generation: &str, offset: u64) -> Req {
     })
 }
 
-#[test]
-fn the_read_surface_against_the_real_core() {
-    if std::env::var_os("OMB_GATE2_READ_CHILD").is_none() {
-        // In a process group of its own, as the benchmark's cores are: the
-        // contract test beside it supervises its own group during its
-        // executes, where a core of this test would be a process it does not
-        // know (`stopped unsupervised`).
-        let status = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "gate2_read::the_read_surface_against_the_real_core",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env("OMB_GATE2_READ_CHILD", "1")
-            .process_group(0)
-            .status()
-            .unwrap();
-        assert!(status.success(), "the read surface's own process: {status}");
-        return;
+/// The scopes the ordinary launcher's sessions hold.
+const ALL: &str = "journey,health,logs,plan";
+
+/// The number of parts the fixtures are read in, each in a process of its own
+/// and all at once: part N reads those whose place in the sorted list leaves
+/// the remainder N.
+const FIXTURE_PARTS: usize = 4;
+
+/// Every macOS fixture is read through `plutil`, which Linux lacks.
+fn mac() -> bool {
+    Path::new("/usr/bin/plutil").exists()
+}
+
+/// The fixture the journey, Health, Logs and plan check are read over.
+fn primary() -> &'static str {
+    if mac() {
+        "mac-m1pro-1tb-roomy"
+    } else {
+        "linux-omarchy-installed"
     }
+}
+
+/// True in the test PART's own process, where the part runs: the harness
+/// starts that process with PART alone, in a process group of its own, as the
+/// benchmark's cores are — the contract test beside it supervises its own
+/// group during its executes, where a core of a part would be a process it
+/// does not know (`stopped unsupervised`). In the harness's process, false
+/// once that process has passed.
+fn own_process(part: &str) -> bool {
+    if std::env::var_os("OMB_GATE2_READ_CHILD").is_some() {
+        return true;
+    }
+    let status = Command::new(std::env::current_exe().unwrap())
+        .arg("--exact")
+        .arg(format!("gate2_read::{part}"))
+        .args(["--nocapture", "--test-threads=1"])
+        .env("OMB_GATE2_READ_CHILD", "1")
+        .process_group(0)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "the read surface's own process for {part}: {status}"
+    );
+    false
+}
+
+/// The part's world: the inherited descriptors sealed, a private folder and
+/// session scratch, and the session's environment set for this process, which
+/// runs this part alone.
+fn world() -> World {
     seal_inherited_descriptors().unwrap();
     let t = std::env::temp_dir().join(format!("omb-gate2-contract-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&t);
@@ -259,19 +290,23 @@ fn the_read_surface_against_the_real_core() {
             std::env::set_var(k, v);
         }
     }
-    let w = World {
-        t: t.clone(),
-        sess: sess.clone(),
-    };
-    let all = "journey,health,logs,plan";
-    let mac = Path::new("/usr/bin/plutil").exists();
+    World { t, sess }
+}
+
+/// The journey, Health, Logs and the plan check over one fixture, in one
+/// session, and what those reads did and did not do.
+#[test]
+fn the_read_surface_against_the_real_core() {
+    if !own_process("the_read_surface_against_the_real_core") {
+        return;
+    }
+    let w = world();
+    let t = w.t.clone();
+    let all = ALL;
+    let mac = mac();
 
     // --- The journey: snapshot, machine and status details, generations ----
-    let name = if mac {
-        "mac-m1pro-1tb-roomy"
-    } else {
-        "linux-omarchy-installed"
-    };
+    let name = primary();
     let mut s = w.session(name, all);
     let mut m = started(&mut s);
     assert_eq!(m.screen, Screen::Dashboard);
@@ -497,6 +532,20 @@ fn the_read_surface_against_the_real_core() {
         listing(&t.join(name).join("home")).is_empty(),
         "nor in the home folder"
     );
+    let _ = std::fs::remove_dir_all(&t);
+}
+
+/// An unplannable machine and a blocked one, over macOS fixtures, which
+/// Linux cannot read: there this part reads nothing.
+#[test]
+fn an_unplannable_and_a_blocked_machine() {
+    if !own_process("an_unplannable_and_a_blocked_machine") {
+        return;
+    }
+    let w = world();
+    let t = w.t.clone();
+    let all = ALL;
+    let mac = mac();
 
     // --- An unplannable machine; a blocked one (macOS fixtures) ------------
     if mac {
@@ -525,6 +574,18 @@ fn the_read_surface_against_the_real_core() {
         assert!(f.contains("✗ blocked"), "{f}");
         assert!(f.contains("The internal disk's partition"), "{f}");
     }
+    let _ = std::fs::remove_dir_all(&t);
+}
+
+/// The Health and Logs screens in a session without their scopes.
+#[test]
+fn a_session_without_the_health_and_logs_scopes() {
+    if !own_process("a_session_without_the_health_and_logs_scopes") {
+        return;
+    }
+    let w = world();
+    let t = w.t.clone();
+    let name = primary();
 
     // --- A session without the scopes: the core refuses, the screen says so
     // (the ordinary launcher's sessions hold both; this one is restricted).
@@ -545,6 +606,16 @@ fn the_read_surface_against_the_real_core() {
         );
     }
     assert_eq!(m.screen, Screen::Logs);
+    let _ = std::fs::remove_dir_all(&t);
+}
+
+/// Over the fixtures of part PART (`FIXTURE_PARTS`), what the core says
+/// reaches the screen.
+fn every_fixture(part: usize) {
+    let w = world();
+    let t = w.t.clone();
+    let all = ALL;
+    let mac = mac();
 
     // --- Every fixture: what the core says reaches the screen ---------------
     let mut fixtures: Vec<String> = std::fs::read_dir(repo().join("tests/fixtures"))
@@ -555,6 +626,13 @@ fn the_read_surface_against_the_real_core() {
         .filter(|n| mac || n.starts_with("linux-"))
         .collect();
     fixtures.sort();
+    let every = fixtures.clone();
+    let fixtures: Vec<String> = fixtures
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| i % FIXTURE_PARTS == part)
+        .map(|(_, n)| n)
+        .collect();
     let mut unanswered = Vec::new();
     for name in &fixtures {
         let mut s = w.session(name, all);
@@ -622,6 +700,47 @@ fn the_read_surface_against_the_real_core() {
     } else {
         &[]
     };
+    // Each is a fixture, so some part reads it; this part answers for those
+    // that are its own.
+    for n in none {
+        assert!(every.iter().any(|f| f == n), "{n} is not a fixture");
+    }
+    let none: Vec<&str> = none
+        .iter()
+        .copied()
+        .filter(|n| fixtures.iter().any(|f| f == n))
+        .collect();
     assert_eq!(unanswered, none);
     let _ = std::fs::remove_dir_all(&t);
+}
+
+/// Every fixture, in `FIXTURE_PARTS` parts that run at once, each in a
+/// process and a process group of its own (as `own_process` starts one), and
+/// all of which must pass: the parts together read each fixture once.
+#[test]
+fn every_fixture_reaches_the_screen() {
+    if let Some(part) = std::env::var_os("OMB_GATE2_READ_PART") {
+        every_fixture(part.to_str().unwrap().parse().unwrap());
+        return;
+    }
+    let parts: Vec<_> = (0..FIXTURE_PARTS)
+        .map(|part| {
+            Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("gate2_read::every_fixture_reaches_the_screen")
+                .args(["--nocapture", "--test-threads=1"])
+                .env("OMB_GATE2_READ_CHILD", "1")
+                .env("OMB_GATE2_READ_PART", part.to_string())
+                .process_group(0)
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    for (part, mut p) in parts.into_iter().enumerate() {
+        let status = p.wait().unwrap();
+        assert!(
+            status.success(),
+            "the read surface's own process for fixture part {part}: {status}"
+        );
+    }
 }

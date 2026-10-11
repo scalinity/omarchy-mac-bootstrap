@@ -1,0 +1,191 @@
+# The FULL acceptance evidence matrix (docs/TESTING.md → *CI*). A candidate is
+# accepted on a FULL run only when the completeness guard (tests/ci.sh guard)
+# finds every unit below executed and passed exactly once, at that SHA, on its
+# lane's platform and shell, with no skip its lane does not allow.
+# Tab-separated; tests/ci.sh lint holds this file to the repository.
+#
+# lane  NAME  RUNNER  OS  ARCH  SHELL (ERE on $BASH_VERSION)  SKIPS (ERE, or none)  SUITES
+#   SUITES is what the lane must run: * for every tests/test-*.sh, otherwise
+#   names and globs; diag stands for every diagnostics unit of tests/test-diag.sh.
+# unit  LANE  SHARD  UNIT
+#   suite:NAME   tests/test-NAME.sh under the lane's shell
+#   diag:NAME    tests/test-diag.sh running the unit tests/diag-NAME.sh alone
+#   check:NAME   a check tests/ci.sh runs (syntax, shellcheck, fixtures, startup, trap-comsub)
+#   step:NAME    a workflow step of the lane's own job in .github/workflows/ci.yml
+# Each lane is one job of .github/workflows/ci.yml, named after it, its shards
+# a matrix; one shard a lane may hold step: units, and only it runs them.
+# Shards are balanced on the hosted times of run 37409491379 (and 37276081880
+# for the target shell); within a shard units keep the order the
+# unsharded jobs ran them in.
+
+lane	macos-bash32	macos-latest	Darwin	arm64	^3\.2\.	none	*
+lane	linux-bash5	ubuntu-24.04	Linux	x86_64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	*
+lane	target-bash53	ubuntu-24.04-arm	Linux	aarch64	^5\.3\.15\(1\)-release$	\(no plutil\)$	records core diag frontend static cp1 gate2-*
+lane	frontend	ubuntu-24.04	Linux	x86_64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	frontend-inputs
+lane	frontend-linux-arm64	ubuntu-24.04-arm	Linux	aarch64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	core diag frontend frontend-check static
+lane	frontend-macos-arm64	macos-15	Darwin	arm64	^3\.2\.	none	core frontend frontend-check static
+
+# macOS · stock /bin/bash 3.2 · BSD userland, plutil, no skip
+unit	macos-bash32	m1	suite:benchmark
+unit	macos-bash32	m1	suite:detection
+unit	macos-bash32	m1	diag:children
+unit	macos-bash32	m1	suite:frontend-check
+unit	macos-bash32	m1	suite:frontend-inputs
+unit	macos-bash32	m1	suite:gate2-edge
+unit	macos-bash32	m1	suite:gate2-foundation
+unit	macos-bash32	m1	suite:state
+unit	macos-bash32	m1	suite:static
+unit	macos-bash32	m1	suite:storage
+unit	macos-bash32	m2	suite:baseline
+unit	macos-bash32	m2	suite:ci
+unit	macos-bash32	m2	suite:core
+unit	macos-bash32	m2	suite:cp1
+unit	macos-bash32	m2	diag:capture
+unit	macos-bash32	m2	suite:frontend
+unit	macos-bash32	m2	suite:gate2-probes
+unit	macos-bash32	m2	suite:gate2-read
+unit	macos-bash32	m2	suite:lifecycle
+unit	macos-bash32	m3	suite:dev
+unit	macos-bash32	m3	diag:bounds
+unit	macos-bash32	m3	diag:session
+unit	macos-bash32	m3	suite:docs
+unit	macos-bash32	m3	suite:fake-children
+unit	macos-bash32	m3	suite:gate2-health
+unit	macos-bash32	m3	suite:gate2-journey
+unit	macos-bash32	m3	suite:gate2-logs-proof
+unit	macos-bash32	m3	suite:gate2-logs
+unit	macos-bash32	m3	suite:routing
+unit	macos-bash32	m3	suite:safety
+unit	macos-bash32	m3	check:startup
+unit	macos-bash32	m4	check:fixtures
+unit	macos-bash32	m4	check:syntax
+unit	macos-bash32	m4	suite:cli
+unit	macos-bash32	m4	diag:temp
+unit	macos-bash32	m4	suite:gate2-health-proof
+unit	macos-bash32	m4	suite:gate2-paging
+unit	macos-bash32	m4	suite:gate2-representation
+unit	macos-bash32	m4	suite:gate2-token
+unit	macos-bash32	m4	suite:gate2-validate-proof
+unit	macos-bash32	m4	suite:gate2-validate
+unit	macos-bash32	m4	suite:records
+unit	macos-bash32	m4	suite:shared
+
+# Linux · bash 5 · ShellCheck 0.9.0, only the plutil-bound checks skip
+unit	linux-bash5	l0	check:fixtures
+unit	linux-bash5	l0	check:syntax
+unit	linux-bash5	l0	check:shellcheck
+unit	linux-bash5	l1	suite:ci
+unit	linux-bash5	l1	suite:cli
+unit	linux-bash5	l1	diag:bounds
+unit	linux-bash5	l1	diag:children
+unit	linux-bash5	l1	suite:fake-children
+unit	linux-bash5	l1	suite:frontend-inputs
+unit	linux-bash5	l1	suite:gate2-journey
+unit	linux-bash5	l1	suite:shared
+unit	linux-bash5	l2	suite:cp1
+unit	linux-bash5	l2	suite:dev
+unit	linux-bash5	l2	diag:temp
+unit	linux-bash5	l2	diag:session
+unit	linux-bash5	l2	suite:gate2-health-proof
+unit	linux-bash5	l2	suite:gate2-health
+unit	linux-bash5	l2	suite:gate2-logs-proof
+unit	linux-bash5	l2	suite:gate2-logs
+unit	linux-bash5	l2	suite:gate2-read
+unit	linux-bash5	l2	suite:gate2-validate
+unit	linux-bash5	l2	suite:records
+unit	linux-bash5	l3	suite:baseline
+unit	linux-bash5	l3	suite:benchmark
+unit	linux-bash5	l3	suite:core
+unit	linux-bash5	l3	suite:detection
+unit	linux-bash5	l3	diag:capture
+unit	linux-bash5	l3	suite:docs
+unit	linux-bash5	l3	suite:frontend-check
+unit	linux-bash5	l3	suite:frontend
+unit	linux-bash5	l3	suite:gate2-edge
+unit	linux-bash5	l3	suite:gate2-foundation
+unit	linux-bash5	l3	suite:gate2-paging
+unit	linux-bash5	l3	suite:gate2-probes
+unit	linux-bash5	l3	suite:gate2-representation
+unit	linux-bash5	l3	suite:gate2-token
+unit	linux-bash5	l3	suite:gate2-validate-proof
+unit	linux-bash5	l3	suite:lifecycle
+unit	linux-bash5	l3	suite:routing
+unit	linux-bash5	l3	suite:safety
+unit	linux-bash5	l3	suite:state
+unit	linux-bash5	l3	suite:static
+unit	linux-bash5	l3	suite:storage
+
+# Linux target shell · GNU Bash 5.3.15 built from tests/bash-5.3.15.sha256's sources · aarch64
+unit	target-bash53	t1	diag:children
+unit	target-bash53	t2	diag:bounds
+unit	target-bash53	t2	diag:temp
+unit	target-bash53	t2	diag:session
+unit	target-bash53	t2	diag:capture
+unit	target-bash53	t3	suite:records
+unit	target-bash53	t3	suite:static
+unit	target-bash53	t3	suite:cp1
+unit	target-bash53	t3	suite:gate2-edge
+unit	target-bash53	t3	suite:gate2-foundation
+unit	target-bash53	t3	suite:gate2-health-proof
+unit	target-bash53	t3	suite:gate2-health
+unit	target-bash53	t3	suite:gate2-journey
+unit	target-bash53	t3	suite:gate2-logs-proof
+unit	target-bash53	t3	suite:gate2-logs
+unit	target-bash53	t3	suite:gate2-paging
+unit	target-bash53	t3	suite:gate2-probes
+unit	target-bash53	t3	suite:gate2-read
+unit	target-bash53	t3	suite:gate2-representation
+unit	target-bash53	t3	suite:gate2-token
+unit	target-bash53	t3	suite:gate2-validate-proof
+unit	target-bash53	t3	suite:gate2-validate
+unit	target-bash53	t4	check:trap-comsub
+unit	target-bash53	t4	suite:core
+unit	target-bash53	t4	suite:frontend
+unit	target-bash53	t4	step:layer-h
+unit	target-bash53	t4	step:pty
+
+# Frontend · fmt · clippy · layers A–F and H · build inputs (x86_64)
+unit	frontend	f1	step:checkout-exact
+unit	frontend	f1	step:fmt
+unit	frontend	f1	step:inputs
+unit	frontend	f1	step:digest
+unit	frontend	f1	step:clippy
+unit	frontend	f1	step:layers
+unit	frontend	f1	step:closure
+unit	frontend	f1	step:nothing-written
+unit	frontend	f1	suite:frontend-inputs
+
+# Frontend · Linux aarch64 · build, PTY, supervision, frontend-compat-linux
+unit	frontend-linux-arm64	a1	step:checkout-exact
+unit	frontend-linux-arm64	a1	step:build
+unit	frontend-linux-arm64	a1	step:closure
+unit	frontend-linux-arm64	a1	step:compat
+unit	frontend-linux-arm64	a1	step:artifact-line
+unit	frontend-linux-arm64	a1	step:pty
+unit	frontend-linux-arm64	a1	step:units
+unit	frontend-linux-arm64	a1	suite:core
+unit	frontend-linux-arm64	a1	suite:frontend
+unit	frontend-linux-arm64	a1	suite:frontend-check
+unit	frontend-linux-arm64	a1	suite:static
+unit	frontend-linux-arm64	a1	step:frontend-check-native
+unit	frontend-linux-arm64	a1	step:cp1-released
+unit	frontend-linux-arm64	a2	diag:children
+unit	frontend-linux-arm64	a3	diag:bounds
+unit	frontend-linux-arm64	a3	diag:temp
+unit	frontend-linux-arm64	a3	diag:session
+unit	frontend-linux-arm64	a3	diag:capture
+
+# Frontend · macOS arm64 · build, PTY, contract under /bin/bash 3.2, frontend-compat-macos
+unit	frontend-macos-arm64	x1	step:checkout-exact
+unit	frontend-macos-arm64	x1	step:build
+unit	frontend-macos-arm64	x1	step:closure
+unit	frontend-macos-arm64	x1	step:compat
+unit	frontend-macos-arm64	x1	step:artifact-line
+unit	frontend-macos-arm64	x1	step:pty
+unit	frontend-macos-arm64	x1	step:units
+unit	frontend-macos-arm64	x1	suite:core
+unit	frontend-macos-arm64	x1	suite:frontend
+unit	frontend-macos-arm64	x1	suite:frontend-check
+unit	frontend-macos-arm64	x1	suite:static
+unit	frontend-macos-arm64	x1	step:frontend-check-native
+unit	frontend-macos-arm64	x1	step:cp1-released
