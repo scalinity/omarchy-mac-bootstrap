@@ -962,6 +962,33 @@ following them. The first ad hoc identity check followed a dangling fixture
 symlink and failed; correcting that check established the identities without
 changing fixtures. This is documentation evidence, not action qualification.
 
+Independent GPT-6 Pro review of candidate
+aaf77bf9bef31e0497991dff81da07b86719674f (tree
+b3606077a364019457fb55ddc8895d40fd6902bf) returned **PS-EXEC-1 REMEDIATION
+REQUIRED**. PS-D01/PS-D03 require amendment; PS-D02/PS-D04/PS-D05 are
+credited ACCEPT without overall acceptance. The consolidated documentation
+correction fixes M01 with family-controlled OMB_PHASE=macos, M02 with
+pre-save supported-byte admission/complete rewrite preflight, L01 with an
+explicit pre-review ops setup owner, and L02 with persistence/dry-run
+exclusion. Future documentary controls remain UNEXECUTED; no runtime owner,
+writer, helper, fixture or executable test is changed. The next review is a
+bounded remediation closeout preserving those credits.
+
+Original candidate automatic CI is historical **FAILED**: run 38146161907,
+attempt 1, five successful jobs and failed macOS stock Bash 3.2/BSD job
+114489849869. Its primary log reports test-baseline: 306 passed, 1 failed,
+0 skipped; frontend-check-default-unchanged on linux-shared-ready differs
+from pre-route 569d67e728d4cee1f345134724e259e52d702af5 by one extra
+Checking GitHub spinner line. test-docs passed 27/0/0; the final native
+entrypoint/no-persistence step was skipped after aggregate failure. The
+docs-only delta leaves the terminal code/test/oracle unchanged. ui_spin's
+background-probe liveness loop makes emitted frames timing-dependent;
+this supports a timing-sensitive terminal comparison explanation, but one
+failure does not establish its exact cause or dismiss a regression. Preserve
+the failure. The correction requires its own automatic exact-head six-job
+CI evidence; pending/failure cannot be called qualification, and no rerun,
+normalization change or CI repair is authorized here.
+
 Starting foundations remain UR-Q4 1956f1b5d9666b5831b30cdb9da5b37e92056055,
 FJ-P5-1 c85470b2c973001c9df692eb04e17628d5c7f7f0,
 FJ-ED-1 f27ee84a4b28fe5ee3a93df53f79598192932468 and core/text

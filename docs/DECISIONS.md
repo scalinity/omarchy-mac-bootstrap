@@ -1024,6 +1024,13 @@ The first source investigation left the documents unchanged because no
 existing plan-scope result followed independent readback. This candidate
 settles the proposed answer; it implements no writer or execution authority.
 
+Independent GPT-6 Pro review of aaf77bf9bef31e0497991dff81da07b86719674f
+returned **PS-EXEC-1 REMEDIATION REQUIRED**: PS-D01 and PS-D03 AMEND;
+PS-D02, PS-D04 and PS-D05 ACCEPT, credited. Overall PS-EXEC-1 acceptance
+remains pending. This consolidated documentation correction addresses M01
+(fixed logging phase), M02 (supported prior-state bytes), L01 (ops setup
+owner) and L02 (dry-run exclusion), preserving the credited design.
+
 Choose $OMB_STATE_DIR/plan-save-result.omb, the internal sealed
 omb-plan-save-result/1 family, published by the future checked Bash
 plan-scope owner after complete save/readback and writer quiescence.
@@ -1055,26 +1062,26 @@ foundation feasibility campaign.
 
 | Proposed delta | Specific baseline difference, rationale and permanent future coverage |
 | --- | --- |
-| PS-D01 | cfg_save stops/propagates the first set/unset failure; mac_save_plan propagates planning, digest, configuration and timestamp failures; fresh whole-state/intent readback is mandatory. Valid writer order/legacy bytes remain the oracle. Current false-success and continue-after-failure behavior must change. PS-11–PS-16, PS-26, PS-28 and fail-first writer fault tests. |
+| PS-D01 | cfg_save stops/propagates the first set/unset failure; mac_save_plan propagates planning, digest, configuration and timestamp failures; fresh whole-state/intent readback is mandatory. From the supported absent/empty/printable-ASCII LF prior capture, independently preflight all twelve cfg operations plus planned_at before any save write; unrelated bytes/order must survive and whole readback must match. Valid writer order/legacy bytes remain the oracle; no writer redesign or unsupported-state repair. Current false-success and continue-after-failure behavior must change. PS-11–PS-16, PS-26–PS-28, PS-35 and fail-first writer/representation controls. |
 | PS-D02 | Add only the explicitly selected read-only plan.save.review contract using existing Validate/normal/answer/review/result records, with complete parameters and a distinct execution rule. Existing plan.save Q4 selection/preimages stay untouched. Review remains read intent/zero persistence and cannot expose actions. PS-03–PS-09, PS-24, PS-30, PS-35; old-core compatibility and Q4 control. |
-| PS-D03 | Add bounded fixture-only plan ownership/exclusion, act ceiling, managed noncancellable dispatch, C-locale save normalization, ASCII media coverage, fresh source/machine/destination checks immediately before save writes and preidentified effect-parent/ops/log admission. The text route through the core gains the same act barrier; the baseline's text plan currently persists under plan intent. No real installer/disk authority follows. Initial save-point comparisons account explicitly for the preceding survey/choices and existing experimental journey gate. PS-05–PS-10, PS-20–PS-25, PS-27, PS-32–PS-36. |
+| PS-D03 | Add bounded fixture-only plan ownership/exclusion, act ceiling, managed noncancellable dispatch, C-locale save normalization, ASCII media coverage, fresh source/machine/destination checks immediately before save writes and preidentified effect-parent/ops/log admission. Fix OMB_PHASE=macos in coordinator and worker before the first persistent append, through retirement; inherited phase never affects covered log bytes and is not a basis/request input. Limit prior state to absent, empty or the exact supported printable-ASCII LF format; unsupported in-bounds content refuses unavailable before save, inspection failure is io and proven bound failure representation. Explicit fixture setup owns pre-review ops provisioning; original survey does not. A separately specified adapted route must provision before review, which stays read-only. Receipt-producing execution requires persistence enabled and excludes done dry-run. The text route gains the act barrier; baseline text plan currently persists under plan intent. No installer/disk authority follows. Save-point comparisons retain survey/choices and the experimental journey gate. PS-01–PS-02, PS-05–PS-10, PS-20–PS-25, PS-27, PS-32–PS-36. |
 | PS-D04 | Apply existing refusal/failure/error codes by the documented phase, and propose stopped changed for a known later safe-boundary change. Refused guarantees no baseline save dispatch, while accounting for existing step-3 coordinator metadata/log effects. Unknown readback/receipt/retirement/supervision retains protection and does not become failed postcondition. Exact status/code pairings and client rendering require review. PS-10–PS-25, PS-32–PS-35. |
 | PS-D05 | Add the final internal receipt and its parser/checked publication/readback before verified owned operation retirement. This adds persistent bytes, temporary objects and related logging to the baseline; they are compared as named deltas, never normalized away. No fsync/power-loss transaction or positive legacy-C clearing is claimed. PS-09, PS-17–PS-22, PS-26–PS-29, PS-34–PS-35. |
 
-All five deltas are proposed, not accepted exceptions to baseline equivalence.
-Independent contract acceptance must adjudicate them before separately
-authorized implementation. Permanent tests must fail against the missing/
-unsafe behavior, then qualify the authorized implementation with the exact
-baseline comparison and retained failure evidence.
+These are future deltas, not runtime qualifications. The review's component
+credits do not accept PS-EXEC-1 as a whole or authorize implementation.
+Permanent tests must fail against the missing/unsafe behavior, then qualify
+the separately authorized implementation with exact baseline comparisons
+and retained failure evidence.
 
-The focused reviewer decisions are finite: accept or amend the dedicated
-receipt schema/provenance and retirement rule; the additive review selection;
-the bounded profile and full basis/exclusions; the minimal checked-writer
-delta; and the exact phase/vocabulary mapping. The primary answer for each
-is fully specified in the protocol section. No unspecified required field
-or future default may be silently chosen by an implementer. Positive plan
-reconciliation remains a separate unimplemented proof obligation; it is
-not an invitation to implement clear, P3/P4 or P5 in this checkpoint.
+The bounded acceptance closeout reviews M01/M02 and L01/L02, the amended
+PS-D01/PS-D03 obligations and their documentary controls. Credited PS-D02,
+PS-D04 and PS-D05 retain their substantive semantics; the receipt schema,
+capacity preflight, original-core provenance, quiescence and verified
+retirement are unchanged. No unspecified required field or future default
+may be silently chosen by an implementer. Positive plan reconciliation
+remains a separate unimplemented proof obligation; no clear, P3/P4 or P5
+implementation follows from this correction.
 
 ## Where each design question is answered
 

@@ -323,6 +323,44 @@ Present and absent state/intent/prior receipt, retained unrelated lines,
 gh clear, all configuration choices, safe/unsafe destination types and
 controlled logs/day changes complete the finite state dimensions.
 
+**Consolidated review controls — DOCUMENTARY, UNEXECUTED.** Within PS-33,
+perturb inherited OMB_PHASE through unset, an ordinary alternate value,
+macos and control-bearing values (LF, CR, tab and escape bytes). Retain raw
+coordinator and registered-worker append traces. Require the family-controlled
+macos phase before the first persistent coordinator append and throughout
+worker/save/result/retirement logging, identical covered log semantics for
+every perturbation, and no inherited control interpolation. Attempt to bypass
+the fixed value separately in the coordinator and worker; retain fail-first
+evidence against a missing/overridable fixed-phase rule. Do not normalize a
+phase/prefix discrepancy or add a public argument/basis input. The historical
+text oracle remains A; the fixed phase in B/C is the named PS-D03 rule.
+
+Within PS-27/PS-35, use absent state.env, a safe zero-byte file and supported
+printable-ASCII LF files, including blank/unrelated lines, spaces, '=' and
+duplicate unrelated keys. Compare the retained complete bytes with the
+independent thirteen-operation expected transformation and final readback.
+Inject unterminated final lines, NUL, CR/tab/other controls and non-ASCII
+bytes separately; LF termination alone is not the positive control. Require
+known unsupported in-bounds content to refuse unavailable before the FIRST
+baseline save writer call, with identical prior bytes and no repair. Account
+for coordinator metadata separately. Separately inject an operational
+inspection/read failure (error io) and a proven size/line/admission bound
+failure (error representation). Neither can become absence or a late first
+postcondition detection. Keep post-write known-negative PS-15, unknown PS-16
+and verified-completion/lost-delivery PS-34 controls distinct. A remains the
+unchanged historical writer, including its behavior on unsupported bytes;
+B/C's narrower population and preflight are PS-D01/PS-D03, never a normalized
+baseline equivalence pass on unsupported content.
+
+Within PS-10, explicit fixture setup must provide the owned ops directory
+before review; test missing ops and a separately specified adapted-route
+setup boundary independently. Do not use original mac_survey as its creator.
+Require execution review to leave all destinations unchanged. Within PS-01/
+PS-02, require persistence enabled for completion; the inherited dry-run
+control must create no final save or completed-operation receipt, cannot
+count as verified save and retains existing done dry-run semantics separately
+from done ok. These setup/dry-run controls amend only PS-D03 coverage.
+
 | Future test group | Documentary coverage | Mandatory evidence |
 | --- | --- | --- |
 | equiv-plan-save-valid | PS-01, PS-02, PS-03, PS-04, PS-26, PS-29, PS-30, PS-31 | independent A/B/C source/tree, selected and normalized inputs, region/answers, writer order, all bytes/metadata and explicit delta projections |
@@ -331,7 +369,7 @@ controlled logs/day changes complete the finite state dimensions.
 | plan-save-write-fault | PS-11, PS-12, PS-13, PS-14, PS-15, PS-16 | each set AND unset, Shared replace AND removal, hash/digest/reload, timestamp, full-state comparison; exact surviving prefix of writes and failed/unknown distinction |
 | plan-save-receipt | PS-09, PS-17, PS-18, PS-19, PS-28, PS-29, PS-35 | prior/new object identities, seal/schema/cross-field admission, full embedded basis, operation/writer binding, staging/chmod/rename/readback/output reread/removal faults |
 | plan-save-interrupt | PS-20, PS-21, PS-22, PS-28, PS-32, PS-34 | interrupt before/after EVERY durable boundary; worker-end and controller identity, every surviving object, old receipt staleness, readable/unreadable/reboot barriers, complete/negative/lost delivery |
-| plan-save-noninterference | PS-27, PS-33, PS-36 | HOME/TMPDIR/unrelated-state inventories, parent/log alias and continuity observations, command/probe traces and no installer/disk mutation/network/download |
+| plan-save-noninterference | PS-27, PS-33, PS-35, PS-36 | supported whole prior/post bytes and ordered rewrite preflight; unsupported-byte refusal versus io/representation; inherited-phase/coordinator/worker controls, HOME/TMPDIR inventories, parent/log continuity and no installer/disk mutation/network/download |
 | plan-save-review-compat | PS-03, PS-23, PS-24, PS-25, PS-30, PS-35 | unchanged Q4 control/preimages/zero persistence; explicit new selector/parameter order/full-choice review, old-core unavailable with no fallback, no action exposure from reads |
 
 Compare planning decisions, effective sizes/choices, exact installer answers,
@@ -376,6 +414,13 @@ unresolved plan barrier. Run each against the actual missing/unsafe behavior
 or one named test-only mutant, retain its observed failure, then require
 the corrected implementation to pass. A test that only reproduces the
 implementation's digest is not independent evidence.
+
+Also retain red controls for copying an inherited phase into either writer,
+admitting an unsupported prior byte representation, first detecting it after
+a save write, normalizing/repairing it, omitting a supported unrelated line,
+crediting survey-created ops or counting dry-run as receipt-backed completion.
+Do not repair the production writer or historical oracle to run these
+future requirements in this documentation slice.
 
 Inject failures at allocation/read/hash/admission/chmod/rename/unlink for
 each relevant writer, including failure after an earlier successful write.

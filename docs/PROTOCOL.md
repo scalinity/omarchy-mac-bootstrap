@@ -3499,6 +3499,12 @@ short digest or matching subset of fields proves the complete save.
 
 The proposed action is scope=plan, intent=act, terminal=managed, gate empty,
 cancel=0. It consumes no terminal input or password and starts no installer.
+Receipt-producing execution additionally requires command-derived persistence
+enabled (OMB_PERSIST=1, OMB_DRY_RUN=0). Judge this before any persistent
+coordinator effect. An inherited dry-run route is outside this execution
+profile and cannot satisfy PS-01/PS-02, publish plan-save-result.omb or publish
+a completed-save operation receipt. Existing done dry-run stays distinct
+from done ok; no current dry-run implementation or result code changes.
 The baseline's save menu expresses save intent; there is no save-specific
 typed word. Execute therefore requires confirm empty; a supplied word is
 refused word. The preceding journey's experimental confirmation remains in
@@ -3529,6 +3535,17 @@ This makes its locale-sensitive filtering explicit instead of letting an
 unbound locale change saved intent. PS-D03 covers this profile restriction;
 the accepted Q4 producer's C-locale behavior is unchanged.
 
+The future supervising coordinator must establish OMB_PHASE=macos before
+its first persistent append, including lock/operation prelude logging, and
+retain that fixed value through save, result publication and retirement.
+The registered save worker must receive and enforce the same family-controlled
+value for every covered append. Inherited OMB_PHASE has no authority: never
+copy it from the invoking environment, request, fixture metadata or client,
+and never interpolate a control-bearing inherited value into persistent
+logs. Preserve log_event's legitimate formatting and message sanitization
+with this fixed prefix phase. This is a source/rule-bound PS-D03 rule, not
+a public parameter or an additional execution-basis input.
+
 **Separate review selector, proposed additive contract PS-D02.** Preserve
 validate select action=plan.save and Q4's two parameters, answers, read
 intent and zero persistence byte-for-byte. A future read-only selection
@@ -3549,10 +3566,16 @@ For this first covered fixture contract require mac_blockers empty, exact
 geometry, a valid selected layout, no existing Asahi stub/EFI/Linux layout,
 and an independently owned fixture/state arena. State root, ops directory,
 logs directory and today's append target must already exist as checked real
-objects before
-review; this avoids the coordinator creating a basis-bound destination
-before step 4. They are provisioned by fixture setup or the preceding text
-survey, never by this read selector. Absent state.env, Shared intent and
+objects before review; this avoids the coordinator creating a basis-bound
+destination before step 4. Explicit fixture setup owns pre-review provisioning
+of the state root, ops directory, logs directory and append target. Original
+mac_survey may provision state/log objects, but does not create ops and is
+not its provisioning owner. A future adapted text route may instead own ops
+provisioning, but must explicitly provision/check it before execution review,
+under that separately specified persistent setup boundary. No such adapted
+route/helper is implemented here. A fixture with all four destinations
+explicitly set up remains covered. This read selector provisions nothing.
+Absent state.env, Shared intent and
 prior receipt remain permitted and explicitly bound. Parent ancestry must
 be fully observed, with no links/aliases or unowned/unwritable effect parents;
 append target is a regular, single-link owned file. Unsafe or unavailable
@@ -3641,6 +3664,48 @@ replaced; all unrelated lines participate in the full state_file hash.
 Prior Shared intent may be old but must be a safely inspected whole file;
 replacement is not agreement with its former planning contents.
 
+**Supported prior state.env bytes (M02; PS-D01/PS-D03).** Before execution
+review and again before any baseline save write, admit only an absent entry,
+a safely inspected zero-byte regular file, or a safely inspected nonempty
+regular file with the following exact byte format: a sequence of LF-terminated
+lines; each line's payload consists solely of printable ASCII bytes 0x20–0x7E
+and may be empty. Total file size is at most 64 KiB; each payload is at most
+16 KiB, LF excluded, consistent with the existing line bound. Thus no NUL,
+CR, tab, other control byte, DEL or non-ASCII byte is covered, and a nonempty
+file ends with LF. This is an opaque byte population, not a new state schema:
+blank lines, spaces, '=' and repeated or unrelated textual keys can be
+retained. There is no implicit decoding, encoding or newline normalization.
+Ownership/type/mode/single-link and all applicable admission bounds remain
+mandatory; _state_file_ok alone does not prove this content property.
+
+Inspect the complete bytes from the identified object using byte-preserving
+capture, before any text decoder that could drop NUL or trailing newlines.
+Retain that full capture. Under the fixed LC_ALL=C profile, these bounded
+printable, LF-terminated lines avoid binary/unterminated-line grep behavior:
+_state_rewrite's grep -v '^KEY=' retains each nonmatching complete line's
+bytes and order. The written keys are the fixed ASCII CFG_KEYS and planned_at,
+with no regex metacharacters. Independently construct the entire expected
+transformation: for each configuration key in CFG_KEYS order, remove every
+line with its exact KEY= prefix and append the checked KEY=VALUE plus LF
+only for a set; then apply the same operation to planned_at. Before the first
+save write prove that every unrelated captured line remains byte-identical
+and in order through all thirteen operations, and that each intermediate
+output stays within the supported format/bounds. Known values are exact;
+generated times/digests occupy constrained ASCII value positions in this
+preflight model and are instantiated/checked at their baseline generation
+boundaries. Do not move generation or publication merely to validate the
+model. No state writer is executed to establish pre-save compatibility.
+
+Known unsupported content, including NUL or an unterminated final line,
+refuses unavailable before baseline save writes, without normalization,
+repair or replacement of state.env. Operational object/read inspection
+failure is error io, never absence. Proven size/admission/representation
+bound failures retain error representation; do not relabel unsupported
+in-bounds opaque content as malformed public wire input. Coordinator metadata
+may already exist at Execute's checks; account for it separately from the
+guaranteed absence of baseline save writes. Postcondition readback must not
+be the first detection of a knowably unsupported prior representation.
+
 Exclude directory mtime/ctime and directory link-count changes caused solely
 by the declared lock/ops/scratch scaffolding; for directory .nlink use the
 fixed scalar value '0' and retain actual link count in the separate effect
@@ -3693,15 +3758,16 @@ destination, prior receipt or media identity can change without altering Q4.
 | --- | --- | --- |
 | identified state root and ancestors; state_dir_ready | baseline mkdir -p/chmod on first write and cached checks; covered profile pre-provisions them and freshly checks them | no parent creation by this save; stable bound identity/access; cached STATE_DIR_OK is not a fresh witness |
 | shared-intent.env; shared_intent_save → state_put_file or state_remove_file | Shared on: body in listed SHARED_INTENT_KEYS order plus 16-hex digest, atomic replacement; Shared off: removal of the existing own file | bind full prior bytes/identity; fresh complete reload plus expected-field/body/digest comparison, or verified entry absence including no dangling link; retries need a new review |
-| state.env; cfg_save → state_set/state_unset → _state_rewrite | enc,user,host,kmap,tz,loc,ssh,gh,linux,shared,dev,plan, in exactly CFG_KEYS order; each operation independently atomic | simulate baseline line removal/append from retained full prior bytes; compare whole final bytes, not state_get's last matching key; empty gh/plan remove all their lines; preserve every unrelated line/order |
+| state.env; cfg_save → state_set/state_unset → _state_rewrite | enc,user,host,kmap,tz,loc,ssh,gh,linux,shared,dev,plan, in exactly CFG_KEYS order; each operation independently atomic | admit only the supported absent/empty/printable-ASCII LF population above; preflight the complete transformation from retained bytes before save; compare whole final bytes, not state_get's last matching key; empty gh/plan remove all their lines; preserve every admitted unrelated line/order |
 | state.env planned_at; state_stamp → state_set | generated UTC timestamp after configuration, separate rewrite | propagate and check the write; compare expected timestamp and whole state bytes; it remains progress, never a standalone completed-save receipt |
-| logs directory/daily file; log_event reached by state/core helpers | baseline mkdir/append, some failures skipped and some statuses exposed; covered profile uses the preidentified existing single-link append object | append only; compare retained old prefix and ordered allowed sanitized non-secret entries; no truncation/other-day/alias; logging cannot turn incomplete save into success |
+| logs directory/daily file; log_event reached by state/core helpers | baseline mkdir/append, some failures skipped and some statuses exposed; covered profile uses the preidentified existing single-link append object and fixed OMB_PHASE=macos in coordinator/worker | append only; compare retained old prefix and ordered allowed sanitized non-secret entries; inherited phase cannot alter bytes; no truncation/other-day/alias; logging cannot turn incomplete save into success |
 | .state.env.*, .shared-intent.env.*, .plan-save-result.omb.*, ops/.plan.*; checked state/result/core writers | unique sibling staging, chmod/rename; baseline helper failure cleanup removes its own temporary | only attempt-owned staging may be removed; crash residue is preserved evidence, never evidence of completion or generic cleanup permission |
 | plan-save-result.omb; future Bash plan-scope completion owner | NEW: one final versioned sealed receipt, atomic replacement after complete fresh postcondition and quiescence | bind prior receipt in next basis; final receipt verified by reopened identity/bytes/admission; old success never certifies a new partial replacement |
 | lock/owner, possible lock.stale.<pid>, ops/plan.omb; generic core/state_lock/core_op_write | existing generic prelude, running publication/rewrite, result-gated retirement; new plan ownership only after review | exact owned generation and no other scope edit; failure may leave scaffolding/logs even before save starts; retain barrier after partial/unknown save |
 | OMB_TMP and OMB_SESSION_DIR request/spool/admission/diagnostics files; existing controller owners | bounded private transient computation, capture, supervision and delivery | enumerated own scratch only; no HOME/TMPDIR-wide cleanup; loss is not no-effect or successful result delivery |
 
-State-file expected bytes use the actual state_set CR/LF rule and
+State-file expected bytes start from the supported, retained prior capture
+and pre-save transformation above, using the actual state_set CR/LF rule and
 _state_rewrite line semantics, although accepted choices already forbid
 controls. Readback also checks every expected cfg value with cfg_field_ok;
 CFG_plan is empty without Shared or the first 8 of the verified stored
@@ -3824,7 +3890,9 @@ from an admitted act refusal. Review remains strictly zero-persistence.
    inadmissible bytes. Validate choices before arithmetic.
 2. Require separately exposed fixture-only plan.save, act ceiling and plan
    scope. Current core still refuses unavailable; the future checks confer
-   no authority on an existing Q4 response.
+   no authority on an existing Q4 response. Require persistence enabled and
+   dry-run disabled; establish fixed OMB_PHASE=macos before any persistent
+   coordinator append and enforce it in the registered save worker.
 3. Take the baseline run lock, inspect plan exclusion, refuse existing
    barriers, and atomically publish/admit this running operation before
    dispatch. No automatic reconciliation/clear is added. Prelude checks
@@ -3833,7 +3901,9 @@ from an admitted act refusal. Review remains strictly zero-persistence.
    establish identities and capture bytes. Hold the consumed choices/capture
    in the owning Bash process; no shell substitution loses their globals.
 5. Judge current availability, the bounded fixture profile, required evidence
-   and the selected plan. A required unplannable/unsafe case exposes no action.
+   and the selected plan, including the supported prior-state representation
+   and preflighted complete rewrite. A required unplannable/unsafe/unsupported
+   case exposes no action.
 6. Rebuild and compare the complete execution basis. Observe all destinations
    including prior_result; a Q4 digest cannot pass this comparison.
 7. Require confirm empty. Pre-save negative decisions retire only this owned
@@ -3842,6 +3912,8 @@ from an admitted act refusal. Review remains strictly zero-persistence.
    requires PLAN_OK. Immediately before the first save write, freshly
    re-observe the machine and destination identities and repeat availability,
    full basis comparison and layout verification against the reviewed inputs;
+   repeat supported-byte admission and the complete state transformation
+   preflight before Shared publication/removal or any state.env rewrite;
    the baseline helpers' in-memory checks alone are not a fresh machine read.
    Then perform Shared publication/removal, derive/check
    CFG_plan, persists CFG_KEYS in baseline order, then planned_at. Every
@@ -3885,7 +3957,7 @@ is still unknown. Absence of ops/plan.omb alone establishes neither.
 | --- | --- |
 | request never admitted, invalid wire types/order/seal, bad environment/version | existing admission error/refusal path and exit semantics; no save writer; no inferred action outcome from a missing result |
 | well-formed undeclared/missing/invalid semantic parameter | refused invalid; validate review selection additionally has existing invalid records; Execute does not gain an invalid record type |
-| current/non-fixture/unexposed action; unsafe/missing destination; cannot publish running operation | refused unavailable before save; coordinator attempts may have partial metadata, so inspect them |
+| current/non-fixture/unexposed action; persistence disabled/dry-run; unsafe/missing destination; known unsupported prior state bytes; cannot publish running operation | refused unavailable before save, no prior-state repair; disabled persistence refuses before persistent coordinator effects; other coordinator attempts may have partial metadata, so inspect them |
 | session lacks act or plan scope | refused ceiling or refused scope respectively; no save dispatch |
 | lock/live-or-not-proven-dead core; previous failed; previous unsupervised/unreadable | refused busy; refused unresolved; refused unsupervised respectively; unreadable text explicitly says reboot cannot clear it; D/undetermined refuses unavailable and preserves unknown |
 | still-available changed geometry/free/limits/floor, choice/answer/prior bytes/receipt/source; wrong execution digest | refused changed; no save writes; unavailable precedes comparison where planning no longer holds |
@@ -3919,8 +3991,8 @@ prior captures, whole readback and delivery admission, not just result text.
 
 | ID | Controlled precondition and action/basis scenario | Expected classification/effects; required evidence; unknown boundary | Executable now |
 | --- | --- | --- | --- |
-| PS-01 | valid supported fixture; no Shared; correct fresh full basis | done ok only after intent absence, all choices/timestamp, final receipt and retirement verified; installation remains unproved | UNEXECUTED; no |
-| PS-02 | valid Shared allocation and correct fresh basis | done ok; exact intent/body/digest, derived CFG_plan and receipt verified in order; no partition created | UNEXECUTED; no |
+| PS-01 | valid supported fixture; persistence enabled, dry-run disabled; no Shared; correct fresh full basis | done ok only after intent absence, all choices/timestamp, final receipt and retirement verified; dry-run cannot complete this case or publish completion receipts; installation remains unproved | UNEXECUTED; no |
+| PS-02 | valid Shared allocation; persistence enabled, dry-run disabled; correct fresh basis | done ok; exact intent/body/digest, derived CFG_plan and receipt verified in order; dry-run cannot complete this case or publish completion receipts; no partition created | UNEXECUTED; no |
 | PS-03 | two size spellings normalize identically; identical prior observations | equal execution basis and same decisions; retain parse/rounding evidence; generated timestamps are not equal-input proof | UNEXECUTED; no |
 | PS-04 | change a size/region so exact installer answers differ | execution basis differs; old digest refused changed if still available; no save | UNEXECUTED; no |
 | PS-05 | change complete geometry after Q4 and execution review | fresh geometry/basis differs: refused changed or unavailable at step 5; exact new probes, no save | UNEXECUTED; no |
@@ -3928,7 +4000,7 @@ prior captures, whole readback and delivery admission, not just result text.
 | PS-07 | state.env appears or bytes/metadata change after review | refused changed if safely available; prior/full bytes and identity prove change; unsafe inspection remains error/unavailable | UNEXECUTED; no |
 | PS-08 | Shared intent appears/changes after review | changed basis/refused changed; exact captured whole file/metadata; no save | UNEXECUTED; no |
 | PS-09 | prior result appears/replaced/changes after review | changed basis/refused changed; full admitted prior receipt/identity; prior success proves no new attempt | UNEXECUTED; no |
-| PS-10 | root/log target unavailable, alias/link/non-file or unwritable | refused unavailable before save; correct-object/access evidence; failed inspection never absence | UNEXECUTED; no |
+| PS-10 | root/ops/log target unavailable, alias/link/non-file or unwritable; explicit pre-review fixture setup versus separately specified adapted provisioning | refused unavailable before save; correct-object/access and provisioning-owner/timing evidence; original survey cannot stand in for ops setup; review provisions nothing; failed inspection never absence | UNEXECUTED; no |
 | PS-11 | inject first Shared publication/removal failure before any save publication | failed postcondition if complete negative evidence, otherwise stopped unsupervised; no claimed zero coordinator effects | UNEXECUTED; no |
 | PS-12 | publish Shared successfully, then fail first cfg write | failed postcondition with surviving intent and failed/unexpected barrier; receipt old/absent, never new success | UNEXECUTED; no |
 | PS-13 | fail each cfg key set/unset in turn, with prior keys published | failed postcondition; stop loop at first failure, exact earlier bytes/order survive; no rollback | UNEXECUTED; no |
@@ -3945,15 +4017,15 @@ prior captures, whole readback and delivery admission, not just result text.
 | PS-24 | Q4 digest, unrelated family digest or wrong full execution digest | refused changed when available; execution preimage/version evidence proves distinctness; no save | UNEXECUTED; no |
 | PS-25 | supply a word although save gate is empty | refused word (wire-invalid word stays admission failure); no invented save/test/launch gate | UNEXECUTED; no |
 | PS-26 | same qualified save-point fixture and inputs in oracle/core/new text | three-way equivalence plus only reviewed deltas; retain independent oracle, probes/writers/state/versions; no two-path-only pass | UNEXECUTED; no |
-| PS-27 | unrelated state keys/files, HOME and TMPDIR sentinels | preserve bytes/metadata outside enumerated effects; independent before/after inventory; no broad cleanup | UNEXECUTED; no |
+| PS-27 | absent, empty or valid printable-ASCII LF prior state; unrelated lines with spaces, '=' and repeated keys; unrelated state keys/files and HOME/TMPDIR sentinels | preflight all cfg/planned_at operations, preserve complete unrelated bytes/order and external metadata; full prior/post comparison and independent inventory; no normalization, repair or broad cleanup | UNEXECUTED; no |
 | PS-28 | prior verified save followed by interrupted changed replacement | stale old receipt cannot certify changed/partial outputs; retained operation blocks another act; completion unknown | UNEXECUTED; no |
 | PS-29 | repeat same effective plan after first verified save, using new review | semantic repeat, fresh prior-receipt basis; new generated times/digests/objects permitted; byte-idempotence not claimed | UNEXECUTED; no |
 | PS-30 | change every selected choice independently, including clear gh | basis changes; checked saved value/unset matches; CFG_plan/answers cannot be supplied as authority | UNEXECUTED; no |
 | PS-31 | no Shared selected with an existing valid Shared intent | removal precedes cfg_plan unset and timestamp; fresh absence and preserved unrelated state; no Shared partition action | UNEXECUTED; no |
 | PS-32 | live/unknown-live, failed, unsupervised or undetermined prior operation | busy/unresolved/unsupervised/unavailable respectively; exact inspection evidence; no new save or positive reconciliation | UNEXECUTED; no |
-| PS-33 | log-day rollover or external destination/source change during save | stopped changed only with known safe writer-end; otherwise stopped unsupervised; prior writes retained; no unreviewed next-day file | UNEXECUTED; no |
+| PS-33 | inherited phase unset, alternate, macos or control-bearing; coordinator/worker phase controls; log-day rollover or external destination/source change during save | fixed macos phase yields identical covered log semantics for every inherited value, no controls interpolated and no basis input added; known later change is stopped changed only with safe writer-end, otherwise stopped unsupervised; prior writes retained; no next-day file | UNEXECUTED; no |
 | PS-34 | result stream lost after verified receipt and retirement; or complete negative delivered | unknown delivery versus delivered negative; receipt/original-core proof separate from transport; neither absence nor exit 0 proves save | UNEXECUTED; no |
-| PS-35 | malformed parameters/receipt, oversized evidence, hash/read/admission tools fail | invalid/admission, unavailable prior receipt, representation or io as specified by phase; no prefix/partial witness or new code | UNEXECUTED; no |
+| PS-35 | malformed parameters/receipt, oversized evidence, byte inspection/hash/read/admission failure; unterminated, NUL, CR/tab/control/non-ASCII prior state | malformed parameters follow invalid/admission rules, malformed prior receipt refuses unavailable; known unsupported in-bounds prior content refuses unavailable before save with unchanged state and no repair; inspection failure is io, proven admission/bound failure representation; distinguish post-write negative/unknown and PS-34 lost delivery; no prefix witness or new code | UNEXECUTED; no |
 | PS-36 | command/probe/child trace includes installer, disk mutation, network/download or undeclared output | qualification fails and coverage refused/stopped; exact trace and complete domain inventory; no accidental installer execution | UNEXECUTED; no |
 
 ### Snapshot generations
