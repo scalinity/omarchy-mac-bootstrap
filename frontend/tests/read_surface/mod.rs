@@ -240,6 +240,405 @@ fn d55_body(generation: &str, total: usize, rows: &str) -> String {
     format!("generation\tid={generation}\ttotal={total}\n{rows}{DONE}")
 }
 
+// D55-FE-01: admitted act-session responses use the existing foundation actions.
+fn fe01_answer(m: &mut Model, req: Req, body: &str) -> Vec<Cmd> {
+    let wire = format!("omb-res 1\n{}{body}", hello_line("act"));
+    let doc = admit(Family::Res, Some(op_of(&req)), wire.as_bytes()).unwrap();
+    update(m, Msg::Done(req, Outcome::Answer(doc.records)))
+}
+
+fn fe01_journey(g: &str) -> String {
+    let mut body = journey(g).strip_suffix(DONE).unwrap().to_string();
+    for (id, intent, gate) in [("test.read", "read", ""), ("test.mutate", "act", "test")] {
+        body.push_str(&omb_tui::record::line(
+            "action",
+            &[
+                ("id", id.as_bytes()),
+                ("scope", b"journey"),
+                ("label", id.as_bytes()),
+                ("intent", intent.as_bytes()),
+                ("gate", gate.as_bytes()),
+                ("terminal", b"managed"),
+                ("cancel", b"1"),
+                ("basis", GEN.as_bytes()),
+                ("explain", b"An existing foundation fixture action."),
+            ],
+        ));
+    }
+    body.push_str(DONE);
+    body
+}
+
+fn fe01_ready(cached: bool) -> Model {
+    let mut m = Model::default();
+    let hello = sent(&m.start());
+    let snapshot = sent(&fe01_answer(&mut m, hello, DONE));
+    assert!(fe01_answer(&mut m, snapshot, &fe01_journey(GEN)).is_empty());
+    assert_eq!(m.hello.as_ref().unwrap().ceiling, "act");
+    if cached {
+        let req = sent(&go(&mut m, 7));
+        let rows = D55_ROWS.replace("col=unreadable", "col=none").replace(
+            "What%20it%20recorded%20is%20unknown.",
+            "PRE_ACTION_OPERATION_NONE",
+        );
+        assert!(fe01_answer(&mut m, req, &d55_body(GEN, 4, &rows)).is_empty());
+        press(&mut m, KeyCode::Down);
+        press(&mut m, KeyCode::Enter);
+        assert!(frame(&m, 200, 40).contains("PRE_ACTION_OPERATION_NONE"));
+    } else {
+        assert!(m.detail(omb_tui::read::Kind::Operation).is_none());
+    }
+    m
+}
+
+fn fe01_execute(m: &mut Model, gated: bool) -> Req {
+    assert!(go(m, 1).is_empty());
+    m.focus = usize::from(gated);
+    if gated {
+        assert!(press(m, KeyCode::Enter).is_empty());
+        assert!(typed(m, "tes").is_empty());
+        assert!(
+            press(m, KeyCode::Enter).is_empty(),
+            "an inexact word submits nothing"
+        );
+        assert!(typed(m, "t").is_empty());
+    }
+    let req = sent(&press(m, KeyCode::Enter));
+    assert!(matches!(&req, Req::Execute { action, word, .. }
+        if action == if gated { "test.mutate" } else { "test.read" }
+        && word == if gated { "test" } else { "" }));
+    req
+}
+
+fn fe01_no_finding(m: &mut Model) {
+    let d = m
+        .detail(omb_tui::read::Kind::Operation)
+        .expect("a truthful unavailable view");
+    assert!(
+        !d.loaded && d.rows.is_empty() && !d.open,
+        "no cached or expanded finding: {d:?}"
+    );
+    assert!(
+        go(m, 7).is_empty(),
+        "no request against the retained Journey generation"
+    );
+    for c in [KeyCode::Down, KeyCode::Enter, KeyCode::End] {
+        assert!(press(m, c).is_empty(), "no page or stale expansion");
+    }
+    for (w, h) in [(200, 40), (80, 24), (60, 24)] {
+        let f = frame(m, w, h);
+        assert!(
+            !f.contains("PRE_ACTION_OPERATION_NONE") && !f.contains("value lines"),
+            "{f}"
+        );
+    }
+    assert!(frame(m, 200, 40).contains("No current operation finding."));
+}
+
+#[test]
+fn d55_fe01_direct_execute_invalidates_before_completion() {
+    let mut m = fe01_ready(true);
+    fe01_execute(&mut m, false);
+    assert!(matches!(
+        m.pending.as_ref().unwrap().req,
+        Req::Execute { .. }
+    ));
+    fe01_no_finding(&mut m);
+    assert!(
+        press(&mut m, KeyCode::Char('r')).is_empty(),
+        "serialized while Execute runs"
+    );
+}
+
+#[test]
+fn d55_fe01_typed_execute_invalidates_before_completion() {
+    let mut m = fe01_ready(true);
+    fe01_execute(&mut m, true);
+    fe01_no_finding(&mut m);
+}
+
+fn fe01_failure(status: &str, code: &str, why: &str) -> Outcome {
+    let wire = format!(
+        "omb-res 1\n{}generation\tid={EMPTY}\ttotal=0\n{}",
+        hello_line("act"),
+        omb_tui::record::line(
+            "result",
+            &[
+                ("status", status.as_bytes()),
+                ("code", code.as_bytes()),
+                ("text", why.as_bytes()),
+                ("next", b"")
+            ]
+        )
+    );
+    Outcome::Answer(
+        admit(
+            Family::Res,
+            Some(omb_tui::record::Op::Snapshot),
+            wire.as_bytes(),
+        )
+        .unwrap()
+        .records,
+    )
+}
+
+fn fe01_failed_snapshot(outcome: Outcome) {
+    for cached in [false, true] {
+        let mut m = fe01_ready(cached);
+        let before = m.snap.clone();
+        let execute = fe01_execute(&mut m, true);
+        let failed =
+            "result\tstatus=failed\tcode=postcondition\ttext=Fixture%20effect%20absent.\tnext=\n";
+        let snapshot = sent(&fe01_answer(&mut m, execute, failed));
+        assert!(matches!(snapshot, Req::Snapshot));
+        assert!(go(&mut m, 7).is_empty(), "Execute follow-up is serialized");
+        assert!(
+            update(&mut m, Msg::Done(snapshot, outcome.clone())).is_empty(),
+            "no retry or fallback"
+        );
+        assert_eq!(m.snap, before, "the Journey snapshot is retained");
+        if m.lost {
+            let d = m.detail(omb_tui::read::Kind::Operation).unwrap();
+            assert!(!d.loaded && d.rows.is_empty() && !d.open);
+            assert_eq!(m.screen, omb_tui::app::Screen::Fatal);
+            assert!(press(&mut m, KeyCode::Char('r')).is_empty());
+        } else {
+            fe01_no_finding(&mut m);
+            let retry = sent(&press(&mut m, KeyCode::Char('r')));
+            assert!(matches!(retry, Req::Snapshot));
+            assert!(update(&mut m, Msg::Done(retry, outcome.clone())).is_empty());
+            fe01_no_finding(&mut m);
+            assert!(go(&mut m, 1).is_empty());
+            assert!(go(&mut m, 7).is_empty(), "reopening cannot request old G");
+            if let Outcome::Answer(records) = &outcome {
+                let r = records.last().unwrap();
+                assert!(
+                    matches!(&m.detail(omb_tui::read::Kind::Operation).unwrap().fault,
+                    Some(omb_tui::read::Fault::Said { status, code, text })
+                    if Some(status.as_str()) == r.text("status") && Some(code.as_str()) == r.text("code")
+                    && Some(text.as_str()) == r.text("text"))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn d55_fe01_snapshot_io_preserves_uncertainty() {
+    fe01_failed_snapshot(fe01_failure("error", "io", "Snapshot could not be read."));
+}
+
+#[test]
+fn d55_fe01_snapshot_representation_preserves_uncertainty() {
+    fe01_failed_snapshot(fe01_failure(
+        "error",
+        "representation",
+        "Snapshot cannot be represented.",
+    ));
+}
+
+#[test]
+fn d55_fe01_snapshot_refusal_preserves_uncertainty() {
+    fe01_failed_snapshot(fe01_failure(
+        "refused",
+        "scope",
+        "Journey snapshot refused.",
+    ));
+}
+
+#[test]
+fn d55_fe01_snapshot_unknown_preserves_uncertainty() {
+    fe01_failed_snapshot(Outcome::Unknown(
+        "transport ended without a complete response".into(),
+    ));
+}
+
+#[test]
+fn d55_fe01_snapshot_incomplete_or_invalid_never_admits() {
+    for body in [
+        format!("generation\tid={GEN}\ttotal=0\n"),
+        format!("generation\tid=invalid\ttotal=0\n{DONE}"),
+    ] {
+        let wire = format!("omb-res 1\n{}{body}", hello_line("act"));
+        let err = admit(
+            Family::Res,
+            Some(omb_tui::record::Op::Snapshot),
+            wire.as_bytes(),
+        )
+        .unwrap_err();
+        fe01_failed_snapshot(Outcome::Unknown(format!("unadmitted snapshot: {err:?}")));
+    }
+}
+
+#[test]
+fn d55_fe01_snapshot_not_sent_preserves_uncertainty() {
+    fe01_failed_snapshot(Outcome::NotSent(
+        "snapshot request could not be delivered".into(),
+    ));
+}
+
+#[test]
+fn d55_fe01_snapshot_lost_ends_the_session_without_a_finding() {
+    fe01_failed_snapshot(Outcome::Lost("core identity unavailable".into()));
+}
+
+#[test]
+fn d55_fe01_every_execute_outcome_keeps_the_finding_invalid() {
+    for outcome in [
+        Outcome::Unknown("no complete Execute response".into()),
+        Outcome::NotSent("Execute not delivered".into()),
+        Outcome::Lost("Execute core identity lost".into()),
+    ] {
+        let mut m = fe01_ready(true);
+        let req = fe01_execute(&mut m, true);
+        let cmds = update(&mut m, Msg::Done(req, outcome));
+        assert!(cmds.iter().all(|c| matches!(c, Cmd::Send(Req::Snapshot))));
+        let d = m.detail(omb_tui::read::Kind::Operation).unwrap();
+        assert!(!d.loaded && d.rows.is_empty() && !d.open);
+    }
+    for (status, code) in [
+        ("done", "ok"),
+        ("failed", "postcondition"),
+        ("refused", "changed"),
+        ("cancelled", "signal"),
+        ("stopped", "unsupervised"),
+    ] {
+        let mut m = fe01_ready(true);
+        let req = fe01_execute(&mut m, true);
+        let body = omb_tui::record::line(
+            "result",
+            &[
+                ("status", status.as_bytes()),
+                ("code", code.as_bytes()),
+                ("text", b"Fixture action result."),
+                ("next", b""),
+            ],
+        );
+        assert!(matches!(
+            sent(&fe01_answer(&mut m, req, &body)),
+            Req::Snapshot
+        ));
+        fe01_no_finding(&mut m);
+    }
+}
+
+fn fe01_recovery(g: &str) {
+    for cached in [false, true] {
+        let mut m = fe01_ready(cached);
+        let req = fe01_execute(&mut m, true);
+        let snap = sent(&fe01_answer(
+            &mut m,
+            req,
+            "result\tstatus=failed\tcode=postcondition\ttext=No%20effect.\tnext=\n",
+        ));
+        assert!(go(&mut m, 7).is_empty());
+        assert!(
+            update(
+                &mut m,
+                Msg::Done(snap, fe01_failure("error", "io", "No snapshot."))
+            )
+            .is_empty()
+        );
+        let snapshot = sent(&press(&mut m, KeyCode::Char('r')));
+        assert!(matches!(snapshot, Req::Snapshot));
+        // The explicitly requested refresh still reopens Operation if the
+        // person navigates away while its Journey read is running.
+        if cached {
+            assert!(go(&mut m, 1).is_empty());
+        }
+        let req = sent(&fe01_answer(&mut m, snapshot, &fe01_journey(g)));
+        let Req::Detail(p) = &req else {
+            panic!("{req:?}")
+        };
+        assert_eq!(p.kind, omb_tui::read::Kind::Operation);
+        assert_eq!(p.generation, g);
+        assert_eq!(p.offset, 0);
+        assert!(p.limit >= 20);
+        let rows = D55_ROWS
+            .replace("col=unreadable", "col=readable")
+            .replace("What%20it%20recorded%20is%20unknown.", "POST_ACTION_ONLY");
+        assert!(fe01_answer(&mut m, req, &d55_body(g, 4, &rows)).is_empty());
+        assert!(go(&mut m, 7).is_empty());
+        let d = m.detail(omb_tui::read::Kind::Operation).unwrap();
+        assert!(d.loaded && d.fault.is_none());
+        assert_eq!(d.generation, g);
+        assert!(frame(&m, 200, 40).contains("POST_ACTION_ONLY"));
+        assert!(!frame(&m, 200, 40).contains("PRE_ACTION_OPERATION_NONE"));
+    }
+}
+
+#[test]
+fn d55_fe01_fresh_same_generation_restores_detail_eligibility() {
+    fe01_recovery(GEN);
+}
+
+#[test]
+fn d55_fe01_fresh_changed_generation_restores_detail_eligibility() {
+    fe01_recovery(GEN2);
+}
+
+#[test]
+fn d55_fe01_old_complete_detail_cannot_be_readmitted_after_execute() {
+    let mut m = fe01_ready(true);
+    let page = m
+        .detail(omb_tui::read::Kind::Operation)
+        .unwrap()
+        .page(0, 500);
+    fe01_execute(&mut m, true);
+    let rows = D55_ROWS.replace("col=unreadable", "col=none");
+    assert!(fe01_answer(&mut m, Req::Detail(page), &d55_body(GEN, 4, &rows)).is_empty());
+    fe01_no_finding(&mut m);
+}
+
+#[test]
+fn d55_fe01_prior_consumers_keep_their_retained_generation_policy() {
+    use omb_tui::read::Kind;
+    let mut m = fe01_ready(false);
+    let req = sent(&go(&mut m, 2));
+    fe01_answer(&mut m, req, &d55_body(GEN, 6, MACHINE_ROWS));
+    let req = sent(&go(&mut m, 3));
+    fe01_answer(
+        &mut m,
+        req,
+        &format!(
+            "generation\tid={GEN}\ttotal=2\nrow\tkind=status\tkey=1\tcol=Before\tcol=PRIOR_STATUS\tcol=value\tcol=\n{DONE}"
+        ),
+    );
+    let snap = sent(&go(&mut m, 4));
+    let req = sent(&fe01_answer(&mut m, snap, &format!("{HEALTH}{DONE}")));
+    fe01_answer(&mut m, req, &d55_body(HGEN, 4, DOCTOR_ROWS));
+    let snap = sent(&go(&mut m, 5));
+    let req = sent(&fe01_answer(&mut m, snap, &format!("{LOGS}{DONE}")));
+    fe01_answer(&mut m, req, &d55_body(LGEN, 3, LOG_ROWS));
+    let before: Vec<_> = [Kind::Machine, Kind::Status, Kind::Doctor, Kind::Log]
+        .into_iter()
+        .map(|k| {
+            (
+                k,
+                m.detail(k).unwrap().rows.clone(),
+                m.detail(k).unwrap().generation.clone(),
+            )
+        })
+        .collect();
+    let journey_before = m.snap.clone();
+    let req = fe01_execute(&mut m, true);
+    let snap = sent(&fe01_answer(&mut m, req, DONE));
+    assert!(
+        update(
+            &mut m,
+            Msg::Done(snap, fe01_failure("error", "io", "Snapshot failed."))
+        )
+        .is_empty()
+    );
+    assert_eq!(m.snap, journey_before);
+    for (kind, rows, g) in before {
+        let d = m.detail(kind).unwrap();
+        assert!(d.loaded && d.fault.is_none() && !d.changed);
+        assert_eq!(d.rows, rows);
+        assert_eq!(d.generation, g);
+    }
+}
+
 #[test]
 fn d55_only_complete_findings_of_the_requested_generation_are_loaded() {
     use omb_tui::read::Kind;

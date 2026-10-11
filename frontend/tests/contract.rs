@@ -782,3 +782,249 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
     }
     std::fs::remove_dir_all(t).unwrap();
 }
+
+/// D55-FE-01 uses a separate act-capable fixture session; the read-only
+/// diagnostic contract above keeps its original intent and persistence checks.
+#[test]
+fn d55_fe01_failed_action_and_failed_snapshot_against_the_real_core() {
+    use omb_tui::app::{Cmd, Model, Msg, Screen, update};
+    use omb_tui::read::{Fault, Kind};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    if std::env::var_os("OMB_D55_FE01_CHILD").is_none() {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "d55_fe01_failed_action_and_failed_snapshot_against_the_real_core",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("OMB_D55_FE01_CHILD", "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "isolated D55-FE-01 contract: {status}");
+        return;
+    }
+    seal_inherited_descriptors().unwrap();
+    let t = scratch();
+    let fixture = if cfg!(target_os = "macos") {
+        "mac-m1pro-1tb-roomy"
+    } else {
+        "linux-omarchy-installed"
+    };
+    let fix = t.join("fixture");
+    assert!(
+        Command::new("cp")
+            .arg("-R")
+            .arg(repo().join("tests/fixtures").join(fixture))
+            .arg(&fix)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::create_dir_all(fix.join("test-children")).unwrap();
+    std::fs::write(fix.join("test-children/mutate"), "effect=none\n").unwrap();
+    // The accepted F03-C representation seam: a fixture path containing TAB.
+    let unrepresentable = t.join("fix\tture");
+    assert!(
+        Command::new("cp")
+            .arg("-R")
+            .arg(&fix)
+            .arg(&unrepresentable)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::create_dir(t.join("home")).unwrap();
+    std::fs::write(t.join("home/keep"), b"unchanged HOME").unwrap();
+    let bash_path = std::env::var("OMB_TEST_BASH").unwrap_or_else(|_| "/bin/bash".into());
+    let path = format!(
+        "{}:/usr/bin:/bin:/usr/sbin:/sbin",
+        Path::new(&bash_path).parent().unwrap().display()
+    );
+    // SAFETY: this isolated child has one test thread and no running readers.
+    unsafe {
+        for (k, _) in std::env::vars() {
+            if k.starts_with("OMB_") {
+                std::env::remove_var(k);
+            }
+        }
+        for (k, v) in [
+            ("OMB_HOME", repo().display().to_string()),
+            ("OMB_SESSION_INTENT", "act".into()),
+            ("OMB_SESSION_SCOPES", "journey".into()),
+            ("OMB_DRY_RUN", "0".into()),
+            ("OMB_FIXTURE", fix.display().to_string()),
+            ("OMB_TEST_FOUNDATION", "1".into()),
+            ("OMB_FRONTEND_DEV", "1".into()),
+            ("TMPDIR", t.display().to_string()),
+            ("HOME", t.join("home").display().to_string()),
+            ("PATH", path),
+        ] {
+            std::env::set_var(k, v);
+        }
+    }
+    let request = |cmds: Vec<Cmd>| {
+        assert_eq!(cmds.len(), 1, "one request: {cmds:?}");
+        let Cmd::Send(req) = cmds.into_iter().next().unwrap() else {
+            panic!("not a request")
+        };
+        req
+    };
+    let press = |m: &mut Model, c| update(m, Msg::Key(KeyEvent::new(c, KeyModifiers::NONE)));
+    let go = |m: &mut Model, n| {
+        assert!(press(m, KeyCode::Left).is_empty());
+        for _ in 0..8 {
+            assert!(press(m, KeyCode::Up).is_empty());
+        }
+        for _ in 0..n {
+            assert!(press(m, KeyCode::Down).is_empty());
+        }
+        press(m, KeyCode::Enter)
+    };
+    for cached in [true, false] {
+        let state = t.join(format!("state-{cached}"));
+        let sess = t.join(format!("omb-session.fe01-{cached}"));
+        std::fs::create_dir(&sess).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&sess, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // SAFETY: every preceding request has finished; this child's env is isolated.
+        unsafe {
+            std::env::set_var("OMB_SESSION_DIR", &sess);
+            std::env::set_var("OMB_STATE_DIR", &state);
+            std::env::set_var("OMB_FIXTURE", &fix);
+        }
+        let mut s = Session::new(sess, repo(), true);
+        let mut m = Model::default();
+        let hello = request(m.start());
+        let (o, _) = run(&mut s, &hello);
+        let snap = request(update(&mut m, Msg::Done(hello, o)));
+        assert_eq!(m.hello.as_ref().unwrap().ceiling, "act");
+        assert!(m.hello.as_ref().unwrap().fixture && !m.hello.as_ref().unwrap().dry_run);
+        let (o, _) = run(&mut s, &snap);
+        assert!(update(&mut m, Msg::Done(snap, o)).is_empty());
+        let old_g = m.snap.as_ref().unwrap().generation.clone();
+        assert!(
+            !state.exists(),
+            "hello/snapshot create no state even in this act session"
+        );
+        if cached {
+            let req = request(go(&mut m, 7));
+            let (o, _) = run(&mut s, &req);
+            assert!(update(&mut m, Msg::Done(req, o)).is_empty());
+            assert_eq!(
+                m.detail(Kind::Operation)
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .find(|r| r.key == "state")
+                    .unwrap()
+                    .col(1),
+                "none"
+            );
+            assert!(!state.exists(), "Operation diagnostics are read-only");
+        } else {
+            assert!(m.detail(Kind::Operation).is_none());
+        }
+        assert!(go(&mut m, 1).is_empty());
+        m.focus = m
+            .snap
+            .as_ref()
+            .unwrap()
+            .actions
+            .iter()
+            .position(|a| a.id == "test.mutate")
+            .unwrap();
+        assert!(press(&mut m, KeyCode::Enter).is_empty());
+        assert_eq!(m.screen, Screen::Gate);
+        for c in "test".chars() {
+            assert!(press(&mut m, KeyCode::Char(c)).is_empty());
+        }
+        let execute = request(press(&mut m, KeyCode::Enter));
+        let (o, _) = run(&mut s, &execute);
+        println!(
+            "D55-FE-01 cached={cached}: Execute {:?}, pre-action generation={old_g}",
+            result(&o)
+        );
+        assert_eq!(result(&o), ("failed".into(), "postcondition".into()));
+        let record = std::fs::read(state.join("ops/journey.omb")).unwrap();
+        assert!(String::from_utf8_lossy(&record).contains("state=failed"));
+        assert!(!state.join("test/effect-mutate").exists());
+        let snap = request(update(&mut m, Msg::Done(execute, o)));
+        assert!(matches!(snap, Req::Snapshot));
+        // Change only the owned fixture input between completed requests.
+        unsafe {
+            std::env::set_var("OMB_FIXTURE", &unrepresentable);
+        }
+        let (o, _) = run(&mut s, &snap);
+        println!(
+            "D55-FE-01 cached={cached}: follow-up snapshot {:?}",
+            result(&o)
+        );
+        assert_eq!(result(&o), ("error".into(), "representation".into()));
+        assert!(update(&mut m, Msg::Done(snap, o)).is_empty());
+        assert_eq!(m.snap.as_ref().unwrap().generation, old_g);
+        assert!(
+            go(&mut m, 7).is_empty(),
+            "no Operation read against retained pre-action G"
+        );
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(
+            !d.loaded && d.rows.is_empty() && !d.open,
+            "no previous state=none finding"
+        );
+        assert!(
+            matches!(&d.fault, Some(Fault::Said { status, code, .. }) if status == "error" && code == "representation")
+        );
+        assert_eq!(
+            std::fs::read(state.join("ops/journey.omb")).unwrap(),
+            record,
+            "diagnostics do not mutate the barrier"
+        );
+        unsafe {
+            std::env::set_var("OMB_FIXTURE", &fix);
+        }
+        let snap = request(press(&mut m, KeyCode::Char('r')));
+        let (o, _) = run(&mut s, &snap);
+        assert_eq!(result(&o), ("done".into(), "ok".into()));
+        let req = request(update(&mut m, Msg::Done(snap, o)));
+        let Req::Detail(page) = &req else {
+            panic!("{req:?}")
+        };
+        assert_eq!(page.kind, Kind::Operation);
+        assert_eq!(page.generation, m.snap.as_ref().unwrap().generation);
+        assert_ne!(
+            page.generation, old_g,
+            "the failed record changes this real dataset"
+        );
+        let (o, _) = run(&mut s, &req);
+        assert_eq!(result(&o), ("done".into(), "ok".into()));
+        let Outcome::Answer(recs) = &o else {
+            unreachable!()
+        };
+        let expected = omb_tui::read::rows(recs, Kind::Operation);
+        assert!(update(&mut m, Msg::Done(req, o)).is_empty());
+        let d = m.detail(Kind::Operation).unwrap();
+        assert!(d.loaded && d.fault.is_none());
+        assert_eq!(
+            d.rows, expected,
+            "only the new Bash-owned complete finding is admitted"
+        );
+        assert_eq!(
+            d.rows.iter().find(|r| r.key == "state").unwrap().col(1),
+            "readable"
+        );
+        assert_eq!(
+            std::fs::read(state.join("ops/journey.omb")).unwrap(),
+            record
+        );
+    }
+    assert_eq!(std::fs::read_dir(t.join("home")).unwrap().count(), 1);
+    assert_eq!(
+        std::fs::read(t.join("home/keep")).unwrap(),
+        b"unchanged HOME"
+    );
+    println!(
+        "D55-FE-01 real producer: cached and unopened paths recovered; effects and records stayed in {t:?}"
+    );
+    std::fs::remove_dir_all(t).unwrap();
+}

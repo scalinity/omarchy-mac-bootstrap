@@ -279,6 +279,8 @@ pub struct Model {
     pub side: bool,
     /// The details opened, by kind.
     pub details: [Option<Detail>; 5],
+    /// An action invalidated Operation; only an admitted Journey read clears it.
+    pub operation_stale: bool,
     pub health: ScopeRead,
     pub logread: ScopeRead,
     pub logs_tab: LogsTab,
@@ -349,6 +351,7 @@ impl Default for Model {
             nav: 1,
             side: false,
             details: [None, None, None, None, None],
+            operation_stale: false,
             health: ScopeRead::default(),
             logread: ScopeRead::default(),
             logs_tab: LogsTab::Tool,
@@ -412,6 +415,11 @@ impl Model {
     }
 
     fn send(&mut self, req: Req, cancellable: bool, label: &str) -> Vec<Cmd> {
+        if matches!(req, Req::Execute { .. }) {
+            self.invalidate_operation(Fault::NoAnswer(
+                "An action was submitted; a fresh Journey snapshot is required.".into(),
+            ));
+        }
         self.pending = Some(Pending {
             req: req.clone(),
             cancellable,
@@ -421,6 +429,15 @@ impl Model {
         self.progress = None;
         self.messages.clear();
         vec![Cmd::Send(req)]
+    }
+
+    fn invalidate_operation(&mut self, fault: Fault) {
+        self.operation_stale = true;
+        let id = self.generation(Scope::Journey).unwrap_or("").to_string();
+        let d = self.details[Kind::Operation.index()]
+            .get_or_insert_with(|| Detail::new(Kind::Operation, &id));
+        discard_operation(d);
+        d.fault = Some(fault);
     }
 
     fn refresh(&mut self) -> Vec<Cmd> {
@@ -587,6 +604,9 @@ fn demand(m: &mut Model) -> Vec<Cmd> {
         },
     };
     let scope = kind.scope();
+    if kind == Kind::Operation && m.operation_stale {
+        return Vec::new();
+    }
     if scope != Scope::Journey && !m.scope(scope).asked {
         return m.read(scope);
     }
@@ -641,6 +661,9 @@ fn regenerated(m: &mut Model, scope: Scope, id: &str) -> Vec<Cmd> {
     let limit = m.limit;
     let mut fresh = None;
     for k in Kind::ALL.into_iter().filter(|k| k.scope() == scope) {
+        if k == Kind::Operation && m.operation_stale {
+            continue;
+        }
         let Some(d) = m.detail_mut(k) else { continue };
         let moved = d.generation != id;
         if reopen == Some(k) && (moved || d.changed || d.fault.is_some() || !d.loaded) {
@@ -711,8 +734,23 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             vec![Cmd::Quit(10, why)]
         }
         Req::Snapshot => {
+            if m.operation_stale && (status != "done" || code != "ok") {
+                m.invalidate_operation(Fault::Said {
+                    status: status.clone(),
+                    code: code.clone(),
+                    text: text.clone(),
+                });
+            }
             if status == "done" {
                 let s = snapshot_of(&records);
+                if m.operation_stale && code == "ok" && !s.generation.is_empty() {
+                    // This response is a new read even when its generation is
+                    // unchanged. The previous finding is never resurrected.
+                    m.operation_stale = false;
+                    if m.reopen != Some(Kind::Operation) {
+                        m.details[Kind::Operation.index()] = None;
+                    }
+                }
                 if m.focus >= s.actions.len() {
                     m.focus = s.actions.len().saturating_sub(1);
                 }
@@ -767,6 +805,10 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                 m.details[kind.index()] = Some(Detail::new(kind, &p.generation));
             }
             if kind == Kind::Operation {
+                if m.operation_stale {
+                    // A retained pre-action generation cannot admit a finding.
+                    return settle(m, Vec::new());
+                }
                 let generation = crate::read::generation(&records);
                 let rows = crate::read::rows(&records, kind);
                 let matches_snapshot = generation.as_ref().is_some_and(|(id, _)| {
@@ -857,6 +899,11 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             settle(m, Vec::new())
         }
         Req::Execute { action, .. } => {
+            m.invalidate_operation(Fault::Said {
+                status: status.clone(),
+                code: code.clone(),
+                text: text.clone(),
+            });
             let (lvl, word) = match status.as_str() {
                 "done" => (Level::Ok, "done"),
                 "cancelled" => (Level::Info, "cancelled"),
@@ -913,6 +960,9 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             settle(m, Vec::new())
         }
         Req::Snapshot => {
+            if m.operation_stale {
+                m.invalidate_operation(fault);
+            }
             m.reopen = None;
             m.status = Some((
                 Level::Warn,
@@ -937,6 +987,7 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             settle(m, Vec::new())
         }
         Req::Execute { .. } => {
+            m.invalidate_operation(fault);
             m.status = Some((
                 Level::Warn,
                 format!(
@@ -968,6 +1019,9 @@ fn not_sent(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
         }
         Req::Validate { .. } => m.plan.fault = Some(fault),
         Req::Snapshot | Req::Execute { .. } => {
+            if m.operation_stale {
+                m.invalidate_operation(fault);
+            }
             m.reopen = None;
             m.status = Some((
                 Level::Fail,
