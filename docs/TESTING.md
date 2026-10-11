@@ -274,6 +274,124 @@ baseline action: `equiv-plan-save`, `equiv-backup-gate`,
 `equiv-omarchy-start`, `equiv-omarchy-resume`, `equiv-shared-create`,
 `equiv-shared-activate`, `equiv-shared-test`.
 
+### Future plan.save equivalence and failure qualification
+
+**PS-EXEC-1 — FUTURE TEST SPECIFICATION, ALL UNEXECUTED.**
+The normative owner, basis, receipt, results and single documentary
+acceptance matrix are docs/PROTOCOL.md → *Proposed plan.save execution
+contract*. PS-01–PS-36 there are unique case definitions; this section maps
+them to future tests without redefining their expected semantics.
+Proposed baseline deltas PS-D01–PS-D05 are in docs/DECISIONS.md →
+*Proposed plan.save completion and execution decision*. No test source,
+fixture, tap, snapshot, parser or writer is added by this checkpoint.
+
+The eventual equiv-plan-save compares three separately executed paths:
+A, accepted baseline text flow at 2edb76a7de3f78ec90927ac93d5eec3a84636253;
+B, future typed core Execute plan.save; C, future text route through the
+same authoritative core. A is an independent oracle, never C. Use stock
+/bin/bash 3.2 where available, with a separately qualified Bash 5 run.
+No real disk, installer or hardware may be reached; all machine probes and
+mutating commands are independently recorded/blocked by owned fixture seams.
+
+**Comparison boundary.** Retain a full baseline text-flow trace, including
+mac_survey's earlier reachability probe, mac_model/surveyed_at/log writes,
+validated defaults, storage/choice collection and any experimental journey
+gate. Capture the precise save-point prior state and selected CFG values
+before mac_save_plan. Independently reproduce that same logical prior
+population in A/B/C arenas; retain each arena's actual paths/object
+identities, with an explicit bijection only for test-root relocation.
+Compare the save suffix and all resulting state separately from the
+preceding survey. Report the full-flow prelude difference as PS-D03, never
+silently drop it or attribute survey writes to mac_save_plan. B/C must add
+the reviewed fresh pre-effect observations and supervision/receipt events;
+A must remain unchanged and expose its actual unchecked-failure behavior.
+Valid legacy save effects must still agree; fault differences require the
+accepted PS-D01 exception. Save-point equivalence is not a claim of
+whole-journey or other-action qualification.
+
+Use existing mac-m1pro-1tb-roomy, mac-m2-512, mac-m1-free-space,
+mac-geo-two-gaps and mac-geo-512-sectors for supported valid candidates.
+Select sizes only after source-grounded layout verification; ensure free
+and resize modes, Shared on/off, max and exact MiB answers. Use
+mac-m1pro-1tb-tight, mac-geo-no-limits, mac-geo-missing-offset,
+mac-geo-disagree, mac-geo-multi-apfs, mac-intel and existing Asahi fixtures
+for refusal boundaries. The experimental fixture retains its preceding
+text journey intent control. A future named variant may change one
+observation or inject one fault, with an immutable before/after description;
+it must not masquerade as an existing qualifying fixture or run on hardware.
+Present and absent state/intent/prior receipt, retained unrelated lines,
+gh clear, all configuration choices, safe/unsafe destination types and
+controlled logs/day changes complete the finite state dimensions.
+
+| Future test group | Documentary coverage | Mandatory evidence |
+| --- | --- | --- |
+| equiv-plan-save-valid | PS-01, PS-02, PS-03, PS-04, PS-26, PS-29, PS-30, PS-31 | independent A/B/C source/tree, selected and normalized inputs, region/answers, writer order, all bytes/metadata and explicit delta projections |
+| stale-plan-save | PS-05, PS-06, PS-07, PS-08, PS-09, PS-24, PS-33 | mutate each bound geometry/limits/floor/input/answer/source/destination/prior receipt observation independently; compare exact preimages and fresh refusal precedence |
+| plan-save-admission | PS-10, PS-23, PS-25, PS-32, PS-35 | malformed versus operational failures, scope/act ceiling, empty gate, no undeclared args, controlled correct-object inspection and no save dispatch |
+| plan-save-write-fault | PS-11, PS-12, PS-13, PS-14, PS-15, PS-16 | each set AND unset, Shared replace AND removal, hash/digest/reload, timestamp, full-state comparison; exact surviving prefix of writes and failed/unknown distinction |
+| plan-save-receipt | PS-09, PS-17, PS-18, PS-19, PS-28, PS-29, PS-35 | prior/new object identities, seal/schema/cross-field admission, full embedded basis, operation/writer binding, staging/chmod/rename/readback/output reread/removal faults |
+| plan-save-interrupt | PS-20, PS-21, PS-22, PS-28, PS-32, PS-34 | interrupt before/after EVERY durable boundary; worker-end and controller identity, every surviving object, old receipt staleness, readable/unreadable/reboot barriers, complete/negative/lost delivery |
+| plan-save-noninterference | PS-27, PS-33, PS-36 | HOME/TMPDIR/unrelated-state inventories, parent/log alias and continuity observations, command/probe traces and no installer/disk mutation/network/download |
+| plan-save-review-compat | PS-03, PS-23, PS-24, PS-25, PS-30, PS-35 | unchanged Q4 control/preimages/zero persistence; explicit new selector/parameter order/full-choice review, old-core unavailable with no fallback, no action exposure from reads |
+
+Compare planning decisions, effective sizes/choices, exact installer answers,
+every sys_cmd/sys_path/sys_has/sys_reachable trace, actual helper writer
+calls and statuses, raw saved bytes/short and full digests, durable
+publication/removal order, error/refusal messages/classification, temporary
+residue, prior-plan replacement behavior and subsequent read/status
+interpretation. Persistently matching a subset of cfg keys is insufficient.
+Record source/template/constants and exact consumed snapshots separately
+from their hashes. Check that no command recorder was accidentally bypassed.
+
+Normalize only independently proven run-varying generated now_utc/now_stamp,
+PID/start identity and mktemp suffix values, and controlled arena relocation.
+If time is normalized in a Shared body, recompute its expected 16-hex digest
+and derived CFG_plan under that same explicit oracle transformation; do
+not blank meaningful digests. Alternatively use one controlled future clock
+adapter in all three harness paths and preserve raw bytes. Keep raw receipts
+and raw traces in either method. Source identities, roles/owners, logical
+destination paths, meaningful prior state, choices, command/probe argv,
+versions and durable effects are never normalized away. A/B/C have distinct
+known source identities; validate each against its exact reviewed source
+rather than replacing source fields with one common value.
+
+Additional probes, coordinator operation/log scaffolding and the final
+receipt are compared under their separately reviewed delta rules; do not
+delete those objects from the comparison to obtain apparent equality.
+Their independent expected bytes/schema, provenance, ordering and absence
+from A are assertions. Failure cases compare A's true partial-state/false-
+success behavior with the specifically approved B/C changes, not an
+imaginary fixed oracle. A later ordinary read may show saved choices or
+planned_at but cannot acquire new completed-save semantics; a future
+receipt read must mark mismatch/staleness and obey its own authorization.
+
+**Fail-first requirements.** Before accepting future runtime code, retain
+a red control for: swallowing one cfg write failure; deleting an intent
+without required checks; accepting Q4 as execution authority; dropping any
+choice/prior receipt/geometry limit from the basis; stamping success before
+full readback; publishing a receipt with the wrong operation/source/output;
+retiring before verified receipt; treating unreadable/failed observations
+or stale old success as completion; admitting a further act through the
+unresolved plan barrier. Run each against the actual missing/unsafe behavior
+or one named test-only mutant, retain its observed failure, then require
+the corrected implementation to pass. A test that only reproduces the
+implementation's digest is not independent evidence.
+
+Inject failures at allocation/read/hash/admission/chmod/rename/unlink for
+each relevant writer, including failure after an earlier successful write.
+Expand cfg faults into twelve exact key positions and set/unset branches,
+not one generic simulated failure. Signal only owned processes held to
+start identity. Include negative-result delivery versus undelivered stream,
+unknown liveness, failed receipt verification, operation-retirement ambiguity
+and the existing log helper's status-after-unlink ambiguity. Require
+complete before/after inventories, not exit status alone. No rollback,
+repair, positive reconciliation, clear or reboot-only success is inferred.
+
+Future qualification records every check as executed result, UNEXECUTED,
+or blocked, at its exact candidate SHA. All three paths, all required faults
+and every named delta require permanent tests, CI and independent source
+review before acceptance. This document supplies no runtime evidence.
+
 ## Migration
 
 ### `scan-*`: the scanner

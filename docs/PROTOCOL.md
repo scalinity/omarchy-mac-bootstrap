@@ -3373,7 +3373,7 @@ Per family, the keys:
 
 | Family | `input` | `seen` (machine, then destination) | `version` |
 | --- | --- | --- | --- |
-| `plan.save` (future Gate 3 execution basis) | the Shared and Linux sizes, each choice, the installer answers | `geometry` (the SHA-256 of an `omb-geometry 1` document: one `part` record per partition in offset order, `guid offset size type content`, and one `container` record, `size free floor`), `plan_record` (absent, or its SHA-256) | `storage_contract`, `template` |
+| `plan.save` (future Gate 3 execution basis) | see *Proposed plan.save execution contract*: normalized sizes and selected choices; installer answers are derived observations | complete consumed geometry/plan, identified destinations, prior configuration, Shared intent and completion receipt | storage contract, template, installer, intent/receipt schemas and execution rule; proposal only |
 | `asahi.launch` | `script_url`, `script_sha256`, `answers` | `plan_record`, `geometry`, `asahi_state` (`none` or `resized-only`) | `installer` |
 | `omarchy.start`, `omarchy.resume` | `user`, `host`, `keymap`, `encrypt`, `script_url`, `script_sha256`, `branch` | `arch`, `euid`, `route`, `marker`, `setup_conf`, `unit_state`, `script_flags` | `omarchy` |
 | `shared.create` | `disk`, `start`, `size` | `part.<n>` for every partition in offset order (`guid:offset:size:type`), `internal_disk`, `plan_record`, `completion_code`, `power_class`, `region` (`start:size`), `creation_record` | — |
@@ -3438,6 +3438,523 @@ A restore repeats steps 4 and 6 for each item immediately before placing
 it. The protocol adds checks in front of the baseline's and removes none; no
 schema has a field that could assert a state (`safe=1`, a plan, a partition
 id), and an unknown field is an error.
+
+### Proposed plan.save execution contract
+
+**PS-EXEC-1 — COMPLETE DOCUMENTATION CANDIDATE, PENDING INDEPENDENT
+ACCEPTANCE.** Everything in this section is a proposed future fixture-only
+contract, not an implemented producer, action, writer, parser or reconciler.
+It defines only plan.save. Gate 3 remains incomplete; Gate 4/5, installer
+exposure and frontend 0.2.0 release gain no authority. Accepted D55, FJ-ED-1,
+FJ-P5-1 and conservative legacy-C rules are unchanged. Documentary cases
+PS-01–PS-36 below are all **UNEXECUTED**.
+
+#### Owner and source boundary
+
+Bash owns meaning. The semantic owner is mac_save_plan in lib/macos.sh,
+with the planning, Shared and state helpers below; a future checked Bash
+plan-scope adapter calls that owner. The generic core owns admission,
+session authority, exclusion, supervision, delivery and operation retirement.
+It cannot substitute its own planning or filesystem-success judgement.
+Rust only presents an explicitly listed action and its returned review.
+
+The save boundary begins with the selected CFG values and the planning
+capture, and ends after configuration and planned_at persistence. Survey,
+choice collection and review precede it. Backup, Asahi launch, Shared
+creation/activation/write test and Linux installation follow it or belong
+to other actions. No run, sudo, download, partition edit or installer is
+in this save call chain. mac_recheck_plan is the later launch check, not a
+save-time machine reread or persisted-save verifier.
+
+References below are to frozen D55 source 02ffc3b / tree
+93ce948453a157fb5a9b9bc3f60e06b74ba2e141, not moving document line numbers.
+The oracle is 2edb76a7de3f78ec90927ac93d5eec3a84636253. In the relevant
+baseline modules, only macos.sh's accepted PLIST-M01 extraction correction
+differs: current mac_save_plan 748–760 is oracle 739–751.
+
+| Exact source / functions / lines at D55 | Verified role and transitive details |
+| --- | --- |
+| omarchy-bootstrap, main, 256–299 and 326–331 | command-derived intent/persistence, state initialization, text lock and mac_main route; text plan currently has plan intent and may persist |
+| lib/macos.sh, mac_survey/mac_main, 1068–1154; mac_plan_storage/mac_shared_max/mac_linux_size/mac_custom_size, 419–449, 453–634; mac_choices/mac_review, 705–742 | survey writes mac_model/surveyed_at and logs before the save boundary; saved choices supply defaults; Shared first, Linux second; user choices then ordinary menu review/save; experimental is a preceding journey gate |
+| lib/macos.sh, mac_detect/mac_read_container/mac_detect_geometry/mac_classify_partition/mac_blockers, 23–92, 122–280 | read-only sys_cmd probes, plist extraction, root/container/store/whole-disk selection, every partition's exact extent and classification, resize limits and eligibility; mac_detect also collects display/default/backup information |
+| lib/macos.sh, mac_plan_compute/mac_save_plan/mac_recheck_plan, 284–290, 745–760, 94–113 | mac_plan_compute → plan_init/plan_compute; save → plan_layout → shared_intent_save → conditional shared_plan_digest → cfg_save → state_stamp; launch recheck is separate |
+| lib/storage.sh, parse_size/_uint/geo_reset/geo_add/_geo_walk/geo_finalize/geo_part/geo_role_uuids/geo_next/_fit/plan_init/plan_compute/plan_validate/plan_layout/plan_verify, 26–37, 85–157, 159–328, 338–440, 489–649 | bounded numbers, sorted exact geometry/gaps, APFS floor/limits, single-region selection, whole-MiB answers, final-layout invariants; planning has no durable effect |
+| lib/shared.sh, shared_intent_body/_part_rec/shared_media/shared_intent_save/shared_plan_digest/shared_intent_load/_intent_rec_ok/intent_parts, 31–34, 46–164 | ordered record fields, generated time, sanitized disk media, geometry/role records; publication/removal; reload validates schema/digest/numbers/partition records; stored digest is 16 hex, CFG_plan uses its first 8 |
+| lib/state.sh, state_init/state_dir_ready/_state_owned_safe/_state_file_ok/state_get/_state_rewrite/state_put_file/state_remove_file/state_set/state_stamp/state_unset, 10–208 | destination selection, cached directory check, checked plain-file reads, last matching key, per-file temporary rename/removal, CR/LF removal for state values, generated UTC stamp; per-file atomicity is not multi-file atomicity |
+| lib/state.sh, state_lock/state_unlock/cfg_load/cfg_save/cfg_field_ok and validators, 222–277, 286–419 | lock lifecycle, validated defaults, all CFG_KEYS in insertion order; cfg_save currently continues after failed individual writes and returns 0 |
+| lib/common.sh, sys_cmd/sys_path/sys_has/log_dir/log_file/log_event/sha256_str/now_utc/omb_tmp_init/omb_cleanup, 28–59, 96–97, 137–155, 223–244 | fixture reads, log directory creation and daily append, UTC name/time, hashes, private scratch and lock cleanup; log_event is a writer reached by state helpers |
+| lib/validate.sh, core_validate_op/context/size/shared/linux/answers/basis/respond/stage/publish, 18–71, 106–252, 308–401, 408–456 | implemented Q4 read capture, normalization, exact inner preimages, staged canonical admission/publication; no save |
+| lib/core.sh, core_action_info/core_basis/core_source/core_op_write/core_op_remove/core_op_execute/core_check_word/core_execute_act/core_reconcile, 839–858, 875–902, 923–958, 710–737, 760, 1302–1344, 1404–1556, 808–830 | current actions/reconciliation are foundation-only; coordinator publication itself logs; checked result-before-retirement order is exemplified by test_last_result, not a plan receipt |
+| lib/operation.sh, _op_owns/op_inspect/op_barrier, 215–225, 338–411, 576–626; lib/records.sh, schemas/admission/seal, 44–81, 381–487, 741–754 | diagnostic object/ownership/admission boundary and conservative barriers; no current plan owner or receipt schema |
+| tests/test-shared.sh, 45–56; tests/test-state.sh, 155–179; tests/test-gate2-validate-proof.sh, 149–186 | existing fixture plan/short-digest and configuration controls, baseline planner/probe comparisons; none qualifies future Execute or final receipt |
+
+Baseline save does not check mac_plan_compute/plan_layout return status,
+the reloaded short digest, cfg_save's individual results or state_stamp's
+result before returning 0. Shared-save failure is the explicitly propagated
+failure. With zero Shared, or PLAN_OK != 1, shared_intent_save removes the
+old intent rather than publishing a plan. No successful return, timestamp,
+short digest or matching subset of fields proves the complete save.
+
+#### Inputs, review and availability
+
+The proposed action is scope=plan, intent=act, terminal=managed, gate empty,
+cancel=0. It consumes no terminal input or password and starts no installer.
+The baseline's save menu expresses save intent; there is no save-specific
+typed word. Execute therefore requires confirm empty; a supplied word is
+refused word. The preceding journey's experimental confirmation remains in
+that text journey; direct save does not become an experimental install gate.
+No cancellation is advertised across this nontransactional save. Forced
+signals still require supervision/effect judgement; they are not rollback.
+
+Declare parameters in this exact order: shared_size, linux_size, enc, user,
+host, kmap, tz, loc, ssh, gh, dev. All are required; size parameters use the
+baseline size grammar, enc/ssh/dev are bool, and the other choices are bytes
+judged by their existing cfg_field_ok owners. Use Q4's C-locale, Shared-first
+size parsing/range/whole-GB rules, including Shared off=0. Effective size
+input values are decimal bytes, each a whole GB; CFG_linux/CFG_shared are
+their exact whole-GB quotients. Equivalent spellings bind identically.
+Preserve case in other accepted choices: do not invent hostname, keymap or
+locale folding. For gh alone, raw empty or '-' means clear; its one
+canonical review/basis value is '-' and its saved representation is absence.
+This nonempty intent marker fits input value:bytes; it is never saved as
+cfg_gh. At wire admission, an empty nonoptional arg value is inadmissible,
+so a client sends '-'. Other required choices cannot silently inherit defaults
+at Execute. Apply selected defaults before review. CFG_plan is an output,
+not a writable argument. Installer answers also are derived, not trusted args.
+
+Run canonical normalization and the covered planning/save adapter with
+LC_ALL=C. A raw disk-media label containing non-ASCII bytes is outside this
+first fixture profile: refuse unavailable before deriving shared_media.
+This makes its locale-sensitive filtering explicit instead of letting an
+unbound locale change saved intent. PS-D03 covers this profile restriction;
+the accepted Q4 producer's C-locale behavior is unchanged.
+
+**Separate review selector, proposed additive contract PS-D02.** Preserve
+validate select action=plan.save and Q4's two parameters, answers, read
+intent and zero persistence byte-for-byte. A future read-only selection
+validate select action=plan.save.review, in ordinary macOS fixtures with
+plan scope, accepts the complete parameter set above. It returns existing
+normal/answer/message/review/result records only, with review action=plan.save
+and the execution-family basis below. It is a review selection, not an
+executable action or new protocol operation. It shows all normalized
+choices, the exact answers, destination/replacement identities, prior
+receipt status and the additional receipt effect. A client must explicitly
+request this selection; no fallback or Q4-digest promotion is allowed.
+Unknown old-core selection remains unavailable. Its complete response is
+staged, canonically admitted and delivered as Q4 already requires; no action
+is exposed by implementing a review selector. Family expansion, client
+selection/compatibility tests and implementation need separate acceptance.
+
+For this first covered fixture contract require mac_blockers empty, exact
+geometry, a valid selected layout, no existing Asahi stub/EFI/Linux layout,
+and an independently owned fixture/state arena. State root, ops directory,
+logs directory and today's append target must already exist as checked real
+objects before
+review; this avoids the coordinator creating a basis-bound destination
+before step 4. They are provisioned by fixture setup or the preceding text
+survey, never by this read selector. Absent state.env, Shared intent and
+prior receipt remain permitted and explicitly bound. Parent ancestry must
+be fully observed, with no links/aliases or unowned/unwritable effect parents;
+append target is a regular, single-link owned file. Unsafe or unavailable
+destinations make the future action unavailable. Unreadable required prior
+bytes are error io, not absence; a representation/bound failure proven by
+admission is error representation. No guessed geometry or partially inspected
+prior destination can produce a review basis.
+
+This is a bounded fixture profile, not an inference that current baseline
+helpers enforce all these conditions. Baseline accepts a broader directory/
+file population and can create parents. PS-D03 names this future narrowing.
+No real host action, arbitrary destination or unregistered child is covered.
+The coordinator and owner must refuse unsupported coverage, with no legacy
+fallback carrying a covered result.
+
+#### Complete execution basis
+
+The proposed rule is G3-plan-save-execution-basis-v1. Build one unsealed
+omb-basis 1 document using §1's existing basis/input/seen/version schemas.
+Hash every canonical byte, header and final LF included, with SHA-256.
+All non-list fields appear in schema order; optional empty fields are
+present. There is no seal, caller-supplied plan, short-hash comparison or
+future producer claim. Bounds: at most 64 KiB, 1024 records, 64 destination
+ancestors; §1 value/line limits still apply. Bound exhaustion is a proven
+representation failure, never a prefix hash or partial basis.
+
+| Order | Exact records / derivation |
+| --- | --- |
+| 1 | header omb-basis 1; one basis action=plan.save proto=1 actor_uid=<actual UID> home=<OMB_HOME bytes> source=<core_source digest of executed entrypoint/lib/data/release lock> |
+| 2 | eleven input records, names in declared parameter order above; effective bytes for sizes, canonical selected values for choices, '-' for cleared gh |
+| 3 | scalar seen keys platform, model, tier, os_version, admin, disk, container, store, stores_extra, disk_internal, whole_internal, disk_media; respectively OMB_PLATFORM, MAC_MODEL_ID, DEV_TIER, MAC_OS_VERSION, MAC_ADMIN, MAC_DISK, MAC_CONTAINER, MAC_STORE, MAC_STORES_EXTRA, MAC_DISK_INTERNAL, MAC_WHOLE_INTERNAL, shared_media output |
+| 4 | seen geometry and plan: full digests of exactly Q4's omb-validate-geometry 1 and omb-validate-plan 1 preimages, produced from this capture and selected sizes; their meaning/order remain unchanged |
+| 5 | scalar seen log_day, value YYYYMMDD UTC, the selected daily append name's date |
+| 6 | observed ancestry from '/' through OMB_STATE_DIR inclusive, shortest prefix first: ancestor.0, ancestor.1, ...; each object and metadata group as specified below |
+| 7 | object groups state_file, shared_intent, prior_result, ops, logs, log_target, in that order; resolved paths are STATE_FILE, OMB_STATE_DIR/shared-intent.env, OMB_STATE_DIR/plan-save-result.omb, OMB_STATE_DIR/ops, log_dir, log_file for log_day |
+| 8 | version keys storage_contract, template, installer, intent_schema, receipt_schema, rule; values STORAGE_CONTRACT, ASAHI_ALARM_OS_CHOICE, ASAHI_INSTALLER_VERIFIED, SHARED_INTENT_SCHEMA, omb-plan-save-result/1, G3-plan-save-execution-basis-v1 |
+
+ASAHI_INSTALLER_VERIFIED is the exact installer-version constant in
+lib/sources.sh; use that source value, not a network lookup. The executed
+source digest also binds every planning constant, CFG_KEYS/validators,
+device table, fixed filenames, logging rule and the selected adapters.
+Changing source, template or rule changes the basis even if outputs happen
+to coincide. The inner geometry includes disk/block/usable bounds, every
+ordered partition's GUID/extent/content/role, selected store, APFS size/free,
+resize knownness/value, floor/availability and gaps. The inner plan includes
+mode, region/predecessor/successor, macOS/Linux/Shared extents and exact ordered
+answer records. Free mode's absent resize answer and resize mode's answer,
+and max versus whole-MiB OS answer, are distinct identities.
+
+A scalar observation is one seen state=value value=<exact canonical bytes>,
+sha256/mode/link empty. An unavailable required scalar prevents the basis.
+Only stores_extra may be empty: encode its known empty value as state=absent
+with value empty, not a missing record. Empty media is an unavailable required
+observation when Shared is selected; otherwise encode its known absence.
+No display label, free-memory reading, internet reachability, backup report,
+default keyboard/locale/user, or saved default is consumed after explicit
+choices are selected, so none becomes authority by being captured.
+
+For each object group emit seen key=<group> state=<actual kind>
+value=<absolute path> sha256=<full contents hash for a present regular
+state_file/shared_intent/prior_result; otherwise empty> mode=<one of the
+existing four mode values if applicable, otherwise empty> link=<link text
+only for an observed link>. An absent entry still has its planned absolute
+path and empty hash/mode/link. Do not follow links to make a file result.
+Then emit scalar seen keys <group>.dev, .ino, .uid, .gid, .perm, .nlink,
+in that exact order: actual device/inode/UID/GID, permission bits in canonical
+decimal including special bits, and link count, all checked uint values.
+For an absent object each metadata record is state=absent with empty optional
+fields. .perm binds modes the mode enum cannot express without widening it.
+Root directories need not be actor-owned; their actual owners/modes are
+bound and must satisfy the fixture's explicitly checked parent-access policy.
+State root/ops/logs/log target must be actor-owned; files being replaced must
+also satisfy baseline _state_file_ok. The future helper additionally checks
+single-link identities and usable access before writing. Its covered effect
+parents/files must have no inherited/default ACL, unexpected extended
+attribute policy or mount redirection that changes publication semantics;
+required inspection failure is unknown, not an assumed ordinary directory.
+Access to ancestors is checked without changing their permissions.
+
+Read complete prior state_file/shared_intent/prior_result bytes once from
+the inspected correct object, within 64 KiB per file, and retain the capture
+for expected-output construction. Existing prior receipt must pass the
+stored schema below; malformed prior receipt refuses unavailable, operational
+inspection failure is error io. Prior state is bound even if a key will be
+replaced; all unrelated lines participate in the full state_file hash.
+Prior Shared intent may be old but must be a safely inspected whole file;
+replacement is not agreement with its former planning contents.
+
+Exclude directory mtime/ctime and directory link-count changes caused solely
+by the declared lock/ops/scratch scaffolding; for directory .nlink use the
+fixed scalar value '0' and retain actual link count in the separate effect
+inspection, never interpret that sentinel as filesystem metadata. Log
+contents/length/mtime are excluded because no save decision reads them and
+the only permitted operation is append to the identified unchanged object.
+Retain pre-append bytes for noninterference evidence; an identity/type/mode/
+owner/path/link-count change still invalidates the basis. The coordinator's
+log append therefore does not stale its own reviewed basis. PID, boot,
+operation timestamp, generated planned_at, mktemp suffix and future receipt
+completion time are generated attempt outputs, not selected save inputs.
+Their generation/format/domain rules are bound by source/rule; their actual
+values and resulting Shared/config/output digests are checked and recorded.
+Exclude no consumed value or meaningful prior file bytes.
+
+An existing ops/plan.omb is an exclusion input, not an omitted replaceable
+plan result: it prevents this attempt's admission through the barrier. Only
+the coordinator's newly published owned generation can be present during
+the pre-effect comparison. Its changing bytes and lock-owner identity are
+not review inputs; they are supervised attempt evidence bound in the final
+receipt. Prior plan configuration, intent and completion-result bytes are
+the separately bound replaceable state.
+
+The append day is bound. Immediately before each append and timestamp
+operation the future owner/coordinator must check it still names the reviewed
+day; a date rollover stops before the next such effect, with partial effects
+reported and the barrier retained. No new daily destination may silently
+appear. Known metadata changes due to this attempt's own declared publications
+are checked against those publications; they are never accepted as a fresh
+review for some external change. The lock does not exclude same-UID/root
+external writers: covered execution requires controlled fixture isolation,
+per-boundary object rechecks and supervision. Lost continuity defeats proof;
+equal endpoint hashes do not establish absence of intervening writes.
+
+Execute rebuilds the same pre-execution basis at steps 4–6, before any
+baseline save write. The only preceding durable effects are the enumerated
+coordinator lock/ops/log writes below, which do not alter basis-bound save
+bytes or stable object identities. If this cannot be established, stop;
+do not normalize a new state into equality. Invalid inputs refuse invalid;
+valid but changed geometry, APFS/limits/floor, input, answers, prior bytes,
+receipt, destination identity, source or version refuse changed when still
+available. Availability failure takes precedence at step 5. Baseline
+plan_layout/plan_verify checks remain independently mandatory at step 8.
+Q4 may equal its earlier value while this execution basis changes: a choice,
+destination, prior receipt or media identity can change without altering Q4.
+
+#### Bounded persistent effects and postcondition
+
+| Destination / owner | Baseline actual effect; proposed future addition or bound | Prior/postcondition, retry and interruption evidence |
+| --- | --- | --- |
+| identified state root and ancestors; state_dir_ready | baseline mkdir -p/chmod on first write and cached checks; covered profile pre-provisions them and freshly checks them | no parent creation by this save; stable bound identity/access; cached STATE_DIR_OK is not a fresh witness |
+| shared-intent.env; shared_intent_save → state_put_file or state_remove_file | Shared on: body in listed SHARED_INTENT_KEYS order plus 16-hex digest, atomic replacement; Shared off: removal of the existing own file | bind full prior bytes/identity; fresh complete reload plus expected-field/body/digest comparison, or verified entry absence including no dangling link; retries need a new review |
+| state.env; cfg_save → state_set/state_unset → _state_rewrite | enc,user,host,kmap,tz,loc,ssh,gh,linux,shared,dev,plan, in exactly CFG_KEYS order; each operation independently atomic | simulate baseline line removal/append from retained full prior bytes; compare whole final bytes, not state_get's last matching key; empty gh/plan remove all their lines; preserve every unrelated line/order |
+| state.env planned_at; state_stamp → state_set | generated UTC timestamp after configuration, separate rewrite | propagate and check the write; compare expected timestamp and whole state bytes; it remains progress, never a standalone completed-save receipt |
+| logs directory/daily file; log_event reached by state/core helpers | baseline mkdir/append, some failures skipped and some statuses exposed; covered profile uses the preidentified existing single-link append object | append only; compare retained old prefix and ordered allowed sanitized non-secret entries; no truncation/other-day/alias; logging cannot turn incomplete save into success |
+| .state.env.*, .shared-intent.env.*, .plan-save-result.omb.*, ops/.plan.*; checked state/result/core writers | unique sibling staging, chmod/rename; baseline helper failure cleanup removes its own temporary | only attempt-owned staging may be removed; crash residue is preserved evidence, never evidence of completion or generic cleanup permission |
+| plan-save-result.omb; future Bash plan-scope completion owner | NEW: one final versioned sealed receipt, atomic replacement after complete fresh postcondition and quiescence | bind prior receipt in next basis; final receipt verified by reopened identity/bytes/admission; old success never certifies a new partial replacement |
+| lock/owner, possible lock.stale.<pid>, ops/plan.omb; generic core/state_lock/core_op_write | existing generic prelude, running publication/rewrite, result-gated retirement; new plan ownership only after review | exact owned generation and no other scope edit; failure may leave scaffolding/logs even before save starts; retain barrier after partial/unknown save |
+| OMB_TMP and OMB_SESSION_DIR request/spool/admission/diagnostics files; existing controller owners | bounded private transient computation, capture, supervision and delivery | enumerated own scratch only; no HOME/TMPDIR-wide cleanup; loss is not no-effect or successful result delivery |
+
+State-file expected bytes use the actual state_set CR/LF rule and
+_state_rewrite line semantics, although accepted choices already forbid
+controls. Readback also checks every expected cfg value with cfg_field_ok;
+CFG_plan is empty without Shared or the first 8 of the verified stored
+16-hex digest with Shared. The Shared body's complete ordered keys must
+agree with the captured plan: schema/contract/time, disk size/block/media,
+ISC/macOS/recovery records, every parts_before extent, mode/macOS_after,
+Linux request/answer, Shared request and region/reservation identities.
+Rehash the exact body as shared_intent_load does; no generic sealed-record
+interpretation is substituted for this legacy env file.
+
+The complete postcondition also requires the retained prior unrelated state
+to remain byte-identical, required ownership/type/mode identities to hold,
+the planned layout/answers to still pass their checks, and no undeclared
+writer/command/effect. No-Shared verifies removal, not an invented empty
+Shared record. A write/read/hash/admission failure is not an absent file.
+There is no multi-file transaction, automatic rollback or repair.
+Logs and staging are part of the checked effect domain; their presence is
+not an installation result. Each declared append requires checked status
+and fresh prefix/entry verification before progression; log_event's existing
+silent skips are not proof of a completed append. This is part of PS-D03's
+checked effect-domain adaptation, preserving valid baseline log bytes.
+Repeat save is semantically repeatable only
+after a fresh basis: generated times, Shared digest/CFG_plan, receipt and
+replacement inode can change, so byte-idempotence is not promised.
+
+#### Dedicated final receipt
+
+Choose a future internal stored family, path
+$OMB_STATE_DIR/plan-save-result.omb, header omb-plan-save-result 1 and schema
+identity omb-plan-save-result/1. It adds no public response/request record
+or Protocol version. A future explicit stored-family parser is required,
+not implemented here. §1 canonical encoding and §2 admission apply before
+parsing; limit 64 KiB and 256 records, including seal, with existing value/
+line bounds. Unknown fields, wrong order/cardinality, bad types/seal,
+duplicate keys/indices or inconsistent digests reject the whole receipt.
+
+| Record / count / order | Proposed internal schema (fields in this order) |
+| --- | --- |
+| result / 1 / first | scope:enum(plan) action:enum(plan.save) proto:enum(1) basis:hex64 source:hex64 rule:enum(G3-plan-save-execution-basis-v1) actor_uid:uint home:bytes state_root:bytes operation:hex64 session:bytes boot:bytes core_pid:uint core_start:text writer_pid:uint writer_start:text writer_boot:bytes writer_source:hex64 status:enum(done) code:enum(ok) completed_at:utc |
+| basis-line / + / contiguous n from 0 | n:uint value:bytes — exact canonical pre-execution basis lines including header, without their LF; reconstruct each plus one LF and verify result.basis |
+| choice / exactly 12 / CFG_KEYS order | name:id state:enum(absent\|value) value:bytes? — saved enc,user,host,kmap,tz,loc,ssh,gh,linux,shared,dev,plan; absent allowed only for gh and plan under their rules |
+| plan / 1 | geometry:hex64 computed:hex64 storage_contract:bytes template:bytes installer:bytes intent_schema:bytes mode:enum(free\|resize) resize_answer:bytes? os_answer:bytes shared_digest:hex16? planned_at:utc |
+| output / exactly 2 / state_file then shared_intent | name:enum(state_file\|shared_intent) path:bytes state:enum(file\|absent) dev:uint? ino:uint? uid:uint? gid:uint? perm:uint? nlink:uint? size:uint? sha256:hex64? |
+| seal / 1 / last | sha256:hex64 over all preceding bytes including their final LF |
+
+Use identical optional-key positions for absence, with empty metadata/hash;
+state_file must be file; shared_intent is absent iff shared=0. File metadata
+is from the actually reopened, fully read object. Choice size values are
+stored whole GB, whereas embedded execution input sizes are bytes. Cleared
+gh is absent, whereas embedded input is '-'; plan is the derived 8-hex
+output, never an input. Cross-check those conversions, validators, all
+versions, geometry/computed digests and exact installer answers. planned_at
+here is the actual freshly verified state.env timestamp; Shared body time
+is independently verified and may differ. shared_digest is the verified
+legacy 16-hex body digest, empty iff no Shared. Full output SHA-256 values
+add complete-byte identity, not a new meaning for the short legacy digest.
+
+operation is the full hash of this attempt's canonically admitted initial
+running ops/plan.omb bytes including seal; its embedded action/scope/basis/
+session/PID/start/boot must agree with the result's core identity. writer
+identity names the actual supervised Bash save adapter, not an arbitrary
+program supplied by a request. writer_source equals the admitted executed
+source; the future registry/adapter closure establishes its meaning and
+detaches=no classification. Source digests, seals and self-declared PID
+fields authenticate nothing on their own: the original supervising core
+must establish that it ran that owner, waited for it, retained the matching
+operation, checked quiescence and obtained these complete observations.
+
+Before the first save write, preflight whether the bounded receipt can carry
+the retained basis, choices, paths and maximum-sized generated identity/time
+fields. A receipt that cannot be represented must not first be discovered
+after changing the save. Unexpected later representation failure still keeps
+the operation and is reported as unknown completion.
+
+Prepare the receipt only after that complete fresh postcondition. Publish
+through a future checked Bash result writer using the same private sibling
+mktemp/chmod/rename pattern as state_put_file, admitting the sealed staged
+bytes before rename. Reopen without following a link, verify owner/type/
+mode 0600, single-link object, complete bytes and canonical seal/schema,
+then compare exactly with the admitted publication. Recheck the two output
+identities/hashes and selected values immediately before retirement.
+Receipt publication does not change those output files. This publication
+pattern is not a disk fsync/power-loss transaction guarantee; after a reboot,
+fresh evidence is required and missing durability stays unknown.
+
+The receipt's own hash/metadata are not embedded in itself or this attempt's
+basis. This attempt binds only the PRIOR receipt; the next attempt binds
+the newly published receipt as prior_result. A generated completion time
+is recorded, not an input, so there is no receipt↔basis cycle. A prior
+receipt can survive an interrupted replacement and become inconsistent with
+current outputs. Report it as historical/stale, never as the new attempt's
+success. No new attempt is admitted through an unresolved operation merely
+because old receipt bytes parse.
+
+The receipt supports the original core's verified normal completion, and
+later inspection of the recorded claim and current output agreement. Alone
+it proves neither origin, uninterrupted supervision, external-writer
+exclusion, historical input consumption nor no effect of another attempt.
+No plan-scope positive reconciler, P3/P4 witness, P5 evaluation or legacy-C
+clear is specified as executable. A future readable-operation reconciler
+would need the exact generation binding, retained executed source/basis/
+planning capture, original-owner completion provenance, complete current
+domain observations and continuity for its use interval. A missing,
+mismatching or untrusted element retains unknown/unexpected and the barrier.
+An unreadable record supplies no operation binding; this receipt cannot
+manufacture it. Foundation receipts and FJ acceptance discharge none of
+these plan-scope obligations.
+
+#### Completion ordering and failures
+
+Apply the existing Execute order with the following proposed family rules.
+All receipt/enforcement/adaptation duties are unimplemented. Refusals
+promise no baseline save writes; generic step-3 metadata may already exist,
+as the current core actually writes/logs before basis/word checks. This
+clarifies §4's shorthand, rather than promising filesystem zero persistence
+from an admitted act refusal. Review remains strictly zero-persistence.
+
+1. Generic admission checks environment/version/framing/schema and complete
+   argument syntax/semantics; no action owner or save writer is reached on
+   inadmissible bytes. Validate choices before arithmetic.
+2. Require separately exposed fixture-only plan.save, act ceiling and plan
+   scope. Current core still refuses unavailable; the future checks confer
+   no authority on an existing Q4 response.
+3. Take the baseline run lock, inspect plan exclusion, refuse existing
+   barriers, and atomically publish/admit this running operation before
+   dispatch. No automatic reconciliation/clear is added. Prelude checks
+   must protect its own root/ops/log destinations before their writes.
+4. Re-read machine and complete prior save destinations under held exclusion;
+   establish identities and capture bytes. Hold the consumed choices/capture
+   in the owning Bash process; no shell substitution loses their globals.
+5. Judge current availability, the bounded fixture profile, required evidence
+   and the selected plan. A required unplannable/unsafe case exposes no action.
+6. Rebuild and compare the complete execution basis. Observe all destinations
+   including prior_result; a Q4 digest cannot pass this comparison.
+7. Require confirm empty. Pre-save negative decisions retire only this owned
+   no-save operation when retirement is verified; uncertainty leaves protection.
+8. The Bash semantic owner recomputes with mac_plan_compute/plan_layout and
+   requires PLAN_OK. Immediately before the first save write, freshly
+   re-observe the machine and destination identities and repeat availability,
+   full basis comparison and layout verification against the reviewed inputs;
+   the baseline helpers' in-memory checks alone are not a fresh machine read.
+   Then perform Shared publication/removal, derive/check
+   CFG_plan, persists CFG_KEYS in baseline order, then planned_at. Every
+   required call must propagate failure. The minimal cfg_save change is to
+   return nonzero immediately on a failed state_set/state_unset; mac_save_plan
+   must propagate compute/layout/digest/configuration/timestamp failures.
+   This changes current failure behavior, explicitly PS-D01.
+9. Generic supervision waits for the actual registered owner and establishes
+   save-worker quiescence. The original supervising Bash core invokes its
+   scope-specific completion callbacks for independent verification and final
+   result publication; these callbacks start no further save worker. They
+   construct/check
+   the whole postcondition from fresh correct-object reads. No exit 0 shortcut.
+10. The core's Bash plan-scope completion owner publishes the final receipt;
+    generic core requires its
+    fresh admission/publication and output verification before retirement.
+11. Generic coordinator removes only the matching owned operation, checks
+    confirmed absence, then delivers done ok. Removal failure with the record
+    still present retains the barrier; removal whose outcome cannot be read
+    is unknown, never a claim that the record remains or disappeared. With
+    verified completion/receipt but a lost retirement observation, save proof
+    and retirement/delivery uncertainty stay separate; no new same-session
+    action is admitted before a fresh scope judgement.
+
+No owner reruns a failed write as an implicit repair. Before the first save
+write, no save outputs change, although lock/operation/log prelude can change.
+After any Shared/configuration/timestamp publication, completed earlier writes
+remain. A failed postcondition with supervised/quiescent writers keeps a
+failed operation; partial effects use finding=unexpected. finding=absent
+requires complete prior-state/no-effect proof of the entire save domain,
+not an absent receipt or Shared file. Failed readback is unknown, not a
+negative postcondition. Result publication/verification failure retains
+the operation even when save outputs match. Never remove the operation
+because an old or partially matching receipt exists. Failure to rewrite a
+barrier leaves the original operation; do not clear it as error cleanup.
+After successful removal and lost result delivery, the receipt may establish
+verified save through the original-owner proof, but missing terminal delivery
+is still unknown. Absence of ops/plan.omb alone establishes neither.
+
+| Situation | Proposed use of accepted vocabulary / non-effects and remaining uncertainty |
+| --- | --- |
+| request never admitted, invalid wire types/order/seal, bad environment/version | existing admission error/refusal path and exit semantics; no save writer; no inferred action outcome from a missing result |
+| well-formed undeclared/missing/invalid semantic parameter | refused invalid; validate review selection additionally has existing invalid records; Execute does not gain an invalid record type |
+| current/non-fixture/unexposed action; unsafe/missing destination; cannot publish running operation | refused unavailable before save; coordinator attempts may have partial metadata, so inspect them |
+| session lacks act or plan scope | refused ceiling or refused scope respectively; no save dispatch |
+| lock/live-or-not-proven-dead core; previous failed; previous unsupervised/unreadable | refused busy; refused unresolved; refused unsupervised respectively; unreadable text explicitly says reboot cannot clear it; D/undetermined refuses unavailable and preserves unknown |
+| still-available changed geometry/free/limits/floor, choice/answer/prior bytes/receipt/source; wrong execution digest | refused changed; no save writes; unavailable precedes comparison where planning no longer holds |
+| nonempty otherwise admitted confirm | refused word; no new mandatory confirmation |
+| proven unrepresentability or machinery failure before save | error representation or error io; no save dispatch; do not confuse operational admission failure with malformed evidence |
+| planner invariant fails before first save write | error invariant; keep/retire only with verified no-save and supervision judgement |
+| supervised action write fails or known whole-postcondition mismatch | failed postcondition, failed barrier; earlier writes remain; no rollback/no-effect implication |
+| I/O/read/hash/receipt publication or verification fails after possible effects; writer-end/continuity cannot be established | stopped unsupervised, retained barrier and unknown effect/completion; fixed explanatory text names actual failure; no fabricated failed postcondition |
+| known change at a later boundary, with writers proven quiescent | stopped changed, retained failed/unexpected barrier for partial effects; this status/code pairing is proposed PS-D04, not claimed implemented/accepted |
+| receipt/output verified but owned operation cannot be retired | stopped unsupervised with save-completion evidence reported separately; record-present barrier retained, indeterminate removal remains indeterminate |
+| fully supervised, fresh complete postcondition, verified receipt and owned retirement | done ok; only this is a delivered successful save; not installation success |
+| interruption, partial/invalid/undelivered spool, lost core or delivery | absent admitted result means unknown delivery; retained operation/evidence decides effects, not exit status or a successful negative-result delivery |
+
+No additional public code is necessary in this primary proposal. PS-D04 asks
+review of the exact existing status/code pairings and the metadata/save
+distinction; it changes neither current implementation nor legacy-C act
+vocabulary. Successful delivery of refused/failed/stopped/error is transport
+success only. Mandatory future baseline equivalence and evidence map:
+docs/TESTING.md → *Future plan.save equivalence and failure qualification*.
+
+#### Documentary acceptance cases
+
+Every case is **UNEXECUTED** and currently not executable as a plan.save
+Execute case. Controls requiring fixtures or faults are future harness
+requirements, not receipts already obtained. For all negative pre-save
+cases prove no save writer call; account separately for the coordinator
+prelude. For all partial/unknown cases preserve exact surviving bytes,
+temporary objects, operation state and observed versus unknown findings.
+Evidence includes probe/command/writer ordering, source versions, independent
+prior captures, whole readback and delivery admission, not just result text.
+
+| ID | Controlled precondition and action/basis scenario | Expected classification/effects; required evidence; unknown boundary | Executable now |
+| --- | --- | --- | --- |
+| PS-01 | valid supported fixture; no Shared; correct fresh full basis | done ok only after intent absence, all choices/timestamp, final receipt and retirement verified; installation remains unproved | UNEXECUTED; no |
+| PS-02 | valid Shared allocation and correct fresh basis | done ok; exact intent/body/digest, derived CFG_plan and receipt verified in order; no partition created | UNEXECUTED; no |
+| PS-03 | two size spellings normalize identically; identical prior observations | equal execution basis and same decisions; retain parse/rounding evidence; generated timestamps are not equal-input proof | UNEXECUTED; no |
+| PS-04 | change a size/region so exact installer answers differ | execution basis differs; old digest refused changed if still available; no save | UNEXECUTED; no |
+| PS-05 | change complete geometry after Q4 and execution review | fresh geometry/basis differs: refused changed or unavailable at step 5; exact new probes, no save | UNEXECUTED; no |
+| PS-06 | alter resize-limit knownness/value, APFS free or derived floor | invalidate basis even if display/answer unchanged; step-5 availability precedence; no guessed limits | UNEXECUTED; no |
+| PS-07 | state.env appears or bytes/metadata change after review | refused changed if safely available; prior/full bytes and identity prove change; unsafe inspection remains error/unavailable | UNEXECUTED; no |
+| PS-08 | Shared intent appears/changes after review | changed basis/refused changed; exact captured whole file/metadata; no save | UNEXECUTED; no |
+| PS-09 | prior result appears/replaced/changes after review | changed basis/refused changed; full admitted prior receipt/identity; prior success proves no new attempt | UNEXECUTED; no |
+| PS-10 | root/log target unavailable, alias/link/non-file or unwritable | refused unavailable before save; correct-object/access evidence; failed inspection never absence | UNEXECUTED; no |
+| PS-11 | inject first Shared publication/removal failure before any save publication | failed postcondition if complete negative evidence, otherwise stopped unsupervised; no claimed zero coordinator effects | UNEXECUTED; no |
+| PS-12 | publish Shared successfully, then fail first cfg write | failed postcondition with surviving intent and failed/unexpected barrier; receipt old/absent, never new success | UNEXECUTED; no |
+| PS-13 | fail each cfg key set/unset in turn, with prior keys published | failed postcondition; stop loop at first failure, exact earlier bytes/order survive; no rollback | UNEXECUTED; no |
+| PS-14 | cfg complete, planned_at write fails | failed postcondition; retain configuration and barrier; old timestamp is not completion | UNEXECUTED; no |
+| PS-15 | successful writer returns but whole saved bytes or derived digest mismatch | failed postcondition; complete fresh mismatch evidence and failed/unexpected barrier; no partial-match success | UNEXECUTED; no |
+| PS-16 | postcondition read/hash/object/admission operation cannot complete | stopped unsupervised; keep barrier, no receipt; completion/effects remain unknown despite plausible bytes | UNEXECUTED; no |
+| PS-17 | verified save; receipt staging/admission/chmod/rename fails | stopped unsupervised; old receipt unchanged when replacement failed, save writes survive; no retirement | UNEXECUTED; no |
+| PS-18 | receipt published; reopened bytes/seal/metadata or output verification fails | stopped unsupervised; preserve published/old objects and operation; no authoritative completion claim | UNEXECUTED; no |
+| PS-19 | verified receipt; operation removal fails or absence cannot be confirmed | stopped unsupervised; distinguish observed record-present from undetermined removal; completion proof and retirement uncertainty separate | UNEXECUTED; no |
+| PS-20 | interrupt before/after every durable save/receipt/retirement boundary | outcome follows retained complete evidence; lost delivery unknown; no automatic rollback/clear or receipt-by-absence proof | UNEXECUTED; no |
+| PS-21 | reboot with unresolved readable plan operation | barrier remains pending plan-owned reconciliation; old writers ended does not prove effect completion; no foundation fallback | UNEXECUTED; no |
+| PS-22 | legacy unreadable ops/plan.omb, including after reboot | refused unsupervised; preserve C/unknown; no receipt-assisted P3/P4 or automatic clear | UNEXECUTED; no |
+| PS-23 | valid request without plan scope or act ceiling | refused scope/ceiling; no save dispatch; authority inspected before owner probes | UNEXECUTED; no |
+| PS-24 | Q4 digest, unrelated family digest or wrong full execution digest | refused changed when available; execution preimage/version evidence proves distinctness; no save | UNEXECUTED; no |
+| PS-25 | supply a word although save gate is empty | refused word (wire-invalid word stays admission failure); no invented save/test/launch gate | UNEXECUTED; no |
+| PS-26 | same qualified save-point fixture and inputs in oracle/core/new text | three-way equivalence plus only reviewed deltas; retain independent oracle, probes/writers/state/versions; no two-path-only pass | UNEXECUTED; no |
+| PS-27 | unrelated state keys/files, HOME and TMPDIR sentinels | preserve bytes/metadata outside enumerated effects; independent before/after inventory; no broad cleanup | UNEXECUTED; no |
+| PS-28 | prior verified save followed by interrupted changed replacement | stale old receipt cannot certify changed/partial outputs; retained operation blocks another act; completion unknown | UNEXECUTED; no |
+| PS-29 | repeat same effective plan after first verified save, using new review | semantic repeat, fresh prior-receipt basis; new generated times/digests/objects permitted; byte-idempotence not claimed | UNEXECUTED; no |
+| PS-30 | change every selected choice independently, including clear gh | basis changes; checked saved value/unset matches; CFG_plan/answers cannot be supplied as authority | UNEXECUTED; no |
+| PS-31 | no Shared selected with an existing valid Shared intent | removal precedes cfg_plan unset and timestamp; fresh absence and preserved unrelated state; no Shared partition action | UNEXECUTED; no |
+| PS-32 | live/unknown-live, failed, unsupervised or undetermined prior operation | busy/unresolved/unsupervised/unavailable respectively; exact inspection evidence; no new save or positive reconciliation | UNEXECUTED; no |
+| PS-33 | log-day rollover or external destination/source change during save | stopped changed only with known safe writer-end; otherwise stopped unsupervised; prior writes retained; no unreviewed next-day file | UNEXECUTED; no |
+| PS-34 | result stream lost after verified receipt and retirement; or complete negative delivered | unknown delivery versus delivered negative; receipt/original-core proof separate from transport; neither absence nor exit 0 proves save | UNEXECUTED; no |
+| PS-35 | malformed parameters/receipt, oversized evidence, hash/read/admission tools fail | invalid/admission, unavailable prior receipt, representation or io as specified by phase; no prefix/partial witness or new code | UNEXECUTED; no |
+| PS-36 | command/probe/child trace includes installer, disk mutation, network/download or undeclared output | qualification fails and coverage refused/stopped; exact trace and complete domain inventory; no accidental installer execution | UNEXECUTED; no |
 
 ### Snapshot generations
 

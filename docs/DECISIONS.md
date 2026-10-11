@@ -1014,6 +1014,68 @@ and all FJ-ED-1/P5 mechanisms unimplemented. Foundation documentation
 acceptance is recorded; execution and implementation require separate
 authorization, tests, CI and independent review of the resulting slice.
 
+### Proposed plan.save completion and execution decision
+
+**D56 / PS-EXEC-1 — PENDING INDEPENDENT ACCEPTANCE; DOCUMENTATION ONLY.**
+The primary proposal is the dedicated final receipt in docs/PROTOCOL.md →
+*Proposed plan.save execution contract*. This is a new plan-scope design,
+not a reopening of accepted D55 or the foundation reconciliation contracts.
+The first source investigation left the documents unchanged because no
+existing plan-scope result followed independent readback. This candidate
+settles the proposed answer; it implements no writer or execution authority.
+
+Choose $OMB_STATE_DIR/plan-save-result.omb, the internal sealed
+omb-plan-save-result/1 family, published by the future checked Bash
+plan-scope owner after complete save/readback and writer quiescence.
+It binds full execution basis and retained preimage, source, exact running
+operation and controller/worker identity, all saved choices, plan/versions,
+complete output-object hashes/metadata or verified Shared absence, and
+completion time. Verify the publication and outputs before the supervising
+core retires ops/plan.omb. A later attempt binds the prior receipt only:
+no circular hash and no old-success certification of a new partial save.
+
+Reject existing-state result authority as the complete proof. state.env
+holds selected choices and progress; planned_at is written before any
+independent complete readback, and mac_save_plan ignores its failure.
+cfg_save currently returns 0 despite individual failed writes. The Shared
+16-hex digest/8-hex CFG_plan omit other choices, are absent without Shared
+and include generated time. None associates verified full completion with
+the exact supervised execution basis and operation. Fresh matching bytes
+are useful postcondition evidence, but cannot alone prove that this attempt
+completed its writer sequence. Also reject a receipt published at action
+start, or a caller-supplied success assertion: neither is completed-save proof.
+
+The receipt is a recorded result under the original owner's supervised
+proof, not cryptographic authentication or positive recovery authority.
+Forged/copied plausible bytes, missing provenance, lost continuity,
+unreadable operations or a reboot alone cannot authorize reconciliation.
+Keeping positive plan reconciliation unimplemented preserves the barrier
+without making this complete normal-execution proposal depend on a new
+foundation feasibility campaign.
+
+| Proposed delta | Specific baseline difference, rationale and permanent future coverage |
+| --- | --- |
+| PS-D01 | cfg_save stops/propagates the first set/unset failure; mac_save_plan propagates planning, digest, configuration and timestamp failures; fresh whole-state/intent readback is mandatory. Valid writer order/legacy bytes remain the oracle. Current false-success and continue-after-failure behavior must change. PS-11–PS-16, PS-26, PS-28 and fail-first writer fault tests. |
+| PS-D02 | Add only the explicitly selected read-only plan.save.review contract using existing Validate/normal/answer/review/result records, with complete parameters and a distinct execution rule. Existing plan.save Q4 selection/preimages stay untouched. Review remains read intent/zero persistence and cannot expose actions. PS-03–PS-09, PS-24, PS-30, PS-35; old-core compatibility and Q4 control. |
+| PS-D03 | Add bounded fixture-only plan ownership/exclusion, act ceiling, managed noncancellable dispatch, C-locale save normalization, ASCII media coverage, fresh source/machine/destination checks immediately before save writes and preidentified effect-parent/ops/log admission. The text route through the core gains the same act barrier; the baseline's text plan currently persists under plan intent. No real installer/disk authority follows. Initial save-point comparisons account explicitly for the preceding survey/choices and existing experimental journey gate. PS-05–PS-10, PS-20–PS-25, PS-27, PS-32–PS-36. |
+| PS-D04 | Apply existing refusal/failure/error codes by the documented phase, and propose stopped changed for a known later safe-boundary change. Refused guarantees no baseline save dispatch, while accounting for existing step-3 coordinator metadata/log effects. Unknown readback/receipt/retirement/supervision retains protection and does not become failed postcondition. Exact status/code pairings and client rendering require review. PS-10–PS-25, PS-32–PS-35. |
+| PS-D05 | Add the final internal receipt and its parser/checked publication/readback before verified owned operation retirement. This adds persistent bytes, temporary objects and related logging to the baseline; they are compared as named deltas, never normalized away. No fsync/power-loss transaction or positive legacy-C clearing is claimed. PS-09, PS-17–PS-22, PS-26–PS-29, PS-34–PS-35. |
+
+All five deltas are proposed, not accepted exceptions to baseline equivalence.
+Independent contract acceptance must adjudicate them before separately
+authorized implementation. Permanent tests must fail against the missing/
+unsafe behavior, then qualify the authorized implementation with the exact
+baseline comparison and retained failure evidence.
+
+The focused reviewer decisions are finite: accept or amend the dedicated
+receipt schema/provenance and retirement rule; the additive review selection;
+the bounded profile and full basis/exclusions; the minimal checked-writer
+delta; and the exact phase/vocabulary mapping. The primary answer for each
+is fully specified in the protocol section. No unspecified required field
+or future default may be silently chosen by an implementer. Positive plan
+reconciliation remains a separate unimplemented proof obligation; it is
+not an invitation to implement clear, P3/P4 or P5 in this checkpoint.
+
 ## Where each design question is answered
 
 | # | Question | Answer |

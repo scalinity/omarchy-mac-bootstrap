@@ -929,6 +929,57 @@ accepted FJ starting tree. Refresh mutable refs before reuse. This session
 runs static documentation/Git checks only; no tests, diagnostics, builds,
 CI dispatch, release, installation or hardware action is authorized.
 
+#### Plan.save execution contract candidate checkpoint
+
+D55 frontend presentation is independently **ACCEPTED** at
+02ffc3b16b4315d9cddb76e0f28717ffcd5d38dc, tree
+93ce948453a157fb5a9b9bc3f60e06b74ba2e141. This endpoint includes the original
+presentation, documentation-scanner remediation, D55-FE-01 freshness
+remediation and exact-head legacy six-job qualification. D55-FE-01 is
+**CLOSED**. The preceding recommendation to implement D55 is historical;
+it is not the next runnable unit and is not reopened by this candidate.
+
+**PLAN.SAVE EXECUTION CONTRACT CANDIDATE — INDEPENDENT REVIEW PENDING.**
+The separate branch codex/m14-gate3-plan-save-execution-contract starts
+directly from that D55 endpoint. PS-EXEC-1 and proposed D56 define only the
+first Gate 3 action family: Bash owner/domain, complete execution basis,
+separate read-only review selection, checked save/readback, dedicated final
+receipt, failure/barrier obligations and PS-01–PS-36 documentary cases.
+See docs/PROTOCOL.md → *Proposed plan.save execution contract*,
+docs/DECISIONS.md → *Proposed plan.save completion and execution decision*
+and docs/TESTING.md → *Future plan.save equivalence and failure qualification*.
+All new mechanisms are **UNIMPLEMENTED**; every future case is **UNEXECUTED**.
+PS-D01–PS-D05 are proposed baseline deltas pending focused independent
+GPT-6 Pro acceptance, not already qualified runtime exceptions.
+
+Focused local documentation qualification on 2026-10-11 used stock
+/bin/bash 3.2.57: tests/test-docs.sh returned 0 (27 passed, 0 failed,
+0 skipped), and git diff --check returned 0. Case/heading/reference checks
+found unique PS-01–PS-36 definitions, complete future-test map coverage and
+UNEXECUTED labels. All 1769 tracked blobs/modes outside the four authorized
+documentation paths matched D55, including nine symlinks inspected without
+following them. The first ad hoc identity check followed a dangling fixture
+symlink and failed; correcting that check established the identities without
+changing fixtures. This is documentation evidence, not action qualification.
+
+Starting foundations remain UR-Q4 1956f1b5d9666b5831b30cdb9da5b37e92056055,
+FJ-P5-1 c85470b2c973001c9df692eb04e17628d5c7f7f0,
+FJ-ED-1 f27ee84a4b28fe5ee3a93df53f79598192932468 and core/text
+a3beb3cba82681fc949ac35d4edf0c132d2cb0fd. No foundation proof generalizes
+to plan.save. The equivalence oracle stays
+2edb76a7de3f78ec90927ac93d5eec3a84636253. Live remote verification on
+2026-10-11 found separate published main at
+aa7d5cccfdff88e310513d26750bb6930e566234 and frontend-v0.1.0 at
+54c3770f99c2affdf63ceaf2d46990cb3d9fd94b; neither is this branch's base.
+
+Gate 3 remains **INCOMPLETE**. Execute plan.save remains unavailable; no
+action, producer, writer, receipt, operation mutation, reconciler or tests
+are implemented by this documentation checkpoint. Gate 4/5 remain
+unauthorized; frontend 0.2.0 remains **UNRELEASED**. No historical
+SUP-EINTR or local Rust E0463 disposition changes.
+The sole next bounded recommendation is focused GPT-6 Pro independent
+acceptance review of this complete documentation candidate.
+
 ### Gate 4 — Scanner and profile
 
 - **Work:** the versioned scan adapters, the Zsh tracker, sensitivity and
