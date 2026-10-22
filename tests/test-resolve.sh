@@ -63,7 +63,7 @@ assert_eq "$(cut -f2 "$T/out" | tr '\n' ' ')" "id=rg id=gh id=node id=fabric id=
 assert_eq "$(fields rg)" "$(want packages pacman rclone '' 0 resolved)" "resolve-layer-packages: Homebrew rclone is pacman rclone"
 assert_eq "$(fields gh)" "$(want packages pacman github-cli '' 0 resolved)" "a native equivalent under another name"
 assert_eq "$(fields node)" "$(want runtimes mise node 26 0 resolved)" "resolve-layer-runtimes: node through mise, its major version kept"
-assert_eq "$(fields fabric)" "$(want tools go github.com/danielmiessler/fabric/cmd/fabric 1.4.526 0 resolved)" "resolve-layer-tools: a Go module at the version this Mac has"
+assert_eq "$(fields fabric)" "$(want tools mise-backend github:danielmiessler/fabric 1.4.526 0 resolved)" "resolve-layer-tools: a release binary through mise's GitHub backend, at the version this Mac has"
 assert_eq "$(fields sc)" "$(want tools mise-backend aqua:koalaman/shellcheck 0.11.0 0 resolved)" "a mise backend for a CLI the repositories lack"
 assert_eq "$(fields fc)" "$(want tools npm firecrawl-cli 1.25.1 0 resolved)" "an npm global under mise's node"
 assert_eq "$(fields claude)" "$(want ai agent claude '' 0 resolved)" "resolve-layer-ai: Claude Code through Omarchy's agent wrapper's package"

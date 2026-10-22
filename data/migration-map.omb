@@ -14,7 +14,7 @@ map	id=docker	source=brew-formula	name=docker	disposition=OMARCHY_PROVIDED	metho
 map	id=docker-buildx	source=brew-formula	name=docker-buildx	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:docker-buildx	note=Omarchy%20Mac%27s%20install/omarchy-base.packages%3B%20extra:%20docker-buildx%200.38.1-1
 map	id=duti	source=brew-formula	name=duti	disposition=MACOS_ONLY	method=	target=	keep=	check=	note=sets%20macOS%20default%20applications%3B%20on%20Linux%20xdg-mime%20does%20that
 map	id=eza	source=brew-formula	name=eza	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:eza	note=Omarchy%20Mac%27s%20install/omarchy-base.packages%3B%20extra:%20eza%200.23.5-2
-map	id=fabric-ai	source=brew-formula	name=fabric-ai	disposition=ECOSYSTEM	method=go	target=github.com/danielmiessler/fabric/cmd/fabric	keep=exact	check=	note=not%20in%20Arch%20Linux%20ARM%20aarch64%20%28extra%27s%20fabric%20is%20another%20program%29%3B%20the%20module%20github.com/danielmiessler/fabric%20%28its%20go.mod%29,%20installed%20by%20hand%20with%20go%20install
+map	id=fabric-ai	source=brew-formula	name=fabric-ai	disposition=ECOSYSTEM	method=mise-backend	target=github:danielmiessler/fabric	keep=exact	check=	note=not%20in%20Arch%20Linux%20ARM%20aarch64%20%28extra%27s%20fabric%20is%20another%20program%29%3B%20danielmiessler/fabric%20releases%20ship%20fabric_Linux_arm64%20%28v1.4.538%29,%20so%20mise%27s%20GitHub%20backend,%20which%20comes%20before%20go%20install%20in%20D25%27s%20order
 map	id=fd	source=brew-formula	name=fd	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:fd	note=Omarchy%20Mac%27s%20install/omarchy-base.packages%3B%20extra:%20fd%2010.5.0-3
 map	id=ffmpeg	source=brew-formula	name=ffmpeg	disposition=EXACT	method=pacman	target=ffmpeg	keep=	check=	note=extra:%20ffmpeg%202:9.0.2-2
 map	id=fzf	source=brew-formula	name=fzf	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:fzf	note=Omarchy%20Mac%27s%20install/omarchy-base.packages%3B%20extra:%20fzf%200.74.5-1
@@ -35,7 +35,7 @@ map	id=python-3.14	source=brew-formula	name=python@3.14	disposition=RUNTIME	meth
 map	id=rclone	source=brew-formula	name=rclone	disposition=EXACT	method=pacman	target=rclone	keep=	check=	note=extra:%20rclone%201.75.2-1
 map	id=ripgrep	source=brew-formula	name=ripgrep	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:ripgrep	note=Omarchy%20Mac%27s%20install/omarchy-base.packages%3B%20extra:%20ripgrep%2015.2.0-1
 map	id=rizin	source=brew-formula	name=rizin	disposition=EXACT	method=pacman	target=rizin	keep=	check=	note=extra:%20rizin%200.8.2-2
-map	id=shellcheck	source=brew-formula	name=shellcheck	disposition=ECOSYSTEM	method=mise-backend	target=aqua:koalaman/shellcheck	keep=exact	check=	note=not%20in%20Arch%20Linux%20ARM%20aarch64%3B%20koalaman/shellcheck%20releases%20ship%20linux.aarch64%20%28v0.11.0%29
+map	id=shellcheck	source=brew-formula	name=shellcheck	disposition=ECOSYSTEM	method=mise-backend	target=aqua:koalaman/shellcheck	keep=exact	check=	note=not%20in%20Arch%20Linux%20ARM%20aarch64%3B%20koalaman/shellcheck%20releases%20ship%20linux.aarch64%20%28v0.11.0%29,%20and%20the%20aqua%20registry%20lists%20koalaman/shellcheck
 map	id=tectonic	source=brew-formula	name=tectonic	disposition=EXACT	method=pacman	target=tectonic	keep=	check=	note=extra:%20tectonic%200.17.0-1
 map	id=uv	source=brew-formula	name=uv	disposition=EXACT	method=pacman	target=uv	keep=	check=	note=extra:%20uv%200.13.4-1
 map	id=wget	source=brew-formula	name=wget	disposition=EXACT	method=pacman	target=wget	keep=	check=	note=extra:%20wget%201.25.0-6
@@ -102,8 +102,8 @@ map	id=own-ai.scalinity.gumbo	source=app	name=ai.scalinity.Gumbo	disposition=MAC
 map	id=own-bio.scalinity.localchat	source=app	name=bio.scalinity.localchat	disposition=MACOS_ONLY	method=	target=	keep=	check=	note=a%20macOS%20application%20built%20on%20this%20Mac:%20no%20package%20exists%20in%20any%20list%20checked%3B%20build%20it%20again%20from%20its%20source%20if%20it%20has%20a%20Linux%20target
 map	id=own-ai.scalinity.threadspace	source=app	name=ai.scalinity.threadspace	disposition=MACOS_ONLY	method=	target=	keep=	check=	note=a%20macOS%20application%20built%20on%20this%20Mac:%20no%20package%20exists%20in%20any%20list%20checked%3B%20build%20it%20again%20from%20its%20source%20if%20it%20has%20a%20Linux%20target
 map	id=own-ai.scalinity.threadspace.dev	source=app	name=ai.scalinity.threadspace.dev	disposition=MACOS_ONLY	method=	target=	keep=	check=	note=a%20macOS%20application%20built%20on%20this%20Mac:%20no%20package%20exists%20in%20any%20list%20checked%3B%20build%20it%20again%20from%20its%20source%20if%20it%20has%20a%20Linux%20target
-map	id=npm-npm	source=npm	name=npm	disposition=ECOSYSTEM	method=npm	target=npm	keep=major	check=	note=npm%27s%20own%20upgrade,%20installed%20under%20mise%27s%20node
-map	id=npm-pnpm	source=npm	name=pnpm	disposition=ECOSYSTEM	method=npm	target=pnpm	keep=major	check=	note=npm%20registry%3B%20extra%20has%20pnpm%2012,%20a%20newer%20major
+map	id=npm-npm	source=npm	name=npm	disposition=ECOSYSTEM	method=npm	target=npm	keep=major	check=	note=Homebrew%27s%20node%20brings%20its%20own%20npm,%20and%20so%20does%20mise%27s%3B%20this%20keeps%20its%20major,%20under%20mise%27s%20node
+map	id=npm-pnpm	source=npm	name=pnpm	disposition=EXACT	method=pacman	target=pnpm	keep=	check=	note=extra:%20pnpm%2012.14.0-1,%20a%20standalone%20build%20%28it%20depends%20on%20sh,%20glibc,%20libgcc%20and%20sqlite,%20not%20nodejs%29%3B%20pacman%20comes%20before%20npm%20in%20D25%27s%20order,%20and%20its%20major%20is%20newer%20than%20this%20Mac%27s
 map	id=npm-firecrawl-cli	source=npm	name=firecrawl-cli	disposition=ECOSYSTEM	method=npm	target=firecrawl-cli	keep=exact	check=	note=npm%20registry
 map	id=npm-rea-agents	source=npm	name=rea-agents	disposition=ECOSYSTEM	method=npm	target=rea-agents	keep=exact	check=	note=npm%20registry
 map	id=npm-pi-coding-agent	source=npm	name=@earendil-works/pi-coding-agent	disposition=ECOSYSTEM	method=npm	target=@earendil-works/pi-coding-agent	keep=exact	check=	note=npm%20registry
@@ -130,4 +130,4 @@ choice	map=app-chrome	id=keep-default	label=Omarchy%27s%20Chromium	method=	targe
 choice	map=app-chrome	id=google-chrome	label=Google%20Chrome	method=pacman	target=omarchy/google-chrome
 choice	map=app-wispr-flow	id=keep-default	label=Leave%20it:%20nothing%20is%20installed	method=	target=
 choice	map=app-wispr-flow	id=voxtype	label=Voxtype:%20push-to-talk%20voice-to-text	method=pacman	target=omarchy/voxtype-bin
-seal	sha256=e6125c0d634359fa87a9b696b3a36173c5fa7bf43e963448229a22da969a3988
+seal	sha256=cd1dde2cef4a92a6cba8833b67e5543b9ca6204175af19968be7ded22d091bca
