@@ -300,6 +300,34 @@ secret values replaced by variable references; Codex's travel in its
 whether a guess); the macOS paths found in files carried whole, listed and
 never rewritten; and what was skipped, with the reason.
 
+`bundle.omb` is an `omb-bundle 1` document, sealed, at most 16 MiB
+(`lib/migrate_bundle.sh` defines the family, `_recx_bundle`), its records
+in this order:
+
+| Record | Schema |
+| --- | --- |
+| `bundle` 1 | `at:utc host:hex16 model:text user:bytes home:bytes items:uint files:uint bytes:uint` |
+| `item` * | `id:bytes class:enum(…) whole:bool`, one per item carried |
+| `dir` * | `item:bytes dest:bytes mode:enum(0700\|0755)` |
+| `file` * | `item:bytes dest:bytes mode:enum(0600\|0644\|0700\|0755) sha256:hex64 size:uint whole:bool` |
+| `link` * | `item:bytes dest:bytes target:bytes` |
+| `setting` * | `item:bytes kind:enum(git\|mcp\|plugin) tool:id name:bytes value:bytes?` |
+| `package` * | `item:bytes layer:enum(packages\|runtimes\|tools\|ai) method:id target:bytes? version:bytes? guess:bool` |
+| `macpath` * | `item:bytes dest:bytes path:bytes` |
+| `skip` * | `item:bytes reason:text` |
+
+Export takes each item's carried form from the scanner (`scan_extract`),
+hashes each captured file and scans those bytes (`scan_secret_check`; for a
+key carried after `carry`, `scan_key_check`), and scans every value the
+item would write as well: one hit leaves the whole item behind, reported by
+kind. The writes stop and fail cleanly at three boundaries — each object,
+the manifest, the rename — and leave only the `.partial-*` folder. Before
+the rename the whole bundle passes the bundle check, `bndl_check DIR`,
+which restore runs again on Linux: the seal, every `dest` against the
+grammar and all of them together, each link's text (relative, never above
+the home), and each object a plain file of its recorded size, at most
+64 MiB, with its digest.
+
 Objects are plain regular files named by the lowercase hex SHA-256 of their
 bytes, at most 64 MiB each (a larger file is skipped as `too-large`): no
 link, FIFO, socket or device object, no other name, no archive. Where a
