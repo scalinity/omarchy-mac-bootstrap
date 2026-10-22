@@ -65,9 +65,11 @@ hello_probes() {
 for scope in health logs; do
   kind=doctor
   [ "$scope" = logs ] && kind=log
-  for fixture in yes no; do
+  # Gate 3: the core answers its reads on a real machine too; that case is
+  # below and in tests/test-gate2-read.sh, and these rows hold the fixture.
+  # shellcheck disable=SC2043 # the fixture's rows; the real machine's follow
+  for fixture in yes; do
     fixture_env=""
-    [ "$fixture" = no ] && fixture_env='OMB_FIXTURE= OMB_FRONTEND_DEV='
     for scopes in "$scope" journey journey,health,logs; do
       expected='refused unavailable'
       [ "$scopes" = journey ] && expected='refused scope'
@@ -90,6 +92,12 @@ for scope in health logs; do
       done
     done
   done
+  if [ "$scope" = logs ]; then
+    # A real machine's logs: the ordinary contract answers them (Gate 3).
+    C_ENV="OMB_SESSION_SCOPES=logs OMB_FIXTURE= OMB_FRONTEND_DEV=" c_run snapshot "scope	name=logs"
+    if [ "$(c_result)" != 'refused unavailable' ]; then ok; else fail 'a real machine'"'"'s logs snapshot is answered'; fi
+    assert_eq "$(c_admits snapshot)" ok 'and admitted'
+  fi
   request_env="OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_SESSION_PURPOSE=frontend-check G2_PROBES=$T/probes CP1_LOOKUPS=$T/lookups CP1_OWNERS=$T/owners"
   hello_probes "$request_env"
   C_ENV="$request_env" c_run snapshot "scope	name=$scope"

@@ -477,7 +477,7 @@ fn phase_sources() -> Fallible<Vec<(String, String)>> {
                 (
                     ". \"$OMB_HOME/lib/read.sh\"",
                     ". \"$OMB_BENCH_COPY/read.sh\"",
-                    5,
+                    9,
                 ),
                 (
                     ". \"$OMB_HOME/lib/health.sh\"",

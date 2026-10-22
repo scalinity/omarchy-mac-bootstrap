@@ -949,12 +949,14 @@ core_arg_into() {
 # facts into $OMB_TMP/rows.facts, its action record into rows.actions and
 # its param records into rows.params, files a snapshot's builder places in
 # the response's order; and for each scope of IDS whose operation record is
-# a barrier, a fact and a blocker into rows.facts and rows.blockers. 1 when
-# a file cannot be written.
+# a barrier, a fact and a blocker into rows.facts and rows.blockers; a row's
+# region, answer and guide records into rows.regions, rows.answers and
+# rows.guides. 1 when a file cannot be written.
 core_rows_snapshot() {
   local a scopes=" " sc
   omb_tmp_init || return 1
   : >"$OMB_TMP/rows.facts" && : >"$OMB_TMP/rows.blockers" && : >"$OMB_TMP/rows.actions" && : >"$OMB_TMP/rows.params" || return 1
+  : >"$OMB_TMP/rows.regions" && : >"$OMB_TMP/rows.answers" && : >"$OMB_TMP/rows.guides" || return 1
   for a in $1; do
     core_action_info "$a" || continue
     core_in_scopes "$CA_SCOPE" || continue
@@ -970,6 +972,13 @@ core_rows_snapshot() {
     core_available "$a" || continue
     "${CA_FN}_facts" >>"$OMB_TMP/rows.facts" || return 1
     "${CA_FN}_params" >>"$OMB_TMP/rows.params" || return 1
+    # What a row's page shows beside its gate: the disk's regions, the
+    # installer's answers, a guide (CA_FN_records, when the row has one).
+    if declare -F "${CA_FN}_records" >/dev/null; then
+      "${CA_FN}_records" >"$OMB_TMP/rows.extra" || return 1
+      awk -F '\t' -v d="$OMB_TMP" '$1 == "region" { print >> (d "/rows.regions") } $1 == "answer" { print >> (d "/rows.answers") }
+        $1 == "guide" { print >> (d "/rows.guides") }' "$OMB_TMP/rows.extra" || return 1
+    fi
     CORE_BASIS=""
     [ -n "$CA_PARAMS" ] || core_basis "$a" || return 1
     rec_line action id "$a" scope "$CA_SCOPE" label "$CA_LABEL" intent "$CA_INTENT" gate "$CA_GATE" \
@@ -1320,6 +1329,17 @@ core_read_op() {
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         bndl_core_op validate
+      elif [ "$CORE_REQ_SELECT" != plan.save ] && core_action_info "$CORE_REQ_SELECT" && [ -n "$CA_PARAMS" ] &&
+        declare -F "${CA_FN}_validate" >/dev/null; then
+        # Any other row with parameters answers its own review (the basis
+        # its execute will be held to). Naming it confers no authority.
+        if core_in_scopes "$CA_SCOPE"; then
+          # shellcheck source=lib/read.sh
+          . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+          "${CA_FN}_validate"
+        else
+          core_result refused scope "This session does not include the $CA_SCOPE scope."
+        fi
       elif [ "$CORE_REQ_SELECT" != plan.save ] || [ "$OMB_PLATFORM" != macos ]; then
         core_result refused unavailable "Validation answers plan.save on macOS, profile.save and export.write."
       elif ! core_in_scopes plan; then
