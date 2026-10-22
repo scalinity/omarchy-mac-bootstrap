@@ -18,6 +18,8 @@
 
 REC_SCOPES="journey|disk|plan|profile|resolve|asahi|network|omarchy|shared|export|restore|rescue|qualify|debug|health|logs"
 REC_STAGES="survey|profile|resolve|plan|asahi|omarchy|shared|restore|verify|done"
+# The inventory's categories: the tabs of docs/UX.md → *Every screen* (5–9, 11).
+REC_CATEGORIES="software|apps|terminal|editors|ai|folders|git-ssh|secrets"
 REC_PROTO=1
 # Set here, so admission copies go only where this library makes them.
 REC_TMP=""
@@ -34,8 +36,24 @@ _rec_family() {
     children) REC_HDR="omb-children 1" REC_MAX_BYTES=65536 REC_MAX_RECS=0 REC_SEALED=1 REC_ORDER="child" ;;
     proc) REC_HDR="omb-proc 1" REC_MAX_BYTES=65536 REC_MAX_RECS=0 REC_SEALED=1 REC_ORDER="proc" ;;
     op) REC_HDR="omb-op 1" REC_MAX_BYTES=65536 REC_MAX_RECS=0 REC_SEALED=1 REC_ORDER="op" ;;
-    *) return 1 ;;
+    # The Migration Profile (docs/MIGRATION.md → *The Migration Profile*) and
+    # the person's choices as the frontend sends them (*On the wire*).
+    profile) REC_HDR="omb-profile 1" REC_MAX_BYTES=16777216 REC_MAX_RECS=0 REC_SEALED=1
+      REC_ORDER="mac adapter item select decision consent resolution change" ;;
+    select) REC_HDR="omb-select 1" REC_MAX_BYTES=61440 REC_MAX_RECS=0 REC_SEALED=0 REC_ORDER="select decision" ;;
+    *) _recx "$1" family ;;
   esac
+}
+
+# _recx FAMILY WHAT [TYPE] — a stored family a module defines for itself
+# (the bundle, the migration map, the restore log): the function
+# _recx_FAMILY answers WHAT (family, spec TYPE, card TYPE, unique TYPE) by
+# setting the same globals as the tables here. 1 when no module loaded
+# defines FAMILY.
+_recx() {
+  case "$1" in '' | *[!a-z]*) return 1 ;; esac
+  declare -F "_recx_$1" >/dev/null || return 1
+  "_recx_$1" "$2" "${3:-}"
 }
 
 # _rec_spec FAMILY TYPE — REC_SPEC: the record's fields in order, each
@@ -74,13 +92,31 @@ _rec_spec() {
     children.child) REC_SPEC="action:id cmd:bytes class:enum(read|mutating|handoff) stdout:enum(functional|diagnostics|null) stderr:enum(functional|diagnostics|null) tty:enum(none|needs) detaches:enum(no|owned) owner:text? check:id?" ;;
     proc.proc) REC_SPEC="role:enum(launcher|frontend|core|worker) pid:uint start:text boot:bytes" ;;
     op.op) REC_SPEC="action:id scope:$s basis:hex64 session:bytes state:enum(running|unsupervised|failed) finding:enum(absent|unexpected)? pid:uint start:text boot:bytes at:utc" ;;
-    *) return 1 ;;
+    profile.mac) REC_SPEC="host:hex16 model:text os:text user:bytes home:bytes shell:bytes at:utc" ;;
+    profile.adapter) REC_SPEC="id:id state:enum(done|partial|unknown|denied|skipped) items:uint note:text?" ;;
+    profile.item) REC_SPEC="id:bytes adapter:id kind:id category:enum($REC_CATEGORIES) name:bytes version:bytes? source:bytes? requested:enum(yes|no|unknown) evidence:enum(observed|inferred|unknown) class:enum(config|sensitive|opaque|secret|mac-only) path:bytes? size:uint? note:text?" ;;
+    profile.select | select.select) REC_SPEC="id:bytes state:enum(include|exclude)" ;;
+    profile.decision | select.decision) REC_SPEC="id:bytes choice:id value:bytes?" ;;
+    profile.consent) REC_SPEC="word:enum(opaque|carry) id:bytes? at:utc" ;;
+    profile.resolution) REC_SPEC="id:bytes layer:enum(packages|runtimes|tools|ai|files|settings|none) method:id target:bytes? version:bytes? guess:bool state:enum(resolved|unresolved|needs-decision|unsupported|mac-only|skipped) note:text?" ;;
+    profile.change) REC_SPEC="kind:enum(gone|new) id:bytes" ;;
+    *) _recx "$1" spec "$2" ;;
   esac
 }
 
 # _rec_card FAMILY OP TYPE — REC_CARD: 1, ?, *, + or - (forbidden).
 _rec_card() {
   local i=0 col
+  case "$1" in
+    profile)
+      REC_CARD='*'
+      [ "$3" = mac ] && REC_CARD=1
+      return 0
+      ;;
+    select) REC_CARD='*' && return 0 ;;
+    req | res | lock | children | proc | op) ;;
+    *) _recx "$1" card "$3"; return ;;
+  esac
   case "$1" in
     req | res)
       case "$2" in hello) i=1 ;; snapshot) i=2 ;; detail) i=3 ;; validate) i=4 ;; execute) i=5 ;; *) return 1 ;; esac
@@ -127,7 +163,11 @@ _rec_unique() {
     res.param) REC_UKEYS="action name" ;;
     lock.artifact) REC_UKEYS="target" ;;
     children.child) REC_UKEYS="action" ;;
-    *) REC_UKEYS="" ;;
+    select.select | select.decision) REC_UKEYS="id" ;;
+    *)
+      REC_UKEYS=""
+      case "$1" in req | res | lock | children | proc | op | profile | select) ;; *) _recx "$1" unique "$2" || REC_UKEYS="" ;; esac
+      ;;
   esac
 }
 

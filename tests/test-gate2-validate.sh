@@ -190,7 +190,7 @@ for V_ACTION in test.read shared.create plan.saved plan; do
   v_route "another select family ($V_ACTION) precedes the scope" refused unavailable
 done
 V_ACTION=''
-assert_eq "$(sed -n '$p' "$C_EV")" "$(printf 'result\tstatus=refused\tcode=unavailable\ttext=%s\tnext=' "$(v_enc 'Plan validation answers only plan.save, in macOS fixtures.')")" 'unavailable refusal: exact result'
+assert_eq "$(sed -n '$p' "$C_EV")" "$(printf 'result\tstatus=refused\tcode=unavailable\ttext=%s\tnext=' "$(v_enc 'Validation answers plan.save on macOS and profile.save.')")" 'unavailable refusal: exact result'
 for fx in linux-alarm-fresh linux-omarchy-installed; do
   C_FIX=$FIX/$fx
   v_run "$(v_l 250GB)" "$(v_s 0)"
@@ -204,10 +204,13 @@ mkdir -p "$T/darwin"
 printf '#!/bin/sh\ncase "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) /usr/bin/uname "$@" ;; esac\n' >"$T/darwin/uname"
 chmod +x "$T/darwin/uname"
 C_PATH="$T/darwin:/usr/bin:/bin:/usr/sbin:/sbin" V_EXTRA='OMB_FIXTURE= OMB_FRONTEND_DEV='
+# Gate 3: the core answers plan validation on a real Mac too, through the
+# same planner; whatever this machine's disk shows, it is a read.
 v_run "$(v_l 250GB)" "$(v_s 0)"
-v_route 'non-fixture macOS validate' refused unavailable
+if [ "$(c_result)" != 'refused unavailable' ]; then ok; else fail "non-fixture macOS validate is answered"; fi
+assert_empty_file "$T/effects" 'non-fixture macOS validate: no effect reached'
 V_SCOPES=journey v_run "$(v_l 250GB)" "$(v_s 0)"
-v_route 'non-fixture macOS validate: fixture precedes the scope' refused unavailable
+v_route 'non-fixture macOS validate without the plan scope' refused scope
 # The startup check's closed table is unchanged: plan.save is refused there too.
 V_SCOPES=journey V_EXTRA='OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_SESSION_PURPOSE=frontend-check'
 v_run "$(v_l 250GB)" "$(v_s 0)"

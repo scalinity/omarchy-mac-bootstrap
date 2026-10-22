@@ -705,5 +705,26 @@ fe_call '' eval "FE_FPID=$live FE_FSTART='$(t_started "$live")'; fe_forward TERM
 wait "$live" 2>/dev/null
 kill -0 "$live" 2>/dev/null && fail "launcher-forward-identity: the frontend itself is signalled" || ok
 
+# --- fe-report-buffer: a failed write never becomes a path -------------------------------
+# On a terminal or pipe that has gone, a builtin's unwritten bytes stay in
+# bash's buffer, and a later command substitution carries them into its
+# value. fe_report writes in a subshell and log_event builds its folder, so
+# the launcher's failure text never becomes a folder in the working folder
+# (once, directories named after "the interface stopped (status 137)").
+mkdir -p "$T/cwd-report"
+(cd "$T/cwd-report" && env -i PATH="$BASE_PATH" HOME="$T/home" TMPDIR="$T/tmp" LANG=en_US.UTF-8 TERM=xterm-256color \
+  OMB_STATE_DIR="$T/state-report" "$T_BASH" -c '
+    . "$1/lib/common.sh"; . "$1/lib/ui.sh"; . "$1/lib/state.sh"; . "$1/lib/records.sh"; . "$1/lib/core.sh"; . "$1/lib/frontend.sh"
+    OMB_HOME=$1 OMB_COLOR=always; ui_init; platform_init; state_init
+    trap "" PIPE
+    until [ -e "$2" ]; do sleep 0.05; done
+    FE_STATE=crashed FE_WHY="the interface stopped (status 137)"
+    fe_report' bash "$TOOL" "$T/closed-report") | {
+  exec <&-
+  : >"$T/closed-report"
+}
+assert_eq "$(ls -A "$T/cwd-report")" "" "fe-report-buffer: nothing is made in the working folder"
+assert_contains "$(cat "$T"/state-report/logs/*.log 2>/dev/null)" "frontend state=crashed the interface stopped (status 137)" "fe-report-buffer: the log line is whole"
+
 t_decoys_survive test-frontend
 t_done test-frontend

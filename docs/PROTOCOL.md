@@ -1504,6 +1504,60 @@ The rows: `plan.save`; `asahi.launch`; the Shared codes; `shared.create`;
 and removes none; no schema has a field that could assert a state
 (`safe=1`, a plan, a partition id), and an unknown field is an error.
 
+### The action table
+
+Each row is one action. `lib/core.sh` holds the order above; the rows live
+in the modules that own their text flows, loaded only for the requests that
+name them: the installer's in `lib/actions.sh` (`act_row`, `ACT_IDS`), the
+profile's in `lib/migrate_profile.sh` (`prof_row`), export's in
+`lib/migrate_bundle.sh` (`bndl_row`).
+
+| Action | Scope | System | Mode | Word | Parameters |
+| --- | --- | --- | --- | --- | --- |
+| `plan.save` | `plan` | macOS | managed | — | the eleven inputs (*plan.save*) |
+| `asahi.launch` | `asahi` | macOS | handoff | `yes` (`experimental` first on an experimental Mac) | — |
+| `shared.code` | `shared` | both | managed | — | `code`: the other system's code (`ombdone` on macOS, `ombshare` on Linux) |
+| `shared.create` | `shared` | macOS | handoff | `yes` | — |
+| `network.connect` | `network` | Linux | handoff | — | — |
+| `omarchy.start` | `omarchy` | Linux | handoff | `start` | — |
+| `omarchy.resume` | `omarchy` | Linux | handoff | `resume` | — |
+| `shared.activate` | `shared` | Linux | handoff | `mount` | — |
+| `shared.test` | `shared` | Linux | handoff | `test` | — |
+| `dev` | `dev` | Linux | handoff | — | — |
+| `profile.scan` | `profile` | macOS | managed | — | — |
+| `profile.save` | `profile` | macOS | managed | — | `select.1` … `select.14` (docs/MIGRATION.md → *On the wire*) |
+| `profile.opaque` | `profile` | macOS | managed | `opaque` | — |
+| `profile.carry` | `profile` | macOS | managed | `carry` | `key`: an encrypted SSH key's item id |
+| `export.write` | `export` | macOS | managed | — | `dir`: a folder, or empty for verified Shared |
+
+A row is the function `<module>_row ID`, which answers 1 for an id it does
+not have and otherwise sets `CA_SCOPE`, `CA_INTENT` (`plan` or `act`),
+`CA_TERMINAL`, `CA_CANCEL`, `CA_GATE`, `CA_LABEL`, `CA_EXPLAIN`,
+`CA_PLATFORM`, `CA_PHASE` (the flow's `OMB_PHASE`), `CA_PARAMS` (the names
+it takes), `CA_LIMIT` (seconds for worker quiescence) and `CA_FN`, the
+prefix of its five functions:
+
+- `CA_FN_offer` — 0 when the text flow would offer it now, on a fresh read
+  (step 4); `CA_WHY` says why not.
+- `CA_FN_facts` — its gate facts, the `fact` records a gate shows
+  (`key=gate.<action>.<name>`); the basis of an action without parameters
+  is the SHA-256 of the `basis` record and these.
+- `CA_FN_params` — its `param` records.
+- `CA_FN_basis` — for an action with parameters, `CORE_BASIS` from the
+  arguments (`core_arg_into NAME VAR`), equal to what its validation's
+  `review` showed.
+- `CA_FN_run` — the text flow's own functions, in its order; the interface
+  word is in `OMB_IFACE_WORD`, which `ui_confirm_word` takes for the first
+  typed-word prompt and then clears.
+- `CA_FN_judge` — on a fresh read, `CORE_FINDING`: `completed`,
+  `no-effect` (proven), `absent` or `unexpected`, with `CORE_JUDGE_TEXT`;
+  called with the run's status, or `reconcile` after a new boot.
+
+The journey snapshot lists the installer's rows the fresh read offers now,
+with their gate facts, parameters, and a fact and blocker for each of their
+scopes an operation record bars; the profile and export snapshots list
+theirs.
+
 ### plan.save
 
 Managed, scope `plan`, no interface word, not cancellable (D56).

@@ -13,9 +13,11 @@ before=$(t_snapshot "$T/state")
 for ceiling in read plan act; do
   C_ENV="OMB_SESSION_INTENT=$ceiling" c_run hello
   assert_eq "$(c_result) $C_RC" 'done ok 0' "ordinary fixture hello at $ceiling ceiling, purpose unset"
-  for action in test.read test.mutate test.handoff plan.save asahi.launch resume; do
+  # The foundation's test actions exist only with its explicit authority;
+  # the action table's rows are tests/test-actions.sh's.
+  for action in test.read test.mutate test.handoff resume; do
     C_ENV="OMB_SESSION_INTENT=$ceiling" c_run execute "exec	action=$action	basis=$(printf '%064d' 0)	confirm=test"
-    assert_eq "$(c_result)" 'refused unavailable' "ordinary $ceiling refuses $action before lookup"
+    assert_eq "$(c_result)" 'refused unavailable' "ordinary $ceiling refuses $action, which no row holds"
   done
 done
 for purpose in '' frontend-read wrong frontend-check; do
@@ -28,7 +30,9 @@ C_ENV=OMB_SESSION_SCOPES=disk c_run snapshot "scope	name=journey"
 assert_eq "$(c_result)" 'refused scope' 'wrong scope refused'
 c_uname_arm "$T/native"
 C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' c_run snapshot "scope	name=journey"
-assert_eq "$(c_result)" 'refused unavailable' 'production read unavailable'
+# The core answers its reads on a real machine (Gate 3); an unreleased
+# frontend still runs only against fixtures (the launcher, and the lock check).
+if [ "$(c_result)" != 'refused unavailable' ]; then ok; else fail "a production read is answered"; fi
 c_run hello "arg	name=future	value=x"
 assert_eq "$C_RC" 2 'unknown request content refused'
 c_run future

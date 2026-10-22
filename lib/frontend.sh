@@ -575,7 +575,7 @@ fe_run() {
     verified) return 0 ;;
     crashed)
       fe_report
-      ui_note "Nothing was left half-done by the interface itself: the core records every action. ./omarchy-bootstrap status shows where the machine is; --no-tui runs this command in text."
+      (ui_note "Nothing was left half-done by the interface itself: the core records every action. ./omarchy-bootstrap status shows where the machine is; --no-tui runs this command in text.")
       return 1
       ;;
   esac
@@ -651,6 +651,10 @@ fe_session_state() {
 
 # fe_report — one line on the frontend's state, for the text interface.
 fe_report() {
+  # In a subshell, as fe_session_state's escapes: on a terminal that has
+  # gone, a failed write's bytes stay in bash's buffer and would ride the
+  # next command substitution into a value (once, into a path).
+  (
   case "$FE_STATE" in
     verified) ;;
     missing) ui_info "Interface: missing — ${FE_WHY:-not downloaded}. Continuing in text." ;;
@@ -663,6 +667,7 @@ fe_report() {
       ui_note "The terminal and the session's files were left as they are, in case a program still uses them. ./omarchy-bootstrap status shows where the machine is."
       ;;
   esac
+  )
   log_event frontend "state=$FE_STATE ${FE_WHY:-}"
 }
 

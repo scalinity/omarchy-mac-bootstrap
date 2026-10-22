@@ -225,6 +225,54 @@ the review; `profile show --unresolved`, the unresolved items.
 | `saved` | every included item `resolved` or `unsupported`: export can use it |
 | `invalid` | fails admission or its seal, or was made on another Mac (a Time Machine restore brings the everyday Mac's): never used, and replaced by the next `profile` |
 
+### On the wire
+
+The frontend reads the profile through scope `profile` and acts on it
+through the rows of docs/PROTOCOL.md → *The action table*; `lib/migrate_profile.sh`
+answers (`prof_core_op`), from `profile.omb` and, for `profile.scan`, a
+fresh scan.
+
+- **`snapshot scope=profile`**: facts `profile.state` (the state above),
+  `profile.mac`, `profile.scanned`, `profile.counts`; one
+  `adapter.<adapter>` per adapter (value `<state> · <n> items`; `ok` done,
+  `warn` partial, `fail` denied, `unknown`, `info` skipped); one
+  `category.<category>` per category (`<selected> of <total> · <size>`;
+  `warn` while a decision is open); `change.gone` and `change.new` after a
+  rescan; blockers; the profile's actions and their parameters.
+- **`detail scope=profile`**, paged, under the snapshot's generation (the
+  SHA-256 of `profile.omb`):
+  - `items` — `row kind=item key=<item id>`, columns: category, name,
+    source, version, becomes, state (`include`, `exclude`, `decide` or
+    `never`), class, by (`default` or `person`), reason, size in bytes,
+    evidence, requested. Items that need a decision come first.
+  - `choices` — `row kind=choice key=<item id>`, columns: choice id,
+    label, guess (`0` or `1`); the decisions an item offers.
+  - `review` — `row kind=review key=<category>`, columns: label, selected,
+    size in bytes, what comes next; the Migration Review.
+  - `changes` — `row kind=change key=<item id>`, columns: `gone` or `new`,
+    name.
+  - `opaque` — `row kind=opaque key=<item id>`, columns: path, size; what
+    a typed `opaque` would cover.
+  - `keys` — `row kind=key key=<item id>`, columns: path, cipher, KDF
+    rounds; the encrypted SSH keys `carry` can include.
+- **The person's choices** travel as one `omb-select 1` document: `select
+  id=<item id> state=include|exclude` and `decision id=<item id>
+  choice=<choice id> value=<bytes>` records, only the choices that differ
+  from the defaults, at most 60 KiB. The frontend splits it at line ends
+  into the arguments `select.1` … `select.14`, each value at most 4 KiB as
+  written; the core joins them in number order and admits the whole as an
+  `omb-select` document, refused whole if it names an item the profile does
+  not hold. `validate select action=profile.save` answers its `review`
+  basis (the SHA-256 of the action id, the profile's generation and the
+  joined document); `execute profile.save` sends the same arguments and
+  that basis.
+- `profile.scan` emits a `progress` record per adapter (`unit=adapter`,
+  the adapter's name as label) and a `message` with each adapter's result.
+
+Scope `export` (`lib/migrate_bundle.sh`, `bndl_core_op`): facts
+`export.profile`, `export.dest` (verified Shared and its mount point, or
+none), `export.size`, `export.last`; the row `export.write`.
+
 ## The bundle
 
 `export [DIR]` (act, macOS) needs a `saved` profile and writes a new bundle

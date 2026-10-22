@@ -305,8 +305,16 @@ cfg_save() {
   local k v
   for k in $CFG_KEYS; do
     eval "v=\${CFG_$k:-}"
+    omb_fail_at "cfg_$k" && return 1
     # An emptied choice is removed, so a cleared optional answer stays cleared.
-    if [ -n "$v" ]; then state_set "cfg_$k" "$v"; else state_unset "cfg_$k"; fi
+    # The first write that fails stops the save: no later choice is written
+    # over a plan that is already incomplete.
+    if [ -n "$v" ]; then
+      state_set "cfg_$k" "$v" || return 1
+    else
+      state_unset "cfg_$k" || return 1
+    fi
+    omb_stop_at "cfg_$k"
   done
   return 0
 }

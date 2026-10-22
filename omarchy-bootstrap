@@ -27,6 +27,9 @@ if [ "$_omb_mode" != bash ]; then
   exec bash "$0" "$@"
 fi
 unset _omb_mode OMB_RESTARTED
+# The interface word (docs/PROTOCOL.md → *Executing*, step 7) is set only by
+# the core, never exported, and never taken from the environment.
+unset OMB_IFACE_WORD
 
 set -u
 # No pipefail: probes are written as `producer | grep -q`, and grep -q exits on
@@ -146,7 +149,7 @@ main() {
       --no-tui) OMB_NO_TUI=1 ;;
       -h | --help) cmd=help ;;
       --version) cmd=version ;;
-      --check) rest+=("$arg") ;;
+      --check | --unresolved) rest+=("$arg") ;;
       # A mistyped --dry-run must stop, not silently become a real run.
       -*) _usage_error "unknown flag: $arg" ; return 2 ;;
       *)
@@ -193,9 +196,9 @@ main() {
   fi
   # The frontend's seams work only against fixtures, never as root: an
   # unreleased frontend or a test child never drives a real machine.
-  if [ -n "${OMB_TEST_HANDOFF_CHILD:-}${OMB_FRONTEND_DEV:-}" ]; then
+  if [ -n "${OMB_TEST_HANDOFF_CHILD:-}${OMB_FRONTEND_DEV:-}${OMB_TEST_STOP_AT:-}${OMB_TEST_FAIL_AT:-}${OMB_TEST_PAUSE_AT:-}${OMB_TEST_QUAL_BYTES:-}" ]; then
     if [ "$(id -u)" = 0 ] || [ -z "${OMB_FIXTURE:-}" ]; then
-      _usage_error "OMB_TEST_HANDOFF_CHILD and OMB_FRONTEND_DEV work only in fixture mode (OMB_FIXTURE), never as root"
+      _usage_error "OMB_TEST_HANDOFF_CHILD, OMB_FRONTEND_DEV and the OMB_TEST_*_AT and OMB_TEST_QUAL_BYTES seams work only in fixture mode (OMB_FIXTURE), never as root"
       return 2
     fi
   fi
@@ -240,6 +243,14 @@ main() {
         *) _usage_error "shared takes status, create, activate or test" ; return 2 ;;
       esac
       ;;
+    scan) [ "${#rest[@]}" = 0 ] || { _usage_error "scan takes no argument" ; return 2; } ;;
+    profile)
+      case "${rest[*]:-}" in
+        '' | show | 'show --unresolved') ;;
+        *) _usage_error "profile takes nothing, show, or show --unresolved" ; return 2 ;;
+      esac
+      ;;
+    export) [ "${#rest[@]}" -le 1 ] || { _usage_error "export takes at most one folder" ; return 2; } ;;
     *) [ "${#rest[@]}" = 0 ] || { _usage_error "unexpected argument: ${rest[0]}" ; return 2; } ;;
   esac
 
@@ -258,7 +269,10 @@ main() {
   # an action by the machine's state (run and fetch_upstream enforce it).
   OMB_CMD=${cmd:-default}
   case "$cmd" in
-    status | doctor | sources | logs | operation) OMB_INTENT=read OMB_PERSIST=0 ;;
+    status | doctor | sources | logs | operation | scan) OMB_INTENT=read OMB_PERSIST=0 ;;
+    profile)
+      if [ "${rest[0]:-}" = show ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
+      ;;
     shared)
       if [ "${rest[0]:-status}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
       ;;
@@ -321,6 +335,34 @@ main() {
     doctor) cmd_doctor ; return ;;
     status) cmd_status ; return ;;
     shared) cmd_shared ${rest[@]+"${rest[@]}"} ; return ;;
+    scan | profile | export)
+      # The migration's commands (docs/MIGRATION.md), macOS only; their
+      # modules load for them alone.
+      if [ "$OMB_PLATFORM" != macos ]; then
+        ui_fail "$cmd runs on macOS, where the Mac's environment is."
+        return 1
+      fi
+      # shellcheck source=lib/records.sh
+      . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
+      # shellcheck source=lib/toml.sh
+      . "$OMB_HOME/lib/toml.sh" || _omb_unloaded toml
+      # shellcheck source=lib/migrate_scan.sh
+      . "$OMB_HOME/lib/migrate_scan.sh" || _omb_unloaded migrate_scan
+      # shellcheck source=lib/migrate_resolve.sh
+      . "$OMB_HOME/lib/migrate_resolve.sh" || _omb_unloaded migrate_resolve
+      # shellcheck source=lib/migrate_profile.sh
+      . "$OMB_HOME/lib/migrate_profile.sh" || _omb_unloaded migrate_profile
+      case "$cmd" in
+        scan) scan_cmd ;;
+        profile) prof_cmd ${rest[@]+"${rest[@]}"} ;;
+        export)
+          # shellcheck source=lib/migrate_bundle.sh
+          . "$OMB_HOME/lib/migrate_bundle.sh" || _omb_unloaded migrate_bundle
+          bndl_cmd_export ${rest[@]+"${rest[@]}"}
+          ;;
+      esac
+      return
+      ;;
   esac
 
   case "$OMB_PLATFORM" in

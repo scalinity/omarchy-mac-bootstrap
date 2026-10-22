@@ -569,4 +569,12 @@ rm -rf net-efi-drift
 net_sources net-efi-drift v0.9.2 "Asahi Alarm Minimal (BTRFS)" 4.0.3rc4 quattro "The installer always leaves 38GB of disk space free" "- At least 50 GB free on the internal SSD (100 GB recommended)." 1073741824
 setup_fixture_script net-efi-drift/net/omarchy_setup
 
+# ---------------------------------------------------------------------------
+# Each unit's own fixtures (docs/TESTING.md → *Principles*), in its own file.
+for gen in gen-*.sh; do
+  [ -f "$gen" ] || continue
+  # shellcheck disable=SC1090 # each unit's generator, sourced in name order
+  . "./$gen"
+done
+
 echo "fixtures regenerated"

@@ -989,11 +989,12 @@ done
 CK_ENV="OMB_FRONTEND_DEV=x" ck hello
 assert_rc "$C_RC" 2 "frontend-check-purpose-env: OMB_FRONTEND_DEV without a fixture is refused before the core"
 assert_eq "$C_OUT" "omb-res 1" "and nothing is answered"
-# The purpose unset: the ordinary contract, which refuses a snapshot outside
-# fixture mode (the gate's foundation reads only fixtures).
+# The purpose unset: the ordinary contract, which answers a real machine's
+# journey snapshot (Gate 3), never the startup check's four facts.
 C_PATH="$CK_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
   C_ENV="OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_STATE_DIR=$CK_STATE" c_run snapshot "scope	name=journey"
-assert_eq "$(c_result)" "refused unavailable" "frontend-check-purpose-env: with no purpose, the ordinary contract answers"
+if [ "$(c_result)" != "refused unavailable" ]; then ok; else fail "frontend-check-purpose-env: with no purpose, the ordinary contract answers"; fi
+if grep -q 'key=check' "$C_EV"; then fail "frontend-check-purpose-env: and not with the startup check's facts"; else ok; fi
 # Controls: names the prefix rule does not match, and an empty OMB_TEST_ one.
 for e in "OMB_TEST_FUTURE=" "OMB_TESTING=x" "OMB_TEST=x" "SOME_OMB_TEST_X=x"; do
   CK_ENV="$e" ck hello

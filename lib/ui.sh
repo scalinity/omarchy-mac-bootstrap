@@ -628,6 +628,16 @@ ui_yesno() {
 # exact word proceeds; Enter alone never does. 0 confirmed, 1 declined.
 ui_confirm_word() {
   local word=$1 prompt=$2 ans
+  # The interface word (docs/PROTOCOL.md → *Executing*, step 7): the word
+  # typed in the frontend answers the step's first typed-word prompt, once;
+  # every later prompt reads the terminal. The core sets it, never exported.
+  if [ -n "${OMB_IFACE_WORD:-}" ]; then
+    ans=$OMB_IFACE_WORD
+    OMB_IFACE_WORD=""
+    _p '\n   %s  %sTyped in the interface:%s %s\n' "$prompt" "$C_DIM" "$C_RESET" "$ans"
+    [ "$ans" = "$word" ]
+    return
+  fi
   while :; do
     _p '\n   %s  %sType %s%s%s%s to continue, or n to stop:%s ' "$prompt" "$C_DIM" "$C_RESET$C_BOLD$C_ACCENT" "$word" "$C_RESET" "$C_DIM" "$C_RESET"
     IFS= read -r ans || return 1

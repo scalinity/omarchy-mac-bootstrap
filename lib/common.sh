@@ -145,7 +145,7 @@ log_event() {
   local msg="$*"
   [ "$OMB_PERSIST" = 1 ] && [ -n "${OMB_STATE_DIR:-}" ] || return 0
   state_dir_ready 2>/dev/null || return 0
-  dir=$(log_dir)
+  dir=$OMB_STATE_DIR/logs # built, never captured: see fe_report
   [ -L "$dir" ] && return 0
   mkdir -p "$dir" 2>/dev/null || return 0
   [ -L "$(log_file)" ] && return 0
@@ -331,3 +331,79 @@ offer_inspection() {
 # clean_version — first line of stdin reduced to version characters, so text
 # from the network never carries control codes to the terminal or state.
 clean_version() { head -1 | tr -cd '[:alnum:]._-'; }
+
+# ---------------------------------------------------------------------------
+# Walking a tree, and the save boundaries' test seams
+# ---------------------------------------------------------------------------
+
+# sys_walk DIR [MAX] — the tree under DIR, never following a link: one line
+# per entry, "TYPE<TAB>SIZE<TAB>MODE<TAB>PATH<TAB>LINK", where TYPE is f, d,
+# l or o (anything else), MODE the octal permission bits, PATH the entry
+# relative to DIR and LINK a link's text, both in the record format's
+# canonical encoding (rec_enc: no TAB, LF or control byte). Folders are
+# listed breadth first, each folder's names in byte order. Reads
+# $OMB_FIXTURE/root/DIR in fixture mode. 0 complete; 3 when MAX entries
+# (default 20000) were listed and more remain (partial); 4 when DIR or a
+# folder beneath it could not be read (denied; what could be read is
+# listed); 1 when DIR is not a folder (a link to one is not). Read-only.
+# shellcheck disable=SC2016 # Perl source: perl expands its own variables
+SYS_WALK_PL='
+my ($root, $max) = @ARGV;
+my ($n, $st) = (0, 0);
+sub enc { my $s = shift; $s =~ s/([^A-Za-z0-9._~\/:\@+,-])/sprintf("%%%02X", ord($1))/ge; $s }
+my @r = lstat($root);
+exit 1 unless @r && -d _;
+my @queue = ("");
+while (@queue) {
+  my $rel = shift @queue;
+  my $dir = $rel eq "" ? $root : "$root/$rel";
+  my $dh;
+  unless (opendir($dh, $dir)) { $st = 4; next; }
+  my @names = sort grep { $_ ne "." && $_ ne ".." } readdir($dh);
+  closedir($dh);
+  for my $name (@names) {
+    exit($st || 3) if $n >= $max;
+    my $r = $rel eq "" ? $name : "$rel/$name";
+    my @s = lstat("$root/$r");
+    unless (@s) { $st = 4; next; }
+    my ($t, $link) = ("o", "");
+    if (-l _) { $t = "l"; $link = readlink("$root/$r"); $link = "" unless defined $link; }
+    elsif (-d _) { $t = "d"; push @queue, $r; }
+    elsif (-f _) { $t = "f"; }
+    printf "%s\t%d\t%o\t%s\t%s\n", $t, $s[7], $s[2] & 07777, enc($r), enc($link);
+    $n++;
+  }
+}
+exit $st;
+'
+sys_walk() {
+  local dir=$1 max=${2:-20000}
+  case "$max" in '' | *[!0-9]* | 0*) return 1 ;; esac
+  [ -n "${OMB_FIXTURE:-}" ] && dir="$OMB_FIXTURE/root$dir"
+  LC_ALL=C perl -e "$SYS_WALK_PL" -- "$dir" "$max" 2>/dev/null
+}
+
+# Test seams at named save boundaries (docs/TESTING.md → *New seams*), in
+# fixture mode only; the entrypoint refuses them as root or without a
+# fixture. omb_stop_at NAME — the process kills itself right after the
+# boundary, as a power cut would (a stop case). omb_fail_at NAME — 0 when the
+# checked writer must fail there as a full disk would (a write-failure case).
+# omb_pause_at NAME — waits, at most 60 s, until the file "$OMB_FIXTURE.go"
+# exists, having made "$OMB_FIXTURE.at-NAME", so a test can change the
+# machine in between; it runs nothing.
+omb_stop_at() {
+  [ -n "${OMB_FIXTURE:-}" ] && [ "${OMB_TEST_STOP_AT:-}" = "$1" ] || return 0
+  kill -9 $$
+}
+omb_fail_at() {
+  [ -n "${OMB_FIXTURE:-}" ] && [ "${OMB_TEST_FAIL_AT:-}" = "$1" ]
+}
+omb_pause_at() {
+  local i=0
+  [ -n "${OMB_FIXTURE:-}" ] && [ "${OMB_TEST_PAUSE_AT:-}" = "$1" ] || return 0
+  : >"$OMB_FIXTURE.at-$1"
+  while [ ! -e "$OMB_FIXTURE.go" ] && [ "$i" -lt 600 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+}

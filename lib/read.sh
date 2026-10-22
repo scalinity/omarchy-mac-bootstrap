@@ -107,9 +107,15 @@ END_BLOCKERS
   # Every value used by either projection, including notes and the token,
   # occurs in the encoding. Scope is bound even for equal-looking datasets.
   printf 'scope\tname=journey\n%s%s' "$machine" "$facts"
+  # The installer's actions the fresh read offers now (core_rows_snapshot,
+  # before this dataset): their gate facts, the barriers of their scopes,
+  # the actions and their parameters, in the response's order.
+  if [ "${CORE_ROWS:-}" = 1 ]; then cat "$OMB_TMP/rows.facts" || return 1; fi
   [ -z "$guide" ] || printf '%s\n' "$guide"
   [ -z "$token" ] || printf '%s\n' "$token"
-  printf '%s%s%s' "$blockers" "$messages" "$rows"
+  printf '%s' "$blockers"
+  if [ "${CORE_ROWS:-}" = 1 ]; then cat "$OMB_TMP/rows.blockers" "$OMB_TMP/rows.actions" "$OMB_TMP/rows.params" || return 1; fi
+  printf '%s%s' "$messages" "$rows"
 )
 
 # Read producer status: 0 admitted, 1 infrastructure failure, 2 established
@@ -187,6 +193,13 @@ core_read_rows() {
 
 core_journey_read() {
   local sum st placeholder
+  omb_tmp_init || return 1
+  # The rows' own reads print nothing into the dataset: the baseline's text
+  # functions they call keep their own output, which no reader sees.
+  core_mod_load actions || return 1
+  CORE_ROWS=0
+  core_rows_snapshot "$ACT_IDS" >/dev/null || return 1
+  CORE_ROWS=1
   CORE_JOURNEY=$(core_journey_dataset) || return 1
   core_read_prefix || return 1
   printf '%s' "$CORE_JOURNEY" >"$OMB_TMP/journey" || return 1

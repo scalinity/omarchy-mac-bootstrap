@@ -818,6 +818,13 @@ core_reconcile() {
         CORE_FINDING=completed
       fi
       ;;
+    *)
+      # A row: its scope's classifier on this boot's fresh read.
+      if core_action_info "$CO_ACTION"; then
+        "${CA_FN}_judge" reconcile
+        case "$CORE_FINDING" in completed | no-effect) ;; *) CORE_FINDING=unexpected ;; esac
+      fi
+      ;;
   esac
   log_event reconcile "$CO_ACTION in scope $scope: $CORE_FINDING"
   case "$CORE_FINDING" in
@@ -835,9 +842,25 @@ core_reconcile() {
 # ---------------------------------------------------------------------------
 
 # core_action_info ACTION — CA_SCOPE CA_INTENT CA_TERMINAL CA_CANCEL CA_GATE
-# CA_LABEL CA_EXPLAIN CA_LIMIT; 1 for an action this core does not have.
+# CA_LABEL CA_EXPLAIN CA_LIMIT, and for a row of the action table (below)
+# CA_FN CA_PHASE CA_PARAMS CA_PLATFORM; 1 for an action this core does not
+# have, or one this system's rows do not offer.
 core_action_info() {
   CA_SCOPE=journey CA_GATE="" CA_CANCEL=0 CA_LIMIT=3 CA_TERMINAL=""
+  CA_FN="" CA_PHASE="" CA_PARAMS="" CA_PLATFORM="" CA_WHY=""
+  case "$1" in
+    test.*) ;;
+    *)
+      # The foundation's fixtures expose its test actions and nothing else.
+      core_foundation_fixture && return 1
+      core_mod_for "$1" || return 1
+      core_mod_load "$CORE_MOD" || return 1
+      "$CORE_MOD_ROW" "$1" || return 1
+      [ -n "$CA_FN" ] && [ "$CA_PLATFORM" = "$OMB_PLATFORM" ] || return 1
+      case "$CA_INTENT" in plan | act) ;; *) return 1 ;; esac
+      return 0
+      ;;
+  esac
   case "$1" in
     test.read)
       CA_INTENT=read CA_TERMINAL=managed CA_CANCEL=1 CA_LABEL="Read the fixture (test)"
@@ -859,6 +882,100 @@ core_action_info() {
 
 CORE_TEST_ACTIONS="test.read test.mutate test.handoff"
 
+# ---------------------------------------------------------------------------
+# The action table (docs/PROTOCOL.md → *The action table*)
+# ---------------------------------------------------------------------------
+
+# core_mod_for ACTION-OR-SCOPE — CORE_MOD and CORE_MOD_ROW: the module whose
+# rows hold an action, or answer a scope's reads. New modules load only for
+# the requests that name them (docs/ARCHITECTURE.md → *Loading*).
+core_mod_for() {
+  case "$1" in
+    plan.save | asahi.* | shared.* | network.* | omarchy.* | dev | dev.*) CORE_MOD=actions CORE_MOD_ROW=act_row ;;
+    profile | profile.*) CORE_MOD=profile CORE_MOD_ROW=prof_row ;;
+    export | export.*) CORE_MOD=export CORE_MOD_ROW=bndl_row ;;
+    *) return 1 ;;
+  esac
+}
+
+# core_mod_load MODULE — sources the module and what it builds on, once.
+core_mod_load() {
+  case "$1" in
+    actions)
+      [ "${CORE_LOADED_actions:-}" = 1 ] && return 0
+      # shellcheck source=lib/actions.sh
+      . "$OMB_HOME/lib/actions.sh" || _omb_unloaded actions
+      CORE_LOADED_actions=1
+      ;;
+    profile | export)
+      [ "${CORE_LOADED_migrate:-}" = 1 ] || {
+        # shellcheck source=lib/toml.sh
+        . "$OMB_HOME/lib/toml.sh" || _omb_unloaded toml
+        # shellcheck source=lib/migrate_scan.sh
+        . "$OMB_HOME/lib/migrate_scan.sh" || _omb_unloaded migrate_scan
+        # shellcheck source=lib/migrate_resolve.sh
+        . "$OMB_HOME/lib/migrate_resolve.sh" || _omb_unloaded migrate_resolve
+        # shellcheck source=lib/migrate_profile.sh
+        . "$OMB_HOME/lib/migrate_profile.sh" || _omb_unloaded migrate_profile
+        CORE_LOADED_migrate=1
+      }
+      if [ "$1" = export ] && [ "${CORE_LOADED_export:-}" != 1 ]; then
+        # shellcheck source=lib/migrate_bundle.sh
+        . "$OMB_HOME/lib/migrate_bundle.sh" || _omb_unloaded migrate_bundle
+        CORE_LOADED_export=1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# core_arg_into NAME VAR — VAR: the value of the request's argument NAME,
+# byte for byte; 1 (VAR empty) when the request has none.
+core_arg_into() {
+  local __i=0
+  while [ "$__i" -lt "$CORE_REQ_ARGS" ]; do
+    if [ "${CORE_REQ_ARG_NAME[__i]}" = "$1" ]; then
+      eval "$2=\${CORE_REQ_ARG_VALUE[__i]}"
+      return 0
+    fi
+    __i=$((__i + 1))
+  done
+  eval "$2=''"
+  return 1
+}
+
+# core_rows_snapshot IDS — for each of IDS the fresh read offers now: its gate
+# facts into $OMB_TMP/rows.facts, its action record into rows.actions and
+# its param records into rows.params, files a snapshot's builder places in
+# the response's order; and for each scope of IDS whose operation record is
+# a barrier, a fact and a blocker into rows.facts and rows.blockers. 1 when
+# a file cannot be written.
+core_rows_snapshot() {
+  local a scopes=" " sc
+  omb_tmp_init || return 1
+  : >"$OMB_TMP/rows.facts" && : >"$OMB_TMP/rows.blockers" && : >"$OMB_TMP/rows.actions" && : >"$OMB_TMP/rows.params" || return 1
+  for a in $1; do
+    core_action_info "$a" || continue
+    core_in_scopes "$CA_SCOPE" || continue
+    case "$scopes" in *" $CA_SCOPE "*) ;; *) scopes="$scopes$CA_SCOPE " ;; esac
+  done
+  for sc in $scopes; do
+    core_barrier "$sc"
+    case "$CORE_BAR" in none | stale) continue ;; esac
+    rec_line fact scope "$sc" key "operation.$sc" label "Operation ($sc)" value "${CORE_BAR_ACTION:-a record that cannot be read}: $CORE_BAR" state fail >>"$OMB_TMP/rows.facts" || return 1
+    rec_line blocker id "operation.$sc" text "An operation record bars the $sc scope ($CORE_BAR): nothing in it runs."       fix "./omarchy-bootstrap operation $sc shows what is known and the way forward." >>"$OMB_TMP/rows.blockers" || return 1
+  done
+  for a in $1; do
+    core_available "$a" || continue
+    "${CA_FN}_facts" >>"$OMB_TMP/rows.facts" || return 1
+    "${CA_FN}_params" >>"$OMB_TMP/rows.params" || return 1
+    CORE_BASIS=""
+    [ -n "$CA_PARAMS" ] || core_basis "$a" || return 1
+    rec_line action id "$a" scope "$CA_SCOPE" label "$CA_LABEL" intent "$CA_INTENT" gate "$CA_GATE" \
+      terminal "$CA_TERMINAL" cancel "$CA_CANCEL" basis "$CORE_BASIS" explain "$CA_EXPLAIN" >>"$OMB_TMP/rows.actions" || return 1
+  done
+}
+
 # Explicit test authority selects the foundation; fixture data alone cannot.
 core_foundation_fixture() {
   [ "${OMB_TEST_FOUNDATION:-}" = 1 ] && [ -n "${OMB_FIXTURE:-}" ] &&
@@ -876,6 +993,14 @@ core_test_effect() {
 # omb-basis document, built from a fresh read (docs/PROTOCOL.md → *The basis*).
 core_basis() {
   local doc
+  # A row with parameters binds what its review showed (plan.save: the
+  # validation's basis over the inputs and the computed plan).
+  if [ -n "$CA_FN" ] && [ -n "$CA_PARAMS" ]; then
+    CORE_BASIS=""
+    "${CA_FN}_basis" || return 1
+    _whole "$CORE_BASIS" '^[0-9a-f]{64}$'
+    return
+  fi
   # A function, not a case inside $( ): /bin/bash 3.2 cannot parse that.
   doc=$(_core_basis_doc "$1")
   CORE_BASIS=$(sha256_str "omb-basis 1
@@ -898,6 +1023,10 @@ _core_basis_doc() {
       fi
       rec_line seen key effect state "$state" value "" sha256 "$sha" mode "" link ""
       ;;
+    *)
+      # A row's basis is its id (above) and the gate facts it shows.
+      [ -z "$CA_FN" ] || "${CA_FN}_facts"
+      ;;
   esac
 }
 
@@ -909,11 +1038,12 @@ core_available() {
   core_action_info "$1" || return 1
   core_in_scopes "$CA_SCOPE" || return 1
   core_intent_allows "$CA_INTENT" || return 1
-  [ "$CA_INTENT" = act ] || return 0
-  [ "${2:-}" = held ] && return 0
-  core_barrier "$CA_SCOPE"
-  case "$CORE_BAR" in none | stale) return 0 ;; esac
-  return 1
+  if [ "$CA_INTENT" != read ] && [ "${2:-}" != held ]; then
+    core_barrier "$CA_SCOPE"
+    case "$CORE_BAR" in none | stale) ;; *) return 1 ;; esac
+  fi
+  # A row: only what the text flow would offer now, on a fresh read.
+  [ -z "$CA_FN" ] || "${CA_FN}_offer"
 }
 
 # ---------------------------------------------------------------------------
@@ -1104,7 +1234,12 @@ core_main() {
     return 0
   fi
   if ! core_foundation_fixture; then
-    core_read_op "$op"
+    # An ordinary session: its reads, and the rows of the action table.
+    if [ "$op" = execute ]; then
+      core_op_execute
+    else
+      core_read_op "$op"
+    fi
     return 0
   fi
   case "$op" in
@@ -1126,43 +1261,60 @@ core_main() {
   return 0
 }
 
-# Ordinary Gate 2 reads retain core_main's read intent and zero persistence,
-# at every admitted session ceiling. No path here reaches action lookup.
+# Ordinary reads retain core_main's read intent and zero persistence, at
+# every admitted session ceiling. No path here reaches action lookup.
 core_read_op() {
   case "$1" in
     hello) core_result "done" ok ;;
     snapshot | detail)
       if ! core_in_scopes "$CORE_REQ_SCOPE"; then
         core_result refused scope "This session does not include the requested scope."
-      elif [ "$CORE_REQ_SCOPE" = journey ] && [ -n "${OMB_FIXTURE:-}" ]; then
+      elif [ "$CORE_REQ_SCOPE" = journey ]; then
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         case "$1" in
           snapshot) core_journey_snapshot ;;
           detail) core_journey_detail ;;
         esac
-      elif [ "$CORE_REQ_SCOPE" = logs ] && [ -n "${OMB_FIXTURE:-}" ]; then
+      elif [ "$CORE_REQ_SCOPE" = logs ]; then
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         # shellcheck source=lib/logs.sh
         . "$OMB_HOME/lib/logs.sh" || _omb_unloaded logs
         core_logs_op "$1"
-      elif [ "$CORE_REQ_SCOPE" = health ] && [ -n "${OMB_FIXTURE:-}" ]; then
+      elif [ "$CORE_REQ_SCOPE" = health ]; then
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         # shellcheck source=lib/health.sh
         . "$OMB_HOME/lib/health.sh" || _omb_unloaded health
         core_health_op "$1"
+      elif [ "$CORE_REQ_SCOPE" = profile ] || [ "$CORE_REQ_SCOPE" = export ]; then
+        # The migration's scopes, answered by their own modules
+        # (docs/MIGRATION.md → *On the wire*).
+        core_mod_for "$CORE_REQ_SCOPE"
+        core_mod_load "$CORE_MOD"
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        case "$CORE_REQ_SCOPE" in
+          profile) prof_core_op "$1" ;;
+          export) bndl_core_op "$1" ;;
+        esac
       else
         core_result refused unavailable "This read dataset is not available."
       fi
       ;;
     validate)
-      # Family, platform, fixture, then scope (docs/PROTOCOL.md → *Future plan
+      # Family, platform, then scope (docs/PROTOCOL.md → *Future plan
       # validation contract*). Naming plan.save confers no action authority:
       # no action lookup, lock or operation record is reached from here.
-      if [ "$CORE_REQ_SELECT" != plan.save ] || [ "$OMB_PLATFORM" != macos ] || [ -z "${OMB_FIXTURE:-}" ]; then
-        core_result refused unavailable "Plan validation answers only plan.save, in macOS fixtures."
+      if [ "$CORE_REQ_SELECT" = profile.save ] && core_in_scopes profile; then
+        core_mod_for profile
+        core_mod_load profile
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        prof_core_op validate
+      elif [ "$CORE_REQ_SELECT" != plan.save ] || [ "$OMB_PLATFORM" != macos ]; then
+        core_result refused unavailable "Validation answers plan.save on macOS and profile.save."
       elif ! core_in_scopes plan; then
         core_result refused scope "This session does not include the plan scope."
       else
@@ -1302,17 +1454,23 @@ _core_snapshot_body() {
 # core_op_execute — docs/PROTOCOL.md → §5, *Executing*, in its order,
 # stopping at the first refusal.
 core_op_execute() {
-  local action=$CORE_REQ_ACTION basis=$CORE_REQ_BASIS confirm=$CORE_REQ_CONFIRM
-  # 1. Every argument must be one the action declares; the test actions
-  # declare none.
-  if [ "$CORE_REQ_ARGS" -gt 0 ]; then
-    core_result refused invalid "$action takes no parameters."
-    return
-  fi
+  local action=$CORE_REQ_ACTION basis=$CORE_REQ_BASIS confirm=$CORE_REQ_CONFIRM i=0
   if ! core_action_info "$action"; then
     core_result refused unavailable "$action is not an action of this core."
     return
   fi
+  # 1. Every argument must be one the action declares; the test actions
+  # declare none.
+  while [ "$i" -lt "$CORE_REQ_ARGS" ]; do
+    case " $CA_PARAMS " in
+      *" ${CORE_REQ_ARG_NAME[i]} "*) ;;
+      *)
+        core_result refused invalid "$action takes no parameter ${CORE_REQ_ARG_NAME[i]}."
+        return
+        ;;
+    esac
+    i=$((i + 1))
+  done
   # 2. The session allows it.
   if ! core_intent_allows "$CA_INTENT"; then
     core_result refused ceiling "$action changes the machine; this session may only $OMB_SESSION_INTENT."
@@ -1322,8 +1480,8 @@ core_op_execute() {
     core_result refused scope "$action is outside this session's scopes."
     return
   fi
-  if [ "$CA_INTENT" = act ]; then
-    OMB_INTENT=act
+  if [ "$CA_INTENT" != read ]; then
+    OMB_INTENT=$CA_INTENT
     [ "$OMB_DRY_RUN" = 1 ] || OMB_PERSIST=1
     core_execute_act "$action" "$basis" "$confirm"
   else
@@ -1443,6 +1601,11 @@ core_execute_act() {
         return
       fi
       core_message info "An earlier boot's $CO_ACTION was reconciled: $CORE_FINDING."
+      # The reconciled row's own information replaced this action's.
+      core_action_info "$action" || {
+        core_result refused unavailable "$action is not an action of this core."
+        return
+      }
       ;;
   esac
   if [ "$OMB_PERSIST" = 1 ] && [ -z "$CORE_BOOT" ]; then
@@ -1472,6 +1635,10 @@ core_execute_act() {
   fi
   if ! core_check_word "$confirm"; then
     core_op_remove "$scope"
+    return
+  fi
+  if [ -n "$CA_FN" ]; then
+    core_execute_row "$action" "$basis" "$scope" "$confirm"
     return
   fi
   effect=$(core_test_effect "$action")
@@ -1554,6 +1721,76 @@ core_execute_act() {
     core_result failed postcondition "The machine does not show $action's effect (the child exited with status $CORE_CHILD_RC); every act in its scope is refused until it is reconciled after a restart." \
       "Run by hand to see its output: $CORE_CHILD_CMD"
   fi
+}
+
+# core_execute_row ACTION BASIS SCOPE WORD — steps 7 and 8 for a row of the
+# action table: its functions run with the text flow's environment, the
+# interface word answering the step's first typed-word prompt once, and
+# the outcome judged by the scope's classifier on a fresh read.
+core_execute_row() {
+  local action=$1 basis=$2 scope=$3 rc q finding
+  if [ "$OMB_DRY_RUN" != 1 ] && ! core_group_snapshot; then
+    core_op_remove "$scope"
+    core_result refused unavailable "The process table could not be read, so the step could not be supervised; nothing ran."
+    return
+  fi
+  if [ "$CA_TERMINAL" = handoff ]; then
+    ui_section "$CA_LABEL" "the terminal is this step's until it ends"
+  fi
+  # 7. The text flow's environment: umask 022, never the core's own 077, and
+  # its phase. The word is never exported, so no child sees it.
+  OMB_IFACE_WORD=$4
+  OMB_PHASE=$CA_PHASE
+  umask 022
+  "${CA_FN}_run"
+  rc=$?
+  umask 077
+  OMB_IFACE_WORD=""
+  if [ "$OMB_DRY_RUN" = 1 ]; then
+    core_result "done" dry-run "Dry run: nothing was changed."
+    return
+  fi
+  [ "$CORE_INTERRUPTED" = 1 ] && core_message warn "Stopped while running $action: it may have made changes; the machine is read below."
+  core_quiescent "$CA_LIMIT"
+  q=$?
+  if [ "$q" != 0 ]; then
+    core_op_write "$scope" "$action" "$basis" unsupervised
+    if [ "$q" = 1 ]; then
+      core_result stopped unsupervised "The outcome of $action is unknown: a process it started is still running. Every act in its scope is refused until this Mac (or this Linux system) restarts." \
+        "Restart, then run the tool again."
+    else
+      core_result stopped unsupervised "The outcome of $action is unknown: the process table could not be read." "Restart, then run the tool again."
+    fi
+    return
+  fi
+  # 8. The scope's classifier, on a fresh read: the expected effect or a
+  # proven "nothing changed" removes the record; anything else keeps it as
+  # failed, a barrier until a new boot reconciles it.
+  CORE_FINDING=unexpected CORE_JUDGE_TEXT=""
+  "${CA_FN}_judge" "$rc"
+  local why=$CORE_JUDGE_TEXT
+  [ -n "$why" ] || why="The machine does not show the effect of $action."
+  case "$CORE_FINDING" in
+    completed)
+      core_op_remove "$scope"
+      core_result "done" ok "$CORE_JUDGE_TEXT"
+      ;;
+    no-effect)
+      core_op_remove "$scope"
+      core_result failed no-effect "$why"
+      ;;
+    *)
+      finding=unexpected
+      [ "$CORE_FINDING" = absent ] && finding=absent
+      if ! core_op_write "$scope" "$action" "$basis" failed "$finding"; then
+        core_result failed postcondition "$why Its operation record could not be updated: every act in its scope is refused as unsupervised until this Mac (or this Linux system) restarts." \
+          "Restart, then run the tool again."
+        return
+      fi
+      core_result failed postcondition "$why Every act in its scope is refused until it is reconciled after a restart." \
+        "./omarchy-bootstrap operation $scope shows what is recorded."
+      ;;
+  esac
 }
 
 # core_failed_text — CORE_FAILED_TEXT: what a failed record says, from
