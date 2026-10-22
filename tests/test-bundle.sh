@@ -276,6 +276,11 @@ done
 P=$(ls -d "$T"/stop-bundle-manifest/omarchy-mac-bootstrap/bundles/*.partial-*)
 rec_admit_file bundle - "$P/bundle.omb"
 assert_rc $? 0 "a stop after the manifest leaves it sealed, still unrenamed"
+D3=$T/fail-bundle-rename
+mkdir -p "$D3"
+T_ENV2="OMB_TEST_FAIL_AT=bundle-rename" t_cli_copy export_cli "$F" "$S" 'y\n' "$D3"
+assert_rc "$T_RC" 1 "a rename that fails stops export"
+case "$(bundles "$D3")" in *T*Z.partial-??????" ") ok ;; *) fail "a failed rename leaves the whole bundle as .partial-*: [$(bundles "$D3")]" ;; esac
 
 # --- The limits: free space, 2 GiB, 64 MiB -------------------------------------------------------------
 D4=$T/full
@@ -442,28 +447,31 @@ assert_contains "$C_OUT" "key=export.profile	label=Profile	value=saved	state=ok"
 assert_contains "$C_OUT" "key=export.dest	label=Destination	value=none:%20name%20a%20folder" "no verified Shared on this disk"
 assert_contains "$C_OUT" "action	id=export.write	scope=export" "the row export.write"
 assert_contains "$C_OUT" "param	action=export.write	name=dir	type=bytes" "with its folder parameter"
-# basis DIR — the basis the core rebuilds for export.write to DIR.
-basis() {
-  (
-    OMB_HOME=$H OMB_FIXTURE=$F OMB_STATE_DIR=$T/core-state OMB_PERSIST=0
-    for l in common ui state records core migrate_scan migrate_profile migrate_bundle; do
-      # shellcheck source=/dev/null
-      . "$H/lib/$l.sh"
-    done
-    platform_init
-    state_init
-    CORE_REQ_ARGS=1 CORE_REQ_ARG_NAME=(dir) CORE_REQ_ARG_VALUE=("$1")
-    bndl_w_basis >/dev/null 2>&1
-    printf '%s' "$CORE_BASIS"
-    omb_cleanup
-  )
-}
+# Validation answers export.write's review basis. Until lib/core.sh routes
+# `validate select action=export.write` to the export scope, the copy of
+# the tool here carries that route.
+if ! grep -q 'CORE_REQ_SELECT" = export.write' "$H/lib/core.sh"; then
+  awk '/elif \[ "\$CORE_REQ_SELECT" != plan.save \]/ {
+      print "      elif [ \"$CORE_REQ_SELECT\" = export.write ] && core_in_scopes export; then"
+      print "        core_mod_for export"
+      print "        core_mod_load export"
+      print "        . \"$OMB_HOME/lib/read.sh\" || _omb_unloaded read"
+      print "        bndl_core_op validate"
+    } { print }' "$REPO/lib/core.sh" >"$H/lib/core.sh"
+fi
 D7=$T/core-usb
 mkdir -p "$D7"
+c_run validate "select	action=export.write" "arg	name=dir	value=$T/not-there"
+assert_eq "$(c_result)" "refused invalid" "bundle-row-validate: a folder that does not exist is refused ($C_ERR)"
+assert_contains "$C_OUT" "invalid	name=dir	code=no-destination" "the parameter is named"
+c_run validate "select	action=export.write" "arg	name=dir	value=$D7"
+assert_eq "$(c_result)" "done ok" "validation answers the folder"
+assert_eq "$(c_admits validate)" ok "its answer admits"
+b=$(printf '%s\n' "$C_OUT" | sed -n 's/^review	action=export.write	basis=//p')
+assert_eq "${#b}" 64 "with the review basis execute must send"
 c_run execute "exec	action=export.write	basis=$(printf '%064d' 0)	confirm=" "arg	name=dir	value=$D7"
 assert_eq "$(c_result)" "refused changed" "a basis that is not the fresh read's is refused"
 assert_eq "$(ls -A "$D7")" "" "and writes nothing"
-b=$(basis "$D7")
 c_run execute "exec	action=export.write	basis=$b	confirm=" "arg	name=dir	value=$D7"
 assert_eq "$(c_result)" "done ok" "bundle-row-execute: export.write writes the bundle ($C_ERR)"
 assert_eq "$(c_admits execute)" ok "its answer admits"

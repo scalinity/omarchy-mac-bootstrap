@@ -392,7 +392,7 @@ _bndl_field() {
 }
 
 # _bndl_extract N ITEM CLASS — capture item ITEM (written id) with
-# scan_extract into $BNDL_W/x/N and stage its records in $BNDL_W/i.*. 0 the
+# scan_extract into $BNDL_X/N and stage its records in $BNDL_W/i.*. 0 the
 # item travels; 1 it is left behind, with BNDL_WHY; 2 it is gone.
 _bndl_extract() {
   local n=$1 item=$2 class=$3 out=$BNDL_X/$1 line t src kind whole=0 id
