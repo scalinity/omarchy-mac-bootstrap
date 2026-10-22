@@ -106,7 +106,7 @@ for s in "$REPO"/tests/test-*.sh; do
 done
 dunits=$(sed -n 's/^UNITS="\(.*\)"$/\1/p' "$REPO/tests/test-diag.sh")
 for u in $dunits; do
-  for lane in macos-bash32 linux-bash5 target-bash53 frontend-linux-arm64; do
+  for lane in macos-bash32 linux-bash5 target-bash53; do
     [ "$(awk -F'\t' -v l="$lane" -v u="diag:$u" '$1 == "unit" && $2 == l && $4 == u' "$M" | wc -l | tr -d ' ')" = 1 ] && ok ||
       fail "ci-manifest-diag: $lane runs the diagnostics unit $u exactly once"
   done
@@ -287,9 +287,9 @@ guard "$v"
 assert_rc "$rc" 1 "ci-guard-shell: the target lane under the runner's Bash 5.2"
 assert_contains "$out" "wrong shell: target-bash53 · t2 · diag:bounds ran under bash 5.2.21(1)-release" "ci-guard-shell: is named"
 v=$(variant platform)
-edit "$v/frontend-linux-arm64-a2.tsv" '$1 == "arch" { $2 = "x86_64" } 1'
+edit "$v/frontend-linux-arm64-a1.tsv" '$1 == "arch" { $2 = "x86_64" } 1'
 guard "$v"
-assert_contains "$out" "wrong platform: frontend-linux-arm64 · a2 ran on Linux x86_64" "ci-guard-platform: another architecture"
+assert_contains "$out" "wrong platform: frontend-linux-arm64 · a1 ran on Linux x86_64" "ci-guard-platform: another architecture"
 v=$(variant fast)
 edit "$v/linux-bash5-l1.tsv" '$1 == "mode" { $2 = "fast" } 1'
 guard "$v"
