@@ -1314,8 +1314,14 @@ core_read_op() {
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         prof_core_op validate
+      elif [ "$CORE_REQ_SELECT" = export.write ] && core_in_scopes export; then
+        core_mod_for export
+        core_mod_load export
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        bndl_core_op validate
       elif [ "$CORE_REQ_SELECT" != plan.save ] || [ "$OMB_PLATFORM" != macos ]; then
-        core_result refused unavailable "Validation answers plan.save on macOS and profile.save."
+        core_result refused unavailable "Validation answers plan.save on macOS, profile.save and export.write."
       elif ! core_in_scopes plan; then
         core_result refused scope "This session does not include the plan scope."
       else

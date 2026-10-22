@@ -72,6 +72,8 @@ unit	macos-bash32	m4	suite:gate2-validate-proof
 unit	macos-bash32	m4	suite:gate2-validate
 unit	macos-bash32	m4	suite:records
 unit	macos-bash32	m4	suite:shared
+unit	macos-bash32	m3	suite:resolve
+unit	macos-bash32	m1	suite:bundle
 
 # Linux · bash 5 · ShellCheck 0.9.0, only the plutil-bound checks skip
 unit	linux-bash5	l0	check:fixtures
@@ -86,6 +88,8 @@ unit	linux-bash5	l1	suite:fake-children
 unit	linux-bash5	l1	suite:frontend-inputs
 unit	linux-bash5	l1	suite:gate2-journey
 unit	linux-bash5	l1	suite:shared
+unit	linux-bash5	l3	suite:resolve
+unit	linux-bash5	l3	suite:bundle
 unit	linux-bash5	l2	suite:cp1
 unit	linux-bash5	l2	suite:dev
 unit	linux-bash5	l2	diag:temp
