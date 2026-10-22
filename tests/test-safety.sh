@@ -53,7 +53,10 @@ assert_eq "$hits" "" "no absolute-path call to a shimmed command (PATH shims wou
 ADDPART='run sudo -n diskutil addPartition "$SHARED_PRED_ID" "$SHARED_FS_MAC" "$SHARED_LABEL" "$SH_SIZE"'
 hits=$(grep -n 'diskutil' $CODE | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' |
   grep -E 'diskutil[[:space:]]+(erase|partition|resize|split|merge|add|zero|random|secure|reformat|unmount|mount|apfs[[:space:]]+(delete|add|create|erase|convert|unlock|encrypt|decrypt|change|resizeContainer))' |
-  grep -v 'resizeContainer "\$1" limits -plist' | grep -vF "$ADDPART" | grep -v 'ui_cmd "sudo -n diskutil addPartition')
+  grep -v 'resizeContainer "\$1" limits -plist' | grep -vF "$ADDPART" | grep -v 'ui_cmd "sudo -n diskutil addPartition' |
+  grep -v 'act_fact shared.create command "Command" "sudo -n diskutil addPartition')
+# The text shown before the creation (the text flow's ui_cmd, and the same
+# command as shared.create's gate fact) only displays it; the one run is ADDPART.
 assert_eq "$hits" "" "only read-only diskutil verbs, plus the one Shared creation"
 assert_eq "$(grep 'resizeContainer' $CODE | grep -v '^[^:]*:[[:space:]]*#' | grep -c 'limits -plist')" \
   "$(grep 'resizeContainer' $CODE | grep -vc '^[^:]*:[[:space:]]*#')" "every resizeContainer use is the limits query"

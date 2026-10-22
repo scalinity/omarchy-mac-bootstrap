@@ -39,7 +39,9 @@ c_run future
 assert_eq "$C_RC" 2 'future operation refused by entrypoint'
 assert_eq "$(t_snapshot "$T/state")" "$before" 'no state, log, plan or operation record written'
 assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' 'no worker or core identity residue'
-assert_eq "$(sed -n '/^core_read_op()/,/^}/p' "$REPO/lib/core.sh" | grep -Ec 'core_op_execute|core_action_info|sudo|fetch_upstream|run ')" 0 'read dispatcher reaches no action, installer, sudo or fetch'
+# A validation may look a row up to find its review; nothing here executes,
+# locks, writes an operation record, runs or fetches.
+assert_eq "$(sed -n '/^core_read_op()/,/^}/p' "$REPO/lib/core.sh" | grep -Ec 'core_op_execute|core_execute_|state_lock|core_op_write|sudo|fetch_upstream|run ')" 0 'read dispatcher reaches no execute, lock, record, installer, sudo or fetch'
 
 # HEALTH-H01: core_read_rows succeeds only after every retained row was read
 # and staged for admission. The real helper loop meets a real builtin read

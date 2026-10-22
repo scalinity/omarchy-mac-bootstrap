@@ -328,6 +328,11 @@ commit "configuration at the root"
 check config
 assert_rc "$?" 1 "frontend-input-cargo-config: a .cargo/config.toml at the repository root is refused"
 git_ rm -q -r .cargo && commit "no root configuration"
+mkdir -p "$R/tests/fixtures/home/.cargo" && printf '[v1]\n' >"$R/tests/fixtures/home/.cargo/.crates.toml"
+commit "a fixture home's cargo install record"
+check config
+assert_rc "$?" 0 "frontend-input-cargo-config: a .cargo folder's install record configures nothing and passes"
+git_ rm -q -r tests/fixtures/home && commit "no fixture home"
 printf '    env:\n      RUSTFLAGS: "-C target-cpu=native"\n' >>"$R/.github/workflows/release.yml"
 commit "flags in the release workflow"
 check config

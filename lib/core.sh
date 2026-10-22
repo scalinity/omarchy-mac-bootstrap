@@ -1279,7 +1279,9 @@ core_main() {
 }
 
 # Ordinary reads retain core_main's read intent and zero persistence, at
-# every admitted session ceiling. No path here reaches action lookup.
+# every admitted session ceiling. A validation may look up a row of a
+# module's table to find its review (CA_FN_validate); no path here
+# executes, locks, writes an operation record or runs anything.
 core_read_op() {
   case "$1" in
     hello) core_result "done" ok ;;
@@ -1336,7 +1338,8 @@ core_read_op() {
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         bndl_core_op validate
-      elif [ "$CORE_REQ_SELECT" != plan.save ] && core_action_info "$CORE_REQ_SELECT" && [ -n "$CA_PARAMS" ] &&
+      elif [ "$CORE_REQ_SELECT" != plan.save ] && core_mod_for "$CORE_REQ_SELECT" &&
+        core_action_info "$CORE_REQ_SELECT" && [ -n "$CA_PARAMS" ] &&
         declare -F "${CA_FN}_validate" >/dev/null; then
         # Any other row with parameters answers its own review (the basis
         # its execute will be held to). Naming it confers no authority.

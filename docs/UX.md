@@ -1,6 +1,7 @@
 # The interface
 
-**Status: designed for M14–M16; built in part.** How the frontend
+**Status: built for M14 (screens 1–4, 5–9 and 11 as tabs, the Migration
+Review, 12–15, 18, 19, 24); screens 20–23 and 25 come with M15 and M16.** How the frontend
 (docs/FRONTEND.md) looks and behaves. Everything on screen comes from the
 core's records (docs/PROTOCOL.md); this document decides how it is shown.
 The owner's reference designs (*Reference designs*; docs/DECISIONS.md → D51)
@@ -257,6 +258,14 @@ Friction follows consequence, and the core checks every word
 | yes / no, default no | saving a plan, saving a profile, exporting a bundle, running a tool's own `mcp list` (it may start the tool's MCP servers) | a one-line question; Enter alone answers no |
 | yes / no, default yes | the first download of the frontend itself, in the text launcher (a pinned file, checked by digest) | `[Y/n]` |
 | **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` (also each qualification step) — and `restore`, `undo`, `opaque` (chosen folders, once per save), `carry` (an encrypted SSH key) | the gate screen |
+
+Which form an action takes follows from what the core lists for it
+(`choose` in `frontend/src/app.rs`): `profile.save` opens the selection's
+save; an action with parameters opens its form (the planner for
+`plan.save`, a generic form otherwise), whose review the core answers for
+exactly what is typed before `y` sends the core's `normal` values with the
+review's basis; `asahi.launch` opens screen 14 and `shared.create` screen
+19; any other action with a word opens the gate; the rest is sent at once.
 
 **The gate screen** says what will happen, on what, what it does not touch,
 what cannot be undone, and what will ask next (a password, a passphrase, an
