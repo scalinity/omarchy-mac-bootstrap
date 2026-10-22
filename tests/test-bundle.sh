@@ -490,5 +490,26 @@ c_run snapshot "scope	name=export"
 assert_contains "$C_OUT" "key=export.last" "the snapshot names the last bundle"
 assert_contains "$C_OUT" "core-usb/omarchy-mac-bootstrap/bundles/" "where it went"
 
+# --- bundle-e2e: the real scanner, profile and export, end to end ----------------------
+# Over the fixture home with planted credentials: profile saves the
+# defaults, export writes a bundle the check accepts, and no planted value
+# reaches the bundle, the state or either command's output.
+if t_plutil 'bundle-e2e'; then
+  E2E=$(t_variant mig-mac-secrets)
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s5 971350180 400000000 500000000 45%% /\n' >"$E2E/cmd/bndl_df"
+  E2E_STATE=$(t_tmp)/state
+  E2E_OUT=$(t_tmp)
+  T_ENV="OMB_STATE_DIR=$E2E_STATE" t_cli "$E2E" '' profile
+  assert_eq "$T_RC" 0 "bundle-e2e: profile saves the defaults"
+  e2e_profile=$T_OUT
+  T_ENV="OMB_STATE_DIR=$E2E_STATE" t_cli "$E2E" 'y\n' export "$E2E_OUT"
+  assert_eq "$T_RC" 0 "bundle-e2e: export writes the bundle"
+  e2e_bundle=$(find "$E2E_OUT/omarchy-mac-bootstrap/bundles" -name bundle.omb | head -1)
+  if [ -n "$e2e_bundle" ] && bndl_check "${e2e_bundle%/bundle.omb}"; then ok; else fail "bundle-e2e: the bundle passes the bundle check (${BNDL_WHY:-no bundle})"; fi
+  assert_eq "$(grep -rlE 'PLANTED|FIXTUREplanted' "$E2E_OUT" "$E2E_STATE" 2>/dev/null | wc -l | tr -d ' ')" 0 \
+    "secret-export-e2e: no planted value in any byte written"
+  assert_not_contains "$e2e_profile$T_OUT" "FIXTUREplanted" "secret-export-e2e: nor in what the commands print"
+fi
+
 omb_cleanup
 t_done test-bundle
