@@ -324,6 +324,19 @@ _res_one() {
     res_layer none
     return 0
   fi
+  case "${RES_I_KIND[i]}" in
+    tap)
+      # Homebrew stays on macOS (D25: Linuxbrew never by default).
+      RES_STATE=mac-only RES_NOTE="a Homebrew tap: Homebrew stays on macOS"
+      res_layer none
+      return 0
+      ;;
+    extension)
+      RES_STATE=unsupported RES_NOTE="an editor extension: install it from the editor on Linux"
+      res_layer none
+      return 0
+      ;;
+  esac
   case "|$RES_SOURCES|" in
     *"|${RES_I_KIND[i]}|"*) ;;
     *)

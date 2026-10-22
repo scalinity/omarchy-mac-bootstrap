@@ -169,5 +169,15 @@ for change in 's/target=rclone/target=rg%3Breboot/' 's/name=rclone/name=gh/' 's/
 done
 assert_eq "$(cat "$T/out")" kept "a refused map never touches the output"
 
+# --- Kinds no map source names: a tap stays on macOS, an extension is the editor's ----------
+res_map_load
+{
+  item tap:homebrew/cask-fonts tap homebrew/cask-fonts ""
+  item vscode:ext:ms-python.python extension ms-python.python 2025.1 config editors
+} >"$T/items"
+res_resolve "$T/items" "" "$T/out"
+assert_eq "$(fields tap:homebrew/cask-fonts)" "$(want none none '' '' 0 mac-only)" "resolve-kinds: a Homebrew tap is macOS-only, never carried"
+assert_eq "$(fields vscode:ext:ms-python.python)" "$(want none none '' '' 0 unsupported)" "resolve-kinds: an editor extension is not installed or carried"
+
 omb_cleanup
 t_done test-resolve
