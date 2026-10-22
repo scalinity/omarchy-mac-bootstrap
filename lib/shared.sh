@@ -837,21 +837,34 @@ shared_take_receipt() {
         return 1
       }
     fi
-    if ! code_parse ombdone "$code"; then
-      ui_fail "That is not a completion code, or a character was mistyped."
-    elif [ "$CODE_PLAN" != "$SHARED_DIGEST" ]; then
-      ui_fail "That code belongs to a different plan ($CODE_PLAN, this one is $SHARED_DIGEST)."
-    elif [ "$CODE_ID12" != "$(guid12 "$ASAHI_ROOT_UUID")" ]; then
-      ui_fail "That code was made on a different Linux partition than the one on this disk."
-    else
+    if shared_receipt_check "$code"; then
       state_must_set shared_linux_done "$code" || return 1
       SHARED_TYPED_RECEIPT=$code
       SHARED_STATE=awaiting-macos-creation
       ui_ok "Linux's completion code matches this disk."
       return 0
     fi
+    ui_fail "$SHARED_CODE_WHY"
     code=""
   done
+}
+
+# shared_receipt_check CODE — is CODE Linux's completion code for this plan
+# and this disk's Linux root (after shared_mac_state)? 0 yes; 1 with
+# SHARED_CODE_ERR (mistyped, other-plan, other-root) and SHARED_CODE_WHY,
+# the words shown for it.
+shared_receipt_check() {
+  SHARED_CODE_ERR="" SHARED_CODE_WHY=""
+  if ! code_parse ombdone "$1"; then
+    SHARED_CODE_ERR=mistyped SHARED_CODE_WHY="That is not a completion code, or a character was mistyped."
+  elif [ "$CODE_PLAN" != "$SHARED_DIGEST" ]; then
+    SHARED_CODE_ERR=other-plan SHARED_CODE_WHY="That code belongs to a different plan ($CODE_PLAN, this one is $SHARED_DIGEST)."
+  elif [ "$CODE_ID12" != "$(guid12 "$ASAHI_ROOT_UUID")" ]; then
+    SHARED_CODE_ERR=other-root SHARED_CODE_WHY="That code was made on a different Linux partition than the one on this disk."
+  else
+    return 0
+  fi
+  return 1
 }
 
 # shared_mac_after EXIT — what the disk looks like after addPartition, judged
@@ -1193,17 +1206,7 @@ shared_activate() {
 # guided flow once Omarchy is installed.
 shared_activate_flow() {
   local code=${1:-} tmp cur f rc
-  if [ "$OMB_UID" = 0 ] && [ "$OMB_DRY_RUN" != 1 ]; then
-    ui_fail "Run this as your everyday user: Shared is mounted for that user, and it uses sudo where needed."
-    return 1
-  fi
-  SH_UID=$(sys_cmd id_u id -u) SH_GID=$(sys_cmd id_g id -g)
-  if ! _uint "$SH_UID" || ! _uint "$SH_GID" || { [ "$SH_UID" = 0 ] && [ "$OMB_DRY_RUN" != 1 ]; }; then
-    ui_fail "Could not read your user and group ids."
-    return 1
-  fi
-  shared_lx_state
-  shared_status_rows
+  shared_lx_begin || return 1
   case "$SHARED_STATE" in
     off | awaiting-linux-completion)
       printf '\n'
@@ -1224,12 +1227,7 @@ shared_activate_flow() {
       ;;
   esac
   if [ "$SH_NEED_CODE" = 1 ]; then
-    shared_take_share_code "$code" || return 1
-    shared_lx_state
-    [ "$SHARED_STATE" = awaiting-linux-activation ] || {
-      ui_blockers "Shared storage cannot be set up." "$SHARED_WHY"
-      return 1
-    }
+    shared_lx_take_code "$code" || return 1
   fi
   ui_section "Mount Shared on every boot" "one managed line in /etc/fstab"
   ui_kv "Partition" "/dev/$SH_NAME" "$(fmt_gb "$SH_SIZE") exFAT${SH_LABEL:+, named $SH_LABEL}"
@@ -1298,6 +1296,34 @@ shared_activate_flow() {
   printf '\n'
 }
 
+# shared_lx_begin — the start of every Shared step on Linux: the everyday
+# user and their ids, then where Shared stands, shown. 1 when this run
+# cannot set Shared up for anyone.
+shared_lx_begin() {
+  if [ "$OMB_UID" = 0 ] && [ "$OMB_DRY_RUN" != 1 ]; then
+    ui_fail "Run this as your everyday user: Shared is mounted for that user, and it uses sudo where needed."
+    return 1
+  fi
+  SH_UID=$(sys_cmd id_u id -u) SH_GID=$(sys_cmd id_g id -g)
+  if ! _uint "$SH_UID" || ! _uint "$SH_GID" || { [ "$SH_UID" = 0 ] && [ "$OMB_DRY_RUN" != 1 ]; }; then
+    ui_fail "Could not read your user and group ids."
+    return 1
+  fi
+  shared_lx_state
+  shared_status_rows
+}
+
+# shared_lx_take_code [CODE] — the code macOS showed, recorded, and the
+# partition it names found ready to set up.
+shared_lx_take_code() {
+  shared_take_share_code "${1:-}" || return 1
+  shared_lx_state
+  [ "$SHARED_STATE" = awaiting-linux-activation ] || {
+    ui_blockers "Shared storage cannot be set up." "$SHARED_WHY"
+    return 1
+  }
+}
+
 # shared_take_share_code [CODE] — the code macOS showed after creating
 # Shared; it names the partition by its GUID.
 shared_take_share_code() {
@@ -1312,18 +1338,30 @@ shared_take_share_code() {
         return 1
       }
     fi
-    if ! code_parse ombshare "$code"; then
-      ui_fail "That is not a Shared code, or a character was mistyped."
-    elif [ -n "${CFG_plan:-}" ] && [ "$CODE_PLAN" != "$CFG_plan" ]; then
-      ui_fail "That code belongs to a different plan ($CODE_PLAN, this one is $CFG_plan)."
-    elif [ "$(shared_code_matches "$CODE_ID12")" != 1 ]; then
-      ui_fail "No Basic Data partition right after the Linux root has that GUID; check the code macOS showed."
-    else
+    if shared_share_code_check "$code"; then
       state_must_set shared_id12 "$CODE_ID12" || return 1
       return 0
     fi
+    ui_fail "$SHARED_CODE_WHY"
     code=""
   done
+}
+
+# shared_share_code_check CODE — does CODE name this plan's Shared partition
+# on this disk (after shared_lx_state)? 0 yes (CODE_ID12 set); 1 with
+# SHARED_CODE_ERR (mistyped, other-plan, no-partition) and SHARED_CODE_WHY.
+shared_share_code_check() {
+  SHARED_CODE_ERR="" SHARED_CODE_WHY=""
+  if ! code_parse ombshare "$1"; then
+    SHARED_CODE_ERR=mistyped SHARED_CODE_WHY="That is not a Shared code, or a character was mistyped."
+  elif [ -n "${CFG_plan:-}" ] && [ "$CODE_PLAN" != "$CFG_plan" ]; then
+    SHARED_CODE_ERR=other-plan SHARED_CODE_WHY="That code belongs to a different plan ($CODE_PLAN, this one is $CFG_plan)."
+  elif [ "$(shared_code_matches "$CODE_ID12")" != 1 ]; then
+    SHARED_CODE_ERR=no-partition SHARED_CODE_WHY="No Basic Data partition right after the Linux root has that GUID; check the code macOS showed."
+  else
+    return 0
+  fi
+  return 1
 }
 
 # shared_code_matches ID12 — how many Basic Data partitions right after the

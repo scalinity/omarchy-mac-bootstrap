@@ -754,8 +754,12 @@ mac_save_plan() {
   fi
   CFG_plan=""
   [ "${CFG_shared:-0}" -gt 0 ] && CFG_plan=$(shared_plan_digest)
-  cfg_save
-  state_stamp planned_at
+  # Each write is checked, and the first that fails stops the save: a plan
+  # that was not all written is never reported, or stamped, as saved.
+  if ! cfg_save || ! state_stamp planned_at; then
+    ui_fail "Could not record the plan in $(tildify "$OMB_STATE_DIR"); stopping before anything changes."
+    return 1
+  fi
   return 0
 }
 
@@ -855,17 +859,23 @@ continuation_commands() {
 # lists the new OS by the name given at the installer's "OS name" prompt.
 mac_reboot_guide() {
   ui_section "After the installer" "it ends by shutting the Mac down"
-  _guide 1 "Wait 25 seconds after the Mac powers off."
-  _guide 2 "Press and HOLD the power button once, until \"Loading startup options…\" appears."
-  _guide 3 "Choose \"$ASAHI_ALARM_OS_CHOICE\" (the OS name you gave the installer)."
-  _guide 4 "A macOS Recovery dialog appears briefly. If asked to \"Select a volume to recover\", choose your normal macOS volume and authenticate."
-  _guide 5 "Follow the prompts on the \"Asahi Linux installer\" screen. The Mac then boots Arch."
-  _guide 6 "Log in as $ASAHI_ALARM_FIRST_LOGIN."
-  _guide 7 "Connect to Wi-Fi: run nmtui, choose Activate a connection, then Quit."
-  _guide 8 "Fetch this repository and continue:"
+  mac_boot_steps _guide
   continuation_commands
   printf '\n'
   ui_note "The installer makes the new OS the default startup disk. macOS stays installed: hold the power button at startup to choose it, or set it back as the default in System Settings > General > Startup Disk. Photograph this screen — no clipboard survives the reboot. './omarchy-bootstrap resume' on macOS shows it again."
+}
+
+# mac_boot_steps EMIT — the boot steps after the installer, in order: EMIT
+# STEP TEXT for each.
+mac_boot_steps() {
+  "$1" 1 "Wait 25 seconds after the Mac powers off."
+  "$1" 2 "Press and HOLD the power button once, until \"Loading startup options…\" appears."
+  "$1" 3 "Choose \"$ASAHI_ALARM_OS_CHOICE\" (the OS name you gave the installer)."
+  "$1" 4 "A macOS Recovery dialog appears briefly. If asked to \"Select a volume to recover\", choose your normal macOS volume and authenticate."
+  "$1" 5 "Follow the prompts on the \"Asahi Linux installer\" screen. The Mac then boots Arch."
+  "$1" 6 "Log in as $ASAHI_ALARM_FIRST_LOGIN."
+  "$1" 7 "Connect to Wi-Fi: run nmtui, choose Activate a connection, then Quit."
+  "$1" 8 "Fetch this repository and continue:"
 }
 
 _guide() {
@@ -902,6 +912,27 @@ asahi_bootstrap_expected() {
   head -1 "$1" | grep -q '^#!/bin/sh' &&
     grep -q "INSTALLER_DATA=\"$ASAHI_ALARM_DATA_URL\"" "$1" &&
     grep -q 'install.sh' "$1"
+}
+
+# mac_answer_rows EMIT — what the Asahi Alarm installer asks and the answer
+# to type, in its order, for the plan laid out (plan_layout): EMIT N PROMPT
+# ANSWER NOTE for each.
+mac_answer_rows() {
+  local n=0
+  "$1" $((n += 1)) "Press enter to continue" "Enter" "and your macOS password when asked"
+  if [ "$PLAN_MODE" = resize ]; then
+    "$1" $((n += 1)) "Choose what to do" "r" "Resize an existing partition"
+    "$1" $((n += 1)) "New size  (macOS keeps)" "$PLAN_ANSWER_RESIZE" "$(fmt_gb "$PLAN_MACOS_NEW"), on your clipboard"
+    "$1" $((n += 1)) "Continue?" "y" "the Mac may seem frozen; wait"
+  fi
+  "$1" $((n += 1)) "Choose what to do" "f" "Install an OS into free space"
+  mac_gap_count
+  if [ "$MAC_GAP_COUNT" -gt 1 ]; then
+    "$1" $((n += 1)) "Choose free space" "$(mac_gap_label_planned)" "the $(fmt_gb $((PLAN_GAP_END - PLAN_GAP_START))) one"
+  fi
+  "$1" $((n += 1)) "Choose an OS to install" "$ASAHI_ALARM_OS_CHOICE" "type its number"
+  "$1" $((n += 1)) "New OS size  (Linux gets)" "$PLAN_ANSWER_OS" "$(fmt_gb "$PLAN_LINUX_ACTUAL") incl. $(fmt_gb "$PLAN_BOOT") boot data"
+  "$1" $((n += 1)) "OS name" "Enter" "or e.g. Omarchy; shown in Startup Options"
 }
 
 mac_handoff() {
@@ -962,22 +993,8 @@ The sizes this tool would ask you to type were computed for asahi-installer $ASA
   # The answer card: exact values, each a whole number of MiB, which the
   # installer's own alignment leaves unchanged.
   if [ "$PLAN_MODE" = resize ]; then first_answer=$PLAN_ANSWER_RESIZE; else first_answer=$PLAN_ANSWER_OS; fi
-  local n=0
   ui_card_open "When the Asahi Alarm installer asks"
-  ui_card_row $((n += 1)) "Press enter to continue" "Enter" "and your macOS password when asked"
-  if [ "$PLAN_MODE" = resize ]; then
-    ui_card_row $((n += 1)) "Choose what to do" "r" "Resize an existing partition"
-    ui_card_row $((n += 1)) "New size  (macOS keeps)" "$PLAN_ANSWER_RESIZE" "$(fmt_gb "$PLAN_MACOS_NEW"), on your clipboard"
-    ui_card_row $((n += 1)) "Continue?" "y" "the Mac may seem frozen; wait"
-  fi
-  ui_card_row $((n += 1)) "Choose what to do" "f" "Install an OS into free space"
-  mac_gap_count
-  if [ "$MAC_GAP_COUNT" -gt 1 ]; then
-    ui_card_row $((n += 1)) "Choose free space" "$(mac_gap_label_planned)" "the $(fmt_gb $((PLAN_GAP_END - PLAN_GAP_START))) one"
-  fi
-  ui_card_row $((n += 1)) "Choose an OS to install" "$ASAHI_ALARM_OS_CHOICE" "type its number"
-  ui_card_row $((n += 1)) "New OS size  (Linux gets)" "$PLAN_ANSWER_OS" "$(fmt_gb "$PLAN_LINUX_ACTUAL") incl. $(fmt_gb "$PLAN_BOOT") boot data"
-  ui_card_row $((n += 1)) "OS name" "Enter" "or e.g. Omarchy; shown in Startup Options"
+  mac_answer_rows ui_card_row
   ui_card_text "Type each size exactly as shown; MiB values are exact."
   [ "${PLAN_SHARED:-0}" -gt 0 ] && ui_card_text "Never type max here: the space after Linux is Shared's."
   ui_card_text "Everything else: read it, and follow the installer's own instructions."
@@ -1079,9 +1096,12 @@ mac_survey() {
   log_event survey "model=$MAC_MODEL_ID tier=$DEV_TIER macos=$MAC_OS_VERSION disk=$MAC_DISK size=$MAC_DISK_SIZE container=$MAC_CONTAINER_SIZE free=$MAC_CONTAINER_FREE pref=$MAC_LIMIT_PREF linux_max=$PLAN_LINUX_MAX asahi_present=$MAC_ASAHI_PRESENT"
 }
 
-mac_main() {
-  local mode=$1 step=survey rc blockers line
-  OMB_PHASE=macos
+# mac_start — the survey and the gates every macOS flow passes before it
+# plans or launches anything: the blockers, where an earlier install stands
+# (from the disk alone), and on an experimental Mac its typed word. 0 go on
+# to planning; 1 stop; 2 an install is already on the disk (ASAHI_STATE).
+mac_start() {
+  local blockers
   mac_survey
   mac_show_survey
   blockers=$(mac_blockers)
@@ -1089,22 +1109,32 @@ mac_main() {
     ui_blockers "This Mac cannot continue." "$blockers"
     return 1
   fi
-  # Where any earlier install stands, from the disk alone.
   asahi_classify
   case "$ASAHI_STATE" in
     none) ;;
     resized-only) asahi_guidance ;;
-    *)
-      mac_existing_install || return 1
-      mac_shared_step "$mode"
-      return
-      ;;
+    *) return 2 ;;
   esac
   if [ "$DEV_TIER" = experimental ]; then
     ui_callout warn "$DEV_CHIP support is experimental." \
       "The Asahi installer accepts this Mac, but Asahi lists display and USB support as work in progress, and Omarchy Mac documents M1/M2 only."
     ui_confirm_word experimental "Continue anyway." || return 1
   fi
+  return 0
+}
+
+mac_main() {
+  local mode=$1 step=survey rc
+  OMB_PHASE=macos
+  mac_start
+  case $? in
+    1) return 1 ;;
+    2)
+      mac_existing_install || return 1
+      mac_shared_step "$mode"
+      return
+      ;;
+  esac
 
   while :; do
     case "$step" in

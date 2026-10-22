@@ -498,8 +498,35 @@ lx_plan() {
 
 # lx_main MODE [TOKEN]
 lx_main() {
-  local mode=$1 token=${2:-} blockers line
+  local mode=$1 token=${2:-}
   OMB_PHASE=linux
+  lx_begin "$token" || return 1
+
+  # Planning is decided before the machine's state picks an action: plan only
+  # ever reviews and saves choices, whatever state the install is in.
+  if [ "$mode" = plan ]; then
+    lx_plan
+    return
+  fi
+
+  case "$LX_OMARCHY_STATE" in
+    installed)
+      lx_installed
+      return
+      ;;
+    in-progress)
+      lx_in_progress
+      return
+      ;;
+  esac
+  lx_install
+}
+
+# lx_begin [TOKEN] — what every Linux flow does first: the survey, the
+# choices saved here (and a token's), the survey shown, and the blockers.
+# 1 when this machine cannot continue.
+lx_begin() {
+  local token=${1:-} blockers line
   lx_detect
   lx_online
   cfg_load
@@ -534,44 +561,18 @@ EOF
     ui_blockers "This machine cannot continue." "$blockers"
     return 1
   fi
+  return 0
+}
 
-  # Planning is decided before the machine's state picks an action: plan only
-  # ever reviews and saves choices, whatever state the install is in.
-  if [ "$mode" = plan ]; then
-    lx_plan
-    return
+# lx_install — Omarchy absent or partial: root, the network, the choices,
+# then the handoff to omarchy-mac-setup.
+lx_install() {
+  if [ "$LX_OMARCHY_STATE" = partial ]; then
+    ui_callout warn "Omarchy's package is present but the install did not finish." \
+      "omarchy-mac-setup reads the machine and redoes only the unfinished steps; running it again is the upstream-supported path."
   fi
-
-  case "$LX_OMARCHY_STATE" in
-    installed)
-      lx_installed
-      return
-      ;;
-    in-progress)
-      lx_in_progress
-      return
-      ;;
-    partial)
-      ui_callout warn "Omarchy's package is present but the install did not finish." \
-        "omarchy-mac-setup reads the machine and redoes only the unfinished steps; running it again is the upstream-supported path."
-      ;;
-  esac
-
-  if [ "$OMB_UID" != 0 ]; then
-    if [ "$OMB_DRY_RUN" = 1 ]; then
-      ui_warn "Not root: a real run must be started as root (Asahi Alarm: $ASAHI_ALARM_FIRST_LOGIN). Continuing the preview."
-    else
-      ui_fail "omarchy-mac-setup must run as root. On a fresh Asahi Alarm system, log in as $ASAHI_ALARM_FIRST_LOGIN and run this again."
-      return 1
-    fi
-  fi
-
-  if [ "$LX_ROUTE" = 0 ] || [ "$LX_ONLINE" = 0 ]; then
-    lx_network || {
-      ui_fail "Still offline. Connect, then run ./omarchy-bootstrap again."
-      return 1
-    }
-  fi
+  lx_root_ok || return 1
+  lx_connect || return 1
 
   lx_choices || {
     printf '\n'
@@ -580,4 +581,30 @@ EOF
   }
   cfg_save
   lx_handoff
+}
+
+# lx_root_ok — omarchy-mac-setup runs as root; a preview may continue as
+# anyone. 1 when this run cannot go on.
+lx_root_ok() {
+  if [ "$OMB_UID" != 0 ]; then
+    if [ "$OMB_DRY_RUN" = 1 ]; then
+      ui_warn "Not root: a real run must be started as root (Asahi Alarm: $ASAHI_ALARM_FIRST_LOGIN). Continuing the preview."
+    else
+      ui_fail "omarchy-mac-setup must run as root. On a fresh Asahi Alarm system, log in as $ASAHI_ALARM_FIRST_LOGIN and run this again."
+      return 1
+    fi
+  fi
+  return 0
+}
+
+# lx_connect — online already, or connected now (lx_network); 1 when still
+# offline.
+lx_connect() {
+  if [ "$LX_ROUTE" = 0 ] || [ "$LX_ONLINE" = 0 ]; then
+    lx_network || {
+      ui_fail "Still offline. Connect, then run ./omarchy-bootstrap again."
+      return 1
+    }
+  fi
+  return 0
 }
