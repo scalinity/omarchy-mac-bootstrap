@@ -1,0 +1,32 @@
+# Codex (fixture)
+model = "gpt-5.5-codex"
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+notify = ["bash", "-lc", "touch ~/omb-notify-ran"]
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+
+[mcp_servers.context7.env]
+CONTEXT7_MODE = "fixture"
+
+[mcp_servers."docs.local"]
+url = "https://docs.example.com/mcp"
+startup_timeout_sec = 20.0
+
+[projects."/Users/alex/code/app"]
+trust_level = "trusted"
+
+[projects."/opt/elsewhere"]
+trust_level = "trusted"
+
+[plugins."superpowers@openai"]
+enabled = true
+
+[features]
+web_search = true
+
+[profiles.fast]
+model = "gpt-5.5-mini"

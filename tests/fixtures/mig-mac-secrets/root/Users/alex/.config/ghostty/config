@@ -1,0 +1,5 @@
+# Ghostty (fixture)
+font-size = 14
+theme = catppuccin-mocha
+macos-titlebar-style = tabs
+config-file = /Users/alex/.config/ghostty/extra

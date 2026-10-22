@@ -1,0 +1,1 @@
+{"model":"opus","env":{"ANTHROPIC_API_KEY":"sk-ant-FIXTUREplantedANTHROPICkey000001"},"apiKeyHelper":"security find-generic-password -s fixture -w"}

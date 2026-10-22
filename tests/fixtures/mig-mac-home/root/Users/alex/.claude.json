@@ -1,0 +1,1 @@
+{"numStartups":3,"mcpServers":{"context7":{"command":"npx","args":["-y","@upstash/context7-mcp"],"env":{"CONTEXT7_MODE":"fixture"}},"files":{"command":"/Users/alex/bin/mcp-files","args":["--root","/Users/alex/code"]}},"projects":{"/Users/alex/code/app":{"allowedTools":[]}}}
