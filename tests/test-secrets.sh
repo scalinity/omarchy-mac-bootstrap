@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# Classification, the hard refusals and the credential scan, the profile's
+# side (docs/MIGRATION.md → *Sensitivity: what may travel*; D23, D40): no
+# planted secret in the profile, state or log, nor in anything an item
+# carries; the kind named, never the value; `opaque` once per save; an
+# encrypted SSH key only after `carry`; UseKeychain dropped. The planted
+# values (tests/fixtures/gen-migrate.sh) all hold "FIXTUREplanted".
+# shellcheck disable=SC2015,SC2016,SC2030,SC2031 # ok/fail always return 0; literal $ in stand-in source; subshell locals on purpose
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh"
+t_load
+# shellcheck source=lib/records.sh
+. "$REPO/lib/records.sh"
+# shellcheck source=lib/toml.sh
+. "$REPO/lib/toml.sh"
+# shellcheck source=lib/migrate_scan.sh
+. "$REPO/lib/migrate_scan.sh"
+echo "test-secrets"
+
+T=$(t_tmp)
+S=$FIX/mig-mac-secrets/root/Users/alex
+PLANT=FIXTUREplanted
+
+# --- secret-kind: the scan names the kind, never the value (no plutil) -------
+check() { # FILE KIND
+  scan_secret_check "$1"
+  assert_eq "$? $SCAN_HIT" "1 $2" "secret-kind: ${1#"$S"/} is found as $2"
+  assert_not_contains "$SCAN_HIT" "$PLANT" "secret-kind: the value is never named (${1#"$S"/})"
+}
+check "$S/.zshrc" "an API key (sk-)"
+check "$S/.myscripts/deploy.sh" "a GitHub token"
+check "$S/.config/nvim/lua/secret.lua" "a Google API key"
+check "$S/.claude/settings.json" "an Anthropic API key"
+check "$S/.env" "a credential assignment"
+check "$S/.npmrc" "a credential assignment"
+check "$S/.aws/credentials" "an AWS access key"
+check "$S/.ssh/id_plain" "a private key"
+printf 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJGSVhUVVJFcGxhbnRlZCJ9.c2lnbmF0dXJlRklYVFVSRXBsYW50ZWQ\n' >"$T/jwt"
+check "$T/jwt" "a JSON Web Token"
+printf 'xoxb-FIXTUREplanted-0001\n' >"$T/slack"
+check "$T/slack" "a Slack token"
+# The whole length: a credential past a long clean prefix is still found.
+awk 'BEGIN { for (i = 0; i < 50000; i++) print "clean line " i; print "token = \"ghp_FIXTUREplantedLATEtoken000000000001\"" }' >"$T/long"
+check "$T/long" "a GitHub token"
+for f in "$FIX/mig-mac-home/root/Users/alex/.zshrc" "$FIX/mig-mac-home/root/Users/alex/.claude/settings.json" "$FIX/mig-mac-home/root/Users/alex/.config/nvim/init.lua"; do
+  scan_secret_check "$f"
+  assert_rc $? 0 "secret-kind: a clean file passes (${f##*/alex/})"
+done
+printf 'export X=${ANTHROPIC_API_KEY}\napi_key = "{env:OPENAI_API_KEY}"\nkey = "ctrl+shift+alt+cmd+k"\n' >"$T/refs"
+scan_secret_check "$T/refs"
+assert_rc $? 0 "secret-kind: a variable reference is not a credential"
+SCAN_HOME=/Users/alex
+for rel in .env .env.local .envrc .netrc .ssh/id_rsa .aws/config .docker/config.json .kube/config .gnupg/private-keys-v1.d/x.key \
+  .config/gh/hosts.yml .codex/auth.json server.pem cert.p12 .git-credentials; do
+  scan_refused "$rel"
+  assert_rc $? 0 "secret-refused: $rel is refused by its path"
+done
+scan_refused .ssh/id_rsa.pub
+assert_rc $? 1 "secret-refused: a public key is not"
+
+# --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
+for k in id_ed25519:encrypted id_plain:plain id_weak:unsupported id_legacy:pem; do
+  scan_ssh_key "$S/.ssh/${k%%:*}"
+  assert_eq "$SCAN_KEY" "${k#*:}" "secret-ssh: ${k%%:*} is $SCAN_KEY"
+done
+scan_key_check "$S/.ssh/id_ed25519"
+assert_rc $? 0 "secret-ssh: aes256-ctr with bcrypt 16 rounds may travel"
+for k in id_plain id_weak id_legacy; do
+  scan_key_check "$S/.ssh/$k"
+  assert_rc $? 1 "secret-ssh: $k may not"
+done
+head -n 2 "$S/.ssh/id_ed25519" >"$T/torn" && printf -- '-----END OPENSSH PRIVATE KEY-----\n' >>"$T/torn"
+scan_ssh_key "$T/torn"
+assert_eq "$SCAN_KEY" malformed "secret-ssh: a torn envelope is malformed"
+{ cat "$S/.ssh/id_ed25519"; head -c 17000 /dev/zero | tr '\0' 'A'; } >"$T/big"
+scan_key_check "$T/big"
+assert_rc $? 1 "secret-ssh: a key over 16 KiB is refused"
+
+# p_tool DIR — a copy of the tool whose resolution is a fixed stand-in.
+p_tool() {
+  mkdir -p "$1"
+  cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$1/"
+  cat >"$1/lib/migrate_resolve.sh" <<'EOF'
+# shellcheck shell=bash
+# A test stand-in for the resolution unit's seam: everything resolves.
+res_resolve() {
+  LC_ALL=C awk -F '\t' '$1 == "item" { k = $4; sub(/^kind=/, "", k)
+    ly = (k == "git" || k == "mcp" || k == "plugin") ? "settings" : "files"
+    if (k ~ /^(brew-formula|brew-cask|app|cargo|npm|pnpm|bun|uv|pipx|go|tap|extension|nvm|mise|asdf)$/) ly = "packages"
+    printf "resolution\t%s\tlayer=%s\tmethod=place\ttarget=\tversion=\tguess=0\tstate=resolved\tnote=\n", $2, ly }' "$1" >"$3"
+}
+res_choices() { : >"$2"; }
+EOF
+}
+
+if t_plutil "the profile and the extracts over planted secrets"; then
+  PT=$T/tool
+  p_tool "$PT"
+  F=$(t_variant mig-mac-secrets)
+
+  # --- secret-profile: nothing planted reaches the profile, state or log -------
+  SD=$T/state-cli
+  REPO=$PT T_ENV="OMB_STATE_DIR=$SD" t_cli "$F" "" profile
+  assert_rc "$T_RC" 0 "secret-profile: profile saves over a home full of credentials"
+  [ -f "$SD/profile.omb" ] && ok || fail "secret-profile: no profile.omb"
+  assert_eq "$(grep -rl "$PLANT" "$SD" 2>/dev/null)" "" "secret-profile: no planted value in the profile, state or log"
+  assert_not_contains "$T_OUT" "$PLANT" "secret-profile: none printed"
+  inv=$(cat "$SD/profile.omb")
+  for want in "id=path:.zshrc	adapter=shell	kind=rc	category=terminal	name=.zshrc" "id=path:.env	" "id=path:.aws	" "id=gh:hosts	" "id=path:.ssh/id_plain	" "id=claude:signin	" "id=codex:signin	"; do
+    line=$(printf '%s\n' "$inv" | grep "^item	$want")
+    assert_contains "$line" "class=secret" "secret-profile: ${want%%	*} is secret"
+  done
+  assert_contains "$(printf '%s\n' "$inv" | grep '^item	id=path:.zshrc	')" "an%20API%20key%20%28sk-%29" "secret-profile: the kind is named"
+  assert_contains "$(printf '%s\n' "$inv" | grep '^item	id=path:.ssh/id_plain	')" "without%20a%20passphrase" "secret-profile: an unencrypted key says why it stays"
+  assert_contains "$(printf '%s\n' "$inv" | grep '^item	id=path:.npmrc	')" "class=secret" "secret-profile: an npm token file is refused by what it holds"
+  if printf '%s\n' "$inv" | grep '^select	' | grep -qE 'id=(path:.env|path:.ssh/id_plain|path:.ssh/id_ed25519|gh:hosts|path:.myscripts|path:.ssh/known_hosts)	state'; then
+    fail "secret-profile: a secret, opaque or sensitive item is selected by default"
+  else
+    ok
+  fi
+  if printf '%s\n' "$inv" | grep -q '^consent	'; then fail "secret-profile: the CLI typed a consent"; else ok; fi
+
+  # --- secret-extract: nothing planted in what any item carries ---------------
+  ids=$(awk -F '\t' '$1 == "item" { sub(/^id=/, "", $2); print $2 }' "$SD/profile.omb")
+  n=0
+  (
+    OMB_FIXTURE=$F
+    i=0
+    while IFS= read -r id; do
+      i=$((i + 1))
+      scan_extract "$(rec_dec "$id")" "$T/x/$i" >/dev/null 2>&1
+    done <<EOF
+$ids
+EOF
+    omb_cleanup
+  )
+  n=$(find "$T/x" -name carry | grep -c .)
+  assert_eq "$n" "$(printf '%s\n' "$ids" | grep -c .)" "secret-extract: every item extracted"
+  assert_eq "$(grep -rl "$PLANT" "$T/x")" "" "secret-extract: no planted value in any byte an item carries"
+  carry=$(cat "$T"/x/*/carry)
+  assert_contains "$carry" "skip	reason=.config/omarchy-mac-bootstrap/zsh/.zshrc:%20an%20API%20key%20%28sk-%29" "secret-extract: a file carried whole with a credential is left out, by kind"
+  assert_contains "$carry" "skip	reason=.myscripts/deploy.sh:%20a%20GitHub%20token" "secret-extract: inside an opaque folder too"
+  assert_contains "$carry" "skip	reason=claude%20env%20values%20never%20travel:%20ANTHROPIC_API_KEY" "secret-extract: env values never travel, their names are listed"
+  assert_contains "$carry" "%22GITHUB_TOKEN%22:%22%24%7BGITHUB_TOKEN%7D%22" "secret-extract: an MCP env value becomes a variable reference"
+  assert_contains "$(cat "$T"/x/*/f/* 2>/dev/null)" 'env_vars = ["GITHUB_TOKEN"]' "secret-extract: Codex's env names join env_vars"
+  assert_contains "$carry" "git%20url.%2A.insteadof:%20a%20URL%20holding%20a%20credential,%20dropped" "secret-extract: a Git URL with a password is dropped"
+  # --- secret-usekeychain ---------------------------------------------------
+  (
+    OMB_FIXTURE=$F
+    scan_extract ssh:config "$T/x-ssh" >/dev/null 2>&1
+    omb_cleanup
+  )
+  src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-ssh/carry")
+  if grep -qi usekeychain "$T/x-ssh/$src"; then fail "secret-usekeychain: a UseKeychain line travelled"; else ok; fi
+  assert_contains "$(cat "$T/x-ssh/$src")" "IdentityFile ~/.ssh/id_ed25519" "secret-usekeychain: the rest of the configuration stays"
+  assert_contains "$(cat "$T/x-ssh/carry")" "dest=.ssh/config	src=f/1	mode=0644	whole=0" "secret-usekeychain: as a regenerated file"
+
+  # --- secret-opaque and secret-carry, through the core ----------------------
+  # shellcheck source=tests/core-harness.sh
+  . "$TESTS_DIR/core-harness.sh"
+  c_session
+  C_HOME=$PT C_FIX=$F C_ENV="OMB_SESSION_SCOPES=profile"
+  export C_HOME C_FIX C_ENV
+  P=$T/state/profile.omb
+  p_snap() { c_run snapshot "scope	name=profile"; }
+  p_actions() { printf '%s\n' "$C_OUT" | awk -F '\t' '$1 == "action" { printf "%s ", $2 }'; }
+  p_basis_of() { printf '%s\n' "$C_OUT" | awk -F '\t' -v a="id=$1" '$1 == "action" && $2 == a { for (i = 2; i <= NF; i++) if ($i ~ /^basis=/) { sub(/^basis=/, "", $i); print $i } }'; }
+  p_gen() { printf '%s\n' "$C_OUT" | awk -F '\t' '$1 == "generation" { sub(/^id=/, "", $2); print $2 }'; }
+  p_item() { # ID — the item's row in the items detail
+    local g
+    p_snap
+    g=$(p_gen)
+    c_run detail "page	scope=profile	kind=items	generation=$g	offset=0	limit=500"
+    printf '%s\n' "$C_OUT" | grep "^row	kind=item	key=$1	"
+  }
+  p_save() { # DOC
+    local b
+    rec_line_v arg name select.1 value "$1
+"
+    c_run validate "select	action=profile.save" "$REC_LINE"
+    b=$(printf '%s\n' "$C_OUT" | awk -F '\t' '$1 == "review" { sub(/^basis=/, "", $3); print $3 }')
+    [ -n "$b" ] || b=$(printf '%064d' 0)
+    rec_line_v arg name select.1 value "$1
+"
+    c_run execute "exec	action=profile.save	basis=$b	confirm=" "$REC_LINE"
+  }
+  p_snap
+  c_run execute "exec	action=profile.scan	basis=$(p_basis_of profile.scan)	confirm="
+  assert_eq "$(c_result)" "done ok" "secret-opaque: the scan saves"
+  p_save 'omb-select 1
+select	id=path:.myscripts	state=include'
+  assert_eq "$(c_result)" "done ok" "secret-opaque: a selection including a chosen folder saves"
+  assert_contains "$(p_item path:.myscripts)" "col=decide	col=opaque	col=person	col=waits%20for%20the%20typed%20word%20opaque" \
+    "secret-opaque: the folder waits for the typed word"
+  p_snap
+  assert_contains "$(p_actions)" "id=profile.opaque" "secret-opaque: profile.opaque is offered"
+  assert_contains "$C_OUT" "key=gate.profile.opaque.path.1	label=Opaque%20path	value=.myscripts%20%28" "secret-opaque: its gate lists every opaque path it covers"
+  assert_contains "$C_OUT" "Shared%20is%20not%20encrypted" "secret-opaque: and says Shared is not encrypted"
+  c_run execute "exec	action=profile.opaque	basis=$(p_basis_of profile.opaque)	confirm=yes"
+  assert_eq "$(c_result)" "refused word" "secret-opaque: only the exact word opaque continues"
+  if grep -q '^consent	' "$P"; then fail "secret-opaque: a wrong word left a consent"; else ok; fi
+  p_snap
+  c_run execute "exec	action=profile.opaque	basis=$(p_basis_of profile.opaque)	confirm=opaque"
+  assert_eq "$(c_result)" "done ok" "secret-opaque: typed opaque includes it"
+  assert_eq "$(awk -F '\t' '$1 == "consent" { print $2 "\t" $3 }' "$P")" "word=opaque	id=" "secret-opaque: one consent, for every opaque folder"
+  assert_contains "$(p_item path:.myscripts)" "col=include	col=opaque	col=person" "secret-opaque: the folder now travels"
+  p_save 'omb-select 1
+select	id=path:.myscripts	state=include'
+  assert_eq "$(c_result)" "done ok" "secret-opaque: the next save"
+  if grep -q '^consent	word=opaque' "$P"; then fail "secret-opaque: a consent outlived its save"; else ok; fi
+  assert_contains "$(p_item path:.myscripts)" "col=decide" "secret-opaque: each save asks again"
+
+  # An encrypted key travels only after typed carry; no other key ever.
+  assert_contains "$(p_item path:.ssh/id_ed25519)" "col=exclude	col=secret	col=default" "secret-carry: an encrypted key stays by default"
+  p_snap
+  assert_contains "$(p_actions)" "id=profile.carry" "secret-carry: profile.carry is offered"
+  assert_contains "$C_OUT" "param	action=profile.carry	name=key	type=bytes	kind=item	required=1" "secret-carry: it takes the key's item id"
+  gen=$(p_gen)
+  carry() { # KEY WORD
+    rec_line_v basis action profile.carry generation "$gen" value "$1"
+    b=$(sha256_str "omb-basis 1
+$REC_LINE
+")
+    rec_line_v arg name key value "$1"
+    c_run execute "exec	action=profile.carry	basis=$b	confirm=$2" "$REC_LINE"
+  }
+  carry path:.ssh/id_plain carry
+  assert_eq "$(c_result)" "failed no-effect" "secret-carry: an unencrypted key can never be carried"
+  carry path:.ssh/id_weak carry
+  assert_eq "$(c_result)" "failed no-effect" "secret-carry: nor one under a weak policy"
+  carry path:.ssh/id_ed25519 yes
+  assert_eq "$(c_result)" "refused word" "secret-carry: only the exact word carry continues"
+  carry path:.ssh/id_ed25519 carry
+  assert_eq "$(c_result)" "done ok" "secret-carry: typed carry includes the encrypted key"
+  assert_contains "$(awk -F '\t' '$1 == "consent"' "$P")" "consent	word=carry	id=path:.ssh/id_ed25519	" "secret-carry: its consent is recorded"
+  assert_contains "$(awk -F '\t' '$1 == "select"' "$P")" "select	id=path:.ssh/id_ed25519	state=include" "secret-carry: and it is selected"
+  assert_contains "$(p_item path:.ssh/id_ed25519)" "col=include	col=secret	col=person" "secret-carry: the key now travels"
+  assert_eq "$(grep -rl "$PLANT" "$T/state" "$SESS" 2>/dev/null)" "" "secret-profile: no planted value in the core's state, spools or diagnostics"
+  rm -rf "$F"
+fi
+
+rm -rf "$T"
+t_done test-secrets

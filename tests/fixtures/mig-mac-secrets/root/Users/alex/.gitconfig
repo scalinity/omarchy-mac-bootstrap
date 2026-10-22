@@ -1,0 +1,7 @@
+[user]
+	name = Alex Fixture
+	email = alex@example.com
+[credential]
+	helper = osxkeychain
+[url "https://alex:FIXTUREplantedGITpassword01@github.com/"]
+	insteadOf = https://github.com/

@@ -1,0 +1,1 @@
+{"provider":{"anthropic":{"options":{"apiKey":"sk-ant-FIXTUREplantedOPENCODEkey00001"}}},"mcp":{"remote":{"type":"remote","url":"https://mcp.example.com","headers":{"Authorization":"Bearer FIXTUREplantedOCheader0001"}}}}

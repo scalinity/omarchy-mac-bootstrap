@@ -1,0 +1,1 @@
+{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github","--api-key","FIXTUREplantedARGsecret0001"],"env":{"GITHUB_TOKEN":"ghp_FIXTUREplantedGITHUBtoken0000000001"}},"remote":{"type":"http","url":"https://api.example.com/mcp?token=FIXTUREplantedURLtoken0001","headers":{"Authorization":"Bearer FIXTUREplantedHEADERtoken0001"}}}}

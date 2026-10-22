@@ -1,0 +1,19 @@
+[user]
+	name = Alex Fixture
+	email = alex@example.com
+[core]
+	excludesfile = /Users/alex/.gitignore_global
+	editor = nvim
+[alias]
+	st = status -sb
+	nuke = !git clean -fdx
+[credential]
+	helper = osxkeychain
+[init]
+	defaultBranch = main
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+[http]
+	postBuffer = 524288000
+[include]
+	path = ~/.gitconfig.local
