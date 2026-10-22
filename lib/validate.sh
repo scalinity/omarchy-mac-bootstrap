@@ -1,71 +1,85 @@
 # shellcheck shell=bash
-# Ordinary fixture-only plan validation (docs/PROTOCOL.md → *Future plan
-# validation contract*): `validate select action=plan.save` with linux_size
-# and shared_size. A typed adapter over the baseline's planning owners, which
-# stay unchanged: one capture by the macOS survey owner, the gates the
-# baseline holds before its storage questions, then parse_size,
-# mac_shared_max, mac_plan_compute, plan_validate and plan_layout (with
-# plan_verify) — Shared first, then Linux. The response and its
-# Q4-plan-validation-basis-v1 basis come from that one capture and that one
-# computation. Nothing is persisted, and no generation is carried.
+# Plan validation (docs/PROTOCOL.md → *plan.save*, *Future plan validation
+# contract*): `validate select action=plan.save` with its eleven inputs, and
+# the same judgement when `execute plan.save` re-reads (lib/actions.sh). A
+# typed adapter over the baseline's planning owners, which stay unchanged:
+# one capture by the macOS survey owner, the gates the baseline holds before
+# its storage questions, then parse_size, mac_shared_max, mac_plan_compute,
+# plan_validate and plan_layout (with plan_verify) — Shared first, then Linux
+# — and then the nine choices in the text flow's order, each by
+# cfg_field_ok. The response and its basis come from that one capture and
+# that one computation. Nothing is persisted, and no generation is carried.
 
-VALIDATE_RULE=Q4-plan-validation-basis-v1
+# The choices after the sizes, in the order the text flow asks them
+# (mac_choices).
+PLAN_CHOICES="enc user host kmap tz loc ssh gh dev"
 
-# core_validate_op — after core_read_op admitted the family, the platform,
-# the fixture and the scope. Evaluator statuses: 0 go on, 1 the machinery
-# failed, 2 a parameter is invalid, 3 no trustworthy plan for this machine,
-# 4 an owner outcome the contract does not name.
+# core_validate_op — after core_read_op admitted the family, the platform and
+# the scope: the evaluation, answered.
 core_validate_op() {
   local st
-  VAL_ANSWERS='' VAL_WARNING='' VAL_LINUX='' VAL_SHARED='' VAL_INVALID='' VAL_REVIEW='' VAL_MESSAGES=''
-  VAL_SHARED_GB='' VAL_LINUX_BYTES='' VAL_EXPLAIN=''
-  omb_tmp_init || { core_validate_error io; return; }
+  val_eval
+  st=$?
+  case "$st" in
+    0) core_validate_respond "done" ok ;;
+    2) core_validate_respond refused invalid ;;
+    3) core_validate_unplannable ;;
+    4) core_validate_error invariant ;;
+    *) core_validate_error io ;;
+  esac
+}
+
+# val_eval — plan.save's inputs judged on one fresh capture, for validate and
+# execute alike (the request's arguments, through core_validate_arg).
+# Statuses: 0 valid, with the review's records, VAL_BASIS, VAL_SHARED_GB,
+# VAL_LINUX_BYTES and VAL_C_<choice> (each as CFG_<choice> takes it); 1 the
+# machinery failed; 2 a parameter is invalid; 3 no trustworthy plan for this
+# machine; 4 an owner outcome the contract does not name.
+val_eval() {
+  local st
+  VAL_ANSWERS='' VAL_WARNING='' VAL_WARN_TEXT='' VAL_LINUX='' VAL_SHARED='' VAL_CHOICES='' VAL_INVALID='' VAL_REVIEW=''
+  VAL_MESSAGES='' VAL_SHARED_GB='' VAL_LINUX_BYTES='' VAL_EXPLAIN='' VAL_BASIS=''
+  omb_tmp_init || return 1
   # Unknown names, before any machine read.
   core_validate_unknown
   if [ -n "$VAL_UNKNOWN" ]; then
     core_validate_invalid "$VAL_UNKNOWN" unknown-parameter
-    core_validate_respond refused invalid
-    return
+    return 2
   fi
   core_validate_context
   st=$?
-  if [ "$st" = 0 ]; then
-    core_validate_shared
-    st=$?
-  fi
-  if [ "$st" = 0 ]; then
-    rec_line_v normal name shared_size value $((VAL_SHARED_GB * GB))
-    VAL_SHARED="$REC_LINE
+  [ "$st" = 0 ] || return "$st"
+  core_validate_shared
+  st=$?
+  [ "$st" = 0 ] || return "$st"
+  rec_line_v normal name shared_size value $((VAL_SHARED_GB * GB))
+  VAL_SHARED="$REC_LINE
 "
-    core_validate_linux
-    st=$?
-  fi
-  if [ "$st" = 0 ]; then
-    # Every refusal the planner can make was settled above.
-    plan_layout "$VAL_LINUX_BYTES"
-    [ "$PLAN_OK" = 1 ] || st=4
-  fi
-  case "$st" in
-    0) ;;
-    2) core_validate_respond refused invalid; return ;;
-    3) core_validate_unplannable; return ;;
-    4) core_validate_error invariant; return ;;
-    *) core_validate_error io; return ;;
-  esac
-  core_validate_answers || { core_validate_error invariant; return; }
+  core_validate_linux
+  st=$?
+  [ "$st" = 0 ] || return "$st"
+  # Every refusal the planner can make was settled above.
+  plan_layout "$VAL_LINUX_BYTES"
+  [ "$PLAN_OK" = 1 ] || return 4
   rec_line_v normal name linux_size value "$VAL_LINUX_BYTES"
   VAL_LINUX="$REC_LINE
 "
-  if [ -n "$VAL_WARNING" ]; then
-    rec_line_v warning id linux-below-recommended text "$VAL_WARNING" fix ''
+  # The choices come after the plan, as the text flow asks them after its
+  # storage questions; a refused one leaves no plan in the answer.
+  core_validate_choices
+  st=$?
+  [ "$st" = 0 ] || return "$st"
+  core_validate_answers || return 4
+  if [ -n "$VAL_WARN_TEXT" ]; then
+    rec_line_v warning id linux-below-recommended text "$VAL_WARN_TEXT" fix ''
     VAL_WARNING="$REC_LINE
 "
   fi
-  core_validate_basis || { core_validate_error io; return; }
+  core_validate_basis || return 1
   rec_line_v review action plan.save basis "$VAL_BASIS"
   VAL_REVIEW="$REC_LINE
 "
-  core_validate_respond "done" ok
+  return 0
 }
 
 # core_validate_unknown — VAL_UNKNOWN: the first argument name outside the
@@ -75,8 +89,8 @@ core_validate_unknown() {
   VAL_UNKNOWN=''
   while [ "$i" -lt "$CORE_REQ_ARGS" ]; do
     n=${CORE_REQ_ARG_NAME[i]}
-    case "$n" in
-      linux_size | shared_size) ;;
+    case " linux_size shared_size $PLAN_CHOICES " in
+      *" $n "*) ;;
       *) if [ -z "$VAL_UNKNOWN" ] || [[ $n < $VAL_UNKNOWN ]]; then VAL_UNKNOWN=$n; fi ;;
     esac
     i=$((i + 1))
@@ -99,10 +113,10 @@ core_validate_arg() {
 }
 
 # core_validate_context — the one fresh planning context: the survey owner's
-# reads (no reachability, saved choice or state), the planner with no
-# reservation, and the baseline's gates before its storage questions:
-# mac_blockers, then an install already on the disk (mac_main). 0 plannable;
-# 3 not, VAL_EXPLAIN holding the owner's reasons, one per line.
+# reads (no reachability or state), the planner with no reservation, and the
+# baseline's gates before its storage questions: mac_blockers, then an
+# install already on the disk (mac_main). 0 plannable; 3 not, VAL_EXPLAIN
+# holding the owner's reasons, one per line.
 core_validate_context() {
   mac_detect
   mac_plan_compute 0
@@ -114,6 +128,84 @@ core_validate_context() {
   VAL_EXPLAIN=$ASAHI_WHY
   [ -n "$VAL_EXPLAIN" ] || return 4
   return 3
+}
+
+# core_validate_choices — the nine choices in the text flow's order, each
+# judged by cfg_field_ok, the rule every choice meets however it arrives. An
+# omitted one takes the text flow's own default (mac_choices: the saved
+# choice, else what the survey suggests), and is required when that default
+# would not pass its own prompt. gh's "-" is its cleared value, as the text
+# flow's prompt reads it. 0 all valid (VAL_C_<key> set); 2 the first that is
+# not.
+core_validate_choices() {
+  local k v
+  # The saved choices are the defaults; nothing else of them is read here.
+  for k in $CFG_KEYS; do unset "CFG_$k"; done
+  cfg_load
+  for k in $PLAN_CHOICES; do
+    if core_validate_arg "$k"; then
+      v=$VAL_ARG
+      if [ "$k" = gh ] && [ "$v" = - ]; then
+        :
+      elif ! cfg_field_ok "$k" "$v"; then
+        core_validate_reason "$k" "$v"
+        core_validate_invalid "$k" invalid-choice "$VAL_REASON"
+        return 2
+      fi
+    else
+      core_validate_default "$k"
+      v=$VAL_DEFAULT
+      if [ "$k" != gh ] && ! cfg_field_ok "$k" "$v"; then
+        core_validate_invalid "$k" required
+        return 2
+      fi
+    fi
+    if [ "$k" = gh ] && [ "$v" = - ]; then
+      VAL_C_gh=''
+    else
+      eval "VAL_C_$k=\$v"
+    fi
+    rec_line_v normal name "$k" value "$v"
+    VAL_CHOICES="$VAL_CHOICES$REC_LINE
+"
+  done
+}
+
+# core_validate_default KEY — VAL_DEFAULT: the text flow's own default for
+# KEY (mac_choices, ask_encrypt), after mac_detect and cfg_load.
+core_validate_default() {
+  VAL_DEFAULT=''
+  case "$1" in
+    enc) if [ "${CFG_enc:-1}" = 0 ]; then VAL_DEFAULT=0; else VAL_DEFAULT=1; fi ;;
+    user)
+      VAL_DEFAULT=${CFG_user:-}
+      if [ -z "$VAL_DEFAULT" ] && valid_username "$MAC_USER" >/dev/null 2>&1; then VAL_DEFAULT=$MAC_USER; fi
+      ;;
+    host) VAL_DEFAULT=${CFG_host:-omarchy} ;;
+    kmap) VAL_DEFAULT=${CFG_kmap:-$(mac_default_keymap)} ;;
+    tz) VAL_DEFAULT=${CFG_tz:-${MAC_TZ:-UTC}} ;;
+    loc) VAL_DEFAULT=${CFG_loc:-$(mac_default_locale)} ;;
+    ssh) if [ "${CFG_ssh:-0}" = 1 ]; then VAL_DEFAULT=1; else VAL_DEFAULT=0; fi ;;
+    gh) VAL_DEFAULT=${CFG_gh:--} ;;
+    dev) if [ "${CFG_dev:-1}" = 0 ]; then VAL_DEFAULT=0; else VAL_DEFAULT=1; fi ;;
+  esac
+}
+
+# core_validate_reason KEY VALUE — VAL_REASON: the words the choice's own
+# validator gives for refusing VALUE, as the text flow's prompt shows them.
+core_validate_reason() {
+  local r
+  case "$1" in
+    enc | ssh | dev) r=$(valid_bool "$2") ;;
+    user) r=$(valid_username "$2") ;;
+    host) r=$(valid_hostname "$2") ;;
+    kmap) r=$(valid_keymap "$2") ;;
+    tz) r=$(valid_tz "$2") ;;
+    loc) r=$(valid_locale "$2") ;;
+    gh) r=$(valid_ghuser "$2") ;;
+  esac
+  r=${r#"${r%%[! ]*}"}
+  VAL_REASON=${r:-This value is not accepted for this choice.}
 }
 
 # core_validate_trim VALUE — VAL_TRIMMED: VALUE without the surrounding blanks
@@ -230,7 +322,7 @@ core_validate_linux() {
   verdict=$(plan_validate "$b")
   case "$verdict" in
     ok) ;;
-    warn\|*) VAL_WARNING=${verdict#warn|} ;;
+    warn\|*) VAL_WARN_TEXT=${verdict#warn|} ;;
     error\|*)
       if [ "$b" -lt "$PLAN_LINUX_MIN" ]; then
         core_validate_invalid linux_size below-minimum
@@ -261,11 +353,18 @@ core_validate_no_region() {
   return 4
 }
 
+# core_validate_invalid NAME CODE [TEXT] — the one invalid record: the fixed
+# text for CODE, or for invalid-choice the choice's own validator's words.
 core_validate_invalid() {
-  local text
+  local text=${3:-}
   case "$2" in
     unknown-parameter) text='This parameter is not accepted by plan validation.' ;;
-    required) text='This size parameter is required.' ;;
+    required)
+      case "$1" in
+        shared_size | linux_size) text='This size parameter is required.' ;;
+        *) text='This choice has no default that passes its own check; give a value.' ;;
+      esac
+      ;;
     empty) text='Enter a size such as 250GB or 30%.' ;;
     syntax) text='Use a number with GB, TB, or %.' ;;
     leading-zero) text='Sizes cannot have a leading zero.' ;;
@@ -293,7 +392,7 @@ core_validate_message() {
 # nothing that would describe a plan.
 core_validate_unplannable() {
   local line
-  VAL_ANSWERS='' VAL_WARNING='' VAL_LINUX='' VAL_SHARED='' VAL_INVALID='' VAL_REVIEW='' VAL_MESSAGES=''
+  VAL_ANSWERS='' VAL_WARNING='' VAL_LINUX='' VAL_SHARED='' VAL_CHOICES='' VAL_INVALID='' VAL_REVIEW='' VAL_MESSAGES=''
   while IFS= read -r line; do
     [ -z "$line" ] || core_validate_message warn "$line"
   done <<EOF
@@ -343,14 +442,17 @@ core_validate_sha() {
   _whole "$VAL_SHA" '^[0-9a-f]{64}$'
 }
 
-# core_validate_basis — VAL_BASIS: Q4-plan-validation-basis-v1, the SHA-256 of
-# an omb-basis 1 document over this capture and computation: the envelope,
-# the effective Shared then Linux sizes, the digests of the consumed
-# geometry and of the resulting plan, and the versions. Unsealed record
-# lines, hashed and never sent (docs/PROTOCOL.md → *Q4-plan-validation-basis-v1*).
+# core_validate_basis — VAL_BASIS: the SHA-256 of an omb-basis 1 document
+# over this capture and computation: the envelope, the normalised inputs
+# (Shared, Linux, then the choices), the digests of the consumed geometry
+# and of the resulting plan, and the versions. Free space, the resize limit
+# and the floor are not bound (docs/DECISIONS.md D56): they drift on a live
+# Mac, and execute checks them again. Unsealed record lines, hashed and
+# never sent.
 core_validate_basis() {
-  local f=$OMB_TMP/validate off size uuid content id role start pred succ geometry
-  # The consumed planning geometry, partitions and free regions in disk order.
+  local f=$OMB_TMP/validate off size uuid content id role start pred succ geometry k v
+  # The consumed planning geometry: the disk, every partition, the macOS
+  # container's partition and the free regions, in disk order.
   {
     printf 'omb-validate-geometry 1\n' &&
       rec_line disk size "$GEO_DISK_SIZE" block "$GEO_BLOCK" start "$GEO_USABLE_START" end "$GEO_USABLE_END"
@@ -361,12 +463,7 @@ core_validate_basis() {
   done <<EOF
 $GEO_PARTS
 EOF
-  {
-    rec_line store guid "$MAC_STORE_UUID" &&
-      rec_line container size "$MAC_CONTAINER_SIZE" free "$MAC_CONTAINER_FREE" floor "$PLAN_MACOS_FLOOR" &&
-      rec_line limits known "$PLAN_LIMITS_KNOWN" value "$MAC_LIMIT_PREF" &&
-      rec_line resize available "$PLAN_RESIZE_OK" end "$PLAN_RZ_END"
-  } >>"$f.geometry" || return 1
+  rec_line store guid "$MAC_STORE_UUID" >>"$f.geometry" || return 1
   while IFS='|' read -r start size pred succ; do
     [ -n "$start" ] || continue
     rec_line gap start "$start" size "$size" >>"$f.geometry" || return 1
@@ -390,13 +487,19 @@ EOF
     printf 'omb-basis 1\n' &&
       rec_line basis action plan.save proto "$REC_PROTO" actor_uid "$OMB_UID" home "$OMB_HOME" source "$CORE_SOURCE" &&
       rec_line input name shared_size value $((VAL_SHARED_GB * GB)) &&
-      rec_line input name linux_size value "$VAL_LINUX_BYTES" &&
-      rec_line seen key geometry state value value '' sha256 "$geometry" mode '' link '' &&
+      rec_line input name linux_size value "$VAL_LINUX_BYTES"
+  } >"$f.basis" || return 1
+  for k in $PLAN_CHOICES; do
+    eval "v=\$VAL_C_$k"
+    [ "$k" != gh ] || [ -n "$v" ] || v=-
+    rec_line input name "$k" value "$v" >>"$f.basis" || return 1
+  done
+  {
+    rec_line seen key geometry state value value '' sha256 "$geometry" mode '' link '' &&
       rec_line seen key plan state value value '' sha256 "$VAL_SHA" mode '' link '' &&
       rec_line version key storage_contract value "$STORAGE_CONTRACT" &&
-      rec_line version key template value "$ASAHI_ALARM_OS_CHOICE" &&
-      rec_line version key rule value "$VALIDATE_RULE"
-  } >"$f.basis" || return 1
+      rec_line version key template value "$ASAHI_ALARM_OS_CHOICE"
+  } >>"$f.basis" || return 1
   core_validate_sha "$f.basis" || return 1
   VAL_BASIS=$VAL_SHA
 }
@@ -427,7 +530,7 @@ core_validate_respond() {
 }
 
 core_validate_stage() {
-  printf '%s' "$VAL_ANSWERS$VAL_WARNING$VAL_LINUX$VAL_SHARED$VAL_INVALID$VAL_REVIEW$VAL_MESSAGES" >"$OMB_TMP/validate.body" || return 1
+  printf '%s' "$VAL_ANSWERS$VAL_WARNING$VAL_LINUX$VAL_SHARED$VAL_CHOICES$VAL_INVALID$VAL_REVIEW$VAL_MESSAGES" >"$OMB_TMP/validate.body" || return 1
   core_read_prefix || return 1
   {
     cat "$OMB_TMP/journey.prefix" &&

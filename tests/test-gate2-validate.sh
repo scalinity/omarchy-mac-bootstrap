@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Gate 2 Validate: the ordinary fixture-only plan validation producer
-# (docs/PROTOCOL.md → *Future plan validation contract*). Routing and refusal
-# precedence, the finite invalid vocabulary with its fixed texts, Shared-first
-# evaluation, whole-GB normalization, the planner's exact answers, unplannable
-# machines, Q4-plan-validation-basis-v1 equivalences and read purity.
+# Plan validation (docs/PROTOCOL.md → *plan.save*, *Future plan validation
+# contract*). Routing and refusal precedence, the finite invalid vocabulary
+# with its fixed texts, Shared-first evaluation, whole-GB normalization, the
+# planner's exact answers, unplannable machines, the nine choices with the
+# text flow's defaults, the basis's equivalences and read purity.
 # shellcheck disable=SC2030,SC2031 # intentionally scoped core environments
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -18,6 +18,7 @@ mkdir "$T/tool"
 cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$T/tool/"
 # Test-only taps in a copied tool. Every planning capture is counted with the
 # intent it ran under; effects a read must never reach are recorded and refused.
+# Reading the saved choices is not one: they are the choices' defaults.
 cat >>"$T/tool/lib/core.sh" <<'TAPS'
 eval "$(declare -f mac_detect | sed '1s/mac_detect/v_original_detect/')"
 mac_detect() { printf '%s %s\n' "$OMB_INTENT" "$OMB_PERSIST" >>"$V_DETECT"; v_original_detect "$@"; }
@@ -28,7 +29,6 @@ state_lock() { printf 'lock\n' >>"$V_EFFECTS"; return 99; }
 state_set() { printf 'state\n' >>"$V_EFFECTS"; return 99; }
 state_must_set() { printf 'state\n' >>"$V_EFFECTS"; return 99; }
 state_stamp() { printf 'state\n' >>"$V_EFFECTS"; return 99; }
-cfg_load() { printf 'config\n' >>"$V_EFFECTS"; return 99; }
 cfg_save() { printf 'config\n' >>"$V_EFFECTS"; return 99; }
 shared_intent_save() { printf 'plan\n' >>"$V_EFFECTS"; return 99; }
 run() { printf 'run\n' >>"$V_EFFECTS"; return 99; }
@@ -66,6 +66,9 @@ v_fixed() {
 }
 v_inv() { printf 'invalid\tname=%s\tcode=%s\ttext=%s' "$1" "$2" "$(v_enc "$(v_fixed "$2")")"; }
 v_norm() { printf 'normal\tname=%s\tvalue=%s' "$1" "$2"; }
+v_c() { printf 'arg\tname=%s\tvalue=%s' "$1" "$(v_enc "$2")"; }
+# v_reason OWNER VALUE — the words a choice's own validator gives.
+v_reason() { (t_load >/dev/null 2>&1 && r=$("$1" "$2"); printf '%s' "${r#"${r%%[! ]*}"}"); }
 v_msg() { printf 'message\tlevel=%s\ttext=%s' "$1" "$(v_enc "$2")"; }
 R_DONE=$(printf 'result\tstatus=done\tcode=ok\ttext=\tnext=')
 R_INVALID=$(printf 'result\tstatus=refused\tcode=invalid\ttext=\tnext=')
@@ -151,9 +154,27 @@ v_owner() {
     esac
   )
 }
+# v_choices FIXTURE — the nine choices' normal records with every one
+# omitted: the text flow's own defaults (mac_choices, ask_encrypt) on that
+# Mac, nothing saved.
+v_choices() {
+  (
+    t_load >/dev/null 2>&1
+    OMB_FIXTURE=$1
+    mac_detect
+    u=''
+    if valid_username "$MAC_USER" >/dev/null 2>&1; then u=$MAC_USER; fi
+    printf 'normal\tname=enc\tvalue=1\nnormal\tname=user\tvalue=%s\nnormal\tname=host\tvalue=omarchy\n' "$u"
+    printf 'normal\tname=kmap\tvalue=%s\n' "$(v_enc "$(mac_default_keymap)")"
+    printf 'normal\tname=tz\tvalue=%s\n' "$(v_enc "${MAC_TZ:-UTC}")"
+    printf 'normal\tname=loc\tvalue=%s\n' "$(v_enc "$(mac_default_locale)")"
+    printf 'normal\tname=ssh\tvalue=0\nnormal\tname=gh\tvalue=-\nnormal\tname=dev\tvalue=1\n'
+  )
+}
 # v_body FIXTURE LINUX_BYTES SHARED_GB WARN [MESSAGE...] — the success records
-# the planner's own layout implies: answers in order, the warning, both
-# normals (Linux first), the review, the informational notices.
+# the planner's own layout implies: answers in order, the warning, the
+# normals (Linux, Shared, then the choices' defaults), the review, the
+# informational notices.
 v_body() {
   local fx=$1 l=$2 s=$3 warn=$4 mode r os n=0 m
   shift 4
@@ -171,7 +192,9 @@ EOF
     printf 'answer\tn=%s\tprompt=New%%20OS%%20size\tvalue=%s\tbytes=%s\n' "$n" "$os" $((${os%MiB} * 1048576))
   fi
   [ -z "$warn" ] || printf 'warning\tid=linux-below-recommended\ttext=%s\tfix=\n' "$(v_enc "$warn")"
-  printf 'normal\tname=linux_size\tvalue=%s\nnormal\tname=shared_size\tvalue=%s\nreview\taction=plan.save\tbasis=BASIS\n' "$l" $((s * GB))
+  printf 'normal\tname=linux_size\tvalue=%s\nnormal\tname=shared_size\tvalue=%s\n' "$l" $((s * GB))
+  v_choices "$fx"
+  printf 'review\taction=plan.save\tbasis=BASIS\n'
   for m in "$@"; do printf 'message\tlevel=info\ttext=%s\n' "$(v_enc "$m")"; done
 }
 
@@ -234,15 +257,20 @@ for bad in 'nothing' 'dup' 'empty' 'page' 'type'; do
   assert_empty_file "$T/detect" "malformed validate ($bad): no capture"
 done
 
-# Execute plan.save stays unavailable, whatever it is sent.
-V_OP=execute
-v_reset
-C_ENV=$(v_env) c_run execute "exec	action=plan.save	basis=$zero	confirm="
-v_route 'execute plan.save' refused unavailable
-v_reset
-C_ENV=$(v_env) c_run execute "exec	action=plan.save	basis=$zero	confirm=" "$(v_l 250GB)" "$(v_s 0)"
-v_route 'execute plan.save with its sizes' refused unavailable
-V_OP=''
+# Execute plan.save is a row of the action table (tests/test-actions.sh):
+# a basis no review gave, or inputs that do not hold, is refused before
+# anything is saved.
+if t_plutil 'execute plan.save refuses before saving'; then
+  C_HOME=$REPO
+  C_STATE=$T/exec-state
+  C_ENV='OMB_SESSION_SCOPES=plan' c_run execute "exec	action=plan.save	basis=$zero	confirm=" "$(v_l 250GB)" "$(v_s 0)"
+  assert_eq "$(c_result) $(c_admits execute)" 'refused changed ok' 'execute plan.save with a basis no review gave'
+  C_ENV='OMB_SESSION_SCOPES=plan' c_run execute "exec	action=plan.save	basis=$zero	confirm="
+  assert_eq "$(c_result) $(c_admits execute)" 'refused unavailable ok' 'execute plan.save without its sizes'
+  if [ ! -f "$T/exec-state/state.env" ] || ! grep -q '^cfg_' "$T/exec-state/state.env"; then ok; else fail 'execute plan.save refused: nothing is saved'; fi
+  assert_eq "$(find "$T/exec-state/ops" -type f 2>/dev/null)" '' 'execute plan.save refused: no operation record stays'
+  C_HOME=$T/tool C_STATE=''
+fi
 
 # Unknown names: the first in byte order, before any machine read — even on a
 # machine nothing can be planned on.
@@ -258,16 +286,26 @@ done
 v_run "arg	name=zeta	value=1" "arg	name=x_	value=1" "arg	name=0x	value=1"
 v_refused 'digits before letters, whatever the request order' "$(v_inv 0x unknown-parameter)"
 
-# Plan.save is never advertised: no Gate 2 snapshot lists an action, and the
-# foundation harness keeps exactly its test actions.
+# Plan.save is advertised where the text flow plans: the macOS journey
+# snapshot of a session with the plan scope lists it, with its eleven
+# parameters and no basis (validate gives that); no other scope lists it,
+# and no Linux snapshot does.
 C_HOME=$REPO
 fixtures=linux-alarm-fresh
-t_plutil 'Validate: macOS journey snapshot lists no action' && fixtures="$fixtures mac-m1pro-1tb-roomy"
+t_plutil 'Validate: the macOS journey snapshot lists plan.save' && fixtures="$fixtures mac-m1pro-1tb-roomy"
 for fx in $fixtures; do
   C_FIX=$FIX/$fx
   C_ENV='OMB_SESSION_SCOPES=journey,plan,logs' c_run snapshot "scope	name=journey"
-  assert_eq "$(c_result)" 'done ok' "$fx journey snapshot with the plan scope"
-  assert_eq "$(grep -c '^action	' "$C_EV") $(grep -c 'plan\.save' "$C_EV")" '0 0' "$fx journey snapshot: no action, plan.save nowhere"
+  assert_eq "$(c_result) $(c_admits snapshot)" 'done ok ok' "$fx journey snapshot with the plan scope"
+  case "$fx" in
+    mac-*)
+      assert_eq "$(grep -c '^action	' "$C_EV") $(grep -c '^param	action=plan\.save	' "$C_EV")" '1 11' "$fx journey snapshot: plan.save and its eleven inputs"
+      assert_contains "$C_OUT" "action	id=plan.save	scope=plan	label=Save%20the%20plan	intent=plan	gate=	terminal=managed	cancel=0	basis=	" "$fx: no basis without a review"
+      ;;
+    *) assert_eq "$(grep -c '^action	' "$C_EV") $(grep -c 'plan\.save' "$C_EV")" '0 0' "$fx journey snapshot: no action, plan.save nowhere" ;;
+  esac
+  C_ENV='OMB_SESSION_SCOPES=journey,logs' c_run snapshot "scope	name=journey"
+  assert_eq "$(c_result) $(grep -c 'plan\.save' "$C_EV")" 'done ok 0' "$fx journey snapshot without the plan scope: plan.save nowhere"
   C_ENV='OMB_SESSION_SCOPES=journey,plan,logs' c_run snapshot "scope	name=logs"
   assert_eq "$(c_result) $(grep -c '^action	' "$C_EV")" 'done ok 0' "$fx logs snapshot: no action"
   C_ENV='OMB_SESSION_SCOPES=journey,plan' c_run snapshot "scope	name=plan"
@@ -583,8 +621,9 @@ $(v_inv linux_size below-minimum)"
   v_run "$(v_l 120GB)" "$(v_s 0)"
   v_unplannable 'a blocker precedes the install state' "$(v_owner "$A" blockers)"
 
-  # L. Q4-plan-validation-basis-v1: equivalent spellings bind one basis
-  # (above); effective input, geometry and answers each change it.
+  # L. The basis: equivalent spellings bind one basis (above); an effective
+  # input, the partitions and the answers each change it; free space does
+  # not (docs/DECISIONS.md D56).
   C_FIX=$R
   v_run "$(v_l 250GB)" "$(v_s 0)"
   assert_eq "$(v_basis)" "$first" 'the same request twice: the same basis'
@@ -594,8 +633,9 @@ $(v_inv linux_size below-minimum)"
   b1=$(v_basis)
   if [ -n "$b251" ] && [ "$b251" != "$first" ]; then ok; else fail 'a different Linux size: a different basis'; fi
   if [ -n "$b1" ] && [ "$b1" != "$first" ]; then ok; else fail 'a different Shared size: a different basis'; fi
-  # Geometry alone: free-space Linux 250 GB stays in the gap, so its answer is
-  # unchanged when macOS's own free space moves; the basis still changes.
+  # Free space alone: free-space Linux 250 GB stays in the gap, so its answer is
+  # unchanged when macOS's own free space moves, and so is the basis: free
+  # space drifts on a live Mac and is checked again at execute.
   G=$(t_variant mac-m1-free-space)
   C_FIX=$G
   v_run "$(v_l 250GB)" "$(v_s 0)"
@@ -604,7 +644,13 @@ $(v_inv linux_size below-minimum)"
   assert_eq "$(grep -c '<integer>399000000000</integer>' "$G/cmd/diskutil_info_root")" 1 'the copied fixture holds 1 GB less APFS free space'
   v_run "$(v_l 250GB)" "$(v_s 0)"
   assert_eq "$(c_result) $(grep '^answer' "$C_EV")" "done ok $a0" 'APFS free space moved: the same free-space answer'
-  if [ -n "$(v_basis)" ] && [ "$(v_basis)" != "$g0" ]; then ok; else fail 'APFS free space moved: a different basis'; fi
+  assert_eq "$(v_basis)" "$g0" 'APFS free space moved: the same basis'
+  # The resize limit alone: the same plan, the same basis.
+  sed -i.bak 's#<key>MinimumSizePreferred</key><integer>334610464768</integer>#<key>MinimumSizePreferred</key><integer>344610464768</integer>#' "$G/cmd/diskutil_limits_disk3" && rm -f "$G/cmd/diskutil_limits_disk3.bak"
+  assert_eq "$(grep -c '<integer>344610464768</integer>' "$G/cmd/diskutil_limits_disk3")" 1 'the copied fixture reports another resize limit'
+  v_run "$(v_l 250GB)" "$(v_s 0)"
+  assert_eq "$(c_result) $(v_basis)" "done ok $g0" 'the resize limit moved: the same basis'
+  cp "$FIX/mac-m1-free-space/cmd/diskutil_limits_disk3" "$G/cmd/diskutil_limits_disk3"
   cp "$FIX/mac-m1-free-space/cmd/diskutil_info_root" "$G/cmd/diskutil_info_root"
   v_run "$(v_l 250GB)" "$(v_s 0)"
   assert_eq "$(v_basis)" "$g0" 'the fixture restored: its basis again'
@@ -615,6 +661,56 @@ $(v_inv linux_size below-minimum)"
   C_FIX=$R
   v_run "$(v_l 120GB)" "$(v_s 0)"
   if [ "$(grep '^answer' "$C_EV")" != "$a2" ] && [ "$(v_basis)" != "$m2" ]; then ok; else fail 'other answers: another basis'; fi
+
+  # N. The nine choices, in mac_choices' order, each judged by cfg_field_ok:
+  # one refused is named with its own validator's words after the choices
+  # before it; a value given replaces the text flow's default and binds the
+  # basis; a default that would not pass its own prompt is required; the
+  # saved choices are the defaults.
+  C_FIX=$R
+  defaults=$(v_choices "$R")
+  pre=''
+  for case in 'enc|2|valid_bool' 'user|Root|valid_username' 'host|-bad|valid_hostname' 'kmap|a b|valid_keymap' \
+    'tz|../x|valid_tz' 'loc|en_US|valid_locale' 'ssh|yes|valid_bool' 'gh|-x|valid_ghuser' 'dev|3|valid_bool'; do
+    IFS='|' read -r k v owner <<EOF
+$case
+EOF
+    v_run "$(v_l 250GB)" "$(v_s 0)" "$(v_c "$k" "$v")"
+    want="$(v_norm linux_size 250000000000)
+$(v_norm shared_size 0)"
+    [ -z "$pre" ] || want="$want
+$pre"
+    want="$want
+$(printf 'invalid\tname=%s\tcode=invalid-choice\ttext=%s' "$k" "$(v_enc "$(v_reason "$owner" "$v")")")"
+    v_refused "choice $k [$v] is refused in its owner's words" "$want"
+    pre="${pre:+$pre
+}$(printf '%s\n' "$defaults" | grep "^normal	name=$k	")"
+  done
+  v_run "$(v_l 250GB)" "$(v_s 0)" "$(v_c gh -)"
+  assert_eq "$(c_result) $(v_basis)" "done ok $first" 'gh - is the cleared value its default is'
+  v_run "$(v_l 250GB)" "$(v_s 0)" "$(v_c enc 0)" "$(v_c user bob)" "$(v_c host m1pro)" "$(v_c kmap de)" \
+    "$(v_c tz Europe/Berlin)" "$(v_c loc de_DE.UTF-8)" "$(v_c ssh 1)" "$(v_c gh octocat)" "$(v_c dev 0)"
+  assert_eq "$(c_result)" 'done ok' 'every choice given'
+  assert_eq "$(grep '^normal	' "$C_EV" | tail -n 9)" "$(printf 'normal\tname=%s\tvalue=%s\n' enc 0 user bob host m1pro kmap de tz Europe/Berlin loc de_DE.UTF-8 ssh 1 gh octocat dev 0)" \
+    'the choices given are the normals, in their order'
+  if [ -n "$(v_basis)" ] && [ "$(v_basis)" != "$first" ]; then ok; else fail 'other choices: another basis'; fi
+  U=$(t_variant mac-m1pro-1tb-roomy)
+  printf 'root\n' >"$U/cmd/id_un"
+  C_FIX=$U
+  v_run "$(v_l 250GB)" "$(v_s 0)"
+  v_refused 'a user the survey suggests that its prompt refuses: required' "$(v_norm linux_size 250000000000)
+$(v_norm shared_size 0)
+$(v_norm enc 1)
+$(printf 'invalid\tname=user\tcode=required\ttext=%s' "$(v_enc 'This choice has no default that passes its own check; give a value.')")"
+  v_run "$(v_l 250GB)" "$(v_s 0)" "$(v_c user alex)"
+  assert_eq "$(c_result)" 'done ok' 'and given, it holds'
+  C_FIX=$R
+  mkdir -p "$T/n-state" && chmod 700 "$T/n-state"
+  printf 'cfg_host=m1pro\ncfg_dev=0\n' >"$T/n-state/state.env" && chmod 600 "$T/n-state/state.env"
+  C_STATE=$T/n-state v_run "$(v_l 250GB)" "$(v_s 0)"
+  assert_contains "$(grep '^normal	' "$C_EV")" "$(printf 'normal\tname=host\tvalue=m1pro')" 'a saved choice is its default'
+  assert_contains "$(grep '^normal	' "$C_EV")" "$(printf 'normal\tname=dev\tvalue=0')" 'a saved no is its default'
+  C_STATE=''
 
   # M. Read purity at every ceiling, with and without saved choices: saved
   # Shared and Linux sizes never reach a validation.
