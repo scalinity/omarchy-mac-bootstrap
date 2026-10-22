@@ -258,7 +258,9 @@ EOF
     ;;
   config)
     wf=${1:-.github/workflows/release.yml}
-    other=$(git ls-files | grep -E '(^|/)\.cargo/' | grep -v '^frontend/\.cargo/config\.toml$')
+    # Cargo reads configuration only from .cargo/config(.toml); other files
+    # under a .cargo folder (a fixture home's .crates.toml) configure nothing.
+    other=$(git ls-files | grep -E '(^|/)\.cargo/config(\.toml)?$' | grep -v '^frontend/\.cargo/config\.toml$')
     [ -z "$other" ] || die "Cargo configuration outside frontend/.cargo/config.toml: $other"
     if [ -f "$wf" ]; then
       # The names the document lists, and the ones that do the same under

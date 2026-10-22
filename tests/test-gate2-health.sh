@@ -344,10 +344,11 @@ c_uname_arm "$T/native"
 C_PATH=$T/native:/usr/bin:/bin:/usr/sbin:/sbin H_EXTRA='OMB_FIXTURE= OMB_FRONTEND_DEV='
 h_reset
 h_snapshot
-assert_eq "$(c_result) $C_RC $(c_admits snapshot)" 'refused unavailable 0 ok' 'non-fixture health snapshot'
+# Gate 3: the core answers a real machine's Health through the same Doctor
+# capture; a generation from elsewhere is refused as changed.
+assert_eq "$(c_result) $C_RC $(c_admits snapshot)" 'done ok 0 ok' 'non-fixture health snapshot is answered'
 h_page "$zero"
-assert_eq "$(c_result) $C_RC $(c_admits detail)" 'refused unavailable 0 ok' 'non-fixture health detail'
-assert_empty_file "$T/doctor" 'non-fixture: no Doctor capture'
+assert_eq "$(c_result) $C_RC $(c_admits detail)" 'refused changed 0 ok' 'non-fixture health detail of another generation'
 H_SCOPES=journey H_EXTRA='OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_SESSION_PURPOSE=frontend-check'
 h_reset
 h_snapshot

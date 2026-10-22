@@ -94,7 +94,8 @@ for scope in health logs; do
   done
   if [ "$scope" = logs ]; then
     # A real machine's logs: the ordinary contract answers them (Gate 3).
-    C_ENV="OMB_SESSION_SCOPES=logs OMB_FIXTURE= OMB_FRONTEND_DEV=" c_run snapshot "scope	name=logs"
+    c_uname_arm "$T/native"
+    C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV="OMB_SESSION_SCOPES=logs OMB_FIXTURE= OMB_FRONTEND_DEV= G2_PROBES=$T/probes CP1_LOOKUPS=$T/lookups CP1_OWNERS=$T/owners" c_run snapshot "scope	name=logs"
     if [ "$(c_result)" != 'refused unavailable' ]; then ok; else fail 'a real machine'"'"'s logs snapshot is answered'; fi
     assert_eq "$(c_admits snapshot)" ok 'and admitted'
   fi
