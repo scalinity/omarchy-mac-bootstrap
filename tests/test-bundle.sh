@@ -325,6 +325,7 @@ assert_rc "$T_RC" 0 "an export with a file over 64 MiB still runs"
 M6=$(ls -d "$D6"/omarchy-mac-bootstrap/bundles/*/bundle.omb)
 assert_contains "$(blines "$M6" skip)" "item=bigfile	reason=too-large:" "bundle-object-size: a file over 64 MiB is skipped as too-large"
 assert_not_contains "$(blines "$M6" file)" "dest=.config/big" "and never becomes an object"
+rm -f "$F6/scan/x/8/f/big"
 
 # --- The profile and the destination it needs -------------------------------------------------------------
 t_cli_copy export_cli "$F" "$T/state-none" 'y\n' "$D2"
