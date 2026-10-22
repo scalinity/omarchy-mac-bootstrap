@@ -278,7 +278,7 @@ _res_lookup() {
 # "|target=V|" the version a decision chose (the first item's decision that
 # names one).
 _res_runtimes() {
-  local i=0 m t set v pre post
+  local i=0 m t vers v pre post
   RES_RT="|" RES_RV="|"
   while [ "$i" -lt "$RES_I_N" ]; do
     if _res_lookup "$RES_M_IDX" "${RES_I_KIND[i]}/${RES_I_NAME[i]}" && [ "${RES_M_DISP[RES_AT]}" = RUNTIME ]; then
@@ -286,12 +286,12 @@ _res_runtimes() {
       _res_keep "${RES_M_KEEP[m]}" "${RES_I_VER[i]}"
       v=${RES_KEPT:-unknown}
       if _res_lookup "$RES_RT" "$t"; then
-        set=$RES_AT
-        case " $set " in
+        vers=$RES_AT
+        case " $vers " in
           *" $v "*) ;;
           *)
-            pre=${RES_RT%%"|$t="*} post=${RES_RT#*"|$t=$set|"}
-            RES_RT="$pre|$t=$set $v|$post"
+            pre=${RES_RT%%"|$t="*} post=${RES_RT#*"|$t=$vers|"}
+            RES_RT="$pre|$t=$vers $v|$post"
             ;;
         esac
       else
@@ -314,7 +314,7 @@ _res_runtimes() {
 # RES_VERSION RES_GUESS RES_STATE RES_NOTE. The note names the map entry or
 # the decision that produced it.
 _res_one() {
-  local i=$1 m dc="" dv="" j set v
+  local i=$1 m dc="" dv="" j vers v
   RES_METHOD=none RES_TARGET="" RES_VERSION="" RES_GUESS=0 RES_STATE=unresolved RES_NOTE=""
   if _res_lookup "$RES_D_IDX" "${RES_I_ID[i]}"; then
     dc=${RES_D_CHOICE[RES_AT]} dv=${RES_D_VALUE[RES_AT]}
@@ -360,13 +360,13 @@ _res_one() {
     RUNTIME)
       RES_METHOD=mise RES_TARGET=${RES_M_TARGET[m]}
       _res_lookup "$RES_RT" "$RES_TARGET"
-      set=$RES_AT
+      vers=$RES_AT
       if _res_lookup "$RES_RV" "$RES_TARGET"; then
         v=$RES_AT
         # A chosen version is one the Mac has, or any when none is known.
-        case " $set " in
+        case " $vers " in
           *" $v "*) ;;
-          *) [ "$set" = unknown ] || v="" ;;
+          *) [ "$vers" = unknown ] || v="" ;;
         esac
         _whole "$v" '^[0-9]+(\.[0-9]+){0,2}$' || v=""
       else
@@ -375,11 +375,11 @@ _res_one() {
       if [ -n "$v" ]; then
         RES_VERSION=$v RES_STATE=resolved RES_NOTE="map ${RES_M_ID[m]}, decision version:$v"
       else
-        case "$set" in
+        case "$vers" in
           *" "* | unknown)
-            RES_STATE=needs-decision RES_NOTE="map ${RES_M_ID[m]}: Linux gets one version of $RES_TARGET; this Mac has $set"
+            RES_STATE=needs-decision RES_NOTE="map ${RES_M_ID[m]}: Linux gets one version of $RES_TARGET; this Mac has $vers"
             ;;
-          *) RES_VERSION=$set RES_STATE=resolved ;;
+          *) RES_VERSION=$vers RES_STATE=resolved ;;
         esac
       fi
       ;;
