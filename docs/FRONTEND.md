@@ -1,8 +1,8 @@
 # The frontend
 
-**Status: the implementation contract for M14 gate 1 (distribution,
-lifecycle, fallback, the startup check) and the screens of M14–M16
-(MILESTONES.md); not implemented.** Library and platform facts: docs/UPSTREAM.md → *Ratatui and
+**Status: built for M14's Gate 1 (distribution, lifecycle, fallback, the
+startup check) and Gate 2's reads; the rest follows MILESTONES.md → *The
+finish*.** Library and platform facts: docs/UPSTREAM.md → *Ratatui and
 distribution*.
 
 The product's interface is a compiled Rust program built with Ratatui,
@@ -33,30 +33,33 @@ descriptors and supervision are defined once, in docs/PROTOCOL.md → §3.
 | --- | --- |
 | an interactive command whose flow is exposed through the protocol, on a terminal | the frontend |
 | `frontend-check` on a terminal (M14 gate 1) | the frontend: its whole flow is the startup check (*The startup check*) |
-| a one-shot command (`status`, `doctor`, `shared`, `logs`, `sources`, `scan`, `profile show`, `restore status`, `restore why`, `qualify status`, `debug`, `debug context`, `debug raw`, `report`, `--help`, `--version`) | text on stdout: a contract for scripts and agents |
+| a one-shot command (`status`, `doctor`, `shared`, `logs`, `sources`, `operation`, `scan`, `profile show`, `restore status`, `qualify status`, `debug`, `report`, `--help`, `--version`) | text on stdout: a contract for scripts and agents |
 | `--no-tui`, stdin or stdout not a terminal, `TERM` unset or `dumb` | text; for `frontend-check`, a report that the check was not performed |
 | the frontend cannot be verified, cannot start, or refuses the handshake | the text recovery surface, saying why; for `frontend-check`, the check's own report that it was not completed, never another command's flow |
 
-A command moves to the frontend only when every action its flow needs is
-exposed (MILESTONES.md): `profile` and `export` with M14's gates 4 and 5;
-`restore` and `rescue` with M15; the installer's commands one family at a
-time in M16. Until then a command stays in text, so no command opens a
-frontend that cannot finish it.
+Once released and pinned in `release/frontend.lock`, the frontend runs on
+real machines for the interactive commands; an unreleased build runs only
+against fixtures (docs/DECISIONS.md, D16). A command moves to the frontend
+only when every action its flow needs is exposed (MILESTONES.md): the
+installer's commands with Gate 3, `profile` and `export` with Gates 4 and
+5, `restore` with M15-A, `qualify` with M16. Until then a command stays in
+text, so no command opens a frontend that cannot finish it.
 
 `frontend-check` meets the same rule rather than bending it: its whole flow
 is starting the interface — acquire or verify it, reach the core, show the
 foundation dashboard, leave — so a dashboard with no actions finishes it.
 It is an additional, explicit command and never becomes a default: the
 default run, `install`, `plan`, `resume`, `profile`, `export`, `restore`,
-`rescue`, `qualify`, `shared create` and `shared activate` keep their routing
-until the milestone above moves each of them.
+`qualify`, `shared create` and `shared activate` keep their routing until
+the milestone above moves each of them.
 
 ## Starting
 
-In M14 gate 1 the one production route to the frontend is `frontend-check`
-(the first diagram). The diagrams after it are the normal commands' routes:
-each becomes active only in the milestone that moves its command to the
-frontend (*When the frontend runs*); until then that command runs in text.
+Until a pinned release exposes another command's flow, the one production
+route to the frontend is `frontend-check` (the first diagram). The diagrams
+after it are the normal commands' routes: each becomes active once its
+command moves to the frontend (*When the frontend runs*); until then that
+command runs in text.
 
 ### The startup check (M14 gate 1)
 
@@ -79,8 +82,8 @@ On macOS arm64 and on Linux aarch64 alike (*The startup check*):
 
 ### On macOS
 
-From M16, once the default run's family moves to the frontend
-(MILESTONES.md → *M16 — The full journey through the frontend, and
+The default run takes this route once the release pinned in M16 exposes
+its flow (MILESTONES.md → *M16 — The full journey through the frontend, and
 qualification*); until then `./omarchy-bootstrap` is the text installer:
 
 ```text
@@ -95,9 +98,10 @@ qualification*); until then `./omarchy-bootstrap` is the text installer:
 
 ### On the fresh Asahi system
 
-From M16, once `resume`'s family (network and the Omarchy handoff) moves to
-the frontend; until then `resume` is the text flow, and `frontend-check` is
-the only command that opens the frontend here.
+`resume` takes the route below from the same release, which exposes its
+flow (network and the Omarchy handoff); until then `resume` is the text
+flow, and `frontend-check` is the only command that opens the frontend
+here.
 
 The earliest the frontend can draw is the first run of this tool, which
 needs the repository, which needs the network:
@@ -584,7 +588,7 @@ Library facts: Ratatui 0.30.2 with Crossterm 0.29.0.
 ## Handing the terminal to a child
 
 The Asahi installer, Omarchy Mac's setup, `nmtui`, `sudo`, `pacman`, a
-sign-in, a rescue agent: each needs the real terminal. The core runs them;
+sign-in: each needs the real terminal. The core runs them;
 the frontend **stops reading terminal input and drawing**, and keeps
 following the request's event spool.
 
@@ -631,7 +635,7 @@ sequenceDiagram
   draw from and asks again after every action, on `r`, and after a handoff or
   a suspend; an action is always submitted with the basis it was shown.
 - **Local work stays local.** Navigation, focus, scrolling, searching and
-  filtering loaded data never call the core (docs/DECISIONS.md → *Resolved review questions*, O1).
+  filtering loaded data never call the core (docs/DECISIONS.md, D6).
 
 ## The security boundary
 
@@ -665,11 +669,11 @@ input:
   gate: the typed word must still be given on stdin, as the baseline's text
   flow reads it. `frontend-check`, whose whole flow is the interface, has
   no text flow: with `--no-tui` it reports the check not performed.
-- **The installer's flows in text** are the baseline's own screens.
-- **Migration in text**: `profile --select FILE` (docs/MIGRATION.md →
-  *Choices in a file*) and `restore --plan FILE` (docs/RESTORE.md →
-  *Decisions in a file*), validated like the frontend's requests, then the
-  gate words and the bundle approval code asked for as in any text flow.
+- **The installer's flows in text** are the baseline's own screens; the
+  text interface stays complete for the install journey and every read.
+- **Migration in text**: migration choices are made in the frontend;
+  without it, `profile` saves the defaults and `restore` keeps every
+  conflict, after their typed words.
 
 ## The crate
 

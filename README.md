@@ -310,7 +310,8 @@ CI runs every test on Linux (bash 5, ShellCheck) and macOS (`/bin/bash` 3.2).
 Design and boundaries: [SPEC.md](SPEC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [MILESTONES.md](MILESTONES.md). The planning and Shared logic is tested against
 recorded disk layouts; qualification on real hardware is milestone M17, the
-first real install with the finished product. The next milestones (a Ratatui
-interface, migrating this Mac's environment to Omarchy, rescue tools and
-cross-system checks) are designed in [docs/DECISIONS.md](docs/DECISIONS.md)
-and the documents it cites; none of it is built yet.
+first real install with the finished product. The Ratatui interface (its
+foundation and read-only screens are built), the migration of this Mac's
+environment to Omarchy and the cross-system checks are finished in the phases
+of MILESTONES.md → *The finish*; their decisions are in
+[docs/DECISIONS.md](docs/DECISIONS.md).

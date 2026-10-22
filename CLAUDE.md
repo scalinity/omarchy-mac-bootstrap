@@ -1,10 +1,12 @@
 # omarchy-mac-bootstrap
 
-A Bash orchestrator that plans storage and launches the official Asahi Alarm
-installer on macOS, continues into Omarchy Mac on the new Arch system, and
-carries an optional Shared macOS/Linux exFAT partition through both. It
-plans, explains, downloads with provenance, launches, verifies the machine
-afterwards, and records.
+A Bash orchestrator with a Ratatui interface that plans storage and launches
+the official Asahi Alarm installer on macOS, continues into Omarchy Mac on the
+new Arch system, carries an optional Shared macOS/Linux exFAT partition
+through both, and carries the Mac's environment over. It plans, explains,
+downloads with provenance, launches, verifies the machine afterwards, and
+records. It is built to be run once, by its owner, on one 2021 MacBook Pro
+(M1 Pro): finished before that install, never revisited after it.
 
 ## Read first
 
@@ -12,12 +14,12 @@ afterwards, and records.
 - `docs/UPSTREAM.md` — what upstream was read and where; read before changing any upstream assumption.
 - `docs/ARCHITECTURE.md` — the seams, module map, bash 3.2 conventions.
 - `docs/SHARED.md` — the Shared lifecycle and its one partition creation; read before touching `lib/shared.sh`.
-- `MILESTONES.md` — mark a milestone done only when its acceptance criteria hold.
-  Its accepted baseline names the reviewed commit every later change is a
-  delta against; new work does not inherit that review.
-- `docs/DECISIONS.md` — the product expansion (M14–M18): its decisions, the
-  review questions they settle, and which design document governs each part;
-  read it, and the gates in `MILESTONES.md`, before building any of them.
+- `MILESTONES.md` — the plan to the finish and where it stands: *The finish*
+  is the order of work and who owns which files; each milestone's *Work* is
+  its whole scope and its *Exit* says when it is done. Where a design
+  document describes more than a milestone's *Work*, the milestone wins.
+- `docs/DECISIONS.md` — the product expansion (M14–M17): its decisions and
+  which design document governs each part. D37 is how the rest is built.
 
 ## Rules
 
@@ -73,13 +75,51 @@ afterwards, and records.
 - **Record before the irreversible step** with `state_must_set`; a record that
   cannot be written stops the step.
 - **Destructive steps sit behind typed words** (`yes`, `launch`, `start`,
-  `resume`, `experimental`, `create`, `mount`, `test`); defaults only ever
-  lead to safe outcomes.
+  `resume`, `experimental`, `create`, `mount`, `test`, `clear`, `restore`,
+  `opaque`, `carry`); defaults only ever lead to safe outcomes.
 - **Print user-visible text through the `ui_*` helpers or `_p`**, so the Linux
   VT console, where Phase 2 runs, stays pure ASCII.
 - **State and logs stay non-secret.** `state_set` refuses secret-shaped keys;
   `run` logs argv and exit code, never output. Nothing in this tool reads a
   password — upstream programs prompt for their own.
+
+## How the rest is built
+
+The rules of docs/DECISIONS.md → D37, which exist so that one session
+finishes M14–M16 without trading away the safety above.
+
+- **Phases A, B and C, in parallel inside each.** Build in MILESTONES.md →
+  *The finish* order. Give units that own different files to workers in
+  isolated worktrees; the session alone edits the shared files and
+  integrates. No unit waits for another's review or for a person.
+- **Code first; the design is written once, as built.** No
+  documentation-only contract before code and no documentary test case.
+  When a milestone closes, its design documents state the built design in
+  the present tense, and its status in `MILESTONES.md` is a few lines.
+- **Tests that guard something** (docs/TESTING.md → *Principles*): per new
+  module, its success path, every refusal or failure it tells apart (above
+  all, those that protect the disk, data or a secret), one stop and one
+  write failure per place it saves data, and a rerun that changes nothing;
+  per action the frontend runs, equivalence with the accepted baseline; per
+  new screen, its frames. Existing suites keep running; no new proof suites,
+  case catalogs or comparisons against intermediate commits.
+- **One review per phase.** A NativePeers batch — a Codex worker
+  (`gpt-6.1-sol`, `xhigh`) and a Claude worker, both read-only — reviews the
+  phase's diff against `main`, with these rules and the design it implements.
+  Every high and medium finding is fixed before the merge. A phase that
+  changes disk authority, `sudo`, the Shared creation or activation, the
+  storage planner, secret handling, restore placement or the safety
+  allowlists adds a third, adversarial Codex worker, and a fix to any of
+  those gets a focused second look.
+- **CI where it decides something.** Push freely: FAST is feedback. During
+  a phase run the suites a change touches. FULL runs at each phase's end and
+  on the commit the owner installs from; a phase merges to `main` only on a
+  green guard at its exact SHA. A documentation-only change needs FAST
+  alone. A timing failure may be rerun once, noted in the commit; a second
+  failure is a finding.
+- **Not this project's work:** positive proofs about an unreadable operation
+  record beyond `operation clear`, provenance or tamper evidence, approval
+  codes, benchmark campaigns, M17 itself (the owner's install).
 
 ## Gotchas
 

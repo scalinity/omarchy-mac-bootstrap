@@ -1,12 +1,60 @@
 # The interface
 
-**Status: designed for M14–M16; not implemented.** How the frontend
+**Status: designed for M14–M16; built in part.** How the frontend
 (docs/FRONTEND.md) looks and behaves. Everything on screen comes from the
 core's records (docs/PROTOCOL.md); this document decides how it is shown.
-The presentation follows the approved reference design (docs/DECISIONS.md →
-D51): the references decide how the interface looks, the core's records what
-it says, and nothing in an image is a fact, a version, a status or a
-capability.
+The owner's reference designs (*Reference designs*; docs/DECISIONS.md → D51)
+decide how the interface looks, the core's records what it says, and
+nothing in an image is a fact, a version, a status or a capability.
+
+## Reference designs
+
+The reference designs are fifteen images in `TUI Redesign Reference
+Images/` at the repository root, not tracked by Git. They set the look every
+screen shares: the pixel OMARCHY wordmark with its MAC BOOTSTRAP tagline and
+the laptop-and-mountains art, the ten-station journey rail, the navigation
+on the left, the System Overview and a context panel on the right, steppers,
+check lists, the footer's key hints, and the dark navy backdrop.
+
+Their content is mock-up: every word, number and state in them is a
+placeholder, and so are the rail's station names, the navigation's entries
+and the Apple logo in the art. The rail shows the core's ten stations
+(*The rail*), and the brand draws no vendor glyph (*Direction: a panelled
+instrument*). A screen never shows what the core cannot observe: no
+installer percentage, time remaining or live log, and no installer "in a
+new terminal window", because an installer runs on this terminal, which the
+frontend hands over. The footer says *read-only* and *no system changes*
+only when *Layout* allows it.
+
+Five file names do not say what the image shows: `Inventory.png` is the
+System Scan, `Resolution Review.png` the Migration Selection,
+`AI Environment.png` the Migration Review, `Linux Continuation.png` the
+Asahi preparation, and `Completion.png` a second qualification layout, a
+verdict with its counts over a check table, which the completion screen
+takes for the report.
+
+| # | Screen | Design |
+| --- | --- | --- |
+| 1 | Welcome and machine identity | `Frontend Acquisition.png`: the Frontend Check, with the verified release, target and SHA-256 |
+| 2 | Journey dashboard | `Journey Dashboard.png` |
+| 3 | Environment scan | `Inventory.png` |
+| 4 | Migration selection | `Resolution Review.png` |
+| 5–9, 11 | Inventory by category | none: one list and detail in the shared look |
+| — | Migration review | `AI Environment.png` |
+| 12, 19 | Storage planner, with Shared creation | `Storage Planer.png` |
+| 13 | Gate | `Safety Gate.png`, from the core's `gate.*` facts and its word, with no button (*Confirmation*) |
+| 14 | Asahi handoff | `Asahi Handoff.png`, with the four-step stepper and check list of `Linux Continuation.png` |
+| 15 | Linux continuation | the stepper layout of 14, for the network and Omarchy Mac's start |
+| 18 | Omarchy progress | `Omarchy Progress.png`, honestly: upstream's signals as a check list, and "runs on tty1" in place of the bar, the times and the log |
+| 20 | Restore progress | `Restore Progress.png`; the bar only from the core's counts |
+| 21 | Conflict and diff | `Conflict:Diff.png` |
+| 22 | Health | `Health.png` |
+| 23 | Qualification | `Qualification.png`, on its check table |
+| 24 | Logs and diagnostics | none: as built |
+| 25 | Completion | `Completion.png` |
+
+Every screen holds at 80×24 and at the 60×20 floor, in ASCII and with no
+colour.
 
 ## Direction: a panelled instrument
 
@@ -53,7 +101,7 @@ what the core reports changes.
   has run 150 ms, elapsed time after two seconds, determinate progress where
   the core reports counts. Nothing animates while idle.
 - **Sparse where it matters, dense where it helps.** Gates, handoffs and
-  reviews are sparse; the inventory, resolution and health views are dense
+  reviews are sparse; the category lists and the health view are dense
   tables.
 
 ## Tokens
@@ -186,13 +234,13 @@ copied.
 
 | Where | Keys |
 | --- | --- |
-| everywhere | `?` help · `q` quit (asks while a request runs) · `Esc` back or close · `r` refresh · `Tab`/`Shift-Tab` move focus · `L` logs · `D` debug report · Ctrl-C and Ctrl-Z as in docs/FRONTEND.md |
+| everywhere | `?` help · `q` quit (asks while a request runs) · `Esc` back or close · `r` refresh · `Tab`/`Shift-Tab` move focus · `L` logs · Ctrl-C and Ctrl-Z as in docs/FRONTEND.md |
 | the frame | `↑` `↓` move in the focused panel · `←` `→` switch between the navigation rail and the workspace · `Enter` select · `s` the sidebar's panels at narrow widths |
 | lists and tables | `↑` `↓` (and `k` `j`) · `PgUp` `PgDn` · `Home` `End` (and `g` `G`) · `Enter` open · `Space` include or exclude · `/` filter (`Esc` clears) · `f` next category · `+` include all shown · `-` exclude all shown |
 | trees | `→` `←` (and `l` `h`) expand and collapse |
 | text fields | typed text, `Backspace`, Ctrl-U clears, `Enter` submits, `Esc` cancels; no single-letter commands while a field has focus |
 | gates | the word, `Enter` (only an exact match continues), `Esc` |
-| conflicts | `k` keep · `R` replace (capital, deliberately) · `m` merge where offered · `s` skip · `n`/`p` next and previous · `v` side by side or unified |
+| conflicts | `k` keep (the default) · `R` replace (capital, deliberately) · `K` keep the rest · `n`/`p` next and previous · `v` side by side or unified |
 | codes and tokens | `y` copies the focused one (OSC 52 where the terminal allows it; on macOS through the core's clipboard action) |
 
 The vim letters are aliases, never the only way. Help (`?`) lists every
@@ -206,10 +254,9 @@ Friction follows consequence, and the core checks every word
 | Level | For | Form |
 | --- | --- | --- |
 | none | moving, selecting, filtering, looking | — |
-| yes / no, default no | saving a plan, finishing a profile, exporting a bundle, the availability check, starting a rescue agent, closing SSH for this boot, live checks, accepting an item as it is, saving raw diagnostics | a one-line question; Enter alone answers no |
+| yes / no, default no | saving a plan, saving a profile, exporting a bundle, running a tool's own `mcp list` (it may start the tool's MCP servers) | a one-line question; Enter alone answers no |
 | yes / no, default yes | the first download of the frontend itself, in the text launcher (a pinned file, checked by digest) | `[Y/n]` |
-| **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` — and the new `restore`, `undo`, `import` (a foreign bundle), `opaque` (a custom path no adapter understands), `carry` (an encrypted SSH key), `ssh` (remote rescue), `harden` (the system's SSH), `remove` (rescue tools), `clean` (qualification files) | the gate screen |
-| **approval code** | restoring a bundle: the `ombbundle-…` code macOS showed after the export | the gate screen, with the code's field in place of the word |
+| **typed word** | every gate the baseline has — `yes` (backup), `experimental`, `launch`, `start`, `resume`, `create`, `mount`, `test` (also each qualification step) — and `restore`, `undo`, `opaque` (chosen folders, once per save), `carry` (an encrypted SSH key) | the gate screen |
 
 **The gate screen** says what will happen, on what, what it does not touch,
 what cannot be undone, and what will ask next (a password, a passphrase, an
@@ -224,10 +271,10 @@ leaves. On a narrow terminal the gate takes the whole screen.
 | loading | the last content, a spinner after 150 ms, elapsed time after 2 s |
 | empty | what would appear here, and how to make it appear |
 | partial | what is there, and what is missing with the reason (`apps: 2 bundles unreadable`) |
-| error | what failed, `r` to retry, `L` for the log, `D` to prepare a debug report |
+| error | what failed, `r` to retry, `L` for the log, `D` for `debug` (the agent brief with the status and doctor facts) in the notes view |
 | blocked | the core's blocker text and its fix, in the `blocked` token |
 | changed | the review, or the open detail, is dimmed with `changed since you looked — r` when the core refused a stale basis or a generation it no longer holds |
-| no answer | "the core stopped without answering", its diagnostics file, and the debug report |
+| no answer | "the core stopped without answering", its diagnostics file, and `D` for `debug` |
 | too small | the size needed and the size now |
 
 ## Screens
@@ -249,76 +296,30 @@ them (title rule, banner, navigation rail, sidebar, footer) is the one in
    Ready           104   exact 61 · Omarchy has it 22 · runtime 6 · other 15
    Needs you         9   alternatives and unknown casks
    Staying           5   macOS only
-   aarch64         not checked yet
 
-   Next   decide the 9 open items, then seal the profile
+   Next   decide the 9 open items, then save the profile
  ──────────────────────────────────────────────────────────────────────────
- ⏎ decide   c check aarch64   s seal   ? help
+ ⏎ decide   ? help
 ```
 
-**Inventory** (standard; at 60 columns `source` and `version` drop):
+**Inventory by category** (standard; every category is the same list, with
+the items that need a decision first; at 60 columns `source` and `version`
+drop; from 120 columns a detail pane beside the list holds the focused
+item's choices, a folder's contents or an AI tool's components, and
+narrower the detail opens on Enter):
 
 ```text
- Software  Apps  Terminal  Editors  AI  Dotfolders  Git & SSH      / filter
+ Software  Apps  Terminal  Editors  AI  Folders  Git & SSH  Secrets  / filter
  ──────────────────────────────────────────────────────────────────────────
    name              source         version   becomes
+   ◌ tailscale       cask           1.88      choose                      !
    ◉ ripgrep         brew           15.2.0    pacman ripgrep              ✓
    ◉ node            brew · nvm     22.11.0   mise node@22                ✓
-   ○ mas             brew           2.1.0     macOS only                  –
  ❯ ◉ gh              brew           2.81.0    pacman github-cli           ✓
-   ◌ tailscale       cask           1.88      choose                      !
+   ○ mas             brew           2.1.0     macOS only                  –
                                                        118 selected · 212
  ──────────────────────────────────────────────────────────────────────────
  space include   ⏎ details   f category   / filter   ? help
-```
-
-**Resolution review** (source and target side by side; narrow stacks each
-row on two lines):
-
-```text
- From macOS                          On Omarchy, aarch64
- ──────────────────────────────────────────────────────────────────────────
- iTerm2            cask           →  ! terminal: foot (Omarchy's) or another
- 1Password         cask           →  ! no aarch64 build · alternatives
- VS Code           cask           →  ✓ pacman omarchy/visual-studio-code-bin
- GitHub MCP        Claude · user  →  ✓ claude mcp · needs node (mise 22)
-                                       /opt/homebrew/bin/npx → npx
- ──────────────────────────────────────────────────────────────────────────
- ⏎ decide or details   ? help
-```
-
-**Dotfolders** (tree; at 120+ a preview pane shows the file with flagged
-paths underlined and secret-shaped values masked):
-
-```text
- Dotfolders                                                     ~ on this Mac
- ──────────────────────────────────────────────────────────────────────────
- ▸ .claude            412 MB   AI tool · on the AI screen
- ▾ .config            1.2 GB
-     ◉ nvim           3.4 MB   portable
-     ◉ ghostty          4 KB   portable · 2 Mac-only keys
-     ○ gh               8 KB   personal · hosts.yml is secret and stays
-     ○ karabiner       60 KB   Mac-only
- ▸ .ssh                24 KB   personal · 2 keys, 1 encrypted
-   ◌ .scripts         120 KB   opaque · type opaque to carry
-   – .zsh_history     2.1 MB   history · not carried in v1
-```
-
-**AI environment** (providers across, components down; narrow shows one
-provider at a time, `Tab` to switch):
-
-```text
- AI tools                   Claude Code       Codex            OpenCode
- ──────────────────────────────────────────────────────────────────────────
- settings                   ◉ settings.json   ◉ config.toml    ◉ opencode.json
- instructions               ◉ CLAUDE.md       ◉ AGENTS.md      ○ none
- MCP servers                ◉ 9 · 1 Mac-only  ◉ 4              ◉ 2
- skills                     ◉ 23              ◉ 6 shared       –
- agents · commands          ◉ 7 · 12          ◉ 2              ◉ 3 · 1
- plugins                    ◉ 5 reinstalled   –                ◌ 1 runs code
- hooks                      ! 3 run commands  –                –
- sessions · history         – not in v1       – not in v1      – not in v1
- sign-in                    again on Linux    again            again
 ```
 
 **Storage planner** (the scale bar; answers computed by the core):
@@ -356,10 +357,11 @@ provider at a time, `Tab` to switch):
  esc cancel
 ```
 
-**A conflict:**
+**A conflict** (from the restore review, on request; Keep is the default,
+and *keep the rest* keeps every conflict after this one):
 
 ```text
- ~/.config/starship.toml                    Omarchy's default ↔ from macOS
+ ~/.config/starship.toml          conflict 1 of 3 · Omarchy's ↔ from macOS
  ──────────────────────────────────────────────────────────────────────────
  - format = "$directory$git_branch$character"
  + format = "$all"
@@ -367,18 +369,18 @@ provider at a time, `Tab` to switch):
  - truncation_length = 2
  + truncation_length = 4
  ──────────────────────────────────────────────────────────────────────────
- k keep   R replace   s skip   n next   v side by side   esc back
+ k keep   R replace   K keep the rest   n next   v side by side   esc back
 ```
 
 **Health:**
 
 ```text
- Health                                               static · c live checks
+ Health                                                         c mcp list
  ──────────────────────────────────────────────────────────────────────────
  Claude Code   ✓ installed 2.1.283 · wrapper Omarchy's · ran at restore
-               ✓ settings  ✓ skills 23  MCP 8 ok · ! xcode-mcp macOS-only
- Codex         ✓ installed 0.157.1   ✓ config   ✓ skills 6   ✓ MCP 4
- OpenCode      ✓ installed 1.18.32   ! kept Omarchy's opencode.json
+               ✓ configured   ✓ sign-in file   MCP 8 · ! xcode-mcp macOS-only
+ Codex         ✓ installed 0.157.1   ✓ configured   ✓ sign-in file   MCP 4
+ OpenCode      ✓ installed 1.18.32   ✓ configured   ○ no sign-in file
  Runtimes      ✓ node 22.20.0    ✓ python 3.13.15    ✓ go 1.27.1
  Packages      ✓ 58 of 61    ✗ 3 unavailable   ⏎ details
 ```
@@ -401,31 +403,24 @@ provider at a time, `Tab` to switch):
 
 | # | Screen | Pattern | At 60 columns | Main keys |
 | --- | --- | --- | --- | --- |
-| 1 | Welcome and machine identity | one page of facts: this machine, the tool and the core, where the journey stands; facts read from a record, and records from another Mac, are named *recorded* | labels shorten; the sidebar is a panel of its own (`s`) | `⏎` `?` `q` |
-| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the blockers, the next step, and the views of status, doctor and details; no action is offered before the gate that exposes it | one-line rail, the card only | `⏎`, the stage's own keys |
+| 1 | Welcome and machine identity | one page of facts: this machine, the tool and the core, the frontend's verified release (target, SHA-256), where the journey stands; facts read from a record are named *recorded* | labels shorten; the sidebar is a panel of its own (`s`) | `⏎` `?` `q` |
+| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the blockers, the next step, and the views of status, doctor and details; only the actions the snapshot lists | one-line rail, the card only | `⏎`, the stage's own keys |
 | 3 | Environment scan | adapters with live counts and states (`done`, `partial`, `denied`) | same | Ctrl-C cancels (safe) |
-| 4 | Migration selection | category tabs over lists, defaults marked by who chose | tabs become one picker line | `Tab` categories |
-| 5 | Homebrew and tool inventory | virtualised table, detail on Enter | source and version drop | `Space` `/` `f` `⏎` |
-| 6 | Resolution review | source → target, decisions first | two-line rows | `⏎` |
-| 7 | Application alternatives | an app's purpose and its choices | the choices full screen | `⏎` |
-| 8 | Dotfolder picker | tree with badges, preview at 120+ | preview on Enter | `→` `←` `Space` `⏎` |
-| 9 | AI environment | providers × components matrix, drill into one | one provider at a time | `Tab` `⏎` |
-| 10 | Path rewrites | per file: found → proposed, diff | diff on Enter | `a` approve `d` decline |
-| 11 | Secrets and sensitive data | secrets (staying, with how to sign in again), sensitive opt-ins, findings in selected files | same | `Space`; `carry` gate for an encrypted key |
+| 4 | Migration selection | the categories, each with its count, whether it is included and its estimated size; defaults marked by who chose; a category opens its list | sizes drop | `Space` `⏎` |
+| 5–9, 11 | Inventory by category | one list and detail, a tab per category (secrets among them), decisions first; the detail pane holds an item's choices, a folder's contents and an AI tool's components | the detail on Enter | `f` `Space` `/` `⏎` |
+| — | Migration review | the summary before the install: what is selected, by category, with its estimated size, and what comes next | same | `⏎` `Esc` |
 | 12 | Storage planner | scale bar, presets, the answers | the strip shortens | `Tab` `⏎` |
-| 13 | Gate | the facts and one field | whole screen | the word, `⏎`, `Esc` |
-| 14 | Asahi handoff | provenance, inspection, answer card, boot guide, token | sections scroll | `i` inspect `y` copy; `launch` |
-| 15 | Linux continuation | token decoded, network, Omarchy Mac provenance | same | `n` network (nmtui); `start` |
-| 16 | Rescue | the options and their states (docs/RESCUE.md) | same | `⏎` |
-| 17 | Debug report | the safe fields by group, preview; raw diagnostics offered separately, marked potentially sensitive | preview on Enter | `s` save `⏎` |
-| 18 | Omarchy progress | upstream's signals as a checklist; where upstream prints (tty1) | same | `r` |
+| 13 | Gate | the core's `gate.*` facts and one field | whole screen | the word, `⏎`, `Esc` |
+| 14 | Asahi handoff | a four-step stepper over a check list: provenance, inspection, the answer card, the boot guide, the token | sections scroll | `i` inspect `y` copy; `launch` |
+| 15 | Linux continuation | the stepper of 14, for the token decoded, the network and Omarchy Mac's provenance and start | same | `n` network (nmtui); `start` |
+| 18 | Omarchy progress | the stepper, with upstream's signals as a check list; Omarchy Mac runs on tty1, and the screen says so | same | `r` |
 | 19 | Shared creation | the region on the strip, the checks, two gates | strip hidden below 70 | `yes`, `create` |
-| 20 | Restore progress | the graph's work grouped by layer, the current node, blocked chains, handoffs announced | the current group only | Ctrl-C between items |
-| 21 | Conflict and diff | both sides, the choices | unified only | `k` `R` `m` `s` `n` `v` |
-| 22 | Health | tools × observed states (docs/AI-TOOLS.md → *What is observed*), live checks on request | one tool per group | `c` |
-| 23 | Qualification | the steps, identity, digests | digests shortened | `⏎`; `test` |
-| 24 | Logs and diagnostics | the tool's log (the entries `logs` shows), the core's diagnostics, and from M15 the restore journal; filter by level | same | `/` `Tab` `f` |
-| 25 | Completion | every stage and the report; on quit, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` | same | `q` |
+| 20 | Restore progress | the work grouped by layer, the current item, what is blocked, handoffs announced; the bar only from the core's counts | the current group only | Ctrl-C between items |
+| 21 | Conflict and diff | each conflict of the restore review as a diff of both sides: Keep by default, Replace, and *keep the rest* for every conflict after it | unified only | `k` `R` `K` `n` `p` `v` |
+| 22 | Health | doctor's checks with restore and AI rows: each tool's observed facts (docs/AI-TOOLS.md → *What is observed*); a tool's own `mcp list` on request | one tool per group | `c` |
+| 23 | Qualification | the three steps on a check table, Shared's identity, the digests, the state | digests shortened | `⏎`; `test` |
+| 24 | Logs and diagnostics | the tool's log (the entries `logs` shows) and the core's diagnostics, a tab each; filter by level | same | `/` `Tab` `f` `⏎` |
+| 25 | Completion | every stage, and the report's check table under its verdict and counts; on quit, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` | same | `q` |
 
 ## Clutter audit of this design
 

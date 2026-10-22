@@ -97,30 +97,21 @@ EOF
 done
 [ "$n" -ge 50 ] && ok || fail "docs-refs: only $n references read; the reader is broken"
 
-# --- docs-test-ids: every test id SECURITY.md cites is defined in TESTING.md -------------
-# Defined: in the first cell of a TESTING.md table row (and the second, when
-# the first is a family such as `mcp-*` listing its members), in a heading,
-# or in a sentence that lists ids ("One id per …"). A template such as
-# `persist-death-<B>` defines `persist-death-*`; a cited family is defined by
-# its members. A name followed by "corpus" is an outside corpus, not an id.
-defined=$(
-  {
-    sed 's/<[A-Za-z]*>/*/g' docs/TESTING.md | grep -E '^\| `' | awk -F'|' '{ print $2; if ($2 ~ /^ `[a-z]+-\*` $/) print $3 }'
-    grep -E '^#' docs/TESTING.md
-    tr '\n' ' ' <docs/TESTING.md | grep -oE 'One id per[^.]*\.'
-  } | grep -oE '`[a-z]+-[a-z0-9*-]+`' | tr -d '`' | awk '!seen[$0]++'
-)
-families=$(printf '%s\n' "$defined" | sed 's/-.*//' | awk '!seen[$0]++')
+# --- docs-test-ids: every test id SECURITY.md cites is tested, or its family planned ----
+# TESTING.md → *Test families*: a row per family (`fam-*`) naming its test files,
+# and "planned: Phase X" while any of its tests is unwritten. A cited id of a
+# listed family must be named in tests/ or frontend/tests/ (this file excluded)
+# unless its row says planned. A token of no listed family is not an id.
+fams=$(section docs/TESTING.md 'Test families' | grep -E '^\| `')
 cited=$(sed -E 's/`[^`]+` corpus//g' docs/SECURITY.md | grep -oE '`[a-z]+-[a-z0-9*-]+`' | tr -d '`' | awk '!seen[$0]++')
 n=0
 for id in $cited; do
-  printf '%s\n' "$families" | grep -qxF -- "${id%%-*}" || continue
+  row=$(printf '%s\n' "$fams" | grep -F -- "\`${id%%-*}-*\`")
+  [ -n "$row" ] || continue
   n=$((n + 1))
-  printf '%s\n' "$defined" | grep -qxF -- "$id" && continue
-  case "$id" in
-    *'*') printf '%s\n' "$defined" | grep -qF -- "${id%\*}" && continue ;;
-  esac
-  fail "docs-test-ids: SECURITY.md cites $id, which TESTING.md does not define"
+  case "$row" in *'planned: Phase '*) continue ;; esac
+  named=$(grep -rlF -- "${id%\*}" tests frontend/tests 2>/dev/null | grep -v '^tests/test-docs\.sh$')
+  [ -n "$named" ] || fail "docs-test-ids: SECURITY.md cites $id, which no test in tests/ or frontend/tests/ names"
 done
 [ "$n" -ge 20 ] && ok || fail "docs-test-ids: only $n cited ids read; the reader is broken"
 
@@ -136,7 +127,7 @@ while IFS='|' read -r _ sub states _; do
     resolution*) owner=docs/RESOLVER.md ;;
     restore*) owner=docs/RESTORE.md ;;
     'AI tool'*) owner=docs/AI-TOOLS.md ;;
-    rescue*) owner=docs/RESCUE.md ;;
+    'system SSH'*) owner=docs/TROUBLESHOOTING.md ;;
     operation*) owner=docs/PROTOCOL.md ;;
     qualification* | journey*) owner=docs/QUALIFICATION.md ;;
     frontend*) owner=docs/FRONTEND.md ;;
@@ -152,7 +143,7 @@ while IFS='|' read -r _ sub states _; do
 done <<EOF
 $rows
 EOF
-[ "$n" -ge 60 ] && ok || fail "docs-states: only $n states read; the reader is broken"
+[ "$n" -ge 45 ] && ok || fail "docs-states: only $n states read; the reader is broken"
 
 # --- docs-commands: every command named is in SPEC.md → *Commands*, with an intent -------
 cmds=""
@@ -217,7 +208,7 @@ bad=$(units | READS=$reads awk -F'\t' '
     } }')
 [ -z "$bad" ] && ok || fail "docs-read-writes: a read command described as writing: $bad"
 
-# --- docs-milestones: each gate and milestone defined once; M17 and M18 not started ------
+# --- docs-milestones: each gate and milestone defined once; M17 not started --------------
 ids=$(grep -E '^#{2,3} (M[0-9]+(-[A-Z])?|Gate [0-9]+) ' MILESTONES.md | sed -E 's/^#+ //; s/^(M[0-9]+(-[A-Z])?|Gate [0-9]+) .*/\1/')
 dup=$(printf '%s\n' "$ids" | awk 'seen[$0]++ == 1')
 [ -z "$dup" ] && ok || fail "docs-milestones: defined more than once in MILESTONES.md: $dup"
@@ -232,13 +223,11 @@ while IFS= read -r m; do
 done <<EOF
 $mentioned
 EOF
-for m in M17 M18; do
-  st=$(awk -v m="$m" '/^## / { on = (index($0, "## " m " ") == 1); next } on && /\*\*Status:\*\*/' MILESTONES.md)
-  case "$st" in
-    *"not started"*) ok ;;
-    *) fail "docs-milestones: $m's status is not 'not started': $st" ;;
-  esac
-done
+st=$(awk '/^## / { on = (index($0, "## M17 ") == 1); next } on && /\*\*Status:\*\*/' MILESTONES.md)
+case "$st" in
+  *"not started"*) ok ;;
+  *) fail "docs-milestones: M17's status is not 'not started': $st" ;;
+esac
 
 # --- docs-shell: the target shell is Bash wherever one is named -------------------------
 bad=$(units | awk -F'\t' 'tolower($2) ~ /target shell/ && $2 !~ /Bash/ { print $1 ": " substr($2, 1, 100) }')
@@ -250,12 +239,12 @@ bad=$(where '(^|[^A-Za-z])Windows([^A-Za-z]|$)' | awk -F'\t' '!($1 == "SPEC.md" 
 [ -z "$bad" ] && ok || fail "docs-windows: Windows outside SPEC.md → *Non-goals*: $bad"
 section SPEC.md Non-goals | grep -qw Windows && ok || fail "docs-windows: SPEC.md → *Non-goals* no longer names Windows"
 
-# --- docs-debug-names: debug, debug context, debug raw, debug save -----------------------
+# --- docs-debug-names: debug is the only debug command -----------------------------------
 bad=$(
   {
     for f in "${DOCS[@]}"; do grep -v '^| `docs-' "$f"; done | grep -oE '`debug [^`]*`' | tr -d '`'
     printf '%s\n' "$named" | cut -f2 | grep '^debug '
-  } | awk '$2 != "context" && $2 != "raw" && $2 != "save"'
+  } | awk '$2 != ">"'
 )
 [ -z "$bad" ] && ok || fail "docs-debug-names: another debug subcommand named: $bad"
 
@@ -279,7 +268,8 @@ docs_sessions_control() {
   [ "$observed" = "$2" ] && ok || fail "docs-sessions control $1: expected $2, observed $observed: $found"
 }
 
-# A/B are the accepted FJ-ED-1 witness paragraphs, joined as units() joins them.
+# A/B use "histories" for something other than agent sessions, joined as units()
+# joins them: the classifier must let such text through.
 docs_sessions_control A allow ' **Conditional positive witnesses.** Apply the two accepted FJ-ED-1 histories with its full independent evidence, not absent fixed filenames alone:'
 docs_sessions_control B allow ' Mixed histories use the same sequence: for example G1 independently completes W and its ordinary operation, then G2 leaves the admitted W/absent-handoff/K prior unchanged and closes before failed replacement. The latest state per destination agrees with that chain. No witness contains simultaneous unsettled G1/G2 operations or extends an unbound G2 ordinary replacement. These are future contractual witnesses, not executed evidence or P3/P4 proof.'
 docs_sessions_control C allow 'Agent sessions and their histories are not carried in v1.'

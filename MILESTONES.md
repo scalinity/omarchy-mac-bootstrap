@@ -1,1158 +1,302 @@
 # Milestones
 
-Each milestone lists its objective, the work, how it is verified, and what must
-hold before it counts as done. Status lives at the end of each entry.
+The plan to the finish and where it stands. Each milestone's *Work* is its
+whole scope and its *Exit* says when it is done, judged from its tests and
+CI. Where a design document describes more than a milestone's *Work*, the
+milestone wins, and the document is brought down to the built design when
+the milestone closes. How the rest is built is docs/DECISIONS.md → D37 and
+CLAUDE.md → *How the rest is built*. The record of every checkpoint before
+2026-10-22 is in Git.
 
 ## Accepted baseline
 
 Commit `2edb76a7de3f78ec90927ac93d5eec3a84636253` is the installer and
-storage safety baseline, accepted by an independent review on 2026-09-26
-before any product-expansion work: the storage planner, the Asahi and Omarchy
-Mac handoffs, install classification, the one Shared creation and its
-activation, state, routing and the launcher, as tested by CI run 36220127446
-(M13). No real hardware has run it; that is M17.
+storage safety baseline (M0–M13), accepted on 2026-09-26 with CI run
+36220127446: the storage planner, the Asahi and Omarchy Mac handoffs,
+install classification, the one Shared creation and its activation, state,
+routing and the launcher. It is the equivalence oracle. An action the
+frontend drives makes the same decisions, runs the same commands in the same
+order and leaves the same state as this commit's text interface, unless the
+difference is a named, tested delta (docs/TESTING.md → *Equivalence with the
+accepted baseline*). No real hardware has run it; that is M17.
 
-`main` carries it at `e33714195c767f94de41cbea2a51d7c04d8e3fe0`, a
-fast-forward (no merge commit) to the reviewed commit plus one
-documentation-only commit that accepts M13 and records this baseline. CI
-run 36224896159 passed on that commit, logs read: Linux 1,809 passed, 0
-failed, 27 skips, every one a plutil-gated section, ShellCheck 0.9.0 clean;
-macOS 2,971 passed, 0 failed, no skips, the launcher step clean on stderr,
-fixtures fresh. That commit had no independent review of its own; it adds
-no code to the reviewed one.
+## The installer: M0–M13
 
-Later work does not inherit this acceptance. Each change is reviewed as a
-delta against this commit, and a change that touches disk authority, `sudo`,
-the storage planner, the Shared creation or activation, or the allowlists in
-`tests/test-safety.sh` is reviewed as a safety change, whichever milestone
-carries it.
+All done, and accepted with the baseline above.
 
-## M0 — Upstream validation + architecture
+| Milestone | What it delivered |
+| --- | --- |
+| M0 | upstream read and cited from source: the Asahi Alarm installer and `installer_data.json`, Omarchy Mac (docs/UPSTREAM.md) |
+| M1 | one entrypoint that routes by system, the degradable interface, `--dry-run` |
+| M2 | the macOS survey and the storage planner |
+| M3 | the gated, provenance-first Asahi handoff and persistent state |
+| M4 | Linux detection and the Omarchy Mac handoff |
+| M5 | `doctor`, `status`, `resume`, `logs` |
+| M6 | the optional developer setup |
+| M7 | tests, recovery documents, polish |
+| M8 | intent from the command, trustworthy state |
+| M9 | storage plans on exact extents, with the installer's own alignment |
+| M10 | where an interrupted Asahi install stands, from the disk |
+| M11 | Shared storage (tested on recorded layouts; real hardware is M17) |
+| M12 | developer outcomes that are true |
+| M13 | CI on stock bash 3.2 and bash 5 |
 
-- **Objective:** ground every assumption in current upstream source.
-- **Work:** read the Asahi Alarm bootstrap, `installer_data.json`, the
-  asahi-installer `main.py`/`osinstall.py`/`util.py`, Asahi FAQ, partitioning
-  cheatsheet and device list, Omarchy Mac `README.md` and
-  `bin/omarchy-mac-setup`; write `SPEC.md`, `docs/UPSTREAM.md`.
-- **Verification:** every constant in `SPEC.md` cites its upstream file.
-- **Acceptance:** OS choice name, resize prompts, 38 GB rule, setup flags and
-  Omarchy 4 branch confirmed from source, not from documentation alone.
-- **Status:** done.
+## The product expansion: M14–M17
 
-## M1 — CLI shell + environment detection
+The tool becomes a Mac → Omarchy migration and bootstrap assistant: a
+required Ratatui interface over the Bash core, which alone reads the machine,
+decides what is legal and runs everything (D3, D5). It is finished before the
+first real install (D4), which is M17. Screen numbers are those of
+docs/UX.md → *Every screen*; the owner's reference designs, with the screen
+each one serves (several file names do not match what they show), are in
+docs/UX.md → *Reference designs*.
 
-- **Objective:** one entrypoint that routes by OS with a polished, degradable UI.
-- **Work:** `omarchy-bootstrap`, `lib/common.sh` (platform, `sys_cmd` seam,
-  `run`, logging, fetch), `lib/ui.sh` (palette, glyph sets, rail, menus),
-  `lib/state.sh`, `lib/sources.sh`; `--help`, `--version`, `--dry-run`,
-  `--no-color`, `--ascii`.
-- **Verification:** `tests/test-cli.sh`; manual run under `NO_COLOR=1`,
-  `TERM=dumb`, `TERM=linux`.
-- **Acceptance:** runs on `/bin/bash` 3.2 with no dependencies.
-- **Status:** done.
+### The finish
 
-## M2 — macOS preflight + storage planner
+The rest is built in one session, in three phases, A, B and C (D37; the
+install's own Phase 1, 2 and 3 in README.md are a different thing). Within a phase,
+units that own different files run in parallel on workers, and the session
+integrates them; the session alone edits the shared files. A phase ends when
+its milestones' exits hold, FULL is green at the phase's head, one
+cross-vendor review of the phase finds no open high or medium finding, and
+the phase is merged to `main`.
 
-- **Objective:** a truthful survey and a planner that mirrors the installer's math.
-- **Work:** `lib/macos.sh` detection via plist parsing; `lib/storage.sh` pure
-  arithmetic; presets, custom parsing, validation, layout strip, shared plan.
-- **Verification:** `tests/test-storage.sh`, `tests/test-detection.sh` over the
-  macOS fixtures.
-- **Acceptance:** presets and limits match `SPEC.md` for every fixture; unsafe
-  input is rejected with its reason.
-- **Status:** done.
+| Phase | Milestones | Units and the files each owns |
+| --- | --- | --- |
+| A | Gate 3, Gate 4, Gate 5 | **the session:** `omarchy-bootstrap`, `lib/core.sh`, `lib/records.sh`, `lib/state.sh`, `lib/common.sh`, `lib/frontend.sh`, `lib/operation.sh`, `data/children.omb`, `tests/test-safety.sh`, `tests/test-static.sh`, `tests/ci-manifest.tsv`, `tests/fixtures/generate.sh`, the documents · **actions:** `lib/macos.sh`, `lib/linux.sh`, `lib/asahi.sh`, `lib/validate.sh`, `lib/shared.sh` outside the critical interval, `tests/test-actions.sh` · **migration choices:** `lib/migrate_scan.sh`, `lib/migrate_profile.sh`, `lib/toml.sh`, their tests · **resolution and export:** `lib/migrate_resolve.sh`, `lib/migrate_bundle.sh`, `data/migration-map.omb`, their tests · **interface:** `frontend/` |
+| B | M15-A, M15-B, M15-C | **restore:** `lib/migrate_restore.sh`, `tests/test-restore.sh` · **AI tools:** `lib/agents.sh`, `lib/dev.sh`, `tests/test-agents.sh`, `tests/test-dev.sh` · **debug and SSH:** `lib/debug.sh`, `lib/doctor.sh`, `lib/health.sh`, `lib/linux.sh`, `tests/test-debug.sh`, `tests/test-detection.sh` · **interface:** `frontend/` · the session as in phase A |
+| C | M16 | **journey and report:** `lib/journey.sh`, `lib/qualify.sh`, `tests/test-journey.sh`, `tests/test-qualify.sh` · **interface:** `frontend/` · **the session:** the release, `README.md`, the documents, the final check of upstream |
 
-## M3 — Asahi handoff + persistent state
-
-- **Objective:** a gated, provenance-first launch of the official installer.
-- **Work:** backup gate, download + fingerprint + inspect, answer card,
-  clipboard, typed `launch`, foreground execution, exit-code recording, reboot
-  guide, resume token.
-- **Verification:** `tests/test-state.sh`, `tests/test-safety.sh` (recorded
-  argv, no forbidden commands, dry-run executes nothing).
-- **Acceptance:** Enter alone never launches; dry-run prints `would run`.
-- **Status:** done.
-
-## M4 — Linux detection + Omarchy handoff
-
-- **Objective:** continue on Asahi Alarm without re-deriving knowledge.
-- **Work:** `lib/linux.sh` detection, `nmtui` launch, token decode, branch
-  version gate, flag check, typed `start`, upstream setup launch.
-- **Verification:** detection tests over the Linux fixtures; command
-  construction test for the setup flags.
-- **Acceptance:** Omarchy 3 and missing-flag branches are refused; installed and
-  in-progress machines are routed away from the handoff.
-- **Status:** done.
-
-## M5 — doctor / status / resume
-
-- **Objective:** make any interruption legible.
-- **Work:** `lib/doctor.sh` for both OSes; `status` with journey rail; `resume`
-  on both OSes; `logs`.
-- **Verification:** doctor over every fixture; exit status non-zero only on FAIL.
-- **Acceptance:** `status` names the next action in every recorded state.
-- **Status:** done.
-
-## M6 — Developer bootstrap
-
-- **Objective:** optional, rerunnable developer setup that defers to Omarchy.
-- **Work:** `lib/dev.sh` modules: core, languages, containers, editor, git,
-  GitHub, SSH, AI CLIs, time/locale.
-- **Verification:** dry-run over the Omarchy-installed fixture; recorded argv.
-- **Acceptance:** nothing installs without selection; installed tools are skipped.
-- **Status:** done.
-
-## M7 — Tests, recovery docs, polish
-
-- **Objective:** documentation that stands without the original brief.
-- **Work:** `README.md`, `docs/*.md`, `AGENTS.md`/`CLAUDE.md`, shellcheck-clean
-  sources, final upstream re-verification.
-- **Verification:** `tests/run.sh` passes on `/bin/bash` 3.2; README commands
-  exercised.
-- **Acceptance:** every command in the README behaves as documented.
-- **Status:** done.
-
-## M8 — Command intent and trustworthy state
-
-- **Objective:** read-only commands and previews that provably change nothing,
-  and a local record that cannot be redirected or silently lost.
-- **Work:** `OMB_INTENT`/`OMB_PERSIST` set from the command before routing;
-  `run` and downloads refuse outside act; Linux `plan` ahead of state routing;
-  lazy, checked state directory (ownership, mode, no symlinks); one checked
-  atomic writer; the run lock; `state_must_set` before irreversible steps.
-- **Verification:** `tests/test-routing.sh` (filesystem snapshots around every
-  read-only command, preview and plan in every lifecycle state),
-  `tests/test-state.sh`, `tests/test-safety.sh`.
-- **Acceptance:** plan never reaches an action in any state; read-only commands
-  and `--dry-run` leave no state, log or download; unsafe state paths and
-  unwritable records stop the step that needs them.
-- **Status:** done.
-
-## M9 — Storage geometry
-
-- **Objective:** plans made on exact extents, with the installer's own
-  alignment, that provably hold.
-- **Work:** `lib/storage.sh` geometry walk and planner; offsets and GUIDs from
-  `diskutil info`; one region per allocation; whole-MiB answers; the eight
-  invariants; checked size input; storage contract at the handoff; re-read
-  before the launch.
-- **Verification:** `tests/test-storage.sh` replays every plan through an
-  independent model of the installer; geometry fixtures shaped on a real disk.
-- **Acceptance:** separate gaps are never summed; Linux and Shared get at least
-  what was asked; the root keeps 50 GB; overflow and leading zeros are
-  refused; an unreadable layout blocks.
-- **Status:** done (model verified against upstream source; see M17).
-
-## M10 — Install classification and recovery
-
-- **Objective:** say truthfully where an interrupted Asahi install stands.
-- **Work:** `lib/asahi.sh`; the re-read after the installer; Omarchy Mac
-  encryption and finishing states; recovery docs corrected.
-- **Verification:** `tests/test-lifecycle.sh` over a fixture per interruption
-  point and per setup/encryption state.
-- **Acceptance:** exit status is never evidence; incomplete and unknown states
-  stop; repair is mentioned only where upstream offers it.
-- **Status:** done.
-
-## M11 — Shared storage
-
-- **Objective:** one exFAT partition both systems read and write, as a
-  first-class part of the plan.
-- **Work:** `lib/shared.sh`: the plan record, the codes, the guarded creation
-  on macOS, the managed mount on Linux, status, doctor and the write test;
-  `docs/SHARED.md`.
-- **Verification:** `tests/test-shared.sh` (every creation gate and failure,
-  reconciliation, activation cases); the static pin of the single
-  `addPartition` in `tests/test-safety.sh`.
-- **Acceptance:** created at most once, only in the verified reserved region,
-  only after both typed gates and a matching re-read; nothing ever formatted,
-  deleted or repaired; mounted by PARTUUID for the everyday user.
-- **Status:** implemented and tested against recorded layouts; real-hardware
-  qualification is M17.
-
-## M12 — Developer outcomes
-
-- **Objective:** a developer setup whose report and exit status are true.
-- **Work:** per-module outcomes checked on the machine afterwards; SSH as
-  separate facts; only success timestamped.
-- **Verification:** `tests/test-dev.sh` with forced failures in every module.
-- **Acceptance:** any failure is reported and exits non-zero.
-- **Status:** done.
-
-## M13 — Continuous integration
-
-- **Objective:** every push checked on stock bash 3.2 and on bash 5.
-- **Work:** `.github/workflows/ci.yml` (Linux with ShellCheck, macOS with
-  `/bin/bash`), fixture freshness, strict skips.
-- **Verification:** the suite passes locally under `/bin/bash` 3.2 and bash 5
-  with `OMB_STRICT_SKIPS=1`.
-- **Acceptance:** both jobs green on GitHub, the Linux job skipping only
-  the plutil-gated sections, the macOS job skipping nothing, and the macOS
-  launcher step clean on stderr — judged from the job logs, not the
-  workflow's conclusion alone.
-- **Status:** accepted on 2026-09-26 for commit
-  `2edb76a7de3f78ec90927ac93d5eec3a84636253`, run 36220127446, logs read:
-  Linux (bash 5.2.21, ShellCheck 0.9.0 clean) 1,809 passed, 0 failed, 27
-  skips, every one a plutil-gated section; macOS (`/bin/bash` 3.2.57) 2,971
-  passed, 0 failed, no skips, the launcher step clean on stderr under `sh`
-  and `/bin/bash`, fixtures what the generator writes. The independent
-  review of the two later findings, DV1 and DV2 — the mounted Shared
-  identity (154db40) and the noninteractive creation after the last read
-  (4f37810) — closed both and found no new code-level blocker. This is
-  acceptance of the code and CI only: it is not evidence that any real
-  hardware has run the tool (M17).
-  - Run 36198289764 (commit 5ce30ae): the macOS job passed with no skips;
-    the Linux job failed on macOS sections not gated on plutil, a
-    locale-dependent conflict order, and ShellCheck 0.9.0 findings.
-  - Run 36200868856 (commit 92b07c0): both jobs green (Linux 1,675 passed
-    with 24 plutil-gated section skips; macOS 2,705 passed, no skips), but a
-    review of the logs found the macOS smoke step printing
-    `lib/shared.sh: line 1004: syntax error near unexpected token '('` under
-    `sh` and passing anyway, because it checked only the exit status. The
-    launcher and that step were fixed after it: the step now fails on any
-    stderr, checks the exact version, and runs a command that needs every
-    library loaded.
-  - Run 36212062095 (commit 0697d1a): the macOS job passed with no skips
-    and a clean launcher step; the Linux job failed on ShellCheck 0.9.0
-    SC2002 in `tests/test-shared.sh`, which 0.11 no longer reports by
-    default.
-  - Run 36212657832 (commit adcd325): both jobs green, logs read (Linux
-    1,793 passed, 27 skips, all plutil-gated sections, ShellCheck 0.9.0
-    clean; macOS 2,946 passed, no skips, launcher step clean under `sh` and
-    `/bin/bash`). A later review then found the mounted-identity and
-    creation-timing gaps fixed after it.
-
-## The product expansion: M14–M18
-
-The tool becomes a Mac → Omarchy migration and bootstrap assistant with a
-required Ratatui interface, and the product is finished **before** the first
-real install, which is itself the hardware qualification. The design is on
-branch `product-expansion-design`: SPEC.md, docs/DECISIONS.md, and the
-subsystem documents each gate names. Every gate is a delta reviewed against
-the accepted baseline above; a change to a baseline file is reviewed as a
-safety change, on its own. Work proceeds through the gates in order; a gate
-is done only when its exit holds, judged from the tests and CI logs, and
-no gate's work starts before the one before it is done.
-
-Screen numbers are those of docs/UX.md → *Every screen*; test ids are those
-of docs/TESTING.md.
+A worker's fixtures go in its own generator file, which
+`tests/fixtures/generate.sh` sources. M17 follows phase C: the owner's
+install on the M1.
 
 ## Gate 0 — Specification remediation
 
-- **Objective:** turn the reviewed architecture (independent review of
-  `6600fff`: approved with required specification fixes) into a precise
-  implementation contract.
-- **Work:** close findings H1–H10 and M1–M4 in the documents; record the
-  review's answers to O1–O9 (docs/DECISIONS.md); remove the rejected
-  `sudo`-cache change; resolve every fact source or package metadata can
-  answer (docs/UPSTREAM.md); define the gates below. Then close the delta
-  review's findings on `9119502` (DV1–DV8, the TOML test oracle, the
-  section references): the build-input closure, per-operation protocol
-  schemas and code kinds, diagnostics bounded by child class, session
-  ownership and the boot-session mutation barrier, a dedicated rescue SSH
-  server, honest last-instant write limits, provisional Linux qualification
-  rounds, and the secret criterion by kind of content.
-- **Exit:** every finding closed in the documents; O1–O9 recorded; the
-  documentation checks of docs/TESTING.md → *Documentation checks* pass
-  when run by hand; an independent review of the remediated documents
-  passes. No code, workflow, test or fixture changes.
-- **Status:** done. The independent verification of
-  `21904d699e0b55fc75c16054a8c83bccbdc25249` (CI run 36243099184) accepted
-  the Gate 1 contract and authorized Gate 1.
+- **Status:** done. The specification fixes and the gate plan were accepted
+  at `21904d699e0b55fc75c16054a8c83bccbdc25249` (CI run 36243099184).
 
 ## M14 — Frontend, protocol, scanner, profile, resolver and bundle
 
 ### Gate 1 — Frontend and transport foundation
 
-- **Work:** the Rust crate: terminal lifecycle, theme and glyph sets, the
-  too-small state, a read-only journey dashboard (screen 2) and the gate
-  component (13) driven by a test action; protocol `hello`; the record
-  format and admission in both languages (`lib/records.sh`, `record.rs`);
-  the process model (`lib/core.sh`, `core.rs`): descriptors, the spool,
-  session ownership, supervision, operation records and the boot-session
-  barrier, diagnostics by child class; the launcher's side
-  (`lib/frontend.sh`): the lock, acquisition, cache, intent rules,
-  fallback; one fake read, one fake mutating and one fake handoff child
-  (`OMB_TEST_HANDOFF_CHILD`); `release/frontend.lock`, the build-input
-  closure checks and the release workflow; the frontend CI jobs;
-  `tests/test-docs.sh`; and the production startup check,
-  `./omarchy-bootstrap frontend-check` (docs/FRONTEND.md → *The startup
-  check*): its own route, which leaves every other command's routing as it
-  is; the launcher's cache authority held apart from the core session's
-  read ceiling and `journey` scope; the session purpose the core validates;
-  the action-free production foundation snapshot (docs/PROTOCOL.md → *The
-  startup-check session*); and its own failure path, which ends the check
-  and never continues into another command. The entrypoint's routing change
-  gets its own focused safety review (docs/DECISIONS.md, D18). **No
-  baseline action is exposed.**
-- **Verification:** `proto-diff-*`, `proto-golden-hello`,
-  `proto-invalid-schemas`, `proto-code-kind`, `proto-admit-io`,
-  `proto-env`, `proto-version`, `proto-exit`, `sup-*`, `diag-*`, `pty-*`,
-  `frontend-*` (the `frontend-check-*` class included), `docs-*`; frontend
-  layers A–H for the two screens.
-- **Exit:** the macOS arm64 artifact built, verified and started by the
-  launcher on CI and on this Mac's macOS — on this Mac, the published
-  macOS artifact the committed production lock pins, acquired or verified
-  and started through `./omarchy-bootstrap frontend-check` with no fixture,
-  development or test override; `hello` and the production foundation
-  snapshot answered; the action-free dashboard visibly drawn and seen; a
-  normal quit restoring the terminal and removing the session; no baseline
-  state written and no baseline action reached
-  (`frontend-check-production-mac`) — the command's status 0 alone is not
-  this evidence, because it cannot show that the dashboard was drawn;
-  the Linux aarch64 artifact passing `frontend-compat-linux` and starting
-  on the aarch64 runner; every
-  `frontend-input-*` case behaving as written; start and every cleanup path
-  verified; every descriptor, diagnostics and process-death test passing
-  on the real topology — a supervised completion with L, F and C alive
-  (`sup-completion-controllers-live`), the owner launcher cleaning its own
-  scratch (`sup-owner-cleanup`), no reclaim under a live old frontend
-  (`sup-reclaim-live-controller`), the boot-session barrier after lost
-  supervision, and every retained diagnostic byte within its limit
-  (`diag-*`); Bash and Rust admission agreeing on the whole differential
-  corpus and the golden examples; `frontend-lock-not-input` passing; no
-  path that changes the machine.
-- **Status:** accepted and closed, 2026-09-28, by the final independent
-  review: Gate 1 accepted, Gate 2 authorized to begin, M17 not started.
-  - **Accepted implementation:** `548de43db2d395b19db0f69cbb550814984f3523`
-    (R2) on branch `m14-gate1-frontend-foundation`. CI run 36469184904 on
-    that exact commit: all six required jobs succeeded.
-  - **Identity chain:** frontend source `54c3770` (S), which
-    `frontend-v0.1.0` and its release carry; production lock commit
-    `569d67e` (L); accepted `frontend-check` contract `480a744` (B); first
-    implementation `ad10453` (R); accepted implementation `548de43` (R2).
-    The `frontend/` tree and `release/frontend.lock` are the ones of S and
-    L. Production `inputs_digest`
-    `3accc9ce9fd188cb599cbe7d805ac3eda7c29205fead5df0beb015f8dfa41aaa`;
-    lock seal
-    `5cb358224f7defb8ebe47c78eb3967321278aa5c39633302b242e299d87d278e`.
-  - **Production acceptance (`frontend-check-production-mac`):**
-    `./omarchy-bootstrap frontend-check` on this Mac, with no fixture,
-    development or test override, started the published `frontend-v0.1.0`
-    macOS artifact (SHA-256
-    `c651bdfe0271e2c8217741213a42de21a0164d0e7cfdc4716f6b4720ab1ee871`)
-    and exited 0. On the screen: the Foundation dashboard with the Check,
-    Interface, Session and Actions facts and zero available actions; the
-    Help and Logs screens; keyboard navigation; a normal `q` exit. From
-    the core and the launcher: core 0.2.0 identified R2; `hello` and the
-    journey snapshot answered; every exchange ended `done`; the terminal's
-    settings read back as saved; the session's files removed. The check
-    stayed read-only and action-free: no baseline action or installer flow
-    was exposed or exercised.
-  - **Next:** Gate 2 may begin. M17 is not started.
-  - **History (each statement as of its own checkpoint, kept as written).**
-    The independent review of
-  `3a1561e` required remediation (H01–H07, M01–M03, L01–L02); its re-review
-  at `38ed2f1` closed nine and left H06, H07 and M03 partial, and the review
-  at `aa08ee0` closed H06 and M03 and left H07 partial: the storm's
-  exemption did not hold the spool to its bytes. Its remediation is on
-  branch `m14-gate1-frontend-foundation` from `21904d6`. CI runs every job
-  on each push (Linux x86_64 Bash 5.2.21 with ShellCheck 0.9.0, macOS
-  `/bin/bash` 3.2.57, the frontend on Linux x86_64, `ubuntu-24.04-arm` and
-  `macos-15` arm64, and the Linux target shell — GNU Bash 5.3.15 built from
-  pinned sources on `ubuntu-24.04-arm`), and the remediation report names
-  the runs. Staging followed: tag `frontend-v0.1.0` on `54c3770`, release
-  run 36362043228 (both artifacts, `SHA256SUMS`, attestations), and the
-  production `release/frontend.lock` committed at `569d67e`
-  (`source_commit` `54c3770`, `inputs_digest`
-  `3accc9ce9fd188cb599cbe7d805ac3eda7c29205fead5df0beb015f8dfa41aaa`, the
-  `frontend/` tree unchanged from `54c3770`). The independent review of the
-  local-launch preflight at `569d67e` kept the release and the lock valid,
-  and found that no production route reached the frontend there: the
-  entrypoint started it only with `OMB_FIXTURE` set, and the core refused
-  every snapshot outside fixture mode, so this exit's production start
-  could not be met without the contract amendment that defines
-  `frontend-check`. The amendment needs no new release, tag, build or
-  artifact: `frontend-v0.1.0` and the lock stay as they are, and only a
-  change under `frontend/`, or Rust behaviour the released artifact cannot
-  give, would need a new release, under a new version. The amendment is
-  `786a726`; its independent review accepted the architecture — the
-  explicit command, the split authorities, the session purpose, the
-  action-free snapshot, protocol 1 and `frontend-v0.1.0` as released — and
-  required four documentation corrections: FC01, what the command's result
-  can prove, apart from what only the drawn dashboard shows; FC02, the
-  cache's effects phase by phase; FC03, one `OMB_TEST_` prefix rule for the
-  launcher and the core; FC04, the terminal's eligibility before the dry
-  run. Their remediation, the documentation commit after `786a726`, is
-  written and awaits independent review; implementation is not authorized.
-  Blocked on, in order: that review; the bounded `frontend-check`
-  implementation; its focused safety review (D18); CI on the exact
-  remediation commit; the production start on this Mac, as this exit
-  states it. Gate 2 is not authorized. Open:
-  - **Bash 5.2 (not a target):** Ubuntu's runners have 5.2.21, which loses
-    a trap inside a command holding two command substitutions (upstream,
-    fixed for 5.3; docs/UPSTREAM.md → *Experiments*). The core's own code
-    holds no such command; the baseline's `log_event` and run lock do, and
-    stay byte for byte. The signal-storm test names that one failure as a
-    skip on 5.2, counted apart from the plutil skips, only when the state
-    it left is one such a death leaves (`sup-eintr-exemption`); the
-    target's 5.3.15 runs the same storm in CI with no skip.
+- **Built:** the Rust crate (terminal lifecycle, theme, glyph sets, the
+  too-small state), protocol `hello`, the record format and admission in
+  Bash and Rust, the process model and supervision, the launcher's side
+  (lock, acquisition, cache, intent, fallback), `frontend-check`, the
+  build-input closure and the release workflow.
+- **Status:** done. Accepted implementation `548de43`; `frontend-v0.1.0`
+  (source `54c3770`) is published, and `release/frontend.lock` (`569d67e`)
+  pins it. `./omarchy-bootstrap frontend-check` started it on this Mac and
+  drew the action-free dashboard.
 
 ### Gate 2 — Read-only equivalence
 
-- **Work:** `snapshot`, `detail` with generations and paging, `validate` for
-  the plan; `status`, `doctor` and details presented in the frontend; the
-  welcome screen (1); the dashboard (2) and the logs screen (24) over real
-  reads.
-- **Verification:** contract tests (layer H) against the baseline's read
-  commands over every baseline fixture; `debug-intent`-style filesystem
-  snapshots around every read; `frontend-intent-*`; `bench-*`.
-- **Exit:** read paths have no persistent effect; what the frontend shows
-  means what the accepted core's read commands say, fixture by fixture; the
-  O1 benchmark run on both arm64 systems, cold and warm, small and
-  representative, with its numbers recorded here, and either within its
-  budgets or with the finding and its decision recorded in
-  docs/DECISIONS.md.
-- **Status:** accepted and closed, **M14 GATE 2 — ACCEPTED / CLOSED**, by
-  the independent review of `c855f6197be86e90f5fb833f7faec0d0f6372794`
-  (recorded 2026-10-05). The frontend's read-only integration is accepted at
-  that commit, and G2-FE-001 through G2-FE-004 are closed. Frontend `0.2.0`
-  stays **UNRELEASED**: no release, tag or lock change comes with the
-  closure. The O1 signoff stays accepted, with O1-LOGS-P01 open. Gate 3 may
-  take only its documented prerequisite contract (*Gate 3 — The action
-  contract under fixtures*, below); M17 is not started. The records below are
-  kept as written, each as of its own checkpoint; where one says that Gate 2
-  is in progress or that its work awaits review, this closure supersedes it.
-- **History:** begun 2026-09-28 on branch
-  `m14-gate2-readonly-equivalence` from the Gate 1 closeout commit
-  `07b57583ec85ca7a606c1db0c1afe9857490463d`. The contract is written in
-  docs/PROTOCOL.md → *The Gate 2 read surface*, docs/UX.md's amended
-  direction, and D49–D53 with the open questions the first independent
-  review ruled on (docs/DECISIONS.md → *Open review questions*: the doctor's
-  and the log's scopes and the validation semantics stay deferred, each
-  blocking only its own work). That review required, and this status
-  records, three corrections: the candidate check applies the commit's own
-  lock admission, the generation test matrix separates a changed generation
-  from a malformed one, and the backdrop is the dark navy of the reference.
-  The authorized S1–S3 ordinary fixture-only journey snapshot and machine/status
-  detail reads are implemented. The focused review of
-  `5a7c659c29b32a4de94f07aa938dc084b3585ed6` required G2-H01/G2-H02
-  remediation: explicit owned foundation authority and the accepted
-  `Gate2-read-representation-failure` rule. The focused independent remediation
-  review accepted S1–S3 at `f35be42e90bfb8fc29e61557f0a126a74cb6460b`
-  (R): **G2-H01/G2-H02 REMEDIATION ACCEPTED — S1–S3 ACCEPTED**.
-  G2-H01 and G2-H02 are **CLOSED**; there are no new material findings.
-  The representation rule is accepted and implemented; Protocol 1 remains
-  preserved for S1–S3. The accepted implementation identities remain:
-  C-doc `2c1b9033423b831da48b872b34d6daeab8395d74`,
-  S1 `8cb100e3ec2aa7419150a56210c9c9302a793917`,
-  S2 `04bacb3d9cd0a049e9e24730fc9b9cfa7089b6df`, and
-  S3 `e33a26fec83468b9979baf272703e150a1c2a01a`.
-  Gate 2 as a whole is **not complete**. No Gate 2 frontend screen or benchmark
-  has been accepted. The published frontend remains `0.1.0`; candidate
-  `0.2.0` is **UNRELEASED** (D49). Gate 3 and M17 are **NOT STARTED**.
-- **Semantic checkpoint:** Q2 is **RESOLVED — health / doctor**; Q3a is
-  **RESOLVED — logs / log**; Q4's validation contract and
-  `Q4-plan-validation-basis-v1` are **RESOLVED**; Q5 is **RESOLVED FOR
-  MEASUREMENT**, with actual O1 signoff pending. The accepted ruling is
-  **GATE 2 SEMANTIC DECISIONS RESOLVED WITH PROTOCOL PREREQUISITE — IMPLEMENT
-  ONLY THE PREREQUISITE** (docs/DECISIONS.md → *Open review questions*).
-- **CP1 checkpoint:** synchronized admission of exactly `health|logs`, Protocol 1,
-  with request-selected old-client compatibility and absent new producers.
-  CP1 at `7d3c4d1756c25d2acda9257c6d809107fd8171e6` is
-  **ACCEPTED WITH BOUNDED FOLLOW-UP**. The accepted model is
-  **PROTOCOL 1 REMAINS SUFFICIENT — REVIEWED ADDITIVE SCOPE EXTENSION**. The
-  implementation checkpoint `7cd7134698f10af881961953e3a819a6ec31d124`
-  passed CI run **36668971772**, all six jobs successful, logs inspected:
-  7,860 macOS checks with no failures/skips; actual published `0.1.0` and
-  candidate native startup checks passed on both arm64 targets.
-  CP1-L01 (unconditional Logs line count) and CP1-M01 (Gate 2 validation
-  basis vs future Gate 3 save basis) are **CLOSED IN CANDIDATE — awaiting
-  review confirmation**, in docs commit `ba0ed3b`.
-- **S4 Logs checkpoint:** the separately authorized ordinary fixture-only
-  Logs snapshot/detail producer is **ACCEPTED** at
-  `a0ba61c5b560bbbffd02dbb92cec7b4fdec34dc9` (G): **S4 LOGS H03 REMEDIATION
-  ACCEPTED — S4 LOGS ACCEPTED**. S4-H01, S4-L01, S4-H02 and S4-H03 are
-  **CLOSED**. G passed exact-head CI run **36829394506**, all six jobs
-  successful. The first implementation head
-  `5643f98daa09f27af3d963a6028397c4450722a7` passed exact-head CI run
-  **36687859414**, all six jobs successful, logs inspected: 8,729 macOS
-  checks with no failures/test skips; Logs 557 and Logs proof 303 checks
-  passed under stock Bash 3.2. Both suites ran under Linux Bash 5 and pinned
-  target Bash 5.3.15, with only their macOS plist comparison skipped on
-  Linux. Candidate and published `0.1.0` native startup checks passed on
-  both arm64 targets. Full local stock-Bash validation also passed 8,729
-  checks with no failures/skips, plus ShellCheck 0.9.0. Text Logs and its
-  writer are unchanged; no frontend product request/screen/navigation is
-  implemented.
-- **S4 Health checkpoint:** the separately authorized ordinary fixture-only
-  Health (Doctor) snapshot/detail producer is **ACCEPTED** at
-  `27f79d6b03a6639eab9205723e9fe5c43377c8bf` (R): **HEALTH-H01 REMEDIATION
-  ACCEPTED — DOCTOR / HEALTH PRODUCER ACCEPTED**, with no new material
-  findings. Acceptance attaches to R, not to the first reviewed head
-  `71b6c6ea18a51c7f536895ea2fca3e4388b0002b` (D), whose focused review found
-  **HEALTH-H01** (HIGH): a failed read inside the shared row preflight
-  `core_read_rows` could pass for complete consumption of the retained rows.
-  The remediation makes the helper succeed only when every counted row was
-  read (docs/TESTING.md → *Gate 2 read tests*); HEALTH-H01 is **CLOSED**. R
-  passed exact-head CI run **36963798514** (attempt 1), all six jobs
-  successful, their logs inspected by the reviewer. Remediation head
-  `7ef8097aaed315cac7416cc1e26beb8820802878` passed exact-head CI run
-  **36958090215**, all six jobs successful, logs inspected: 11,315 macOS
-  checks with no failures/skips, among them read 55, Health 737 and Health
-  proof 1,604 under stock Bash 3.2; Linux Bash 5 (ShellCheck 0.9.0) and
-  pinned target Bash 5.3.15 each ran read 55, Health 645 and Health proof
-  866, with only their `(no plutil)` macOS sections skipped. Candidate and
-  published `0.1.0` native startup checks passed on both arm64 targets.
-  Full local stock-Bash validation also passed 11,315 checks with no
-  failures/skips, plus ShellCheck 0.9.0. The first implementation
-  head `34f0c687cad40c82f8cc024b814dd778b9a7da70` passed exact-head CI run
-  **36923581109**, all six jobs successful, logs inspected: 11,139 macOS
-  checks with no failures/skips, among them Health 601 and Health proof
-  1,586 under stock Bash 3.2. Linux Bash 5 passed 7,825 checks under
-  ShellCheck 0.9.0, and pinned target Bash 5.3.15 ran the Gate 2 suites;
-  both ran Health (509) and Health proof (848), with only their `(no plutil)`
-  macOS sections skipped. Candidate and published `0.1.0` native startup
-  checks passed on both arm64 targets. Full local stock-Bash validation
-  also passed 11,139 checks with no failures/skips, plus ShellCheck 0.9.0.
-  One `cmd_doctor` invocation per request supplies its counts and rows;
-  `lib/doctor.sh` is unchanged.
-- **Validate checkpoint:** the separately authorized ordinary fixture-only
-  Validate (plan validation) producer, `validate select action=plan.save`
-  with `linux_size` and `shared_size` under the `plan` scope, implements
-  *Future plan validation contract* and `Q4-plan-validation-basis-v1` as a
-  delta on R. Independent verdict: **VALIDATE / PLAN-VALIDATION PRODUCER
-  ACCEPTED** at `b01610e69a2eef6e5a52f5ede18236210699704e`, with no new
-  findings. Its exact-head CI run **37011572618** (attempt 1) had all six
-  jobs successful; the independent review inspected the logs. Historical
-  implementation head
-  `69da12b93cc7bcb0801f8e6e5cffedaba1b3722f` passed exact-head CI run
-  **37003457163** (attempt 1), all six jobs successful, logs inspected:
-  13,121 macOS checks with no failures/skips, among them Validate 1,349 and
-  Validate proof 457 under stock Bash 3.2; Linux Bash 5 (ShellCheck 0.9.0)
-  and pinned target Bash 5.3.15 each ran Validate 145 and Validate proof 1,
-  with only their `(no plutil)` macOS sections skipped. Candidate and
-  published `0.1.0` native startup checks passed on both arm64 targets. Full
-  local stock-Bash validation also passed 13,121 checks with no
-  failures/skips, plus ShellCheck 0.9.0 and 0.11.0. `lib/validate.sh` adapts the
-  baseline's planning owners; at accepted V, `lib/storage.sh` and `lib/macos.sh`
-  remained byte-identical to the accepted baseline, and only `lib/core.sh` routed it
-  (docs/PROTOCOL.md → *Future plan validation contract*, its implementation
-  paragraphs). The review accepted the C-locale adapter delta and the
-  machine-context gate: `parse_size` runs in the C locale, so a non-ASCII
-  byte is `syntax` rather than cut off by a multibyte `tr`; requests
-  inside the baseline `plan_verify` band on `mac-m1-free-space` are `error
-  invariant`, the accepted `plan_validate` -> `plan_verify` invariant band.
-  Successful basis/response construction uses one `mac_detect` capture;
-  the existing-install unplannable path may make additional read-only
-  `asahi_classify` observations. Permanent evidence: `tests/test-gate2-validate.sh` and
-  `tests/test-gate2-validate-proof.sh` (docs/TESTING.md → *Gate 2 read
-  tests*). No action is advertised, `execute plan.save` stays unavailable,
-  and nothing is persisted.
-- **PLIST-M01 prerequisite checkpoint (historical candidate record):** independent review confirmed
-  **MEDIUM, prerequisite-blocking** failed plist-extraction stdout consumed as
-  data on supported macOS 15. Exact-H CI **37095456840**, attempt 1, finished
-  with five successful jobs and native macOS job **111124336601** failing the
-  unchanged complete Validate attachment: 54 passed, 1 failed, 2 ignored.
-  The single-store fixture was falsely refused as multi-store. This is a latent
-  compatibility defect exposed by legitimate new coverage; V's macOS 26 full
-  detection/Validate/proof evidence remains valid. Only a Class A `plist_get`
-  correction/comment and bounded tests/docs are authorized on H
-  `6a191f46ece7d9fceeb2b8538b0cb05b0599d154`. The fixed BASE safety pin permits
-  only that exact helper replacement; all other production owners remain
-  unchanged. **PLIST-M01 REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
-  CONFIRMATION**; this checkpoint is not closed.
-- **CP1-PLIST-M01 preservation checkpoint (historical candidate record):** P
-  `86b8c02aff9938bace32d05a464e2086d6ee3465` passed the unchanged native
-  macOS-15 Validate attachment (55/0, two ignored), then exact-P CI
-  **37102168035** / job **111143698200** failed the frozen CP1 oracle (350/5/0).
-  Independent review selected Class D: one proven false-blocker and derived-
-  guide correction, independently rebuilt whole-Journey generations, complete
-  own-generation details and cross-generation changed refusals. Only
-  `tests/test-cp1.sh`, TESTING/DECISIONS and this milestone document are
-  authorized on P; its production helper remains frozen. The exception is a
-  candidate awaiting focused prerequisite remediation review, not PLIST-M01
-  closure or benchmark acceptance. Historical language/parser, runtime
-  authority and default exact response preservation remain unchanged.
-- **Accepted prerequisite at P2:** independent verdict **PLIST-M01 PRODUCTION
-  PREREQUISITE ACCEPTED**, **PLIST-M01 CLOSED** at
-  `f91c19574cb8b0c8d3d0e1a16181c374476d7dd3`. Acceptance is prerequisite-only:
-  the Class A helper correction, historical Shared safety-pin exception,
-  CP1-PLIST-M01 Class D preservation exception, exact-P2 six-job CI
-  **37107501150** (attempt 1), and release/Protocol integrity are accepted.
-  The benchmark prerequisite freeze is lifted; accepted implementation/proof
-  files remain frozen absent a concrete regression.
-- **Closed in Gate 2:** the production frontend read-surface integration —
-  the Welcome screen, the Journey dashboard, machine and status details,
-  Health, Logs, and a read-only presentation of
-  `validate select action=plan.save` — is accepted at `c855f61`
-  (*Frontend integration checkpoint* below). O1 performance signoff is
-  **ACCEPTED**, with finding O1-LOGS-P01 recorded and open (*O1 performance
-  signoff* below). S5+, Gate 3's implementation, the frontend `0.2.0`
-  release, M15, M16 and M17 remain unauthorized; frontend `0.2.0` is
-  **UNRELEASED**.
-- **Frontend integration checkpoint:** the first production UI candidate
-  (`7b30143`, `0e67c09` and `1e6eac54c552f50dc46aeb41a6828ba579e93f05` from
-  `c4a418a`) was independently reviewed: **GATE 2 FRONTEND REMEDIATION
-  REQUIRED**. Its architecture was credited; four findings block acceptance:
-  **G2-FE-001** (the ordinary launcher omitted the accepted `health` and
-  `logs` read scopes), **G2-FE-002** (refreshed metadata could describe
-  retained rows of another generation), **G2-FE-003** (an expanded value's
-  suffix could not be reached) and **G2-FE-004** (contract and status
-  documents contradicted authorized and accepted work). G2-FE-005 (filter-mode
-  hints) and G2-FE-006 (an Enter hint with no action) are recorded,
-  non-blocking observations, not remediated. That first candidate remains
-  **UNACCEPTED**. The focused re-review of the remediation forward from
-  `1e6eac5` (through `04132b4`) closed G2-FE-001, G2-FE-002 and G2-FE-004 and
-  accepted the expanded-value scrolling; G2-FE-003 stayed open for one case:
-  at the 60×20 floor, an open value of rows retained from an earlier read had
-  no line to be drawn in while that read's facts and the newer read's notices
-  and refusal filled the panel. Its remediation, forward from `04132b4`
-  through `c855f61`, was confirmed by the independent review that accepted
-  Gate 2 at `c855f61`, which closes G2-FE-003: G2-FE-001 through G2-FE-004
-  are all **CLOSED**, and the read-only integration is **ACCEPTED** at that
-  commit. G2-FE-005 and
-  G2-FE-006 stay recorded, non-blocking and unremediated. The O1 performance
-  signoff stays **ACCEPTED** and O1-LOGS-P01 unchanged; frontend `0.2.0`
-  stays **UNRELEASED**.
-- **Visual backlog, carried forward.** The live visual review of the Gate 2
-  frontend is complete. Its findings pass, with the dispositions the review
-  gave them, to the next separately authorized UI-capable slice, whichever
-  gate carries it; the closure remediates none of them.
-  - **Follow-up:** F1 — wide wordmark/banner composition; F2 — sparse wide
-    navigation/workspace/sidebar balance; F3 — raw memory quantity /
-    human-readable units; F5 — Journey initial information allocation;
-    F6 — saturated blue background versus reference; F11 — clipped narrow
-    pagination hint; F13 — quantity presentation, where D52 still defers the
-    Storage Planner and its partition bar to the gate that owns the relevant
-    actions.
-  - **Deferred / acceptable:** F4 — Journey label arrangement / narrow dots
-    with truthful explanation; F7 — header/footer differences from comps;
-    F10 — one-row closed Logs view at 60×20; F12 — compact footer omits
-    Home/End while help retains them.
-  - Every future UI-capable implementation slice brings deterministic frame
-    or snapshot proof and actual live-terminal visual QA before its
-    independent review.
+- **Built:** `snapshot`, `detail` with generations and paging, `validate`
+  for the plan; machine, status, Health (doctor) and Logs details; the
+  Welcome, Journey dashboard and Logs screens over real reads.
+- **Status:** done at `c855f61`. The O1 benchmark is signed off; one
+  limitation stays recorded, O1-LOGS-P01: on the physical M1 the full-window
+  Logs detail has p95 540–545 ms against a 500 ms target.
 
-- **BENCH-M01 candidate remediation:** independent review of B
-  `6129d07bd6cf04a4fd9a98773231677fb1473375` credited other benchmark methodology
-  and required the single MEDIUM blocker **BENCH-M01 — Required core timing
-  decomposition is absent**. The bounded forward candidate provides actual
-  supplementary startup/admission/owner-probe populations and complete macOS
-  Validate probe/computation observations through benchmark-only companions.
-  Complete totals, loaded Validate and the 102-case matrix remain unchanged;
-  permanent equivalence/boundary/accounting proofs and fresh committed-candidate
-  NON-AUTHORITATIVE smoke validate instrumentation, without grading. See
-  bench/README.md for the exact contract. Disposition is **REMEDIATED IN
-  CANDIDATE — AWAITING INDEPENDENT CONFIRMATION**; harness **UNACCEPTED**, O1
-  **PENDING**, Gate 2 **IN PROGRESS**, frontend 0.2.0 **UNRELEASED**. Stop at
-  **BENCH-M01 CLOSURE / FINAL BENCHMARK-INSTRUMENT ACCEPTANCE REVIEW** of B
-  through the final candidate, using completed V-to-B review as integration
-  base. If independently closed without a new concrete blocker, next is
-  directly **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN / SIGNOFF-EVIDENCE COLLECTION
-  ONLY** under its own authorization. PLIST-M01 remains CLOSED at P2.
-- **O1 performance signoff:** the measurement campaign is complete and the
-  independent verdict is **GATE 2 PERFORMANCE SIGNOFF ACCEPTED — LOGS FINDING
-  RECORDED**. The official populations are the final physical M1 Pro macOS
-  population, 52 of 52 cases and 10,400 of 10,400 ordinary repetitions, and
-  the retained complete Linux ARM64 population, 50 of 50 cases and 10,000 of
-  10,000 ordinary repetitions: 102 of 102 cases and 20,400 successful ordinary
-  repetitions together, with no ordinary failure, timeout or missing sample.
-  The historical hosted-Mac population and the interrupted first physical-Mac
-  attempt are excluded from the official macOS population. The physical-Mac
-  results were supplied to the review as measurement evidence; the retained
-  Linux raw evidence was inspected independently. Raw benchmark artifacts and
-  result bytes stay outside the repository, unchanged.
-  **O1-LOGS-P01** stays open: the physical-macOS full-window Logs detail
-  exceeds its target, p95 < 500 ms, in four cases — cold offset-0 limit-500
-  p95 544.667 ms; cold offset-1 limit-500 p95 541.182 ms; warm offset-0
-  limit-500 p95 540.411 ms; warm offset-1 limit-500 p95 543.766 ms. All four
-  remain **MISS** results and the target is unchanged. Disposition: **ACCEPTED
-  LIMITATION — NON-BLOCKING FOR GATE 2 PERFORMANCE SIGNOFF**. No Logs
-  optimization was performed, and none is authorized; the finding stays
-  recorded until a later measurement establishes compliance. Gate 2 as a
-  whole remains **IN PROGRESS**. (Historical campaign-time status, as of
-  this signoff: Gate 2 was later accepted and closed at `c855f61` by its
-  independent review, *Status* above, which supersedes it.)
+### Gate 3 — The installer's actions through the frontend
 
-### Gate 3 — The action contract under fixtures
-
-- **Work:** `execute` for the baseline's actions (plan save, the backup gate,
-  the Asahi fetch and launch, network, Omarchy start and resume, Shared
-  creation, activation and the write test), with their basis families,
-  typed gates, exclusion, handoff and cancellation, **in fixture mode
-  only**: no installer command moves to the frontend yet.
-- **Verification:** `proto-ceiling`, `proto-scope`, `proto-unavailable`,
-  `proto-word`, `proto-arg`, `proto-handoff`, `proto-managed-prompt`,
-  `proto-no-shell-text`, `stale-*`, `sup-shared-critical`,
-  `sup-mutator-survives`, `equiv-*` against the accepted baseline.
-- **Exit:** every refusal and fault test passes; three-way equivalence with
-  `2edb76a` holds for every exposed action; nothing enters the Shared
-  critical interval; no real hardware is touched.
-- **Prerequisite, before any real mutating action is exposed:** a recovery
-  and diagnostic contract for an operation record that cannot be read.
-  Today such a record blocks every act in its scope for good — fail closed:
-  a reboot does not make it readable — while read commands keep working
-  (Gate 1). The contract says how a person inspects the record, what tells
-  "the record cannot be decoded" apart from "no worker and no unexpected
-  effect remains", and how the record is cleared: never automatically,
-  never by a reboot alone, never by treating corruption as no operation.
-  That contract is written in docs/PROTOCOL.md → *An operation record that
-  cannot be read* and D54, with its acceptance cases U1 to U33 and its open
-  questions UR-Q1 to UR-Q9 (docs/DECISIONS.md → *Open review questions*). It
-  is documentation only and implements none of it.
-- **Status:** not started but for the read-only diagnostic slice below. The
-  prerequisite contract's candidate
-  `806a8793a1c1537e3e10ee5840817e53b8c35e93`, on branch
-  `m14-gate3-prereq-unreadable-record` from the Gate 2 endpoint `c855f61`,
-  was independently reviewed: **GATE 3 PREREQUISITE CONTRACT REMEDIATION
-  REQUIRED**. Its architecture was credited; three contract findings block
-  it, and only they are remediated: **UR-C01** (the acceptance matrix
-  allowed conclusions stronger than the evidence: U2's unknown liveness as
-  supervision, U17's eligibility as a completed clear, U19's later act as
-  finding no record), **UR-C02** (any admission reason but `io` was taken
-  as evidence of malformed bytes, though the current seal check reports a
-  tool that failed as `seal`) and **UR-C03**, high (a clear interrupted or
-  mismatched after taking the entry could leave `ops/<scope>.omb` absent and
-  read as no record). The review accepted UR-Q2 (a clear only for a plain
-  file read in full within the stored-document limit, with every other
-  prerequisite still required) and UR-Q9 (a record naming another scope, or
-  an action its scope does not own, may be C; a scope's own action merely
-  unavailable now is not corruption). UR-Q1 and UR-Q3 to UR-Q8 stay open and
-  block the implementation; a fingerprint sighting with a reboot is not yet
-  an accepted P4 mechanism, UR-Q4 must still define which worker identities
-  count, the diagnostic's and the clear's controllers not silently excluded,
-  and a scope's ownership of reconciliation alone does not prove P5. The
-  remediation, forward from `806a879` and documentation only, writes UR-C01
-  into U2, U17 and U19; UR-C02 into *The states* and the cases C02-A to
-  C02-D, as U25 to U28; and UR-C03 into *Clearing*, *The clear transaction*
-  and the cases C03-A to C03-E, as U29 to U33. The focused independent
-  re-review of `806a879..ba2146749d6cbbc6ded583f115a0bd08aa6ba8d0` closed
-  **UR-C01**, **UR-C02** and **UR-C03** and raised one finding, **UR-C04**
-  (medium, contract-blocking: U31 took an identity that cannot be confirmed
-  for a confirmed mismatch). It judged the target-shell job's failure to
-  download the pinned Bash sources from `ftp.gnu.org` external
-  infrastructure incompleteness for that documentation-only delta, not an
-  acceptance blocker. The UR-C04 remediation, forward from `ba21467` and
-  documentation only, splits U31 into a confirmed mismatch, U31(a), and an
-  identity not confirmed, U31(b), with the wording that refers to it. It
-  was submitted as **UR-C04 REMEDIATED — AWAITING FOCUSED INDEPENDENT
-  CLOSURE / GATE 3 PREREQUISITE ACCEPTANCE REVIEW** (**M14 GATE 3
-  PREREQUISITE — UR-C04 CLOSURE / FINAL PREREQUISITE ACCEPTANCE
-  RE-REVIEW**). That final re-review closed UR-C04 and concluded **GATE 3
-  PREREQUISITE CONTRACT ACCEPTED** at
-  `152c8f68854368025816b926494dbec0e94bc903`: **UR-C01**, **UR-C02**,
-  **UR-C03** and **UR-C04** are **CLOSED**; UR-Q2 and UR-Q9 stay accepted;
-  UR-Q1 and UR-Q3 to UR-Q8 stay open and block the implementation. The
-  read-only operation-record diagnostic interface contract follows,
-  documentation only, on branch `m14-gate3-readonly-diagnostic-contract`
-  from `152c8f6`: D55 and docs/PROTOCOL.md → *The operation-record
-  diagnostic*, with the documentation cases DIA-01 to DIA-15. It proposes
-  candidate resolutions for UR-Q7 and for the diagnostic's parts of UR-Q6
-  and UR-Q8 only, leaving their other parts open (docs/DECISIONS.md → *Open
-  review questions*). Its focused independent review concluded **GATE 3
-  READ-ONLY DIAGNOSTIC INTERFACE CONTRACT ACCEPTED** at
-  `2840fe2efc0b240ccb9343f6013912d6fc941a6f`: UR-Q7 is accepted; the
-  diagnostic's parts of UR-Q6 and UR-Q8 are accepted and their remainders
-  stay open, blocking the implementation; UR-Q1, UR-Q3, UR-Q4 and UR-Q5 stay
-  open. The bounded core and text implementation of D55 follows, forward
-  from `2840fe2` on branch `m14-gate3-readonly-diagnostic-implementation`:
-  `lib/operation.sh` (the inspection, its rows, the foundation journey
-  snapshot's `operation` fact and blockers, `detail kind=operation` and
-  `operation SCOPE`), its routing in `lib/core.sh` and the launcher, the
-  command's row in SPEC.md → *Commands*, `tests/test-operation.sh` and DIA-14
-  in `frontend/tests/proto_diff.rs`, which runs the released `0.1.0`'s own
-  code; docs/TESTING.md → *Gate 3 operation-record diagnostic tests* maps
-  each case, the clear's DIA-10(b), DIA-11(b) and DIA-12 deferred to UR-Q1.
-  No frontend source, act refusal, startup check or Gate 2 read changes.
-  The implementation review of `b52f3fd` required remediation of F-01 to
-  F-04: the record replaced between its status and its read, a schema check
-  that stopped short taken for a finished one, the snapshot published
-  outside the response gate, and a failed `ps` query for the recorded core
-  taken for an ended core. The forward remediation from `b52f3fd` opens the
-  record once, following no link and waiting on no FIFO, and reads nothing
-  unless it is the plain file the status identified (perl: docs/UPSTREAM.md).
-  `_rec_schema` answers `io` unless it reached the document's last line, and
-  every caller of the admission answers a document that failed that way as
-  a failed tool; nothing else about them changes. The snapshot's own answer
-  is staged, admitted, kept and published as the detail's is. The
-  diagnostic reads the recorded core's liveness from one `ps` that also
-  lists the core itself; the act path keeps `core_alive`. The closure
-  re-review of `679062c` closed F-02, F-03 and F-04 and kept F-01 open: the
-  status took the entry's kind, identity, owner and mode from separate
-  looks at the path, so one object's identity could stand with another's
-  owner and mode, and the read then admit the first. The forward F-01
-  closure from `679062c` reads the status once, one lstat whose every field
-  is of the same object; the read still opens that object or nothing. The
-  re-review of `0e3e8b1` confirmed that one observation and kept F-01 open
-  for the shell's check of its answer: a mode past 4095 was taken as a
-  mode, and bytes after the first line were never looked at. The forward
-  completion from `0e3e8b1` admits the status only as its one line, byte
-  for byte, its mode 0 to 4095 in canonical decimal.
-  Disposition: **GATE 3 CORE + TEXT DIAGNOSTIC F-01 STATUS-RESPONSE
-  COMPLETENESS REMEDIATED — AWAITING FOCUSED INDEPENDENT RE-REVIEW**
-  (**OMB M14 GATE 3 — F-01 STATUS-RESPONSE COMPLETENESS CLOSURE
-  RE-REVIEW**). Gate 2 stays **ACCEPTED / CLOSED** at `c855f61`; frontend
-  `0.2.0` stays **UNRELEASED**; the rest of Gate 3's implementation is **NOT
-  STARTED**. No recovery, clear, sighting, reconciliation, execute or action
-  exposure is implemented or authorized.
-
-- **Final diagnostic acceptance:** independent review concluded **GATE 3
-  CORE + TEXT READ-ONLY DIAGNOSTIC — ACCEPTED** at
-  `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd`, tree
-  `8e483db6d078ad57cf0af7dac2c8a6e6a244a843`. F-01, F-02, F-03 and F-04
-  are **CLOSED**. The earlier remediation/re-review entries above remain
-  historical. Retain two nonblocking observations without claiming repair:
-  the Bash 5.3.20 full-suite terminal-spinner equivalence mismatch (focused
-  rerun passed; original failure retained), and one unexplained empty
-  scratch-directory residue among 33 reviewer observations (32 matched
-  persistence receipts; one did not; cause remains unknown).
-- **P5 prerequisite checkpoint:** independent review confirmed **UR-Q3 /
-  UR-Q5 P5-20 PROOF BLOCKER — CONFIRMED**. The preceding documentation
-  slice stopped with no repository edits/commits because fixed-effect
-  absence did not account for configurable destinations. Its bounded
-  prerequisite is **FJ-ED-1 — FOUNDATION JOURNEY EFFECT-DOMAIN CONTRACT
-  ACCEPTED AS A DOCUMENTATION CONTRACT**, on local branch
-  `m14-gate3-ur-q3-q5-reconciliation-contract` directly from `a3beb3c`.
-  docs/PROTOCOL.md → *Foundation journey effect-domain contract*
-  defines bounded relevant effects, enforced instrumentation exclusion,
-  retained consumed inputs, independent generation/domain evidence,
-  concrete future positive proofs and FED-01–FED-24. All enforcement is
-  **UNIMPLEMENTED**; these cases are documentation, not executed tests.
-- **FJ-ED-1 independent acceptance:** GPT-6 Pro accepted source tree
-  `29ac7b58502618a72295375ff68b9b326f765fd6` at reported checkpoint
-  `f27ee84a4b28fe5ee3a93df53f79598192932468`, compared with `a3beb3c` / tree
-  `8e483db6d078ad57cf0af7dac2c8a6e6a244a843`. No HIGH or MEDIUM findings;
-  all 24 FED cases and both future contractual witnesses were accepted.
-  Source-content acceptance does not independently authenticate the
-  unpublished commit object/parentage; those were locally verified before
-  continuation. The original branch remains at that clean checkpoint.
-  No mechanism was implemented or executed and no UR-Q3/UR-Q5/UR-Q4 or
-  recovery/clear authority was accepted by FJ-ED-1.
-- **FJ-P5-1 independent acceptance:** **FJ-P5-1 — ACCEPTED AS A
-  DOCUMENTATION CONTRACT**, independently reconstructed source tree
-  `a84298a315e54edfe985a81e858f423839c1c007`. The unpublished local
-  commit-object association was separately verified before continuation:
-  `c85470b2c973001c9df692eb04e17628d5c7f7f0`, parent
-  `f27ee84a4b28fe5ee3a93df53f79598192932468`, tree exactly as accepted,
-  clean worktree on `m14-gate3-p5-reconciliation-contract`. Source-tree
-  acceptance does not authenticate the commit object. The original
-  checkpoint stays unchanged. docs/PROTOCOL.md → *Foundation journey P5
-  reconciliation contract* defines the foundation journey owner, complete generation/domain
-  aggregation, unchanged/independently completed versus observed/unknown
-  findings, P4 ordering and usable observation interval. P5-01–P5-20 and
-  additional cases are unexecuted. G1's ordinary barrier must be separately
-  settled before G2; G2's positive no-effect witness stops before unbound
-  ordinary failed replacement. Conditional positive P5 grants no clear.
-  The normative body, complete matrices, positive witnesses and limitations
-  are preserved; all runtime mechanisms remain **UNIMPLEMENTED**.
-  Overall UR-Q3/UR-Q5 remain **PARTIAL / REMAINING OPEN** for other scopes.
-- **UR-Q4 owner decision:** **DECISION RESOLVED — CONSERVATIVE LEGACY-C
-  POLICY** (docs/DECISIONS.md → *UR-Q4 owner disposition — conservative
-  legacy-C policy*). Unknown writer-end history retains the refusal/barrier:
-  no inferred P4, retrospective sighting, automatic clear, privileged custody,
-  generalized process tracker or refused-act persistence exception. This is
-  not **P3/P4 POSITIVE PROOF IMPLEMENTED**, and satisfies no P1–P5 proof.
-  The historical feasibility investigation is retained; the unaccepted
-  `b79bec92588a580f04c87fcdec2808344a058f87` candidate is not inherited.
-  Positive P3/P4 proof remains unsupported; runtime P4 precedes P5. Future
-  independently evidenced designs are not universally prohibited. Manual
-  recovery outside this mechanism requires separate authorization; none is
-  granted here.
-- **Remaining boundary:** foundation FJ-ED-1 and FJ-P5-1 documentation is
-  accepted; both mechanisms are **UNIMPLEMENTED**. UR-Q1 and remaining
-  UR-Q6/UR-Q8 remain open. Gate 3 overall is **INCOMPLETE**; Gate 2 stays
-  **ACCEPTED / CLOSED** and frontend `0.2.0` **UNRELEASED**. No production
-  implementation, fixture/registry changes, reconciliation, recovery,
-  clear, sighting, broader action implementation or new D55 evidence
-  reader has begun or is authorized by this documentation slice. The
-  separate CI→Main workstream is outside it.
-
-#### Gate 3 critical path after the legacy-C decision
-
-The graph remains the ordered gates in *The product expansion: M14–M18*:
-Gate 3 → Gate 4 → Gate 5 → M15 → M16 → M17 → M18. This disposition does
-not waive any exit or make Gate 4 eligible. Within Gate 3, D55 presentation
-uses the accepted diagnostic and does not require FJ enforcement, a P5
-evaluator or positive legacy-C clear. The existing text diagnostic already
-works across scopes; the protocol diagnostic is fixture-only and currently
-has a producer only for the foundation journey scope (docs/PROTOCOL.md →
-*The operation-record diagnostic*, *Surfaces* and *The text interface*).
-
-| Class | Remaining work and dependency boundary |
-| --- | --- |
-| A — next non-destructive capability | Bounded D55 frontend presentation: accepted `a3beb3c` core/text diagnostic and D55 generation/row/compatibility contract are sufficient prerequisites. Its implementation, permanent tests, CI and independent review are still required. No new recovery architecture is needed. |
-| B — independent of legacy-C clear | D55 presentation may proceed under separate authorization within Gate 3. The remaining fixture action families still need their own accepted owner/domain/basis and applicable vocabulary contracts, tests and review; FJ evidence cannot be generalized to them. Gate 4 scan/profile and Gate 5 resolver/bundle remain in order after full Gate 3 exit, despite their non-installer work. |
-| C — defer recovery/clear work | Legacy-C positive P3/P4, UR-Q1's clear transaction, remaining clear-specific UR-Q6/UR-Q8, FJ-ED-1 enforcement and FJ-P5-1 runtime evaluation are not prerequisites for D55 presentation. P5 remains conditional on independently established P4 and legal assessment authority. No new general feasibility campaign is recommended. |
-| D — hardware gated | M16 real action-family moves require their separate baseline safety reviews and simulation/qualification exits; M17 first install requires finished M14–M16; M18 requires M17's valid hardware report. No hardware or release authority follows from this decision. |
-| E — separate CI→Main | `aa7d5cccfdff88e310513d26750bb6930e566234` is a separate integration candidate, not this accepted base or a Gate 3 acceptance. Its integration and SUP-EINTR work remain outside this branch. No workflow changes or integration are prerequisites for writing/reviewing the D55 source slice; required CI acceptance must still be obtained separately. |
-
-**Next bounded implementation recommendation, not authorization:** add
-only the frontend presentation of the accepted D55 finding for an already
-admitted record-owning scope, initially the foundation fixture's journey.
-
-- **Contract/prerequisite:** D55 at `2840fe2` and accepted implementation
-  `a3beb3c` / tree `8e483db6d078ad57cf0af7dac2c8a6e6a244a843`, with
-  docs/PROTOCOL.md → *The operation-record diagnostic*, *The frontend* and
-  *Compatibility*. Open the detail from that scope's snapshot generation;
-  preserve every row's label/value/text and the core's unknown/refusal/error
-  distinctions. No new production scope producer or public protocol change.
-- **Necessary production scope:** `frontend/src/read.rs` (the detail kind),
-  `frontend/src/app.rs` (view state and navigation),
-  `frontend/src/screens/mod.rs`, `frontend/src/screens/table.rs` and
-  `frontend/src/keys.rs` (rendering and keyboard access). Existing generic
-  request serialization in `frontend/src/core.rs` already carries the kind;
-  change it only if a demonstrated presentation requirement needs it. No
-  Bash, record schema, launcher, installer or release-lock changes.
-- **Permanent regression coverage:** extend `frontend/tests/contract.rs`,
-  `frontend/tests/proto_diff.rs`, the existing read-surface/frame tests and
-  their snapshots; keep the Bash DIA tests unchanged. Cover C/D/readable/none,
-  missing data never becoming `none`, changed generation and fresh snapshot,
-  unavailable old-core responses with no fallback, io/representation with no
-  finding, hostile text, ordered full rows, no actions inferred from findings,
-  and no direct `ops/` access or persistence. Check 80×24, 60×24, 59×20,
-  ASCII/no-colour, keyboard navigation and PTY terminal restoration; retain
-  startup-check and ordinary Gate 2 read equivalence (docs/TESTING.md →
-  *Layers*, DIA-01–DIA-15, with clear-only DIA-10(b)/11(b)/12 still deferred).
-- **CI/review checkpoint:** CI is required at the exact implementation SHA,
-  including the complete Bash and frontend lanes and macOS `/bin/bash` 3.2.
-  Under the separate FAST/FULL CI design, only a green exact-SHA FULL guard
-  is acceptance evidence; FAST is feedback. This accepted checkpoint
-  predates that CI split, so do not import CI→Main to manufacture the check.
-  Coordinate CI acceptance separately when authorized. Independently review
-  the bounded frontend delta against D55 and `a3beb3c` before accepting it.
-- **Usable afterward / still blocked:** an unreleased development frontend
-  can show the same foundation-fixture diagnostic and barriers as the core
-  and text interface, with truthful old-core failure. It adds no production
-  snapshot producer: real-machine cross-scope inspection remains the existing
-  text command. Gate 3 overall stays incomplete; Gate 4+, FJ runtime proof,
-  recovery/clear, installer exposure, frontend 0.2.0 release and hardware
-  qualification remain blocked by their existing prerequisites.
-
-GitHub identity refresh for this documentation candidate (2026-10-09):
-`main` remains `7fe99801277d6699350a5e20ad89fd80c559140b`; the diagnostic
-branch remains `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd`;
-`ci-throughput` is `8c7b1297a2fbbf3db5043b80f2e4ba7b5bb2b28c`.
-The separate `aa7d5cccfdff88e310513d26750bb6930e566234` commit was verified
-on GitHub with parents `7fe9980` and `c933ba4`; none substitutes for the
-accepted FJ starting tree. Refresh mutable refs before reuse. This session
-runs static documentation/Git checks only; no tests, diagnostics, builds,
-CI dispatch, release, installation or hardware action is authorized.
-
-#### Plan.save execution contract candidate checkpoint
-
-D55 frontend presentation is independently **ACCEPTED** at
-02ffc3b16b4315d9cddb76e0f28717ffcd5d38dc, tree
-93ce948453a157fb5a9b9bc3f60e06b74ba2e141. This endpoint includes the original
-presentation, documentation-scanner remediation, D55-FE-01 freshness
-remediation and exact-head legacy six-job qualification. D55-FE-01 is
-**CLOSED**. The preceding recommendation to implement D55 is historical;
-it is not the next runnable unit and is not reopened by this candidate.
-
-**PLAN.SAVE EXECUTION CONTRACT CANDIDATE — INDEPENDENT REVIEW PENDING.**
-The separate branch codex/m14-gate3-plan-save-execution-contract starts
-directly from that D55 endpoint. PS-EXEC-1 and proposed D56 define only the
-first Gate 3 action family: Bash owner/domain, complete execution basis,
-separate read-only review selection, checked save/readback, dedicated final
-receipt, failure/barrier obligations and PS-01–PS-36 documentary cases.
-See docs/PROTOCOL.md → *Proposed plan.save execution contract*,
-docs/DECISIONS.md → *Proposed plan.save completion and execution decision*
-and docs/TESTING.md → *Future plan.save equivalence and failure qualification*.
-All new mechanisms are **UNIMPLEMENTED**; every future case is **UNEXECUTED**.
-PS-D01–PS-D05 are proposed baseline deltas pending focused independent
-GPT-6 Pro acceptance, not already qualified runtime exceptions.
-
-Focused local documentation qualification on 2026-10-11 used stock
-/bin/bash 3.2.57: tests/test-docs.sh returned 0 (27 passed, 0 failed,
-0 skipped), and git diff --check returned 0. Case/heading/reference checks
-found unique PS-01–PS-36 definitions, complete future-test map coverage and
-UNEXECUTED labels. All 1769 tracked blobs/modes outside the four authorized
-documentation paths matched D55, including nine symlinks inspected without
-following them. The first ad hoc identity check followed a dangling fixture
-symlink and failed; correcting that check established the identities without
-changing fixtures. This is documentation evidence, not action qualification.
-
-Independent GPT-6 Pro review of candidate
-aaf77bf9bef31e0497991dff81da07b86719674f (tree
-b3606077a364019457fb55ddc8895d40fd6902bf) returned **PS-EXEC-1 REMEDIATION
-REQUIRED**. PS-D01/PS-D03 require amendment; PS-D02/PS-D04/PS-D05 are
-credited ACCEPT without overall acceptance. The consolidated documentation
-correction fixes M01 with family-controlled OMB_PHASE=macos, M02 with
-pre-save supported-byte admission/complete rewrite preflight, L01 with an
-explicit pre-review ops setup owner, and L02 with persistence/dry-run
-exclusion. Future documentary controls remain UNEXECUTED; no runtime owner,
-writer, helper, fixture or executable test is changed. The next review is a
-bounded remediation closeout preserving those credits.
-
-Original candidate automatic CI is historical **FAILED**: run 38146161907,
-attempt 1, five successful jobs and failed macOS stock Bash 3.2/BSD job
-114489849869. Its primary log reports test-baseline: 306 passed, 1 failed,
-0 skipped; frontend-check-default-unchanged on linux-shared-ready differs
-from pre-route 569d67e728d4cee1f345134724e259e52d702af5 by one extra
-Checking GitHub spinner line. test-docs passed 27/0/0; the final native
-entrypoint/no-persistence step was skipped after aggregate failure. The
-docs-only delta leaves the terminal code/test/oracle unchanged. ui_spin's
-background-probe liveness loop makes emitted frames timing-dependent;
-this supports a timing-sensitive terminal comparison explanation, but one
-failure does not establish its exact cause or dismiss a regression. Preserve
-the failure. The correction requires its own automatic exact-head six-job
-CI evidence; pending/failure cannot be called qualification, and no rerun,
-normalization change or CI repair is authorized here.
-
-CI from `beba63c` on (2026-10-11): pull request 1 merged `main`'s FAST/FULL
-workflow (`aa7d5cc`) into this branch as `fb4c89f`, whose FAST run
-38157512716 failed `test-ci`'s manifest checks because no shard ran
-`tests/test-operation.sh`; `beba63c` adds `suite:operation` to
-`tests/ci-manifest.tsv` (m2, l0). The correction `e94afcf` had passed its
-automatic legacy six-job run 38155507027. FULL run 38165090458 at `beba63c`
-passed every shard and its completeness guard. This branch, and every
-branch made from it, runs FAST/FULL: a push gets FAST, which is feedback
-only, and a candidate's CI acceptance evidence is a green FULL completeness
-guard at its exact SHA (`gh workflow run ci.yml --ref BRANCH -f
-candidate=SHA`; CLAUDE.md → *Verify*). The six-job wording above records
-the checkpoints of its time; it is not a requirement on later candidates.
-
-Starting foundations remain UR-Q4 1956f1b5d9666b5831b30cdb9da5b37e92056055,
-FJ-P5-1 c85470b2c973001c9df692eb04e17628d5c7f7f0,
-FJ-ED-1 f27ee84a4b28fe5ee3a93df53f79598192932468 and core/text
-a3beb3cba82681fc949ac35d4edf0c132d2cb0fd. No foundation proof generalizes
-to plan.save. The equivalence oracle stays
-2edb76a7de3f78ec90927ac93d5eec3a84636253. Live remote verification on
-2026-10-11 found separate published main at
-aa7d5cccfdff88e310513d26750bb6930e566234 and frontend-v0.1.0 at
-54c3770f99c2affdf63ceaf2d46990cb3d9fd94b; neither is this branch's base.
-
-Gate 3 remains **INCOMPLETE**. Execute plan.save remains unavailable; no
-action, producer, writer, receipt, operation mutation, reconciler or tests
-are implemented by this documentation checkpoint. Gate 4/5 remain
-unauthorized; frontend 0.2.0 remains **UNRELEASED**. No historical
-SUP-EINTR or local Rust E0463 disposition changes.
-The sole next bounded recommendation is focused GPT-6 Pro independent
-acceptance review of this complete documentation candidate.
+- **Built:** the read-only operation-record diagnostic, core and text
+  (`a3beb3c`), and its presentation in the frontend (`02ffc3b`); FAST/FULL
+  CI on this line of work (`beba63c`).
+- **Work:**
+  - The generic request surface in the frontend: `Validate{action, args}`,
+    `Execute{action, args, word}` and `Detail{scope, kind}` replace the
+    requests hardwired to the journey scope and `plan.save`
+    (`frontend/src/core.rs`). New screens add data — detail kinds, row
+    kinds, fact keys, action ids, parameters, blocker ids — never a new
+    schema (D7).
+  - Real reads: the released frontend starts on a real machine for the
+    interactive commands, and the core answers its reads there. Today three
+    policy lines keep everything in fixtures — the launcher starts the
+    frontend only under `OMB_FIXTURE`, the core answers reads and `validate`
+    only in fixtures, and `core_child` runs only the test children. An
+    unreleased frontend stays fixture-only (D16).
+  - `execute` for every baseline action. An action is a row of the core's
+    action table: its scope, the text flow's own functions in the text
+    flow's order, managed or handoff, and its interface word if it has one.
+    The rows: `plan.save`, the Asahi launch (survey, backup gate, handoff),
+    the Shared codes, Shared creation, network, Omarchy start and resume,
+    Shared activation and the write test, and `dev`. The same functions run
+    in fixture and real mode, so there is no second code path. The core
+    takes the run lock and the scope's operation record, re-reads, rebuilds
+    the basis, checks the typed word, then runs the step with the text
+    flow's environment — `umask 022`, never the core's own 077. The interface
+    word answers the step's first typed-word prompt once, from a variable the
+    core never exports; every later prompt (`launch` and `start` after their
+    downloads, `create`, `sudo`, the installers) is asked on the terminal,
+    which the frontend has handed over. The outcome comes from the scope's
+    classifier on a fresh read: the expected effect, or a proven "nothing
+    changed" (an installer quit at its first question), removes the record;
+    anything else keeps it as `failed` (docs/PROTOCOL.md → *Executing*).
+  - `plan.save`, managed, no word: `validate` takes all eleven inputs and
+    answers the layout, the installer's answers and a basis over the
+    inputs, the partitions and the computed plan. Free space, the resize
+    limit and the floor are checked again at execute, never bound into the
+    basis, because they drift on a live Mac and would refuse every save.
+    `cfg_save` and `mac_save_plan` stop at the first write that fails (today
+    they return success after one); the outcome is a read-back of every
+    saved value, the Shared intent and `planned_at`.
+  - `operation clear SCOPE`, the way out of an unreadable operation record
+    (docs/PROTOCOL.md → *An operation record that cannot be read*).
+  - The whole-file pins of baseline modules in `tests/test-static.sh` give
+    way to behaviour checks; the pin of the Shared critical interval, from
+    `sudo -v` to `sudo -n diskutil addPartition`, stays exactly as it is.
+  - The spinner frames are left out of the baseline equivalence comparison,
+    and nothing else is: the comparison failed on one extra
+    `Checking GitHub` frame (run 38146161907).
+  - CI that buys nothing goes: the Bash units on `frontend-linux-arm64`
+    (shards a2 and a3, and a1's `suite:core`, `suite:frontend` and
+    `suite:static`), which repeat `linux-bash5` and `target-bash53`;
+    `diag:children` and `diag:session` run 1,004 children and 100 requests
+    instead of 10,004 and 1,000 (together 36% of FULL's unit time); the two
+    byte comparisons against frozen commits in
+    `tests/test-gate2-representation.sh` and `tests/test-gate2-logs-proof.sh`.
+    FAST gains a static scan for Bash 4 features.
+  - Screens 1 and 2 brought to their reference designs, 12 (with Shared
+    creation, 19), 13 (naming the core's real effects), 14, 15 and 18 —
+    the designs' look, never a fact the core cannot observe: no installer
+    percentage, time remaining or live log (docs/UX.md → *Reference
+    designs*).
+- **Verification:** `tests/test-actions.sh`; `tests/test-operation.sh` for
+  the clear; frames and PTY runs for the new screens (docs/TESTING.md →
+  *Principles*).
+- **Exit:** every baseline action runs from a development frontend over the
+  lifecycle fixtures, equivalent to the accepted baseline; the text
+  interface still runs every flow; nothing enters the Shared critical
+  interval; an unreadable record has its way out.
+- **Status:** in progress.
 
 ### Gate 4 — Scanner and profile
 
-- **Work:** the versioned scan adapters, the Zsh tracker, sensitivity and
-  the opaque path consent, the dotfolder picker, the AI tools' scan side,
-  the TOML subset reader, the host binding, selection and profile states;
-  screens 3, 4, 5, 8, 9 and 11.
-- **Verification:** `scan-*`, `zsh-*`, `toml-*`, `secret-*` (capture side),
-  `profile-*`, over every `mac-home-*` fixture.
-- **Exit:** adversarial inventories are reported truthfully, uncertainty
-  kept; unsupported formats refuse; no tool is run and no configuration
-  executed; every planted credential stays out of the profile.
+- **Work:**
+  - `scan`, read as text and never run: Homebrew (services as a flag),
+    applications, language tools and runtimes, editors, terminal settings,
+    Git, `gh` and SSH, AI tools (Claude Code, Codex and OpenCode in full,
+    others recognised), chosen folders, and projects (remote and branch
+    only, never copied). Unknown, `partial` and `denied` stay visible.
+  - Zsh: literal aliases and allowlisted exports become Bash; the rc files
+    travel as reference copies, never sourced. The strict TOML subset reader
+    for Codex's configuration and mise.
+  - Classification, the hard refusals and the credential scan; chosen
+    folders with one typed `opaque` per save; an encrypted SSH key with
+    typed `carry`; `UseKeychain` lines dropped from SSH's configuration; a
+    folder whose root is a link (stow) followed once.
+  - Selection with defaults, as one `omb-select` document; one sealed
+    profile bound to this Mac; a rescan keeps choices by item id and reports
+    what is gone and what is new.
+  - Resolution from `data/migration-map.omb` and the person's decisions, in
+    fixed layers (packages, runtimes, ecosystem tools, AI tools, files,
+    settings); an unresolved item becomes a decision or a guess checked on
+    Linux.
+  - Screens: Scan (3), Selection (4), one list and detail per category (5–9
+    and 11, as tabs), and Review.
+- **Verification:** `tests/test-scan.sh`, `tests/test-toml.sh`,
+  `tests/test-secrets.sh`, `tests/test-resolve.sh`, `tests/test-profile.sh`;
+  frames for the four screens.
+- **Exit:** nothing inventoried runs and no configuration executes;
+  uncertainty is shown, never hidden; no planted secret reaches the profile.
 - **Status:** not started.
 
 ### Gate 5 — Resolver and bundle
 
-- **Work:** the registry v1, the graph, providers and version instances,
-  decisions, the availability check; `prof=` in the resume token; export:
-  capture, classification of the captured bytes, objects, the manifest,
-  the approval code; screens 6, 7 and 10; `profile` and `export` move to
-  the frontend.
-- **Verification:** `dag-*`, `registry-*`, `avail-*`, `mcp-*`,
-  `secret-toctou`, `secret-deep`, `bundle-*` (export side),
-  `bundle-forged-cleanup`.
-- **Exit:** the graph is byte-identical across shells, locales and inventory
-  orders; no implicit build is ever planned; an exported bundle's objects
-  are exactly the classified captured bytes, and its approval code is shown
-  and kept.
+- **Work:** `export [DIR]` to verified Shared or a folder the person names:
+  a fresh scan reconciled with the profile, the captured bytes classified
+  and carried as exactly those bytes, hash-named objects and one sealed
+  `bundle.omb`, written as `.partial-*` then renamed; size limits and a
+  free-space check; nothing ever deleted. The bundle holds files ready for
+  their place on Linux (Claude Code's settings, Codex's `config.toml`,
+  `shell.bash`) and records for Git settings, MCP servers, plugins and
+  packages. The bundle check that M15-A reuses: seal, digests, destination
+  rules.
+- **Verification:** `tests/test-bundle.sh`; the export side of
+  `tests/test-secrets.sh`.
+- **Exit:** no planted secret in any byte written; a corrupt bundle is
+  refused; a failure leaves only `.partial-*`.
 - **Status:** not started.
 
-## M15 — Linux restore, AI environment, rescue and debugging
+## M15 — Linux restore, AI environment, SSH safety and debugging
 
 ### M15-A — Restore and safe debugging
 
-- **Work:** import, admission and the approval code; the destination graph;
-  the journal, placement, backups, conflicts, conditional undo; the target
-  checks; the field-allowlisted `debug`, `debug context`, `debug raw`,
-  `debug save`; screens 17, 20, 21, and the journal in 24; `restore` moves
-  to the frontend.
-- **Verification:** `bundle-*` (import side), `restore-*`, `persist-*`,
-  `stale-dest-*`, `stale-between-items`, `stale-last-instant`,
-  `stale-setting-before-recheck`, `secret-whole-file-marked`, `debug-*`,
-  over every `linux-restore-*` fixture.
-- **Exit:** a stop or a full disk at every persistence boundary reconciles
-  correctly on real temporary filesystems; a recomputed bundle is refused;
-  undo refuses after later edits; the debug report holds only allowlisted
-  fields.
+- **Work:** `restore [DIR]` as the everyday user, after Omarchy: the bundle
+  check; a review of what installs, where each file lands and each conflict
+  (Keep by default, diff on request); typed `restore`; packages through one
+  `omarchy-pkg-add` handoff, then mise, npm and uv, judged by the machine
+  (`pacman -Q`, not exit statuses), with cargo-binstall, go and Flathub
+  printed as commands to run by hand; files placed by docs/RESTORE.md's
+  placement steps, each original moved whole into backups first; an
+  append-only run log, so a stop resumes and a rerun changes nothing; Git
+  settings through `git config`, MCP servers through `claude mcp add-json`,
+  OpenCode merged with `jq`, Codex's file kept or replaced whole;
+  `restore status`; `restore undo` for files, folders and links, refused
+  where the destination changed. `debug`: the fixed agent brief and the
+  status and doctor facts, never a log line, command output or file content.
+  Screens 20 and 21; `debug` from the error state's `D` key.
+- **Verification:** `tests/test-restore.sh`, `tests/test-debug.sh`; frames.
+- **Exit:** never as root; no replacement without a backup; no path escape;
+  an interrupted run resumes and a finished one changes nothing on rerun.
 - **Status:** not started.
 
 ### M15-B — Packages and AI providers
 
-- **Work:** the providers shared by `dev` and `restore` (the change to the
-  baseline's `dev` module is its own reviewed safety delta); installation
-  the way Omarchy's wrappers do; Claude Code, Codex and OpenCode
-  configuration transforms and writers; explicit live checks and sign-in
-  handoffs; the health screen (22).
-- **Verification:** `omarchy-*`, `toml-merge`, `toml-target-refused`,
-  `restore-consent`, `test-agents.sh` over the `mcp-*` fixtures; the
-  equivalence list's `dev` delta reviewed.
-- **Exit:** no static path runs a wrapper, shim, mise or agent; no second
-  copy of any tool is installed and no wrapper overwritten; every outcome
-  reflects the machine; the M15-B facts in docs/UPSTREAM.md → *Not verified
-  yet* verified first.
+- **Work:** `lib/agents.sh`, one table for Claude Code, Codex and OpenCode,
+  shared by `dev` and `restore`: observation from files only (installed,
+  ran at restore, configured, sign-in file present); installation with
+  `mise use -g`, one copy each; sign-in handoffs; the tool's own `mcp list`
+  on request. `dev` stops counting Omarchy's lazy wrappers as installed
+  tools (`dev_tool_present` today). Screen 22 gains restore and AI rows.
+- **Verification:** `tests/test-agents.sh`, `tests/test-dev.sh`; frames.
+- **Exit:** no check runs a wrapper, shim, mise or agent; every outcome is
+  what the machine shows.
 - **Status:** not started.
 
-### M15-C — Optional rescue
+### M15-C — SSH safety and recovery help
 
-- **Work:** the rescue screen (16), the root workspace, the agents as root,
-  closing and hardening the system's SSH, the rescue-owned SSH server and
-  its checks, `rescue remove`
-  and the safe final states.
-- **Verification:** `rescue-*`, `ssh-*`.
-- **Exit:** remote rescue opens only through its own server, never beside an
-  exposed or unproven system server; no failure leaves a newly opened
-  password path; cleanup reports
-  success only in a verified safe state; nothing crosses from root to the
-  everyday user; the M15-C facts in docs/UPSTREAM.md → *Not verified yet*
-  verified first.
+- **Work:** before Omarchy Mac's setup, `start` disables the image's
+  password-accepting `sshd` (`systemctl disable --now sshd`), checks it is
+  inactive and disabled, and reports a failure. `doctor` reports SSH as
+  off, key-only, accepting passwords, or cannot tell (`sshd -T` as root),
+  and names the image's `alarm` password with the command that locks it.
+  Recovery help lives in docs/TROUBLESHOOTING.md and the agent brief. There
+  is no rescue mode: no agents as root, no rescue SSH server.
+- **Verification:** `tests/test-detection.sh` (the SSH classification, and
+  disable-then-check in `start`).
+- **Exit:** no password SSH is left listening once `start` has run.
 - **Status:** not started.
 
 ## M16 — The full journey through the frontend, and qualification
 
-- **Work:** the baseline's actions move to the frontend on real machines,
-  one family at a time (plan and survey; the Asahi handoff; network and the
-  Omarchy handoff; Shared creation, activation and test), each with its
-  equivalence; screens 12, 14, 15, 18, 19, 23 and 25; the ten stages on
-  both systems and journey notes on Shared; qualification: the stream, the
-  round trip, the names test, active rounds, stage records with the
-  executed source's digest, `report`; the journey simulation.
-- **Verification:** `equiv-*` for each family as it moves, `qual-*`,
-  `test-journey.sh`, the simulation, and the frontend's layers, on both CI
-  systems.
-- **Exit:** each family's move reviewed as a separate safety delta against
-  the accepted baseline; the simulation passes on both systems; every
-  `qual-*` passes, the wrong partition and the stale round among them; the
-  stream matches the reference vectors on both systems; every stage's
-  screen holds at 80×24 and 60 columns.
+- **Work:** the ten stages derived from the machine on both systems;
+  `qualify`, when Shared is planned: a file over 4 GiB and the test names
+  with their SHA-256, written to a fresh folder on verified Shared and
+  checked by the other system, both ways; small step records holding the
+  commit and the time; `report`, the hardware, identities, planned against
+  observed layout, encryption, Shared, restore and AI health and warnings,
+  each check pass, warn, fail or not checked, with its reason. Screens 23 and 25. The
+  journey simulation over fixtures, macOS → reboot → Linux → back. A new
+  frontend release through `release.yml`, pinned in the production
+  `release/frontend.lock`, acquired and verified by the launcher and
+  started by `frontend-check` on this Mac; the checks that drive the old
+  `0.1.0` retire with its pin. `README.md` → *Install, step by step* as the
+  owner's guide for the one run on the M1.
+- **Verification:** `tests/test-journey.sh`, `tests/test-qualify.sh`; the
+  PTY journey; FULL on `main`.
+- **Exit:** the simulation passes on both systems; FULL is green on `main`;
+  the release is pinned and verified; `sources --check` passes.
 - **Status:** not started.
 
 ## M17 — Real-hardware qualification: the first real install
 
-- **Objective:** evidence from the target Mac (2021 16-inch MacBook Pro, M1
-  Pro, 16 GB, 1 TB) that the modelled behaviour is the real behaviour,
-  obtained by running the finished product.
-- **Work:** the whole journey, from the Mac's macOS restored from Time
-  Machine to `done`, with the tool; every check in docs/QUALIFICATION.md →
-  *What the tool checks and what only the person can*, which includes the
-  earlier hardware list (the survey against `diskutil list`; planned and
-  actual extents; macOS, Recovery and Linux booting; encryption finished,
-  with the LUKS header read as root before the completion code shows;
-  `awaiting-macos-creation`; no other disk tool during creation; `sudo -n`
-  running the creation without asking again under this Mac's sudo policy;
-  the partition against the size and start shown; Shared matched through
-  `MAJ:MIN`; a file over 4 GB both ways; clean reboots; a persisting mount; a
-  rerun that changes nothing); the hardware-only facts in docs/UPSTREAM.md
-  → *Not verified yet*.
-- **Verification:** `report` on both systems, from the stage records and a
-  fresh read.
-- **Acceptance:** every automatic check passes on the real machine; the
-  attested steps are confirmed; planned and actual extents match; restore
-  is `complete`; qualification passed; a rerun changes nothing; every stage
-  record's executed source matches its commit; every way the machine
-  differed from the fixtures has become a fixture and a fix before M18,
-  with the evidence it invalidates run again.
-- **Status:** not started. Not before M14–M16 are done.
-
-## M18 — Hardware-validated release
-
-- **Objective:** a commit that is known to work on this Mac model.
-- **Work:** the M17 report committed as `docs/hardware/<model>-<date>.md`;
-  the README's tested-on row; the `hw-<model>-<date>` tag on the validated
-  commit (docs/QUALIFICATION.md → *Hardware-validated release (M18)*).
-- **Acceptance:** the report shows every check passing and every warning
-  explained; every stage's evidence is valid for the tagged commit under
-  the behaviour rule; the validation names `MacBookPro18,2` and the M1 Pro,
-  and nothing else.
-- **Status:** not started.
+- **Objective:** the finished tool, run once by the owner on the target Mac
+  (2021 16-inch MacBook Pro, M1 Pro, 16 GB, 1 TB), from its macOS restored
+  from Time Machine to `done`; then `report` on each system prints what
+  the machine shows (docs/QUALIFICATION.md → *Real-hardware qualification
+  (M17)*).
+- **Status:** not started. It is the owner's run, after M16, never a
+  session's.

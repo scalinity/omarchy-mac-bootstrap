@@ -235,12 +235,12 @@ unzip, Neovim (LazyVim), and runs IP-based timezone detection.
 Asahi kernels use 16 KiB pages; the tool reports the page size and asks you to
 confirm each CLI starts after installing.
 
-# Product expansion (designed, not implemented)
+# Product expansion
 
 What the M14–M16 design relies on, where each fact was read, and what is
 not yet verified. Verified: 2026-09-26. Facts that decide behaviour at run
-time are checked again then (the registry's target checks, `sources
---check`); nothing here is a contract the code may assume without looking.
+time are checked again then (`pacman -Si` on Linux, `sources --check`);
+nothing here is a contract the code may assume without looking.
 
 ## Package inventories on macOS
 
@@ -273,7 +273,6 @@ Read at `omacom/omarchy-mac` `quattro` `ba546a61f881c1fe9d79d75ec050eab048b8cb63
 | seeded into `~/.config` and user-owned afterwards: alacritty, btop, foot, ghostty, git, herdr, hypr, kitty, lazygit, omarchy, opencode, tmux, `starship.toml` and more; `omarchy-reinstall-configs` copies `/etc/skel` over the home without a backup; theme state in `~/.local/state/omarchy` | `config/`, `docs/file-layout.md`, `bin/omarchy-reinstall-configs` |
 | foot is the default terminal; Ghostty only from `[omarchy-aarch64]`; Flatpak not installed by default; `jq`, `git`, `curl`, `openssl` and `mise` (`mise-bin` 2026.9.12) present after install; `visual-studio-code-bin` only in the `Usage = Sync` repository (issue #297) | `manual/15-terminal.md`, `install/omarchy-base.packages` (line 80) |
 | Omarchy's firewall denies incoming connections (`ufw default deny incoming`); setup locks root's password and removes `alarm` from `wheel`, but neither changes `alarm`'s password nor disables `sshd`; `omarchy-setup-security-sshd` writes a key-only drop-in, checks it with `sshd -t` and `sshd -T -C` | `install/config/firewall.sh` (line 23), `bin/omarchy-mac-setup` (lines 742–801), `bin/omarchy-setup-security-sshd` (lines 148–188), `migrations/1788124236.sh` |
-| `/root` survives the in-place encryption | `bin/omarchy-system-btrfs-migrate` |
 
 ## Omarchy's agent wrappers
 
@@ -300,8 +299,7 @@ Read at the same commits, and mise `v2026.9.12`
 | Arch Linux ARM documents `root`/`root`, `alarm`/`alarm` and `sshd` started | <https://archlinuxarm.org/platforms/armv8/generic> |
 | Arch's (and Arch Linux ARM's, identical) `sshd_config` starts with `Include /etc/ssh/sshd_config.d/*.conf`; `99-archlinux.conf` sets `KbdInteractiveAuthentication no`, `UsePAM yes`; `PasswordAuthentication` stays at its default, yes | `archlinux/packaging/packages/openssh` `87ce57139f3b40e1fb20b85128fb5b10b9128f40` (10.5p1-1) `PKGBUILD` (lines 93–95, 159); the Arch Linux ARM package inspected |
 | OpenSSH 10.5p1: `-t` checks the configuration and keys; `-T` prints the effective configuration, `-C` sets `addr`, `user`, `host`, `laddr`, `lport`, `rdomain` (and `invalid-user`), and an attribute left out makes a `Match` on it false; both need root (they load the host keys); the first value of a keyword wins; included files are read in name order; a satisfied `Match` overrides the global value; since 10.4 the dump's keywords are in mixed case | openssh-portable `V_10_5_P1` `b3f7344209832eea8ece447d871ea748767c444b` `servconf.c` (lines 893–897, 2649–2681), `sshd.c` (lines 1506, 1567–1745); sshd(8), sshd_config(5); release notes 10.4 |
-| with `BatchMode=yes` the client never sends a password and fails with `Permission denied (<methods>)`, listing the server's methods for that account | openssh-portable `sshconnect2.c` (lines 405–414, 543, 2414), `auth2.c` |
-| `sshd -f <file>` reads that configuration instead of `/etc/ssh/sshd_config`; `-D` keeps it in the foreground; `-E <file>` sends its log there; it refuses to run unless started by an absolute path; `Match` and `Include` are its only conditional and indirection keywords, so a configuration without either has one effective policy | openssh-portable `V_10_5_P1` `sshd.c` (lines 1350, 1364, 1370, 1455), `servconf.c` (lines 517–518) |
+| `Match` and `Include` are `sshd`'s only conditional and indirection keywords, so a configuration without either has one effective policy | openssh-portable `V_10_5_P1` `servconf.c` (lines 517–518) |
 | `AuthenticationMethods publickey` lets only public-key authentication complete a login; methods it lists should also be enabled | sshd_config(5); `auth2.c` |
 
 ## Platform tools the core relies on
@@ -332,7 +330,7 @@ Read at the same commits, and mise `v2026.9.12`
 
 | Fact | Where |
 | --- | --- |
-| Claude Code 2.1.283: `https://claude.ai/install.sh` (redirecting to `downloads.claude.ai/claude-code-releases/bootstrap.sh`, SHA-256 `3a68d340…aa766a944` on 2026-09-25) checks the binary's SHA-256 from its manifest and installs `~/.local/bin/claude` → `~/.local/share/claude/versions/`; it refuses to run under `sudo` (`SUDO_USER` set) unless `CLAUDE_INSTALL_ALLOW_SUDO` is set, and allows real root; it does not check memory first, and says it needs about 512 MB when the install is killed; run from `/` it scans the whole filesystem; `--dangerously-skip-permissions` is refused as root; the supported systems listed are macOS 13+, Ubuntu 20.04+, Debian 10+, Alpine 3.19+ | `bootstrap.sh` (lines 20, 39, 249–251); <https://code.claude.com/docs/en/setup>, <https://code.claude.com/docs/en/troubleshoot-install>, <https://code.claude.com/docs/en/permission-modes> |
+| Claude Code 2.1.283: `https://claude.ai/install.sh` (redirecting to `downloads.claude.ai/claude-code-releases/bootstrap.sh`, SHA-256 `3a68d340…aa766a944` on 2026-09-25) checks the binary's SHA-256 from its manifest and installs `~/.local/bin/claude` → `~/.local/share/claude/versions/`; it refuses to run under `sudo` (`SUDO_USER` set) unless `CLAUDE_INSTALL_ALLOW_SUDO` is set, and allows real root; it does not check memory first, and says it needs about 512 MB when the install is killed; run from `/` it scans the whole filesystem; the supported systems listed are macOS 13+, Ubuntu 20.04+, Debian 10+, Alpine 3.19+ | `bootstrap.sh` (lines 20, 39, 249–251); <https://code.claude.com/docs/en/setup>, <https://code.claude.com/docs/en/troubleshoot-install> |
 | Claude Code layout (`settings.json`, `CLAUDE.md`, `rules/`, `skills/`, `agents/`, `commands/`, `plugins/` with `installed_plugins.json` and `known_marketplaces.json`, `projects/<encoded path>/` sessions, `history.jsonl`; `~/.claude.json` with user-scope `mcpServers`, per-project state and account metadata); `claude mcp add-json … --scope user`; `claude mcp list` connects to every server; `${VAR}` expands in user-scope servers; `AGENTS.md` read only without a `CLAUDE.md`; sign-in without a browser by copying a URL and pasting a code | <https://code.claude.com/docs/en/claude-directory>, <https://code.claude.com/docs/en/mcp>, <https://code.claude.com/docs/en/memory>, <https://code.claude.com/docs/en/authentication> |
 | Codex 0.157.1: `https://chatgpt.com/codex/install.sh` (musl build, checksums checked, `CODEX_NON_INTERACTIVE=1`); `auth.json` is a file on macOS too; skills in `~/.agents/skills`; `codex login --device-auth`; `codex mcp list` starts no stdio server; `codex mcp add --url` may start a browser sign-in | <https://github.com/openai/codex>, <https://learn.chatgpt.com/docs/auth>, <https://learn.chatgpt.com/docs/extend/mcp> |
 | OpenCode 1.18.32 (`anomalyco/opencode`): its installer verifies nothing; `~/.config/opencode/opencode.json` (`mcp`, `agent`, `command`, `plugin`, `permission`), `{env:VAR}`; credentials in `~/.local/share/opencode/auth.json`; `opencode mcp list` starts every local server; plugins run code | <https://opencode.ai/docs/config>, <https://opencode.ai/docs/plugins> |
@@ -393,11 +391,6 @@ Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
   non-ASCII, ESC, DEL; no final LF; a blank line; `%2f`, `%4`, a raw space,
   a raw `=`; `%41`; `%00`; an upper-case key; 70 KB against 64 KiB; a 17 KB
   line against 16 KiB.
-- **The qualification stream** (docs/QUALIFICATION.md → *The stream*):
-  every reference value there was produced with `openssl enc
-  -aes-256-ctr -nosalt` over `head -c N /dev/zero`, every `PIPESTATUS` 0;
-  the MiB at offset 2³² generated from its counter equals the same MiB cut
-  from the full stream; the full stream took 96 s.
 - **`noclobber`** on `/bin/bash` 3.2.57 and Bash 5.3.20: `>` onto a new file
   succeeds; onto an existing file, a dangling link, or a link to a file it
   fails; `>|` and `>>` succeed.
@@ -439,8 +432,8 @@ Run on this Mac on 2026-09-26 (macOS 27.0, `/bin/bash` 3.2.57, Homebrew Bash
 
 ## Not verified yet
 
-Split by what can answer it (docs/DECISIONS.md → *Resolved review questions*, O9). Nothing is left for
-the Mac that source, package metadata or a CI runner can answer.
+Split by what can answer it. Nothing is left for the Mac that source,
+package metadata or a CI runner can answer.
 
 ### Before a feature's gate closes
 
@@ -449,9 +442,6 @@ the Mac that source, package metadata or a CI runner can answer.
 | a stable Rust toolchain gives the same loader, libraries and glibc symbol versions as the inspected artifact; C dependencies follow `MACOSX_DEPLOYMENT_TARGET`; the stripped macOS binary keeps its ad hoc signature | `frontend-compat-linux`, `frontend-compat-macos` on the first build | M14 gate 1 |
 | the Asahi kernel in `asahi-alarm` includes the console alternate screen (`23743ba64709`) | the `linux-asahi` package's version and source | M14 gate 1 |
 | the delivered `asahi-base-btrfs.zip` has the root filesystem's packages, `sshd` enabled and `alarm` present, as inferred from its builder | list the image's package database and enabled units | M15-C |
-| Codex, OpenCode, Gemini CLI and Crush refuse or change behaviour as root | their source | M15-C |
-| `claude install` refuses root in any case beyond bypass mode; its working-directory scan | an install as root in a container on the aarch64 runner | M15-C |
-| the rescue server on the image: `sshd -D -f` under `systemd-run`, `UsePAM no` with Arch's build, the `sshd-session` and `sshd-auth` helpers it starts, and `ssh -o StrictHostKeyChecking=yes` against a prepared host-key file | a run in a container of the image's root filesystem on the aarch64 runner | M15-C |
 | `renameat2` with `RENAME_NOREPLACE` on btrfs, ext4, xfs and tmpfs in the Asahi kernel | the kernel source of the `linux-asahi` version | M15-A |
 | which mise backend Claude Code resolves to on linux-arm64, the executable's path under `installs/claude/<version>/`, and whether mise reaches the network beyond version resolution | mise's source and a run in a container on the aarch64 runner | M15-B |
 | how mise quotes keys for tools outside its registry in `config.toml` | mise's source | M15-B |

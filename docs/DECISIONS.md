@@ -3,29 +3,31 @@
 The product expansion's decisions, each with why and what was set aside.
 Numbers are stable; a decision that changes keeps its number and states its
 new form. The accepted installer and storage baseline (MILESTONES.md →
-*Accepted baseline*) is not reopened here. The architecture was reviewed
-independently (result: approved with required specification fixes); the
-decisions below include that review's resolutions.
+*Accepted baseline*) is not reopened here.
 
 ## Product
 
 **D1. The source is this Mac's own macOS.** The M1, restored from the
 everyday Mac's Time Machine backup and brought up to date, is scanned where
-it stands, before Linux exists. *Set aside:* exporting from the everyday Mac
-as the normal path; it remains possible as a foreign bundle (D21).
+it stands, before Linux exists. *Set aside:* exporting from the everyday Mac.
 
 **D2. The target shell stays Bash.** The Mac is meant to be a Linux and Bash
-learning environment. Two literal forms (aliases, allowlisted exports) are
-imported automatically; everything else is reviewed; functions travel only as
-reviewed code (docs/RESOLVER.md → *From Zsh to Bash*). *Set aside:* Zsh on the
-target; converting Zsh automatically.
+learning environment. Two literal forms (aliases, allowlisted exports) become
+Bash automatically; the Zsh rc files travel as reference copies, never
+sourced, and functions are not carried as code (docs/RESOLVER.md → *From Zsh
+to Bash*). *Set aside:* Zsh on the target; converting Zsh automatically.
 
 **D3. Ratatui is the product's interface; the Bash core is the authority.**
 The frontend presents and collects; the core reads the machine, decides what
-is legal, and runs everything. The text interface remains complete, as the
-recovery and non-interactive surface; the installer's text flows keep their
-behaviour and the read commands gain the new facts. *Set aside:* rewriting
-the accepted core in Rust; an optional frontend.
+is legal, and runs everything. The text interface stays complete for the
+install journey and every read, as the recovery and non-interactive surface:
+the installer's text flows keep their behaviour and the read commands gain
+the new facts. Migration choices are made in the frontend; without it,
+`profile` saves the defaults and `restore` keeps every conflict, each after
+its typed word, so the text path always lands on the safe choice. *Set
+aside:* rewriting the accepted core in Rust; an optional frontend; record
+files that stand in for the frontend's choices (`--select FILE`,
+`--plan FILE`).
 
 **D4. The product is complete before the first real install**, which is
 M17's qualification.
@@ -39,14 +41,17 @@ anything else.
 **D6. One short-lived core process per request** (review question O1).
 Local navigation, focus, scrolling, search and filtering stay in the
 frontend with no core call. Snapshots, validation and actions each start a
-fresh core. The M14 gate 2 benchmark measures it (cold and warm, macOS arm64
-and Linux aarch64, small and representative inventories), against these
-budgets: navigation p95 under 50 ms and search p95 under 100 ms with no core
-call; a small non-disk snapshot p95 under 500 ms; plan validation after
-inputs are loaded p95 under 300 ms; a full disk refresh shows progress at
-once and is investigated above 2 s. Only if start-up dominates and misses
-these would a long-lived, bounded **read-only** session be considered;
-mutation authority never becomes persistent for speed.
+fresh core. The budgets: navigation p95 under 50 ms and search p95 under
+100 ms with no core call; a small non-disk snapshot p95 under 500 ms; plan
+validation after inputs are loaded p95 under 300 ms; a full disk refresh
+shows progress at once and is investigated above 2 s. The Gate 2 benchmark
+measured them, cold and warm, on the physical M1 and on Linux aarch64, over
+small and representative workloads (D53), and O1 is closed with one
+limitation recorded, O1-LOGS-P01: on the M1, the full-window Logs detail has
+p95 between 540 and 545 ms against its 500 ms target. A later screen is
+measured only if it feels slow, and only if start-up then dominates would a
+long-lived, bounded **read-only** session be considered; mutation authority
+never becomes persistent for speed.
 
 **D7. One record format, with admission before parsing.** ASCII,
 tab-separated, percent-encoded, one canonical encoding per value, typed and
@@ -57,24 +62,54 @@ trailing TABs and drops or truncates NULs (reproduced on Bash 3.2 and 5.3);
 a tool that fails refuses the document. The Rust side applies the same
 rules; a differential corpus and golden examples hold them together. Every
 protocol operation has its own record set; codes (the resume token, the
-completion, Shared and approval codes) are a `code` type checked by kind,
-never a widened `id`; there are no comment lines, and a family that wants
-notes has a `note` record. *Set aside:* JSON (no parser in the core on fresh
+completion and Shared codes) are a `code` type checked by kind, never a
+widened `id`; there are no comment lines, and a family that wants notes has
+a `note` record. Screens add data, not schema: detail and row kinds,
+columns, fact keys, action ids, parameters, and blocker and refusal ids are
+values of existing `id` and `text` fields, so a new screen needs no
+admission change, corpus case or compatibility ruling. Core and frontend
+always ship together — the core refuses any frontend but the one the lock
+pins — so an old client never meets a new value. The frontend's requests
+are generic: `Validate{action, args}`, `Execute{action, args, word}` and
+`Detail{scope, kind}`. *Set aside:* JSON (no parser in the core on fresh
 Asahi, and a Bash JSON parser would be a larger trusted surface), plists,
 NUL-separated streams.
 
-**D8. The core says what is legal and judges every execute afresh.** In
-order: admission; the session's ceiling and scopes from the launcher; the
-scope's exclusion; a fresh read; availability now; the canonical basis
-rebuilt and compared; the typed word; then the baseline's own flow with all
-its checks. Each action family has a normative basis schema (docs/PROTOCOL.md
-→ §5); restore re-checks each item before it is applied.
+**D8. The core says what is legal and judges every execute afresh.** An
+action is one row of the core's action table: its scope, the text flow's own
+functions in the text flow's order, `managed` or `handoff`, and its
+interface word or none. The rows are `plan.save` (D56), `asahi.launch`, the
+Shared codes, `shared.create`, `network.connect`, `omarchy.start`,
+`omarchy.resume`, `shared.activate`, `shared.test` and `dev`, and a snapshot
+lists only what the text flow would offer now. In order, the core admits the
+request; checks the session's ceiling and scope; takes the run lock and the
+scope's operation record (a record from an earlier boot is first reconciled
+by the scope's classifier, and a `busy`, `unsupervised`, `failed` or
+unreadable one refuses); re-reads the machine; compares the basis, the
+SHA-256 of the action id and the gate facts shown; and checks the typed
+word. The step runs with the text flow's environment — `umask 022`, never
+the core's own 077, and the flow's `OMB_PHASE` — and the scope's classifier
+decides the outcome on a fresh read: the expected effect, or a proven
+"nothing changed" (an installer quit), removes the record; an unexpected
+state keeps it `failed`; lost supervision leaves it `unsupervised`
+(docs/PROTOCOL.md → *Executing*). Restore re-checks each item before it is
+applied. *Set aside:* free space, battery or a time in the basis, which
+drift on a live Mac and would refuse every attempt; a basis schema per
+action family.
 
 **D9. Typed words are intent, validated by the core** (review question O2).
 Every existing gate stays exactly an intentional-action gate, `start` and
 `mount` included, collected by the frontend or the text flow and validated by
-the core. Authentication is a separate matter, left to upstream programs and
-`sudo` under their own policies. The baseline's Shared sequence is unchanged.
+the core. The interface word answers the step's first typed-word prompt
+once, from a variable the core never exports; every later prompt — `launch`
+and `start` after their downloads, `create`, `sudo`, the installers — is
+asked on the terminal, which the frontend has handed over, so no word given
+for one gate answers another. Nothing that changes the machine is
+cancellable, and Ctrl-C in a handoff belongs to the program. Authentication
+is a separate matter, left to upstream programs and `sudo` under their own
+policies. The baseline's Shared sequence is unchanged. *Set aside:*
+answering a flow's later prompts from the frontend; cancelling a step that
+changes the machine, which could stop it half-done.
 
 **D10. Release binaries, pinned by a lock outside the build inputs.**
 `release/frontend.lock` pins each artifact's SHA-256 and size, and records
@@ -120,18 +155,24 @@ for emphasis; ASCII on the console; no wide characters.
 
 **D17. All Bash stays 3.2-compatible**, Linux-only modules included.
 
-**D18. The expansion cannot reach the installer's paths, and the accepted
-baseline is the oracle.** New modules load only for the commands that need
-them; the installer's act paths load none; new functions carry prefixes and
-never redefine baseline functions. Each baseline action exposed through the
-protocol is compared with the **accepted baseline, `2edb76a`**, through
-recorded commands and records over fixtures — not only with the new text
-path, which could share a regression. Every change to a baseline file is its
-own reviewed safety delta. A change to the entrypoint's routing is one even
-when it adds no privileged command: adding `frontend-check` (D48) gets its
-own focused safety review, which holds that no existing action becomes
-newly reachable, that every other command routes as before, and that no
-`sudo`, child-registry action or disk, package or boot authority is added.
+**D18. The expansion reaches the installer only through the core's action
+table, and the accepted baseline is the oracle.** New modules load only for
+the commands that need them; the installer's act paths load none; new
+functions carry prefixes and never redefine baseline functions. An installer
+step is reached only through a row of the core's action table that runs the
+text flow's own functions (D8), the same in fixture and real mode, so there
+is no second path. Every exposed action is equivalent with the **accepted
+baseline, `2edb76a`**, in three ways — the same decisions, the same commands
+with the same arguments in the same order, the same resulting state —
+through recorded commands and records over fixtures, not only with the new
+text path, which could share a regression; each difference is a named,
+tested delta on one short list (docs/TESTING.md → *Equivalence with the
+accepted baseline*). Every change to a baseline file is a named delta with
+its own test. A change to the entrypoint's routing is one even when it adds
+no privileged command: `frontend-check` (D48) holds that no existing action
+becomes newly reachable, that every other command routes as before, and
+that no `sudo`, child-registry action or disk, package or boot authority is
+added.
 
 **D38. One process model, with a spool instead of a response pipe.** The
 request travels on fd 3, which the core reads (bounded) and closes before
@@ -183,63 +224,39 @@ hold nothing. *Set aside:* treating an empty-looking process group as
 proof (the controllers are always in it, and a daemonised descendant never
 is); a general process tracker.
 
-**D54. An operation record that cannot be read stays a barrier until an
-explicit, evidenced clear** (the Gate 3 prerequisite; a contract accepted at
-`152c8f68854368025816b926494dbec0e94bc903`, not implemented:
-docs/PROTOCOL.md → *An operation record that cannot be read*). Failing to decode a record is never
-evidence that nothing runs, that the operation ended or that it left no
-effect, because every judgement of D47 starts from the record's fields and
-none is available. Looking and reading are judged apart, so an inspection
-that failed is told from bytes that were read and refused, and neither
-becomes no record. Unreadable rests only on an inspection whose every step
-completed, never on a reason code alone, since the current seal check
-reports a tool that failed as `seal`; what could not be established stays
-undetermined. No record itself means only that nothing is recorded as
-begun and unsettled, since each act's fresh read and rebuilt basis, not the
-record's absence, make it safe; and a readable record whose core's liveness
-is unknown stays excluded without being called supervised. Read commands
-keep working, and a read-only
-diagnostic reports what can be established without trusting the bytes —
-the entry's kind, owner, size and fingerprint, admission's reason code,
-worker evidence and effect certainty — and nothing taken from them. No
-boot, age, count, read or reconciliation clears the record: a reboot ends
-the old boot's processes but cannot say the record came from that boot,
-because its boot session is part of what cannot be read. A clear is an
-action the core lists, with a typed word, bound by its basis to the
-inspected bytes, recorded before it changes anything, and taken by rename
-and confirmed as an abandoned run lock is cleared; it is offered only when
-no recorded process is alive or unknown, the processes that could have
-written those bytes are proven gone, and the scope's reconciliation finds
-nothing unexpected; it proves nothing about the past and resumes nothing.
-Those conditions make a clear eligible, an authorized attempt, never a
-completed one. Its record is its own, so the ordinary operation record's
-pre-write never overwrites the entry it is for; it is complete only when
-verified complete, and one that began and is not — interrupted, or stopped
-by an entry that is not the one inspected — keeps the scope barred as the
-unreadable record did, even with `ops/<scope>.omb` gone, and preserves what
-it took. A completed clear gives a later request nothing to rely on: each
-act inspects afresh. The frontend presents and never decides (D5). The
-mechanisms this leaves open are UR-Q1 to UR-Q9 (*Open review questions*).
-*Set aside:* treating corruption as no record; a reason code as proof that
-its check ran; the record's path being empty as proof that a clear
-finished; clearing on a reboot; file times as proof of which
-boot wrote the bytes (a process of the person can set them, and the clock
-can move); the person's word in place of the boot-change proof; showing an
-unadmitted record's fields, even marked as unverified; a frontend that
-reads `ops/`; an automatic clear after reconciliation, which a readable
-record gets only because its action and basis are known.
+**D54. An operation record that cannot be read blocks its scope until the
+person moves it aside** (docs/PROTOCOL.md → *An operation record that
+cannot be read*). Every judgement of D47 starts from the record's fields,
+so failing to decode one is never evidence that nothing runs, that the
+operation ended or that it left no effect: every act in its scope is
+refused, a reboot changes nothing, and reads keep working, `operation
+SCOPE` among them (D55). The way out is `operation clear SCOPE`, an act
+command of the text interface: under the run lock, on a fresh inspection
+that finds the entry unreadable, after the tool says what it cannot know
+and the person types `clear`, and only while the entry is the one shown,
+it renames it inside `ops` to a kept name no reader takes for a record.
+The tool cannot prove that whatever wrote those bytes has stopped — the
+boot it ran in is part of what cannot be read — so on this one machine
+the person's word, after a restart when in doubt, stands in for that
+proof: a scope barred for good on a one-time install is the worse
+failure. The move destroys nothing, and the next act's fresh read and
+rebuilt basis, never the record's absence, make it safe. *Set aside:*
+corruption as no record; clearing by a reboot, a read or time; deleting
+or editing the entry; moving one that could not be inspected; sightings,
+file times, process trackers, clear transactions and effect-domain
+proofs, which serve no moment of one owner's single install.
 
 **D55. The operation-record diagnostic is a detail of the record's own
-scope** (accepted at `2840fe2`; its core and text implementation is
-independently accepted at `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd`:
-docs/PROTOCOL.md → *The operation-record diagnostic*). The
+scope** (built in the core and the text interface at `a3beb3c`, and in the
+frontend at `02ffc3b`: docs/PROTOCOL.md → *The operation-record
+diagnostic*). The
 scope that keeps `ops/<scope>.omb` must already show its barrier and
 withhold its act actions, so its snapshot already inspects the record; the
 diagnostic publishes that inspection whole, as `detail kind=operation`, a
 projection of the snapshot's own data set under its generation, so a
 finding and the barrier beside it never describe two moments. The snapshot
-keeps one `operation` fact and a blocker of the state's own — `unreadable`,
-`undetermined`, `unsettled-clear` — and no path, so a value the record
+keeps one `operation` fact and a blocker of the state's own — `unreadable`
+or `undetermined` — and no path, so a value the record
 format cannot carry never hides a barrier. Every addition is a value of an
 `id`, `bytes` or `text` field: no enum, record type, key or cardinality
 changes, so protocol 1 holds by the admission rules both implementations
@@ -254,7 +271,7 @@ by a record that admitted, or inferred by a fixed rule, and a `recorded.`
 key marks the second on the wire; nothing is shown from a record that
 did not admit, a failed lookup is never no record and a check that did not
 finish is never an unreadable record, and no worker or effect evidence is
-claimed that the open UR-Q3, UR-Q4 and UR-Q5 have not supplied. *Set
+claimed that an existing mechanism has not supplied. *Set
 aside:* a new operation (a `req` enum word an older core refuses at
 admission, and a generic read made for one question); a new scope (an enum
 word the released parser rejects, and a second generation over the
@@ -266,6 +283,25 @@ carry it, and an unrepresentable path would take the barrier with it);
 keeping `unsupervised` as C's blocker, whose meaning includes clearing by a
 new boot; a fingerprint for D, which would make a delivered D depend on the
 hash tool that may be what failed.
+
+**D56. plan.save is one managed act with a read-back.** It runs in scope
+`plan`, managed, with no typed word, and is not cancellable.
+`validate select action=plan.save` takes the eleven inputs — `shared_size`,
+`linux_size`, `enc`, `user`, `host`, `kmap`, `tz`, `loc`, `ssh`, `gh` and
+`dev` — each judged by the function that owns it in the text flow, and
+answers the layout, the installer's answers and a basis over the normalised
+inputs, every partition's GUID, offset and size, and the computed plan.
+Free space, the resize limit and the floor are checked again at execute and
+never bound into the basis, because they drift on a live Mac and would
+refuse every save. Execute re-reads and recomputes; it refuses `unavailable` if the plan
+has blockers and `changed` if the basis differs; then it sets `CFG_*` and
+calls `mac_save_plan`, whose writes stop at the first failure. The outcome
+is a read-back, as for every act (D8): `cfg_load` gives exactly the inputs;
+with Shared, the intent admits and its digest matches `CFG_plan`, and
+without Shared no intent file remains; `planned_at` is set. *Set aside:* a
+receipt of the save; a separate review selector; documentary test cases
+written before the code; binding free space or the resize limit into the
+basis; a rollback.
 
 **D43. The frontend's own persistence follows intent, with one named
 exception.** For every ordinary command, only an act session downloads and
@@ -334,7 +370,7 @@ on purpose, never read from `Cargo.toml`. Every other difference stays a
 failure, and the release workflow never runs `candidate` and stays exact.
 Gate 2 publishes nothing: a manual look starts a build of the candidate as
 `OMB_FRONTEND_DEV` over a fixture, as D16 requires, and no command exists
-only to show it. When `0.2.0` becomes a release is a later gate's decision.
+only to show it. `0.2.0` becomes a release in M16.
 *Set aside:* letting `lock` accept a larger version, which turns a failure of
 the exact oracle into a success; changing the lock so CI passes; a preview
 release; a production command for viewing an unfinished interface.
@@ -391,7 +427,7 @@ no save, no action and no execute. The Storage Planner, its scale bar and
 the Safety Gate belong to the gate that exposes their actions. *Set aside:*
 a 2 000-line log window; an executable planner in this gate.
 
-**Gate2-read-representation-failure (accepted independent ruling).** For
+**Gate2-read-representation-failure.** For
 ordinary journey `snapshot` and `detail kind=machine|status`, required
 authoritative content that violates the frozen Protocol-1 representation
 contract returns `error representation`, the fixed safe text
@@ -423,119 +459,23 @@ entries — is met with fixed synthetic loaded data where the real dataset
 does not exist yet: the frontend's navigation, search and render
 benchmarks run over deterministic loaded models of both sizes, and the core's
 benchmarks run over the read families Gate 2 implements. The two are
-reported separately. A workload that returns no work is invalid, not fast,
-and each one proves its work before it is timed. Timing is never taken
-beside the test suite. *Set aside:* deferring the 400-entry workload until
-profiles exist; a 2 000-line production log to reach 2 000 items.
+reported separately. `bench-snapshot` measures the fixture-free
+`frontend-check` journey snapshot as a core-only complete request, its four
+facts neither padded nor substituted for the loaded models. A workload that
+returns no work is invalid, not fast, and each one proves its work before it
+is timed. Timing is never taken beside the test suite. O1 is closed (D6); a
+later screen is measured, on these rules, only if it feels slow. *Set
+aside:* deferring the 400-entry workload until profiles exist; a 2 000-line
+production log to reach 2 000 items.
 
-**Review-resolved benchmark-target clarification at accepted V
-`b01610e69a2eef6e5a52f5ede18236210699704e`:** `bench-snapshot` measures the
-already accepted fixture-free `frontend-check` journey snapshot, as a core-only
-complete request. This narrow exception to ordinary fixture-backed core
-benchmark workloads resolves the pre-implementation semantic STOP; the mapping
-was not previously explicit. It changes no production session or Protocol
-semantics, and runs no frontend executable. The startup-check's four facts are
-not padded or substituted for D53's separate loaded-model obligations. Every
-other workload, platform, repetition, meaningful-work and timing obligation
-above remains binding. Exact timing and work-witness rules are in the
-benchmark section of docs/TESTING.md.
-
-**PLIST-M01 production prerequisite (historical Class A candidate record).** Independent
-review confirmed a MEDIUM, prerequisite-blocking compatibility defect: failed
-Apple plist extraction can emit stdout that callers consume as structured data.
-The bounded remediation on diagnostic head
-`6a191f46ece7d9fceeb2b8538b0cb05b0599d154` changes only `plist_get` in
-`lib/macos.sh` and its contract comment. Success publishes the extracted bytes;
-failure publishes nothing and retains the extraction's nonzero status. Empty,
-false, zero and multiline successful values retain their semantics. This is a
-candidate awaiting independent confirmation, not finding closure.
-Historical BASE remains `2edb76a7de3f78ec90927ac93d5eec3a84636253`.
-The static Shared safety pin permits only the explicit candidate helper/comment
-replacement in the whole BASE `macos.sh`; other pinned files and the critical
-interval remain unchanged. The seven benchmark commits through diagnostic H
-remain UNACCEPTED; the harness is FROZEN pending prerequisite review.
-Benchmark completion has not resumed, Q5 is RESOLVED FOR MEASUREMENT, O1 is
-PENDING, and Gate 2 remains IN PROGRESS.
-
-**CP1-PLIST-M01 preservation ruling (historical Class D candidate record).** Independent review selected
-"CP1 PRESERVATION EXCEPTION REQUIRED — BOUNDED TEST/DOC REMEDIATION AUTHORIZED"
-on PLIST candidate P `86b8c02aff9938bace32d05a464e2086d6ee3465`.
-The Class A production helper correction alone was insufficient to reconcile
-the frozen response oracle: removing its known-false blocker also corrects the
-owner-derived next guide and changes the whole-Journey generation. Class D
-permits only the exact witnessed blocker/derived-guide/generation exception,
-with independent dataset hashes, own-generation complete details and explicit
-cross-generation changed refusals. The known-false C observation is not desired
-truth. Default byte preservation, language/parser and runtime authority remain
-unchanged; this grants no general owner-delta permission. Only the CP1 test and
-three status/contract docs may change on P; production, Rust and benchmark bytes
-remain frozen. PLIST-M01 remains REMEDIATED IN CANDIDATE — AWAITING INDEPENDENT
-CONFIRMATION. Benchmark is FROZEN/UNACCEPTED, Q5 RESOLVED FOR MEASUREMENT,
-O1 PENDING and Gate 2 IN PROGRESS.
-
-**Prerequisite acceptance and benchmark resume authorization (before B review).**
-Independent review returned **PLIST-M01 PRODUCTION PREREQUISITE ACCEPTED**:
-**PLIST-M01 CLOSED** at P2 `f91c19574cb8b0c8d3d0e1a16181c374476d7dd3`,
-prerequisite-only. The accepted H-to-P2 carve-out includes the Class A helper,
-historical Shared safety pin and CP1-PLIST-M01 Class D exception, exact-P2 CI
-and release/Protocol integrity. The preceding candidate records remain
-historical facts. The prerequisite freeze is lifted:
-**BENCHMARK HARNESS / GATE 2 MEASUREMENT PREPARATION ONLY MAY RESUME**.
-The seven V-to-H benchmark commits remain UNACCEPTED; the harness is a candidate
-awaiting focused independent review of V through the final benchmark candidate,
-with H-to-P2 carved out as the accepted prerequisite. Reviewing only the resumed
-P2 delta is insufficient. Q5 remains RESOLVED FOR MEASUREMENT, O1 PENDING,
-Gate 2 IN PROGRESS and frontend 0.2.0 UNRELEASED. Accepted prerequisite files
-remain frozen; no authoritative O1 campaign, optimization or product work is
-authorized by this preparation slice.
-
-**BENCH-M01 bounded remediation authorization.** Independent review at B
-`6129d07bd6cf04a4fd9a98773231677fb1473375` returned **BENCHMARK HARNESS
-REMEDIATION REQUIRED** for the single blocker **BENCH-M01 — Required core
-timing decomposition is absent**; other V-to-B methodology was credited.
-This candidate adds benchmark-private acknowledged-boundary companions with
-explicit startup/admission/owner-probe observations and separate complete
-Validate acquisition/computation. The real complete-request stopwatch/budgets
-and loaded bench-validate stay unchanged. Exact definitions, applicability,
-non-additive populations, transformation identities, equivalence proofs and
-overhead limitations are in bench/README.md. PLIST-M01 remains CLOSED at P2;
-accepted proofs/product files stay frozen. BENCH-M01 is **REMEDIATED IN
-CANDIDATE — AWAITING INDEPENDENT CONFIRMATION**, harness UNACCEPTED, O1 PENDING.
-The next checkpoint is **BENCH-M01 CLOSURE / FINAL BENCHMARK-INSTRUMENT
-ACCEPTANCE REVIEW** of B through the final remediation candidate, using the
-completed V-to-B assessment as integration base. If closed with no new concrete
-blocker, proceed directly to **O1 AUTHORITATIVE MEASUREMENT CAMPAIGN /
-SIGNOFF-EVIDENCE COLLECTION ONLY**, under that separate authorization. No
-generic preparation milestone, optimization, frontend source, product UI or
-release is authorized.
-
-**O1 performance signoff and O1-LOGS-P01.** The independent review returned
-**GATE 2 PERFORMANCE SIGNOFF ACCEPTED — LOGS FINDING RECORDED**. Official
-populations: the final physical M1 Pro macOS population, 52 of 52 cases and
-10,400 of 10,400 ordinary repetitions, and the retained complete Linux ARM64
-population, 50 of 50 cases and 10,000 of 10,000 ordinary repetitions — 102 of
-102 cases and 20,400 successful ordinary repetitions, with zero ordinary
-failures, timeouts and missing samples. The historical hosted-Mac population
-and the interrupted first physical-Mac attempt are excluded from the official
-macOS population. The physical-Mac results were supplied measurement
-evidence; the retained Linux raw evidence was inspected independently. Raw
-artifacts and historical result bytes stay outside the repository and are
-not modified. **O1-LOGS-P01** — physical-macOS full-window Logs detail
-exceeds the strict target p95 < 500 ms: cold offset-0 limit-500 p95
-544.667 ms, cold offset-1 limit-500 p95 541.182 ms, warm offset-0 limit-500
-p95 540.411 ms, warm offset-1 limit-500 p95 543.766 ms. The four stay true
-**MISS** results; the target is not raised and they are not relabelled.
-Disposition: **ACCEPTED LIMITATION — NON-BLOCKING FOR GATE 2 PERFORMANCE
-SIGNOFF**. No optimization was performed and none is authorized; the finding
-stays visible until a later measurement establishes compliance. The
-frontend's own pending feedback while Logs is read is presentation, never a
-workaround for this finding or evidence about the core's target. Gate 2 as a
-whole remains IN PROGRESS until the frontend's read-only integration and
-equivalence are accepted. The same authorization admits that integration:
-the Welcome screen, the Journey dashboard, machine and status details,
-Health, Logs, and a read-only presentation of plan validation, over the
-accepted core reads and Protocol 1, with no action, save or execute
-authority.
+**PLIST-M01.** `plist_get` in `lib/macos.sh` publishes the extracted bytes
+on success and nothing on failure, keeping the extraction's nonzero status;
+empty, false, zero and multiline values keep their meaning. A failed
+extraction could otherwise print text that its callers took for data. It is
+a named change to a baseline file (D18), and **CP1-PLIST-M01** is the one
+exception to CP1's byte preservation that it brings: removing the false
+blocker the defect produced also corrects the derived guide and changes the
+journey generation, and nothing else may differ.
 
 ## Migration
 
@@ -545,31 +485,39 @@ managers' own records with fixed read-only utilities (`find`, `plutil`,
 or an AI tool, whose listing commands update, write, fetch or execute
 configuration. Each adapter has a versioned contract, and every item carries
 its evidence (`observed`, `inferred`, `unknown`); a missing field is never
-turned into certainty. `brew bundle dump` is not used; an enrichment command
-may come later, with consent and its own effect tests.
+turned into certainty. `brew bundle dump` is not used.
 
-**D20. The Migration Profile is a sealed record of choices, bound to this
-Mac.** A draft while it is being made, a finished profile when every choice
-is settled. It comes before the plan. Its id rides in the token for journey
-matching only.
+**D20. The Migration Profile is one sealed record of choices, bound to this
+Mac.** The frontend sends the selection, defaults included, as one
+`omb-select` document; `profile` saves it as `profile.omb`, and a rescan
+keeps choices by item id and reports what is gone and what is new. It comes
+before the plan. *Set aside:* draft and finished profile files; a profile
+id; `prof=` in the resume token, since restore lists the bundles it finds
+with their origin and time (D39).
 
-**D21. The bundle is a content-addressed folder of plain objects placed
-only by a validated destination graph.** No archive; no link, special or
-hard-link objects; symlinks only inside their own item, lexically; the whole
-bundle's destinations validated together; removal only by a record that
-owns what it removes.
+**D21. The bundle is a content-addressed folder of plain objects with one
+sealed manifest.** No archive; no link, special or hard-link objects;
+hash-named objects and one sealed `bundle.omb`, written as `.partial-*` and
+then renamed; every destination checked against one grammar for the whole
+bundle — no `..`, no absolute path, no control byte, nothing beneath a link,
+no duplicates. Export never deletes anything, on Shared or in the folder the
+person names, so no export can lose data there; a failure leaves only
+`.partial-*`. *Set aside:* symlink objects; a destination graph; any
+removal, even of export's own leftovers.
 
 **D22. Before Shared, only the token, the repository and the frontend need
-to cross; after it, the bundle and its approval code.** Removable media can
-carry a bundle at any time.
+to cross; after it, the bundle.** Removable media can carry a bundle at any
+time. *Set aside:* bundles made on another Mac (D1).
 
-**D39. Integrity, approval and journey are three different mechanisms.**
-Seals and object digests detect corruption; the token's `prof=` matches the
-journey; **approval** is a code macOS shows after export — 64 bits of
-SHA-256 over the manifest's full digest, the profile, the plan id and the
-host, with separate check digits — that Linux recomputes and requires before
-restoring anything. *Set aside:* treating a recomputable seal as approval;
-signing infrastructure.
+**D39. Integrity is the seal and the object digests; consent is the typed
+`restore`.** Nobody but the owner's two systems writes Shared, so the seal
+and the object digests are there to catch corruption. Restore lists the
+bundles it finds, with their origin and time, and the typed `restore` after
+the review is the consent. The `ombbundle` code kind stays in the record
+admissions, unused. *Set aside:* an approval code shown on macOS and
+recomputed on Linux, and a typed `import`: nobody else writes Shared, so
+neither checks anything the seal and the review do not; signing
+infrastructure.
 
 **D23. Secrets: allowlist first; heuristics only reject.** Supported
 adapters carry allowlisted fields, drop credential fields and regenerate the
@@ -582,78 +530,95 @@ parsed envelope shows a supported cipher and KDF, carried after typed
 guarantee over arbitrary files; an encrypted secrets bundle.
 
 **D40. Custom paths are selectable, as opaque content.** A path no
-supported adapter understands is `OPAQUE`: excluded by default, included
-only after typed `opaque` for that path, outside the secret guarantee, with
-known credential files still refused inside it and the scan still applied.
-This keeps the arbitrary dotfolder picker without pretending to vouch for
-what it carries.
+supported adapter understands is `opaque`: excluded by default, included
+only after one typed `opaque` per save, which covers the chosen folders
+together (Shared is not encrypted), outside the secret guarantee, with known
+credential files still refused inside it and the scan still applied. This
+keeps the arbitrary dotfolder picker without pretending to vouch for what it
+carries. *Set aside:* a typed word for each path.
 
 **D41. No sessions or histories in v1** (review question O8). Agent sessions,
 transcripts, prompt histories, agent memory and shell history do not
 travel; history settings do.
 
-**D24. Resolution is deterministic and reviewable.** A pure function of the
-registry, the person's local registry and their decisions. No model decides
-an installation.
+**D24. Resolution is deterministic and reviewable.** A pure function of
+this repository's migration map and the person's decisions (D26). No model
+decides an installation. Package names are data, passed as argument arrays;
+the AUR is never used automatically, and nothing is built implicitly.
 
 **D25. Where software comes from, in order**: already there, pacman through
 `omarchy-pkg-add`, Omarchy's helpers, mise runtimes, mise's aqua and GitHub
 backends, Flathub, uv, cargo-binstall, Go, npm; the AUR never automatically;
-Linuxbrew never by default. No implicit source build; a build happens only
-when the chosen method is one (`go install`) and the review says so.
+Linuxbrew never by default. No implicit source build: cargo-binstall, Go and
+Flathub installs are printed as commands to run by hand.
 
-**D26. Two resolutions**: planned on macOS with an optional, advisory
-availability check (the aarch64 package databases, Flathub, `mise lock` in
-an isolated folder, `uv pip compile`); checked on the target, read-only,
-before anything installs.
+**D26. Resolution comes from this repository's migration map and is checked
+on Linux.** `data/migration-map.omb` (`map`, `choice` and `note` records)
+covers the owner's real inventory; an item it does not resolve becomes a
+decision — skip it, or "try pacman NAME", shown as a guess. Linux decides
+what is available, read-only, before anything installs (`pacman -Si`).
+*Set aside:* registry versions; a local registry; an availability check on
+macOS (the aarch64 package databases, Flathub, `mise lock`,
+`uv pip compile`), which would fetch on the Mac only to guess what Linux
+decides.
 
-**D27. A bounded, deterministic DAG orders the work.** Needs, capabilities,
-versioned provider instances, configuration and verification are separate
-nodes; Kahn's order with a fixed tie-break; cycles, conflicting instances
-and incompatible version constraints become decisions; failures block and
-optional edges degrade;
-at most 5 000 nodes. The seven layers remain as screen groups. *Set aside:*
-layer-only ordering (it could not express a tool needing a tool, or two
-versions of one runtime); a solver.
+**D27. Fixed layers order the work**: packages, runtimes, ecosystem tools,
+AI tools, files, settings, in that order, so a runtime is in place before
+the tools that need it; one version per runtime. *Set aside:* a dependency
+graph, provider instances and a solver, with what only they express: a tool
+needing a tool of its own layer, and two versions of one runtime.
 
-**D28. Paths are rewritten only inside fields an adapter parses.**
+**D28. Paths are rewritten only inside fields an adapter parses**
+(`p:home`, `p:brew-bin`, `p:shared`); in a file carried whole, macOS paths
+are listed in the review, never rewritten.
 
-**D29. Restore is journaled, resumable and conditionally reversible.** One
-immutable, sealed record per step and phase, committed (flush, rename,
-directory flush) before the step it announces; after any crash the next run
-judges each unfinished step from its records and the filesystem. A
-replacement moves the destination aside whole and compares it with what
-was reviewed; placing uses primitives that fail if anything appeared
-(`link`, `symlink`, `renameat2` with `RENAME_NOREPLACE`); a cross-device
-replacement is refused rather than copied. The residual race is stated: a
-program holding the old file open writes into the backup, and a structured
-setting's owner command has no compare-and-set, so a write by another
-program just before it is overwritten and not detected. Undo re-reads the
-destination and refuses when anything changed; packages, sign-ins and
-external effects are never claimed to roll back.
+**D29. Restore keeps one append-only run log, and backups.** Each run
+appends to its own log (`restore/runs/<run>.log`), with `sync` after each
+line and a torn last line ignored; a stop resumes, and a rerun re-judges
+each item from the filesystem and changes nothing already in place. The
+safety core stays: never as root; Keep by default; each item re-checked
+before it is placed; after a device check, the original moved aside whole
+into backups and compared before anything takes its place; files, folders
+and links placed with no-clobber forms that fail if anything appeared; undo
+only where the destination is unchanged. The residual race is stated: a program holding
+the old file open writes into the backup, and a structured setting's owner
+command has no compare-and-set, so a write by another program just before
+it is overwritten and not detected. Packages, sign-ins and external effects
+are never claimed to roll back. *Set aside:* a sealed record per step and
+phase, a crash table, a generic merge and an automatic undo, which serve no
+moment of one owner's single restore.
 
-**D30. AI tools are providers shared by `dev` and `restore`** (review
-questions O5 and O6). One provider per tool, used by both commands, over one
-installer implementation per method. Observation keeps six states apart —
-wrapper present, artifact installed, selected version, runnable, configured,
-authenticated — read from files; nothing static ever invokes Omarchy's lazy
-wrapper, its mise shim or mise, because the wrapper runs `mise use -g` each
-time, which installs, rewrites mise's global configuration and resets a pin
-to `latest`. Installing runs the same `mise use -g` the wrapper would, so
-there is one copy of each tool; no agent version is promised, because the
-wrapper selects its own. `dev` keeps its place for a machine without a
-profile; the baseline's `dev` module stops installing Claude Code over
-Omarchy's wrapper, as a reviewed change to a baseline file.
+**D30. AI tools are one table shared by `dev` and `restore`** (review
+questions O5 and O6). `lib/agents.sh` has one row each for Claude Code,
+Codex and OpenCode. Observation keeps four facts apart, read from files:
+installed (a mise install folder, or a binary from elsewhere), ran at
+restore, configured, and a sign-in file present. Nothing static ever invokes
+Omarchy's lazy wrapper, its mise shim or mise, because the wrapper runs
+`mise use -g` each time, which installs, rewrites mise's global
+configuration and resets a pin to `latest`; the one exception is
+`mise x <tool> -- <tool> --version`, with a timeout, right after installing.
+Installing runs the same `mise use -g` the wrapper would, so there is one
+copy of each tool; no agent version is promised, because the wrapper
+selects its own. Sign-in is a handoff to the tool; its own `mcp list` runs
+on request and is shown unparsed; sign-in files are never read, and MCP
+secrets travel as variable names. `dev` keeps its place for a machine
+without a profile and stops counting Omarchy's lazy wrappers as installed
+tools; the baseline's `dev` module stops installing Claude Code over
+Omarchy's wrapper, as a change to a baseline file (D18). *Set aside:* six
+observed states (wrapper, artifact, selected version, runnable, configured,
+authenticated), which need checks that run the tools; a provider per tool
+over one installer per method.
 
-**D44. Codex's `config.toml` is read by a strict subset reader** (review
-question O7). The core parses the subset of TOML that Codex writes and
-documents, and refuses the whole file on anything else — no opaque copy, no
-pattern-matching that skips valid TOML (docs/AI-TOOLS.md → *Codex's
-configuration*). It has size and nesting bounds and is held to the
-`toml-test` conformance corpus before M14 gate 4 closes; it is a real
-parser to maintain, accepted for that. *Set aside:* a full TOML parser in
-the frontend, which is not the authority and whose output the core would
-have to trust.
+**D44. Codex's and mise's configuration are read by a strict TOML subset
+reader, on macOS only** (review question O7). `lib/toml.sh` parses the
+subset of TOML that Codex and mise write, and refuses the whole file on
+anything else, listing it — no opaque copy, no pattern-matching that skips
+valid TOML (docs/AI-TOOLS.md → *Codex's configuration*). It has size and
+nesting bounds, and its tests use files as Codex and mise write them. On
+Linux, Codex's file is kept or replaced whole, so no TOML is parsed there.
+*Set aside:* a full TOML parser in the frontend, which is not the authority
+and whose output the core would have to trust; the `toml-test` conformance
+corpus as a gate, which tests far more TOML than the reader accepts.
 
 **D31. Omarchy's default agent is the person's choice, made through
 Omarchy.** The restore never runs `omarchy-default-agent` (which opens a
@@ -664,67 +629,89 @@ authorise nothing in this tool.
 
 ## Rescue and debugging
 
-**D32. Rescue is optional, lives in `/root`, and never crosses to the
-user.** No global agent policy is installed (review question O3): isolated
-workspace rules, a plain statement of root's risk, no claim of a sandbox.
+**D32. There is no rescue mode, and nothing crosses from root to the
+everyday user.** No agent runs as root, there is no rescue workspace and no
+rescue SSH server; recovery help is docs/TROUBLESHOOTING.md and the agent
+brief that `debug` prints (D33). `restore` never runs as root, and the
+everyday user's AI tools are installed through Omarchy's mechanism and
+signed in as that user (D30). On one install, root agents and a listening
+rescue server would add risk at the system's most fragile moment. *Set
+aside:* agents as root, a rescue workspace and their removal; managed
+settings for a root agent (review question O3).
 
-**D42. Remote rescue runs its own SSH server and ends in a verified safe
-state** (review question O4). A rescue-owned `sshd` with a configuration
-this tool writes whole — no `Include`, no `Match`, so one effective policy
-for every connection — is validated and inspected offline (`sshd -t -f`,
-`sshd -T -f`) before it listens, runs as a transient systemd unit, and is
-open only after a real key login. The system's own server is classified;
-an exposed one, or one whose `Match` blocks make it unprovable, is stopped
-for this boot before remote rescue opens, and never restarted by cleanup.
-Cleanup stops the rescue server and removes its files. Hardening the
-system's server is a separate choice, only for `Match`-free
-configurations, checked offline first and released to the person. *Set
-aside:* changing the system's configuration for rescue and sampling
-connection contexts, which cannot cover every `Match`; a failed-password
-probe as evidence.
+**D42. Before Omarchy Mac's setup, `start` turns off the image's password
+SSH** (review question O4). The Asahi Alarm image accepts SSH passwords
+(`alarm` / `alarm`, `root` / `root`). `start` runs
+`systemctl disable --now sshd`, checks `is-active` and `is-enabled`, and
+reports a failure, so no password SSH is left listening once it has run.
+`doctor` classifies SSH from `sshd -T` as root — `off`, `key-only`,
+`passwords` or `cannot-tell` — names the `alarm` password and prints
+`sudo passwd -l alarm`. SSH comes back only through `dev` → SSH. *Set
+aside:* a rescue-owned SSH server; a failed-password probe as evidence.
 
-**D33. The default debug report is field-allowlisted**; raw diagnostics are
-a separate command, `debug raw`, marked potentially sensitive and never put
-into an agent's context automatically. The brief separates fixed
-instructions from untrusted observed data.
+**D33. `debug` is one read command, and it prints only fixed text and
+facts**: the fixed agent brief, with the exact `journalctl` commands to run
+by hand, and the status and doctor facts — never a log line, journal line,
+command output or file content — with a root line only when run as root.
+The brief's fixed instructions stay apart from the observed facts. It
+writes nothing; `debug > file` keeps a copy. *Set aside:* raw diagnostics,
+a context dump and a saved report, which would put what the tool cannot vet
+into an agent's context; a debug schema.
 
 ## Journey and qualification
 
 **D34. Ten stages, derived from the machine**; the other system's progress
-arrives as typed codes or journey notes and is shown as recorded. Nothing
-starts by itself after a reboot.
+arrives only as typed codes and is shown as recorded. Nothing starts by
+itself after a reboot. *Set aside:* journey notes.
 
-**D35. Qualification is bound to an active round, and macOS decides it.**
-Identity first; then admission, plan, Shared GUID and schema; then the
-round macOS's own `active.omb` names, from immutable `created`, `finished`
-and `cleaned` records, one round awaiting Linux at a time, and the step
-order. Linux, which cannot know what macOS cleaned, accepts at most one
-candidate, provisionally; only macOS's active round can pass. The stream is
-a normative AES-256-CTR construction with reference vectors; exclusive
-creation for names; removal only of what the round's own records name.
-*Set aside:* a cross-boot freshness proof for Linux, which would buy only
-the avoidance of provisional work.
+**D35. Qualification is three steps in one folder on Shared, and the files
+present say which is due.** `qualify` (typed `test`; on Linux as the
+everyday user) runs only after the baseline's Shared identity check, in
+`omarchy-mac-bootstrap/qualify/` on Shared. Step 1, on macOS, writes a file
+of random bytes over 4 GiB and the fixed test names, with the SHA-256 the
+writer computed; step 2, on Linux, checks them and writes its own; step 3,
+on macOS, checks Linux's and writes the result. Rerunning step 1 starts
+over, and a pass removes the data files. *Set aside:* rounds and an
+`active.omb`, provisional candidates, replay protection, a specified
+AES-CTR stream with reference vectors, and a separate clean-up command:
+nobody but the owner's two systems writes that folder.
 
-**D36. Hardware validation is per model, and evidence is scoped by
-behaviour.** Every stage records the claimed commit, the executed source
-digest (recomputable from that commit) and the frontend artifact's digest;
-a change invalidates only the evidence of the behaviours its files touch.
-`frontend-v*` and `hw-*` are the only tags.
+**D36. M17's `report` on the M1 is the hardware record; there is no
+hardware-validated release.** Stage records hold only the commit and the
+time, and `frontend-v*` is the only tag. *Set aside:* executed-source
+digests, evidence scoped by behaviour, and `hw-*` tags, for a tool that
+runs once on one Mac.
 
 ## Delivery
 
-**D37. Implementation proceeds through gates** (MILESTONES.md): the
-specification first, then the frontend and transport foundation, read-only
-equivalence, the action contract under fixtures, the scanner and profile,
-the resolver and bundle, then restore and debug, providers, rescue, the
-journey and qualification.
+**D37. The rest is built in one session, in three phases** (MILESTONES.md
+→ *The finish*): A is Gate 3, Gate 4 and Gate 5; B is M15-A, M15-B and
+M15-C; C is M16 and the release. Within a phase, units that own different
+files run in parallel on workers, and the session alone edits the shared
+files and integrates. Code comes first, and a design document is brought to
+the built design when its milestone closes. Each phase has one cross-vendor
+review, read-only, through NativePeers — a Codex worker (`gpt-6.1-sol`,
+`xhigh`) and a Claude worker — and every high and medium finding is fixed
+before the phase merges; a phase that changes disk authority, `sudo`, the
+Shared creation or activation, the storage planner, secret handling,
+restore placement or the safety allowlists adds a third, adversarial Codex
+worker. FAST runs on each push as feedback and focused suites run locally;
+FULL runs at each phase's end and at the commit the owner installs from,
+with one rerun of failed jobs allowed for a timing failure, noted in the
+commit. Nothing waits for the owner. The tool is built for one install on
+one Mac, so one review of a whole phase, which sees how its parts meet, is
+worth more than a review of each slice, and the third worker goes where a
+mistake cannot be undone. *Set aside:* documentation-only contracts and
+documentary test cases written before the code; a review per slice; moving
+the baseline's actions one family at a time, each with its own safety
+review; authorising gate by gate.
 
 **D45. The documents are checked mechanically.** A documentation validator
 runs in CI (docs/TESTING.md → *Documentation checks*): cited sections exist,
 test ids resolve, states and commands are declared, read commands never
 write, and a small set of fixed facts (Bash as the target shell; the
-Shared sequence as accepted; `debug save` as the one writing debug command)
-hold.
+Shared sequence as accepted; `debug` as the only debug command, which
+writes nothing) hold.
 
 ## Rejected
 
@@ -741,12 +728,12 @@ the postcondition.
 
 | # | Question | Decision |
 | --- | --- | --- |
-| O1 | one Bash process per request | keep; local work in the frontend; the gate 2 benchmark (D6) |
+| O1 | one Bash process per request | keep; local work in the frontend; signed off by the Gate 2 benchmark, with O1-LOGS-P01 recorded (D6) |
 | O2 | typed gates where no upstream prompt follows | keep core-validated typed words; authentication is separate (D9) |
-| O3 | Claude Code managed settings for a root agent | not installed by default (D32) |
-| O4 | SSH after rescue | never restore active password exposure; verified safe final states (D42) |
-| O5 | the developer module's Claude Code installer | align with Omarchy through a shared provider; never overwrite the lazy wrapper (D30) |
-| O6 | `dev` beside `restore` | keep both commands, sharing providers and verification (D30) |
+| O3 | Claude Code managed settings for a root agent | none: no agent runs as root (D32) |
+| O4 | SSH on the fresh system | `start` turns off the image's password SSH and checks it; `doctor` classifies SSH (D42) |
+| O5 | the developer module's Claude Code installer | align with Omarchy through the shared table; never overwrite the lazy wrapper (D30) |
+| O6 | `dev` beside `restore` | keep both commands, sharing one table and its observation (D30) |
 | O7 | Codex's TOML | a strict subset reader, whole-file refusal (D44) |
 | O8 | agent sessions | not in v1 (D41) |
 | O9 | unverified upstream facts | split into facts to verify from source before a feature's gate, and facts only the Mac can show in M17 (docs/UPSTREAM.md → *Not verified yet*) |
@@ -760,11 +747,11 @@ beside it, and no code depends on another question's answer.
 | # | Question | Why it was open | Ruling of the independent review | What it blocks |
 | --- | --- | --- | --- | --- |
 | Q1 | Which provenance and derivation do a stage's records carry? | SPEC.md → *States* and the `stage` schema give two provenances, `machine` and `recorded`; docs/QUALIFICATION.md → *The journey* names three (`machine`, derived on this system this run, `recorded`) and defines each stage's *done when* for M16. The baseline's rail has six stations and defaults some of their states (on macOS `omarchy` and `dev` are always *to do*; on Linux `survey`, `plan`, `asahi` and `reboot` are always *done*; `plan` is *done* when a plan is recorded, not when a fresh read of the disk agrees). No stage's baseline derivation equals its M16 rule. | **Accepted for Gate 2.** The frontend shows the canonical ten stations as *later* and no `stage` record is emitted. No stage completion, progress or provenance is inferred before the milestone that owns its derivation. A new provenance value, or an M16 derivation before M16, would be a protocol decision and is not made. | Nothing further in Gate 2. |
-| Q2 | Which scope owns the doctor's data set? | Doctor's reads are a superset of `status`'s and include network probes (`sys_reachable`, `sys_net`), so it cannot share the `journey` generation without making every journey snapshot as slow and as networked as a doctor run. No scope in the enum names health, and adding one changes an existing enum. | **RESOLVED: `health` / `doctor`.** One future authoritative `cmd_doctor` invocation owns counts and rows; `Gate2-health-representation-failure` governs required unrepresentable content (docs/PROTOCOL.md → *Future health and logs producers*). | CP1 scope compatibility is the prerequisite. Producer, client, screen, equivalence and benchmark implementation remain unauthorized. |
-| Q3a | Which scope owns the log's data set? | `debug` is the scope of the M15 report; `journey` would couple the log's changes to the journey's generation. | **RESOLVED: `logs` / `log`.** The baseline's last sorted matching path and exact last-40-line window own the dataset; full path, context, presence and exact window bytes/order bind its generation (docs/PROTOCOL.md → *Future health and logs producers*). | CP1 scope compatibility is the prerequisite. Producer, client, screen, equivalence and benchmark implementation remain unauthorized. |
-| Q3b | How is a line the record format cannot carry answered? | `logs` prints a whole line, the record format bounds a value (4 KiB), and `log_event` does not bound a line. | **Resolved, named `CP0-Q3b-overflow` (D52).** Any unrepresentable line in the complete selected 40-line window makes snapshot/detail `refused overflow` with empty generation and fixed safe text before changed/offset handling. No partial metadata/rows, truncation or larger window. Required location metadata instead uses `error representation`; operational discovery/read/capture failure uses `error io` (docs/PROTOCOL.md → *Future health and logs producers*). | No semantic question remains; the future log producer implements it. |
-| Q4 | How is a plan the disk cannot support answered, and what are `invalid`'s codes? | `blocker` is forbidden in `validate`'s answer; `parse_size` and `plan_validate` return prose, not codes; the baseline's planner file is a safety-reviewed file. | **RESOLVED.** Shared-first validation, effective whole-decimal-GB sizes, deterministic first parameter error, finite invalid vocabulary, `refused unplannable`, distinct infrastructure/invariant/representation errors and `Q4-plan-validation-basis-v1` are accepted (docs/PROTOCOL.md → *Future plan validation contract*). | Nothing further: the separately authorized ordinary fixture-only Validate producer implements it (accepted at `b01610e69a2eef6e5a52f5ede18236210699704e`), and no planner/parser owner changed. |
-| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | **RESOLVED FOR MEASUREMENT.** macOS journey/detail are `bench-disk`; Linux journey/detail are `bench-journey-linux`; future health/logs/validation classifications, component boundaries and local initiation feedback are recorded in the benchmark section of docs/TESTING.md. D53 remains binding. | O1 signoff is accepted, with O1-LOGS-P01 recorded and open (the O1 performance signoff record above). |
+| Q2 | Which scope owns the doctor's data set? | Doctor's reads are a superset of `status`'s and include network probes (`sys_reachable`, `sys_net`), so it cannot share the `journey` generation without making every journey snapshot as slow and as networked as a doctor run. No scope in the enum names health, and adding one changes an existing enum. | **RESOLVED: `health` / `doctor`.** One authoritative `cmd_doctor` invocation owns counts and rows; `Gate2-health-representation-failure` governs required unrepresentable content (docs/PROTOCOL.md → *Future health and logs producers*). | Nothing: CP1 added the scope, and the Health producer is built (`27f79d6`). |
+| Q3a | Which scope owns the log's data set? | `debug` is the scope of the M15 report; `journey` would couple the log's changes to the journey's generation. | **RESOLVED: `logs` / `log`.** The baseline's last sorted matching path and exact last-40-line window own the dataset; full path, context, presence and exact window bytes/order bind its generation (docs/PROTOCOL.md → *Future health and logs producers*). | Nothing: CP1 added the scope, and the Logs producer is built (`a0ba61c`). |
+| Q3b | How is a line the record format cannot carry answered? | `logs` prints a whole line, the record format bounds a value (4 KiB), and `log_event` does not bound a line. | **Resolved, named `CP0-Q3b-overflow` (D52).** Any unrepresentable line in the complete selected 40-line window makes snapshot/detail `refused overflow` with empty generation and fixed safe text before changed/offset handling. No partial metadata/rows, truncation or larger window. Required location metadata instead uses `error representation`; operational discovery/read/capture failure uses `error io` (docs/PROTOCOL.md → *Future health and logs producers*). | No semantic question remains; the Logs producer implements it. |
+| Q4 | How is a plan the disk cannot support answered, and what are `invalid`'s codes? | `blocker` is forbidden in `validate`'s answer; `parse_size` and `plan_validate` return prose, not codes; the baseline's planner file is a safety-reviewed file. | **RESOLVED.** Shared-first validation, effective whole-decimal-GB sizes, deterministic first parameter error, finite invalid vocabulary, `refused unplannable`, distinct infrastructure/invariant/representation errors and `Q4-plan-validation-basis-v1` are accepted (docs/PROTOCOL.md → *Future plan validation contract*). | Nothing further: the ordinary fixture-only Validate producer implements it (`b01610e69a2eef6e5a52f5ede18236210699704e`), and no planner/parser owner changed. |
+| Q5 | Which benchmark id does a macOS journey snapshot belong to? | It runs the detection `status` runs, which reads the disk, while `bench-snapshot` is *a small snapshot that reads no disk* and `bench-disk` is a full disk refresh. | **RESOLVED FOR MEASUREMENT.** macOS journey/detail are `bench-disk`; Linux journey/detail are `bench-journey-linux`; future health/logs/validation classifications, component boundaries and local initiation feedback are recorded in the benchmark section of docs/TESTING.md. D53 remains binding. | Nothing: O1 is signed off, with O1-LOGS-P01 recorded (D6). |
 | Q6 | May `validate` name `plan.save`, which `execute` refuses? | The golden and the basis family name `plan.save`; the action is not exposed until Gate 3. | **Accepted (Q6-A).** `validate` may name `plan.save` as the validation and basis family while `execute plan.save` stays unavailable and no Gate 2 snapshot lists it as an action. Naming it confers no authority, and validation saves nothing. | Nothing. |
 
 **PROTOCOL 1 REMAINS SUFFICIENT — REVIEWED ADDITIVE SCOPE EXTENSION.**
@@ -778,310 +765,31 @@ when an updated client explicitly requests them. That client against an old
 core fails closed, with no fallback, retry under `journey`, alias or scope
 substitution. The actual released parser continues rejecting new-scope
 documents. This is a ruling for these two values, not a rule that arbitrary
-future enum additions are compatible. CP1 adds no producer, UI or action
-authority; Doctor, Logs, Validate, benchmarks and S4+ remain unauthorized.
+future enum additions are compatible. CP1 itself adds no producer, UI or
+action authority.
 
-Current authorization after CP1: S4's ordinary fixture-only Logs producer
-was separately authorized and is accepted at `a0ba61c`; S4's ordinary
-fixture-only Health (Doctor) producer is accepted at `27f79d6`. The ordinary
-fixture-only Validate producer is accepted at
-`b01610e69a2eef6e5a52f5ede18236210699704e`. O1 signoff is accepted with
-O1-LOGS-P01 recorded; the frontend read-surface integration is authorized
-(the O1 performance signoff record above), implemented in the unreleased
-0.2.0 candidate, and accepted at `c855f6197be86e90f5fb833f7faec0d0f6372794`,
-which closes Gate 2; S5+ remain unauthorized (MILESTONES.md → *Gate 2 —
-Read-only equivalence*).
+After CP1, the ordinary fixture-only producers are built: Logs at
+`a0ba61c`, Health (Doctor) at `27f79d6` and Validate at
+`b01610e69a2eef6e5a52f5ede18236210699704e`. O1 is signed off with
+O1-LOGS-P01 recorded (D6), and the frontend's read-surface integration, in
+the unreleased 0.2.0, is built at
+`c855f6197be86e90f5fb833f7faec0d0f6372794`, which closes Gate 2
+(MILESTONES.md → *Gate 2 — Read-only equivalence*).
 
-Historical questions, options and recommendations raised by the Gate 3
-prerequisite contract (D54; docs/PROTOCOL.md → *An operation record that
-cannot be read*), for its independent review. They were not settled by that
-contract; each blocked only the work named beside it. The subsequent
-dispositions below govern continuation; the historical UR-Q4 sighting
-recommendation is not accepted writer-end authority.
+### The unreadable-record questions, settled
 
-| # | Question | Why it matters, and the evidence | Options | Recommendation | What it blocks |
-| --- | --- | --- | --- | --- | --- |
-| UR-Q1 | Does a clear delete the entry, or keep it aside? | Deleting destroys the only trace of an unknown operation; keeping it needs a place no reader takes for a record (the launcher lists `ops/*.omb`) and a rule for how long. The precedents differ: an abandoned run lock is moved aside, confirmed and deleted (`lib/state.sh`); a mismatching frontend binary is moved aside and kept (D43). | (a) delete once renamed and confirmed; (b) keep aside, private, under a name no reader takes for a record; (c) keep aside, then delete by a later explicit step | (b): an entry a clear may take is at most 64 KiB (UR-Q2) and is the evidence of what could not be read, and a kept copy changes no barrier | the clear's last step; not the barrier or the diagnostic |
-| UR-Q2 | Exactly what must hold before a clear is offered? | D54 fixes P1 to P5. Not settled: an entry that is not a plain file (a link is never followed), a plain file over the 64 KiB limit (no fingerprint without an unbounded read, which §2 forbids), and D (nothing to bind a clear to). | (a) P1 to P5, plain files within the limit only, every other entry left to the person; (b) also other entries, bound by kind and a link's own text, never followed; (c) over-limit files bound by size and a bounded prefix | (a) first, (b) as a reviewed extension; never (c), since a prefix is not the file | the clear |
-| UR-Q3 | Who reconciles a scope when the record's action is unknown? | Only the fixture's `core_reconcile` exists; it chooses by `CO_ACTION` and needs `CO_BASIS`. The scope's own records stay the authority for what happened (docs/PROTOCOL.md → *Operations and exclusion*). Gate 3 brings the real actions, and the way out of *something unexpected* is defined nowhere, readable record or not. | (a) each scope's owner judges every action of the scope against the machine, an action it cannot judge without a basis counting as unexpected; (b) one generic judgement in the core; (c) no reconciliation, the clear after the person acknowledges it | (a), owned per scope as Gate 3 exposes each action; reject (c), which puts the clear in reconciliation's place | P5, and so the clear |
-| UR-Q4 | How does the tool know that the processes that wrote unreadable bytes are gone, and which identities may a diagnosis read? | D47 makes a new boot session the one proof, taken from the record's `boot` field, which C cannot read. Session scratches can show a live process but cannot tie it to the record, a later session reads them today only to decide removal (docs/PROTOCOL.md → *The session scratch*), and a handoff program may detach. | (a) the tool records a sighting of the unreadable entry — its fingerprint and the boot session — when an act session first meets it, and a later boot with the same fingerprint discharges P4; (b) file times against the boot time; (c) the person's word; (d) none: never clear | (a), written only by an act request with the checked writer, as a record of its own: one restart, the same as for an unsupervised record; reject (b) and (c) (D54); reading scratches for P3 reviewed with it as a new use of an existing record | P3 and P4, and so the clear; not the barrier or the rest of the diagnostic |
-| UR-Q5 | What can reconciliation prove without the record? | A readable record's reconciliation knows the action and basis: `completed` compares the effect with the basis (the fixture's effect file holds the basis prefix). Without them, a completed effect cannot be told from an unexpected one wherever its content depends on the basis. | (a) per action: *no effect* where it can be shown, *completed* only where the scope's own records prove it (a creation record, a journal, a classification), otherwise unexpected; (b) an effect consistent with some basis counts as completed; (c) the person decides | (a) | P5 |
-| UR-Q6 | Which wire vocabulary? | C is refused `unsupervised` and shown as `blocker id=unsupervised` (Gate 1), whose documented meaning includes clearing by a new boot, which does not hold for C. D has no answer of its own (it falls into no record or C). The clear's action id, word and answer texts, and the diagnostic's texts, do not exist. §4 lists the refusal codes, and the CP1 ruling covers only its own two additions. | (a) keep `unsupervised` with distinct texts and fix; (b) a refusal code and blocker id of C's own, and `unavailable` for D (its existing use when supervision cannot be established: an unidentified boot, an unwritable record); (c) a new protocol version | (b), reviewed as a vocabulary addition to protocol 1 with the released client's handling of an unknown code checked, as CP1 was; until then (a) | the implementation's answers; not the contract |
-| UR-Q7 | Is a separate diagnostic operation or scope needed? | §4 answers per scope with `snapshot` and `detail`, whose kinds are added by review (`doctor`, `log`); D50 set aside a new purpose for reads; the text interface must say the same (D3); the documentation checks fix the command names, and the contract names none. | (a) facts and the barrier in the scope's snapshot, the whole finding as a `detail` kind; (b) a new operation; (c) a new scope; (d) a text-only command | (a), under the record's own scope, with the text interface's form decided with UR-Q8 | the diagnostic's implementation |
-| UR-Q8 | Can the existing surfaces carry it safely? | The foundation's journey snapshot shows C today, fixture only. The ordinary Gate 2 reads, `status` and `doctor` read no operation record and are held to the baseline (D52); the startup check must not read one; the debug report's fields are allowlisted (docs/RESCUE.md → *Safe fields*) and include no operation; the launcher reads records only to keep a scratch. Today's fix text advises removal by hand once the operation is known to have ended, which no one can learn from the record. | (a) each surface gains fixed facts, as its own reviewed change; (b) only the scope's snapshot and the diagnostic carry it | (a): the scope's snapshot and a journey summary of barriers; the text interface in the reviewed baseline change Gate 3 already names; the debug report an operation-state enum and admission's reason code per scope; the startup check unchanged; the fix text naming the diagnostic instead of removal | each surface's change, separately |
-| UR-Q9 | Is admission enough to call a record readable? | `core_op_read` reads no `scope` field, so a record whose scope differs from its path is read as the path's; one naming an action this core does not have is read, and reconciles to `unexpected`. | (a) as today; (b) a record whose scope differs from its path, or whose action is not one of its scope's, is C | (b): it is not this scope's record, and C keeps it blocked with the same diagnostic | the classification's implementation |
-
-The prerequisite's review is concluded. Its first review required the
-remediation of UR-C01 to UR-C03; the re-review of `806a879..ba21467` closed
-them and raised UR-C04; the final re-review closed UR-C04 and accepted the
-contract at `152c8f68854368025816b926494dbec0e94bc903` (**GATE 3
-PREREQUISITE CONTRACT ACCEPTED**; MILESTONES.md → *Gate 3 — The action
-contract under fixtures*). UR-Q2 and UR-Q9 are accepted as that review
-ruled; UR-Q1 and UR-Q3 to UR-Q8 stay open, each blocking the work beside it,
-and Gate 3's implementation is not started.
-
-The read-only diagnostic interface contract (D55; docs/PROTOCOL.md → *The
-operation-record diagnostic*) then took the dispositions below, and its
-focused independent review accepted them at
-`2840fe2efc0b240ccb9343f6013912d6fc941a6f` (**GATE 3 READ-ONLY DIAGNOSTIC
-INTERFACE CONTRACT ACCEPTED**): UR-Q7, and the diagnostic's parts of UR-Q6
-and UR-Q8. A question it touches stays open, blocking the implementation,
-in every part the third column names.
-
-| # | State after the prerequisite's acceptance | Disposition (D55), accepted | Stays open |
-| --- | --- | --- | --- |
-| UR-Q1 | open | none | all of it |
-| UR-Q2 | accepted: a clear only for a plain file read in full within the stored-document limit, every other prerequisite still required | — | — |
-| UR-Q3 | open | none: the diagnostic runs no reconciliation and reports the effect `unknown` | all of it |
-| UR-Q4 | open | none: for C, D and an unsettled clear the diagnostic reads no recorded identity and reports workers `unknown` | all of it |
-| UR-Q5 | open | none | all of it |
-| UR-Q6 | open | the diagnostic's part, accepted: the `operation` detail and row kind, its keys, values, labels and texts; the `operation` fact's values; the blocker ids `unreadable`, `undetermined` and `unsettled-clear`; D as a delivered `done` finding naming its failed step; the fixed `error io` and `error representation` texts | the act refusals' codes and texts for C and D (C is refused `unsupervised` today, and D falls into A or C); the `busy` refusal's text for unknown liveness; the clear's action id, typed word and answers; a wire value for `unexpected`; every other Gate 3 action's vocabulary |
-| UR-Q7 | open | accepted: recommendation (a), made precise: the record's own scope; its `snapshot` carries the barrier and `detail kind=operation` the finding, from one inspection under one generation; no new operation, scope, purpose or protocol version | nothing of the transport |
-| UR-Q8 | open | the diagnostic's part, accepted: the record's scope snapshot (fact and blocker), the detail, the read command `operation SCOPE`, and the frontend's presentation rules; status, Doctor, Logs, the debug report, the startup check and the ordinary Gate 2 reads unchanged | a journey summary of barriers across scopes; operation fields in the debug report; act refusal texts that name the diagnostic; the act entry's check in the launcher (Gate 3's reviewed baseline change); any other surface |
-| UR-Q9 | accepted: a record naming another scope, or an action its scope does not own, is C; a scope's own action merely unavailable now is not corruption | — | — |
-
-### UR-Q4 owner disposition — conservative legacy-C policy
-
-**DECISION RESOLVED — CONSERVATIVE LEGACY-C POLICY.** For unreadable
-operation record C whose writer-end history cannot be independently
-established, the existing refusal/barrier remains authoritative and no
-automatic clear is permitted. Matching fingerprints, a reboot alone,
-absent recorded processes, timestamps, inode equality, seals and
-self-declared provenance cannot establish P4. No retrospective sighting,
-privileged custody machinery, generalized process tracker or refused-act
-persistence exception is introduced.
-
-This resolves the policy decision, not **P3/P4 POSITIVE PROOF IMPLEMENTED**:
-that capability is unsupported. P1–P5 have not been satisfied. D54's
-conditional clear eligibility and U1–U33 remain intact; unknown writer-end
-history cannot satisfy their prerequisites. The conditional writer-end
-statements require independently established history for the current
-unreadable generation, not equality of observations before and after a
-restart. D55 still reports C's workers/effects as unknown, reads no recorded
-identity or scratch for C, and writes no sighting.
-
-The earlier UR-Q4 feasibility investigation and unaccepted local candidate
-`b79bec92588a580f04c87fcdec2808344a058f87` remain historical; the candidate
-is not inherited. The proof failure was that an earlier-boot sighting and
-equal later bytes do not establish continuity/writer exclusion for the
-current unreadable generation. This decision neither supplies that proof
-nor prohibits every future independently evidenced recovery design.
-Separately authorized manual recovery may occur outside this proposed
-automatic-clear mechanism; no manual recovery implementation or execution
-authority is granted here. UR-Q1 and the remaining UR-Q6/UR-Q8 stay open for
-recovery/clear. Non-destructive D55 presentation does not depend on them
-(MILESTONES.md → *Gate 3 critical path after the legacy-C decision*).
-
-### Foundation journey effect-domain prerequisite — accepted
-
-**UR-Q3 / UR-Q5 P5-20 PROOF BLOCKER — CONFIRMED** by independent review.
-The source counterexample is fake-handoff's `keys_out` overwrite with
-`effect=none`: both fixed effect files may be absent while meaningful
-synthetic state changed. Other configured output destinations and the
-handoff-child override are not independently covered by the current basis,
-source digest or result records. Repeated mutable configuration reads also
-mean a pre-action digest does not establish actual consumption. The
-external source-only blocker package remains historical evidence; no
-normative completion commit was made for that slice.
-
-**FJ-ED-1 — ACCEPTED AS A DOCUMENTATION CONTRACT**, documentation only
-(docs/PROTOCOL.md → *Foundation journey effect-domain contract*).
-Independent GPT-6 Pro review accepted source tree
-`29ac7b58502618a72295375ff68b9b326f765fd6` at the reported local checkpoint
-`f27ee84a4b28fe5ee3a93df53f79598192932468`, compared with `a3beb3c` / tree
-`8e483db6d078ad57cf0af7dac2c8a6e6a244a843`: no HIGH or MEDIUM findings,
-all 24 FED cases adequate and both future witnesses accepted. Acceptance
-attaches to source content; unpublished commit identity/parentage were
-verified locally for this continuation, not authenticated by that reviewer.
-The accepted branch remains an immutable historical checkpoint. This
-acceptance implements no mechanism and accepts none of UR-Q3, UR-Q5 or UR-Q4.
-
-The proposed boundary is the existing journey act pair `test.mutate` and
-`test.handoff`, with `test.read` kept read-class. Relevant writes are bounded
-synthetic effect files with independently retained prior and expected states.
-Instrumentation may be excluded from meaningful payload comparison only
-through exclusive generation-owned slots, object/parent identity and
-non-alias enforcement, bounded output and verified lifecycle; neither its
-name nor a temporary-directory location supplies those guarantees.
-
-The proposed future mechanism is a reviewed adapter consuming latched
-retained source/configuration, plus a narrow object-bound filesystem helper.
-Arbitrary host destinations, unmanaged escape behavior and unidentified or
-unreviewed handoff overrides cannot inherit positive coverage. An override's
-digest alone supplies identity, not a complete effect-domain guarantee.
-The ordinary legacy testing seam is preserved as uncovered; the accepted
-code, fixtures and registry are unchanged by this candidate.
-
-An original act core that passed its existing exclusion/preflight/basis/word
-checks would commit an independently discoverable journey incarnation,
-complete bounded generation/domain/source/prior-state evidence and launch
-gate before the first child effect. It would later publish generation-bound
-completion only from its own supervision and verified postconditions.
-Complete discovery covers both act families and every retained generation;
-it does not decode C or select the latest convenient result. The proposed
-private stored-family constraints add no Protocol 1 response/request words.
-Seals supply integrity; core-origin publication, issuer/write-site separation
-and independently established incarnation/continuity must separately supply
-provenance. Their absence, replay, conflict or unknown external writer blocks.
-
-The contract gives concrete future no-effect and independently completed
-controls and FED-01–FED-24. They are unexecuted contract proofs conditional
-on the named **UNIMPLEMENTED** adapters, latched consumption/source closure,
-object helper, exclusive durable publisher, stored admission/catalog,
-original-core completion and instrument lifecycle. They are not current
-capabilities or acceptance of P5-20. Legacy corrupted operations lacking
-historical destinations/inputs stay unknown; new records cannot reconstruct
-that missing history. The run lock is not external-writer exclusion.
-
-The foundation UR-Q3/UR-Q5 documentation prerequisite is accepted as
-FJ-P5-1 below. Runtime P4 still precedes P5; P1–P5 plus basis/word precede
-a clear attempt; verified clear completion precedes reliance on that
-transaction. UR-Q4's policy is resolved above; positive P3/P4 capability
-remains unsupported for legacy C with unknown writer-end history. The
-unaccepted local `b79bec9` candidate is not inherited. UR-Q1 and the
-remaining UR-Q6/UR-Q8 stay open for recovery/clear.
-No recovery, clear, sighting, new diagnostic evidence reader, action
-implementation or later action-owner generalization is authorized here.
-Shared creation's transaction remains creation-specific; later Gate 3
-owners must supply their own independently reviewed domain/evidence rules.
-
-### Foundation journey P5 reconciliation continuation — accepted
-
-**FJ-P5-1 — ACCEPTED AS A DOCUMENTATION CONTRACT**, documentation only
-(docs/PROTOCOL.md → *Foundation journey P5 reconciliation contract*).
-Independent acceptance attaches to reconstructed source tree
-`a84298a315e54edfe985a81e858f423839c1c007`, not authentication of its
-unpublished commit object. The local association was verified separately:
-`c85470b2c973001c9df692eb04e17628d5c7f7f0`, parent
-`f27ee84a4b28fe5ee3a93df53f79598192932468`, on the clean unchanged
-`m14-gate3-p5-reconciliation-contract` checkpoint. That parent's tree is
-the independently accepted FJ-ED-1 tree
-`29ac7b58502618a72295375ff68b9b326f765fd6`, directly after accepted
-diagnostic `a3beb3cba82681fc949ac35d4edf0c132d2cb0fd` / tree
-`8e483db6d078ad57cf0af7dac2c8a6e6a244a843`. Both FJ mechanisms remain
-**UNIMPLEMENTED**; acceptance changes no normative rule, matrix, witness
-or implementation limitation.
-The semantic owner is the authoritative foundation Bash core under the
-reviewed journey fixture contract. The generic coordinator requires its
-complete positive finding; it cannot supply another scope's semantics.
-The complete roster is the journey act pair, test.mutate and test.handoff,
-with test.read preserved as read-class. Every applicable retained generation,
-consumed source/input, domain, prior and original-core evidence is admitted
-independently of C and checked against fresh scope-owned observations.
-
-| Question | Accepted bounded rule | Disposition and remaining dependency |
+| # | Question | Settled by D54 |
 | --- | --- | --- |
-| UR-Q3 | foundation journey owner judges every applicable act family and generation under FJ-ED-1; legal future internal assessment after separate P4, no repair/persistence | foundation documentation ACCEPTED; overall PARTIAL / REMAINING OPEN; other scopes require their own reviewed owners and domains |
-| UR-Q5 | each relevant item must be unchanged prior state or independently completed under authoritative original-core generation evidence, with complete fresh agreement and usable interval; otherwise retain observed and/or unknown reasons | foundation documentation ACCEPTED; overall PARTIAL / REMAINING OPEN; no plausible basis, missing lookup, partial coverage or old receipt can establish positive P5 |
+| UR-Q1 | delete the entry or keep it? | kept, renamed inside `ops`, until the person deletes it |
+| UR-Q2 | what holds before a clear? | the run lock, a fresh `unreadable` finding (any kind), the typed `clear`, the entry unchanged since shown |
+| UR-Q3, UR-Q5 | who reconciles without the record, and what can that prove? | no one, nothing; the next act checks the machine afresh |
+| UR-Q4 | how are the writers known to be gone? | they cannot be: the person's word, after a restart when in doubt |
+| UR-Q6 | which wire words? | D55's; acts stay `refused unsupervised`, their text naming the clear |
+| UR-Q7, UR-Q8 | which operation and surfaces? | D55's snapshot, detail and `operation SCOPE`, plus `operation clear SCOPE` |
+| UR-Q9 | is admission enough? | no: another scope's record, or an action the scope lacks, is `unreadable` |
 
-P5-01–P5-20 and additional adversarial cases preserve the two accepted future
-witnesses. G1's failed ordinary barrier is settled by separate readable
-D47/new-boot reconciliation before G2 admission. G2's no-effect control
-stops before ordinary failed-record replacement; its completion control stops
-before ordinary removal/result. The independent step-3 object binding cannot
-silently associate an unbound replacement or prove who wrote C. Known object
-mismatch differs from an unavailable comparison. Source/configuration is the
-retained consumed version, never today's mutable file as historical evidence.
-
-Complete aggregation includes both-family history and justified latest state
-for reused destinations, noninterference/lifecycle for every exclusion, and
-independently established provenance/continuity. Known unexpected or
-basis-dependent unjustified effects prevent positive P5; missing/failed
-authority or coverage remains unknown. An observed fact beside unknown
-coverage is retained without pretending the whole inspection completed.
-D54's meanings and D55's current read-only answers remain unchanged.
-
-Assessment findings exist only for their supported observation/use interval
-and decision point. Rechecks reject changes but equal endpoints cannot prove
-absence of intervening writes. The run lock is not external-writer exclusion.
-Future clear use must re-establish all P1–P5, basis/word and a separately
-reviewed continuity guard or equivalent atomic recheck-and-take over the
-entry and relevant evidence/effects. This proposal grants none of that
-authority and stores no durable reconciliation result. P4 precedes P5;
-eligibility is not verified clear completion.
-
-UR-Q4's conservative legacy-C policy is resolved; positive P3/P4 proof
-remains unsupported, and `b79bec9` stays unaccepted and uninherited.
-UR-Q1 and remaining UR-Q6/UR-Q8 stay open, including future assessment/clear
-entry, act vocabulary and any additional surface. No accepted diagnostic,
-read, refused act, reboot or frontend gains evaluator or write authority.
-For plan save, installer/network/Omarchy, each Shared lifecycle operation
-and backup, separate scope-owned domain/evidence/reconciliation contracts
-remain necessary; creation's topology authority is not activation/write-test
-coverage. No broader implementation, M15 restore or M16 qualification is
-required or authorized. Gate 3 remains incomplete, frontend 0.2.0 unreleased,
-and all FJ-ED-1/P5 mechanisms unimplemented. Foundation documentation
-acceptance is recorded; execution and implementation require separate
-authorization, tests, CI and independent review of the resulting slice.
-
-### Proposed plan.save completion and execution decision
-
-**D56 / PS-EXEC-1 — PENDING INDEPENDENT ACCEPTANCE; DOCUMENTATION ONLY.**
-The primary proposal is the dedicated final receipt in docs/PROTOCOL.md →
-*Proposed plan.save execution contract*. This is a new plan-scope design,
-not a reopening of accepted D55 or the foundation reconciliation contracts.
-The first source investigation left the documents unchanged because no
-existing plan-scope result followed independent readback. This candidate
-settles the proposed answer; it implements no writer or execution authority.
-
-Independent GPT-6 Pro review of aaf77bf9bef31e0497991dff81da07b86719674f
-returned **PS-EXEC-1 REMEDIATION REQUIRED**: PS-D01 and PS-D03 AMEND;
-PS-D02, PS-D04 and PS-D05 ACCEPT, credited. Overall PS-EXEC-1 acceptance
-remains pending. This consolidated documentation correction addresses M01
-(fixed logging phase), M02 (supported prior-state bytes), L01 (ops setup
-owner) and L02 (dry-run exclusion), preserving the credited design.
-
-Choose $OMB_STATE_DIR/plan-save-result.omb, the internal sealed
-omb-plan-save-result/1 family, published by the future checked Bash
-plan-scope owner after complete save/readback and writer quiescence.
-It binds full execution basis and retained preimage, source, exact running
-operation and controller/worker identity, all saved choices, plan/versions,
-complete output-object hashes/metadata or verified Shared absence, and
-completion time. Verify the publication and outputs before the supervising
-core retires ops/plan.omb. A later attempt binds the prior receipt only:
-no circular hash and no old-success certification of a new partial save.
-
-Reject existing-state result authority as the complete proof. state.env
-holds selected choices and progress; planned_at is written before any
-independent complete readback, and mac_save_plan ignores its failure.
-cfg_save currently returns 0 despite individual failed writes. The Shared
-16-hex digest/8-hex CFG_plan omit other choices, are absent without Shared
-and include generated time. None associates verified full completion with
-the exact supervised execution basis and operation. Fresh matching bytes
-are useful postcondition evidence, but cannot alone prove that this attempt
-completed its writer sequence. Also reject a receipt published at action
-start, or a caller-supplied success assertion: neither is completed-save proof.
-
-The receipt is a recorded result under the original owner's supervised
-proof, not cryptographic authentication or positive recovery authority.
-Forged/copied plausible bytes, missing provenance, lost continuity,
-unreadable operations or a reboot alone cannot authorize reconciliation.
-Keeping positive plan reconciliation unimplemented preserves the barrier
-without making this complete normal-execution proposal depend on a new
-foundation feasibility campaign.
-
-| Proposed delta | Specific baseline difference, rationale and permanent future coverage |
-| --- | --- |
-| PS-D01 | cfg_save stops/propagates the first set/unset failure; mac_save_plan propagates planning, digest, configuration and timestamp failures; fresh whole-state/intent readback is mandatory. From the supported absent/empty/printable-ASCII LF prior capture, independently preflight all twelve cfg operations plus planned_at before any save write; unrelated bytes/order must survive and whole readback must match. Valid writer order/legacy bytes remain the oracle; no writer redesign or unsupported-state repair. Current false-success and continue-after-failure behavior must change. PS-11–PS-16, PS-26–PS-28, PS-35 and fail-first writer/representation controls. |
-| PS-D02 | Add only the explicitly selected read-only plan.save.review contract using existing Validate/normal/answer/review/result records, with complete parameters and a distinct execution rule. Existing plan.save Q4 selection/preimages stay untouched. Review remains read intent/zero persistence and cannot expose actions. PS-03–PS-09, PS-24, PS-30, PS-35; old-core compatibility and Q4 control. |
-| PS-D03 | Add bounded fixture-only plan ownership/exclusion, act ceiling, managed noncancellable dispatch, C-locale save normalization, ASCII media coverage, fresh source/machine/destination checks immediately before save writes and preidentified effect-parent/ops/log admission. Fix OMB_PHASE=macos in coordinator and worker before the first persistent append, through retirement; inherited phase never affects covered log bytes and is not a basis/request input. Limit prior state to absent, empty or the exact supported printable-ASCII LF format; unsupported in-bounds content refuses unavailable before save, inspection failure is io and proven bound failure representation. Explicit fixture setup owns pre-review ops provisioning; original survey does not. A separately specified adapted route must provision before review, which stays read-only. Receipt-producing execution requires persistence enabled and excludes done dry-run. The text route gains the act barrier; baseline text plan currently persists under plan intent. No installer/disk authority follows. Save-point comparisons retain survey/choices and the experimental journey gate. PS-01–PS-02, PS-05–PS-10, PS-20–PS-25, PS-27, PS-32–PS-36. |
-| PS-D04 | Apply existing refusal/failure/error codes by the documented phase, and propose stopped changed for a known later safe-boundary change. Refused guarantees no baseline save dispatch, while accounting for existing step-3 coordinator metadata/log effects. Unknown readback/receipt/retirement/supervision retains protection and does not become failed postcondition. Exact status/code pairings and client rendering require review. PS-10–PS-25, PS-32–PS-35. |
-| PS-D05 | Add the final internal receipt and its parser/checked publication/readback before verified owned operation retirement. This adds persistent bytes, temporary objects and related logging to the baseline; they are compared as named deltas, never normalized away. No fsync/power-loss transaction or positive legacy-C clearing is claimed. PS-09, PS-17–PS-22, PS-26–PS-29, PS-34–PS-35. |
-
-These are future deltas, not runtime qualifications. The review's component
-credits do not accept PS-EXEC-1 as a whole or authorize implementation.
-Permanent tests must fail against the missing/unsafe behavior, then qualify
-the separately authorized implementation with exact baseline comparisons
-and retained failure evidence.
-
-The bounded acceptance closeout reviews M01/M02 and L01/L02, the amended
-PS-D01/PS-D03 obligations and their documentary controls. Credited PS-D02,
-PS-D04 and PS-D05 retain their substantive semantics; the receipt schema,
-capacity preflight, original-core provenance, quiescence and verified
-retirement are unchanged. No unspecified required field or future default
-may be silently chosen by an implementer. Positive plan reconciliation
-remains a separate unimplemented proof obligation; no clear, P3/P4 or P5
-implementation follows from this correction.
+FJ-ED-1, FJ-P5-1 and the conservative legacy-C policy are withdrawn
+unimplemented; their text stays in Git (`f27ee84`, `c85470b`, `1956f1b`).
 
 ## Where each design question is answered
 
@@ -1089,43 +797,43 @@ implementation follows from this correction.
 | --- | --- | --- |
 | 1 | What is a Migration Profile? | docs/MIGRATION.md → *The Migration Profile*; D20 |
 | 2 | Where does it live before Linux exists? | the macOS state directory (same section) |
-| 3 | How does the minimum profile reach fresh Asahi? | it does not need to; only its id, in the token (docs/MIGRATION.md → *Moving between the systems*) |
+| 3 | How does the minimum profile reach fresh Asahi? | it does not need to: before Shared, only the token, the repository and the frontend cross (docs/MIGRATION.md → *Moving between the systems*; D22) |
 | 4 | When does the full payload reach Linux? | docs/MIGRATION.md → *Moving between the systems*, *The bundle* |
-| 5 | Homebrew formulae → target methods | docs/RESOLVER.md → *The registry*, *Where software comes from on the target* |
+| 5 | Homebrew formulae → target methods | the migration map (D24, D26); docs/RESOLVER.md → *Where software comes from on the target* |
 | 6 | Casks | docs/RESOLVER.md → *Casks and applications* |
-| 7 | Functional equivalents | docs/RESOLVER.md → *Dispositions*, *The graph* |
+| 7 | Functional equivalents | docs/RESOLVER.md → *Dispositions* |
 | 8 | Omarchy-provided or missing | docs/RESOLVER.md → *Omarchy-provided or missing* |
-| 9 | aarch64 availability | docs/RESOLVER.md → *Two resolutions: planned and checked*; D26 |
-| 10 | Dependency order | docs/RESOLVER.md → *The graph*; D27 |
+| 9 | aarch64 availability | checked on Linux with `pacman -Si` (D26) |
+| 10 | Dependency order | fixed layers (D27) |
 | 11 | macOS paths | docs/RESOLVER.md → *Paths*; D28 |
-| 12 | MCP configuration without executing it | docs/AI-TOOLS.md, per provider, and *Things that execute* |
+| 12 | MCP configuration without executing it | docs/AI-TOOLS.md, per tool, and *Things that execute* |
 | 13 | AI configuration safe to copy | docs/AI-TOOLS.md → *What travels* |
 | 14 | AI state needing a new sign-in | the same section |
 | 15 | Sessions | not in v1 (D41) |
 | 16 | Arbitrary dotfolders | docs/MIGRATION.md → *Custom paths: opaque, by consent*, *The bundle*; D40 |
-| 17 | Symlinks | docs/MIGRATION.md → *What is carried from each kind of source*; docs/RESTORE.md → *Placing a file* |
-| 18 | Existing target files | docs/RESTORE.md → *Conflicts*, *Each item's basis* |
-| 19 | An interrupted restore | docs/RESTORE.md → *After a crash* |
-| 20 | Rerunning a restore | the same section; D29 |
-| 21 | Agents before Omarchy finishes | docs/RESCUE.md → *Agents on this machine, as root* |
-| 22 | Rescue state after the user exists | docs/RESCUE.md → *`rescue remove`*, *Root and the everyday user* |
-| 23 | The debug report's contents | docs/RESCUE.md → *Safe fields* |
-| 24 | Secrets kept out of it | docs/RESCUE.md → *The debug report*; D33 |
+| 17 | Symlinks | a folder whose root is a link is followed once; the bundle holds no links (D21) and restore places none (D29) |
+| 18 | Existing target files | docs/RESTORE.md → *Conflicts*; D29 |
+| 19 | An interrupted restore | the run log: a stop resumes (D29) |
+| 20 | Rerunning a restore | each item is judged again from the filesystem, and nothing already in place changes (D29) |
+| 21 | Agents before Omarchy finishes | none as root: there is no rescue mode (D32); `debug` prints the fixed brief (D33) |
+| 22 | Rescue state after the user exists | none: there is no rescue mode (D32) |
+| 23 | The debug report's contents | D33; docs/TROUBLESHOOTING.md |
+| 24 | Secrets kept out of it | fixed text and facts only, never a log line, command output or file content (D33) |
 | 25 | Continuing across reboots | docs/QUALIFICATION.md → *Across reboots* |
 | 26 | Authoritative versus recorded | docs/QUALIFICATION.md → *What each system can see*; SPEC.md → *States* |
-| 27 | What moves before Shared | docs/MIGRATION.md → *Moving between the systems* |
-| 28 | What moves after Shared | the same section; D39 |
-| 29 | Automated cross-system qualification | docs/QUALIFICATION.md → *Qualification* |
-| 30 | Over 4 GB without copying digests by hand | docs/QUALIFICATION.md → *The stream*, *The round trip* |
-| 31 | Binding to the right Shared and plan | docs/QUALIFICATION.md → *Binding and freshness* |
-| 32 | The first install as M17 | docs/QUALIFICATION.md → *Real-hardware qualification (M17)* |
-| 33 | What makes an M18 release | docs/QUALIFICATION.md → *Hardware-validated release (M18)*; D36 |
+| 27 | What moves before Shared | docs/MIGRATION.md → *Moving between the systems*; D22 |
+| 28 | What moves after Shared | the same section; D22, D39 |
+| 29 | Automated cross-system qualification | docs/QUALIFICATION.md → *Qualification*; D35 |
+| 30 | Over 4 GB without copying digests by hand | the writer's SHA-256 travels beside the file on Shared (D35) |
+| 31 | Binding to the right Shared and plan | the baseline's Shared identity check comes first (D35) |
+| 32 | The first install as M17 | docs/QUALIFICATION.md → *Real-hardware qualification (M17)*; D36 |
 | 34 | Protecting the frozen baseline | D18, D38; docs/TESTING.md → *Equivalence with the accepted baseline*; MILESTONES.md → *Accepted baseline* |
 | 35 | Bash as the target shell | docs/RESOLVER.md → *From Zsh to Bash*; D2 |
 | — | The frontend: distribution, start-up, the split, the protocol, handoff, lifecycle, the boundary, working without it | docs/FRONTEND.md, docs/PROTOCOL.md; D5–D16, D38, D43 |
 | — | Gate 1's production start, and its authority | docs/FRONTEND.md → *The startup check*; docs/PROTOCOL.md → *The startup-check session*; D10, D18, D43, D48 |
 | — | Gate 2's read surface, generations and paging | docs/PROTOCOL.md → *The Gate 2 read surface*; D50, D52, D53, and *Open review questions* |
-| — | An operation record that cannot be read | docs/PROTOCOL.md → *An operation record that cannot be read*; D47, D54, and *Open review questions* (UR-Q1 to UR-Q9) |
-| — | Its diagnostic's request, answer, words and interfaces (accepted; implemented in the core and the text interface, awaiting review) | docs/PROTOCOL.md → *The operation-record diagnostic*; D55 |
+| — | Executing an action, plan.save among them | docs/PROTOCOL.md → *Executing*; D8, D9, D18, D56 |
+| — | An operation record that cannot be read | docs/PROTOCOL.md → *An operation record that cannot be read*; D47, D54 |
+| — | Its diagnostic's request, answer, words and interfaces | docs/PROTOCOL.md → *The operation-record diagnostic*; D55 |
 | — | An unreleased frontend candidate | D49; docs/FRONTEND.md |
 | — | The interface | docs/UX.md; D51 |
