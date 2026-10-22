@@ -4,4 +4,4 @@ tests/.tmp/
 .DS_Store
 *.swp
 *~
-.claude/
+/.claude/
