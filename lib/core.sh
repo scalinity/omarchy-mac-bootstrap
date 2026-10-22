@@ -898,8 +898,15 @@ core_mod_for() {
   esac
 }
 
+# The folder this library was loaded from: where core_mod_load finds the
+# modules when OMB_HOME is not set (a test that loads the libraries itself).
+CORE_LIB=${BASH_SOURCE[0]%/*}
+
 # core_mod_load MODULE — sources the module and what it builds on, once.
 core_mod_load() {
+  local OMB_HOME=${OMB_HOME:-} __h=${CORE_LIB%lib}
+  __h=${__h%/}
+  [ -n "$OMB_HOME" ] || OMB_HOME=${__h:-.}
   case "$1" in
     actions)
       [ "${CORE_LOADED_actions:-}" = 1 ] && return 0

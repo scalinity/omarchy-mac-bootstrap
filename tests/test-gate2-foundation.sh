@@ -53,7 +53,10 @@ FOUNDATION_ENV=OMB_TEST_FOUNDATION=2 unavailable wrong-seam-value
 c_uname_arm "$T/native"
 C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" FOUNDATION_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_TEST_FOUNDATION=1' unavailable non-fixture
 C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_TEST_FOUNDATION=1' c_run snapshot "scope	name=journey"
-assert_eq "$(c_result)" 'refused unavailable' 'non-fixture read unavailable'
+# The foundation's seam without a fixture selects nothing: the ordinary
+# contract answers a real machine's journey (Gate 3), with no test action.
+if [ "$(c_result)" != 'refused unavailable' ]; then ok; else fail 'non-fixture read: the ordinary contract answers'; fi
+if grep -q 'id=test\.' "$C_EV"; then fail 'non-fixture read: no foundation action is listed'; else ok; fi
 C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_TEST_FOUNDATION=1 OMB_SESSION_INTENT=read OMB_SESSION_PURPOSE=frontend-check' c_run hello
 assert_eq "$(c_result) $C_RC" 'error environment 2' 'frontend-check rejects explicit foundation seam'
 

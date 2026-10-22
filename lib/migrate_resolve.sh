@@ -62,14 +62,14 @@ res_target_ok() {
   esac
 }
 
-# res_map_load [FILE] — admit the migration map and hold it: RES_M_* per
+# res_map_load — admit the migration map (data/migration-map.omb) and hold it: RES_M_* per
 # entry (source and name as written, the rest decoded), RES_C_* per choice,
 # RES_M_IDX the lookup "|source/name=index|". 1 (RES_WHY) when the map does
 # not admit, or an entry breaks a rule admission cannot state: a source and
 # name twice, a target outside its method's grammar, a disposition without
 # what it needs, a choice of anything but an ALTERNATIVE.
 res_map_load() {
-  local f=${1:-$OMB_HOME/data/migration-map.omb} i=0 n=0 c=0 j m d t
+  local f=$OMB_HOME/data/migration-map.omb i=0 n=0 c=0 j m d t
   RES_WHY="" RES_M_N=0 RES_C_N=0 RES_M_IDX="|"
   RES_M_ID=() RES_M_SRC=() RES_M_NAME=() RES_M_DISP=() RES_M_METHOD=() RES_M_TARGET=() RES_M_KEEP=() RES_M_CHECK=()
   RES_C_MAP=() RES_C_ID=() RES_C_LABEL=() RES_C_METHOD=() RES_C_TARGET=()
@@ -159,10 +159,10 @@ res_map_load() {
     fi
     m=${RES_C_METHOD[j]}
     if [ "${RES_C_ID[j]}" = keep-default ]; then
-      [ -z "$m" ] && [ -z "${RES_C_TARGET[j]}" ] || {
+      if [ -n "$m" ] || [ -n "${RES_C_TARGET[j]}" ]; then
         RES_WHY="choice keep-default of ${RES_C_MAP[j]} keeps Omarchy's own and installs nothing"
         return 1
-      }
+      fi
     elif [ -z "$m" ] || ! res_target_ok "$m" "${RES_C_TARGET[j]}"; then
       RES_WHY="choice ${RES_C_ID[j]} of ${RES_C_MAP[j]}: no method, or a target outside its grammar"
       return 1

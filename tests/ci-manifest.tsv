@@ -92,12 +92,6 @@ unit	linux-bash5	l1	suite:fake-children
 unit	linux-bash5	l1	suite:frontend-inputs
 unit	linux-bash5	l1	suite:gate2-journey
 unit	linux-bash5	l1	suite:shared
-unit	linux-bash5	l3	suite:resolve
-unit	linux-bash5	l3	suite:bundle
-unit	linux-bash5	l0	suite:toml
-unit	linux-bash5	l1	suite:scan
-unit	linux-bash5	l2	suite:secrets
-unit	linux-bash5	l2	suite:profile
 unit	linux-bash5	l2	suite:cp1
 unit	linux-bash5	l2	suite:dev
 unit	linux-bash5	l2	diag:temp
@@ -130,6 +124,12 @@ unit	linux-bash5	l3	suite:safety
 unit	linux-bash5	l3	suite:state
 unit	linux-bash5	l3	suite:static
 unit	linux-bash5	l3	suite:storage
+unit	linux-bash5	l3	suite:resolve
+unit	linux-bash5	l3	suite:bundle
+unit	linux-bash5	l0	suite:toml
+unit	linux-bash5	l1	suite:scan
+unit	linux-bash5	l2	suite:secrets
+unit	linux-bash5	l2	suite:profile
 
 # Linux target shell · GNU Bash 5.3.15 built from tests/bash-5.3.15.sha256's sources · aarch64
 unit	target-bash53	t1	diag:children
