@@ -28,68 +28,8 @@ A_ALL=journey,plan,asahi,shared,network,omarchy
 REAL_SED=$(command -v sed)
 c_session
 
-# The tool under test. `validate select action=shared.code` reaches the
-# row's own act_code_validate through the core's ${CA_FN}_validate hook;
-# where this checkout's core does not call it yet, the shared.code cases
-# run a copy whose core_read_op routes it there.
+# The tool under test.
 A_TOOL=$REPO
-A_CODE_TOOL=$REPO
-if ! grep -q 'CA_FN}_validate' "$REPO/lib/core.sh"; then
-  A_CODE_TOOL=$T/code-tool
-  mkdir -p "$A_CODE_TOOL"
-  cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$A_CODE_TOOL/"
-  awk '
-    /^      elif \[ "\$CORE_REQ_SELECT" != plan\.save \]/ && !done {
-      print "      elif [ \"$CORE_REQ_SELECT\" = shared.code ]; then"
-      print "        if core_in_scopes shared; then"
-      print "          core_mod_load actions"
-      print "          act_row shared.code"
-      print "          \"${CA_FN}_validate\""
-      print "        else"
-      print "          core_result refused scope \"This session does not include the shared scope.\""
-      print "        fi"
-      done = 1
-    }
-    { print }' "$REPO/lib/core.sh" >"$A_CODE_TOOL/lib/core.sh"
-  grep -q 'CA_FN}_validate' "$A_CODE_TOOL/lib/core.sh" || fail "the shared.code route could not be added to the copy"
-fi
-
-# a_hook DIR FIXTURE ACTION HOOK — what the row's HOOK prints right after its
-# offer, on FIXTURE and DIR's state, as core_rows_snapshot calls it.
-a_hook() {
-  (
-    t_load >/dev/null 2>&1
-    # shellcheck source=lib/records.sh
-    . "$REPO/lib/records.sh"
-    # shellcheck source=lib/core.sh
-    . "$REPO/lib/core.sh"
-    OMB_HOME=$REPO OMB_FIXTURE=$2 OMB_STATE_DIR=$1/state OMB_INTENT=read OMB_PERSIST=0 OMB_DRY_RUN=0 CORE_OP=snapshot
-    platform_init
-    state_init >/dev/null 2>&1
-    core_mod_load actions
-    if act_row "$3" && "${CA_FN}_offer" >/dev/null 2>&1; then "${CA_FN}_$4"; fi
-    omb_cleanup
-  )
-}
-
-# a_snapshot_admits FILE — FILE's records, between a hello and a result, are
-# an admissible journey snapshot (their schema and order).
-a_snapshot_admits() {
-  {
-    printf 'omb-res 1\n'
-    sed -n 2p "$C_EV"
-    printf 'generation\tid=%s\ttotal=0\n' "$ZERO"
-    cat "$1"
-    printf 'result\tstatus=done\tcode=ok\ttext=\tnext=\n'
-  } >"$1.res"
-  (
-    t_load >/dev/null 2>&1
-    # shellcheck source=lib/records.sh
-    . "$REPO/lib/records.sh"
-    if rec_admit_file res snapshot "$1.res"; then printf ok; else printf '%s:%s' "$REC_REASON" "$REC_AT"; fi
-    omb_cleanup
-  )
-}
 
 # a_shims DIR — the forbidden commands (t_shims), one fixed clock (values
 # made from a time must agree between runs) and a sed that notes the umask
@@ -410,12 +350,13 @@ if t_plutil "the macOS rows"; then
   assert_eq "$(a_ops)" "" "actions-plan.save-success: its operation record is removed"
   assert_empty_file "$A_DIR/record" "actions-plan.save-success: nothing runs"
   a_umask actions-plan.save-umask
-  # Its records for the storage screen: the disk as it is, every region.
-  a_hook "$A_DIR" "$R" plan.save records >"$T/plan.records"
-  assert_eq "$(a_snapshot_admits "$T/plan.records")" ok "actions-plan.save-records: region records a snapshot admits"
-  assert_eq "$(sed -n 's/^region	start=[0-9]*	size=[0-9]*	role=\([a-z]*\)	.*/\1/p' "$T/plan.records" | tr '\n' ' ')" "apple macos apple " \
+  # Its records for the storage screen, in the journey snapshot: the disk as
+  # it is, every region.
+  a_run snapshot "scope	name=journey"
+  assert_eq "$(c_result) $(c_admits snapshot)" "done ok ok" "actions-plan.save-records: the snapshot admits"
+  assert_eq "$(printf '%s\n' "$C_OUT" | sed -n 's/^region	start=[0-9]*	size=[0-9]*	role=\([a-z]*\)	.*/\1/p' | tr '\n' ' ')" "apple macos apple " \
     "actions-plan.save-records: iBoot, macOS and Recovery, in disk order"
-  assert_contains "$(cat "$T/plan.records")" "role=macos	label=disk0s2" "actions-plan.save-records: each named by its partition"
+  assert_contains "$C_OUT" "role=macos	label=disk0s2" "actions-plan.save-records: each named by its partition"
   # Validation's defaults are the text flow's, the saved choices first.
   a_review plan.save "$(a_arg linux_size 250GB)" "$(a_arg shared_size 0)"
   assert_contains "$C_OUT" "normal	name=gh	value=octocat" "actions-plan.save: an omitted choice takes the saved one"
@@ -507,12 +448,11 @@ if t_plutil "the macOS rows"; then
     "actions-asahi.launch: scope asahi, a handoff, word yes"
   # Its records: the installer's answers as the card computes them, and the
   # boot steps after it.
-  a_hook "$A_DIR" "$R" asahi.launch records >"$T/asahi.records"
-  assert_eq "$(a_snapshot_admits "$T/asahi.records")" ok "actions-asahi.launch-records: answer and guide records a snapshot admits"
-  assert_contains "$(cat "$T/asahi.records")" "value=710114MiB	bytes=$((710114 * MIB))" "actions-asahi.launch-records: the resize answer with its exact bytes"
-  assert_contains "$(cat "$T/asahi.records")" "prompt=New%20OS%20size%20%20%28Linux%20gets%29	value=max	bytes=" "actions-asahi.launch-records: then max for Linux"
-  assert_eq "$(grep -c '^guide	id=boot	' "$T/asahi.records") $(grep -c '^guide	id=next	' "$T/asahi.records")" "8 0" \
-    "actions-asahi.launch-records: the eight boot steps, never the next step's id"
+  assert_eq "$(c_admits snapshot)" ok "actions-asahi.launch-records: the snapshot with its answers and guide admits"
+  assert_contains "$C_OUT" "value=710114MiB	bytes=$((710114 * MIB))" "actions-asahi.launch-records: the resize answer with its exact bytes"
+  assert_contains "$C_OUT" "prompt=New%20OS%20size%20%20%28Linux%20gets%29	value=max	bytes=" "actions-asahi.launch-records: then max for Linux"
+  assert_eq "$(printf '%s\n' "$C_OUT" | grep -c '^answer	')" 8 "actions-asahi.launch-records: the card's eight answers"
+  assert_eq "$(printf '%s\n' "$C_OUT" | grep -c '^guide	id=boot	')" 8 "actions-asahi.launch-records: the eight boot steps, as guide id=boot"
   a_common asahi.launch yes
   a_barriers asahi.launch asahi yes
   # The word answers the backup gate only: launch is typed on the terminal.
@@ -552,6 +492,18 @@ if t_plutil "the macOS rows"; then
   A_ENV="OMB_TEST_AFTER=$FIX/mac-asahi-stub-only" a_exec_tty '\nlaunch\n\004\004\004' asahi.launch yes
   assert_eq "$(c_result)" "failed postcondition" "actions-asahi.launch-unexpected: a first stage cut short is failed"
   assert_contains "$(cat "$A_DIR/state/ops/asahi.omb" 2>/dev/null)" "	state=failed	finding=unexpected	" "actions-asahi.launch-unexpected: its record stays"
+  # The installer resized macOS and was quit before installing: a state the
+  # text flow continues from, so completed, and the next launch installs
+  # into the freed space.
+  a_plan_state "$T/asahi-resized" "$R" 250 0
+  A_ENV="OMB_TEST_AFTER=$FIX/mac-asahi-resized-only" a_exec_tty '\nlaunch\n\004\004\004' asahi.launch yes
+  assert_eq "$(c_result)" "done ok" "actions-asahi.launch-resized: resized, then quit, is completed"
+  assert_contains "$(a_text)" "resized%20macOS%20and%20stopped%20before%20installing" "actions-asahi.launch-resized: and says so"
+  assert_contains "$(a_text)" "The%20next%20launch%20continues%20from%20there" "actions-asahi.launch-resized: and what comes next"
+  assert_eq "$(a_ops)" "" "actions-asahi.launch-resized: no record bars the asahi scope"
+  A_FIX=$FIX/mac-asahi-resized-only a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" asahi.launch "*) ok ;; *) fail "actions-asahi.launch-resized: the next launch is offered" ;; esac
+  assert_contains "$C_OUT" "value=not%20resized:%20Linux%20goes%20into%20the%20free%20space" "actions-asahi.launch-resized: into the freed space, no second resize"
   # After a new boot, the classifier judges the record on the machine.
   a_use "$T/asahi-boot" "$FIX/mac-asahi-pending"
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
@@ -562,6 +514,13 @@ if t_plutil "the macOS rows"; then
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
   assert_contains "$C_OUT" "reconciled:%20no-effect" "actions-asahi.launch-reconcile: no Asahi partition and macOS as it was is no effect"
+  a_use "$T/asahi-boot-resized" "$FIX/mac-asahi-resized-only"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
+  printf 'asahi_prelaunch_macos_size=994610155520\n' >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
+  a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
+  a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
+  assert_contains "$C_OUT" "reconciled:%20completed" "actions-asahi.launch-reconcile: resized and nothing installed is completed after a new boot"
+  assert_eq "$(a_ops)" "" "actions-asahi.launch-reconcile: and the record goes"
   a_use "$T/asahi-boot3" "$FIX/mac-asahi-stub-only"
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
@@ -594,7 +553,6 @@ if t_plutil "the macOS rows"; then
     cp -p "$T/plan150/state/state.env" "$T/plan150/state/shared-intent.env" "$1/state/"
     a_use "$1" "$FIX/mac-shared-reserved"
   }
-  A_TOOL=$A_CODE_TOOL
   a_shared_state "$T/code"
   a_run snapshot "scope	name=journey"
   assert_contains "$C_OUT" "param	action=shared.code	name=code	type=code	kind=ombdone	required=1" "actions-shared.code: it takes Linux's code"
@@ -628,11 +586,10 @@ if t_plutil "the macOS rows"; then
   SH_BYTES=$(((150000000000 + MIB - 1) / MIB * MIB))
   assert_contains "$C_OUT" "key=gate.shared.create.command	label=Command	value=sudo%20-n%20diskutil%20addPartition%20disk0s6%20ExFAT%20Shared%20$SH_BYTES" \
     "actions-shared.create: its gate facts name the one command"
-  a_hook "$A_DIR" "$A_FIX" shared.create records >"$T/create.records"
-  assert_eq "$(a_snapshot_admits "$T/create.records")" ok "actions-shared.create-records: region records a snapshot admits"
-  assert_contains "$(cat "$T/create.records")" "size=$SH_BYTES	role=shared	label=Shared,%20to%20be%20created" \
+  assert_eq "$(c_admits snapshot)" ok "actions-shared.create-records: the snapshot with its regions admits"
+  assert_contains "$C_OUT" "size=$SH_BYTES	role=shared	label=Shared,%20to%20be%20created" \
     "actions-shared.create-records: where Shared would be created, at its size"
-  assert_eq "$(grep -c 'role=linux' "$T/create.records")" 1 "actions-shared.create-records: after the Linux root"
+  assert_eq "$(printf '%s\n' "$C_OUT" | grep -c '^region	.*role=linux')" 1 "actions-shared.create-records: after the Linux root"
   a_common shared.create yes
   a_barriers shared.create shared yes
   # The word answers the backup gate only: create is typed on the terminal.
@@ -658,7 +615,6 @@ sudo -n diskutil addPartition disk0s6 ExFAT Shared $SH_BYTES" "actions-shared.cr
   assert_eq "$(c_result)" "done ok" "actions-shared.create-record: recorded, nothing created ($(a_text))"
   assert_empty_file "$A_DIR/record" "actions-shared.create-record: no command ran"
   assert_contains "$(a_state)" "shared_uuid=4A7B1C2D-0007-4E5F-8A9B-000000000007" "actions-shared.create-record: the partition is recorded"
-  A_TOOL=$REPO
   a_unavailable shared.code "" "$R" "$(a_arg code "$CODE")"
   a_unavailable shared.create yes "$R"
 fi
@@ -732,7 +688,6 @@ a_unavailable omarchy.resume resume "$FIX/linux-alarm-fresh"
 
 # --- shared.code (Linux) and shared.activate ----------------------------------------------
 SCODE=$( (t_load >/dev/null 2>&1 && code_make ombshare 1a2b3c4d 4A7B1C2D-0007-4E5F-8A9B-000000000007))
-A_TOOL=$A_CODE_TOOL
 a_use "$T/lcode" "$FIX/linux-shared-present"
 a_run snapshot "scope	name=journey"
 assert_contains "$C_OUT" "param	action=shared.code	name=code	type=code	kind=ombshare	required=1" "actions-shared.code: on Linux it takes macOS's code"
@@ -747,7 +702,6 @@ assert_contains "$(a_state)" "shared_id12=4a7b1c2d0007" "actions-shared.code-lin
 a_umask actions-shared.code-linux-umask
 a_run snapshot "scope	name=journey"
 case " $(a_actions)" in *" shared.activate "*) ok ;; *) fail "actions-shared.activate: offered once the partition is identified" ;; esac
-A_TOOL=$REPO
 a_common shared.activate mount
 a_barriers shared.activate shared mount
 A_ENV="OMB_TEST_AFTER=$FIX/linux-shared-ready" a_exec_tty '\004\004\004' shared.activate mount
@@ -956,7 +910,7 @@ if t_plutil "the macOS rows against the baseline"; then
   e_case "$T/pre-plan150"
   e_base "$EB" "$FIX/mac-shared-reserved" 'n\n' shared create "$CODE"
   e_core "$FIX/mac-shared-reserved"
-  A_TOOL=$A_CODE_TOOL a_exec shared.code "" "$(a_arg code "$CODE")"
+  a_exec shared.code "" "$(a_arg code "$CODE")"
   assert_eq "$(c_result)" "done ok" "equiv-shared.code: the core took the code"
   e_agree equiv-shared.code
   cp -R "$EB/state" "$T/pre-receipt"
@@ -992,7 +946,7 @@ e_agree equiv-omarchy.resume
 e_case
 e_base "$EB" "$FIX/linux-shared-present" 'n\n' shared activate "$SCODE"
 e_core "$FIX/linux-shared-present"
-A_TOOL=$A_CODE_TOOL a_exec shared.code "" "$(a_arg code "$SCODE")"
+a_exec shared.code "" "$(a_arg code "$SCODE")"
 e_agree equiv-shared.code-linux
 cp -R "$EB/state" "$T/pre-id12"
 # shared.activate: from the identified partition, mount.

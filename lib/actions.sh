@@ -454,8 +454,10 @@ act_asahi_run() {
 }
 
 # Asahi's install classification on a fresh read: its partitions in place,
-# or a disk proven untouched (the installer quit at its first question, or
-# never ran); anything else needs the person.
+# or macOS resized and nothing installed yet (a state the next launch
+# continues from), are completed; a disk proven untouched (the installer
+# quit at its first question, or never ran) is no effect; anything else
+# needs the person.
 act_asahi_judge() {
   local before
   act_mac_read again
@@ -463,6 +465,12 @@ act_asahi_judge() {
   case "$ASAHI_STATE" in
     installed | pending-first-boot | installed-unverified)
       act_judged completed "Asahi's partitions are in place ($ASAHI_STATE)."
+      return 0
+      ;;
+    resized-only)
+      # A state the text flow continues from (asahi_guidance, then planning):
+      # the freed space stays free, and the next launch installs into it.
+      act_judged completed "The installer resized macOS and stopped before installing ($ASAHI_WHY). The next launch continues from there: it installs into the freed space, with no second resize."
       return 0
       ;;
     none)

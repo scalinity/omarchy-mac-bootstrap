@@ -23,7 +23,10 @@ cat >>"$T/tool/lib/core.sh" <<'TAPS'
 eval "$(declare -f mac_detect | sed '1s/mac_detect/v_original_detect/')"
 mac_detect() { printf '%s %s\n' "$OMB_INTENT" "$OMB_PERSIST" >>"$V_DETECT"; v_original_detect "$@"; }
 log_event() { printf 'log\n' >>"$V_EFFECTS"; return 99; }
-core_action_info() { printf 'action\n' >>"$V_EFFECTS"; return 99; }
+# An action looked up is witnessed apart: naming another select family
+# looks its row up for a review hook, which is a read; plan.save never does.
+eval "$(declare -f core_action_info | sed '1s/core_action_info/v_original_action_info/')"
+core_action_info() { printf '%s\n' "$1" >>"${V_LOOKUPS:-/dev/null}"; v_original_action_info "$@"; }
 core_barrier() { printf 'barrier\n' >>"$V_EFFECTS"; return 99; }
 state_lock() { printf 'lock\n' >>"$V_EFFECTS"; return 99; }
 state_set() { printf 'state\n' >>"$V_EFFECTS"; return 99; }
@@ -37,8 +40,8 @@ core_op_write() { printf 'operation\n' >>"$V_EFFECTS"; return 99; }
 TAPS
 shims=$(t_shims "$T")
 C_HOME=$T/tool C_PATH="$shims:/usr/bin:/bin:/usr/sbin:/sbin"
-v_reset() { : >"$T/detect"; : >"$T/effects"; : >"$T/shims.log"; }
-v_env() { printf 'OMB_SESSION_SCOPES=%s V_DETECT=%s V_EFFECTS=%s SHIM_LOG=%s %s' "${V_SCOPES:-plan}" "$T/detect" "$T/effects" "$T/shims.log" "${V_EXTRA:-}"; }
+v_reset() { : >"$T/detect"; : >"$T/effects"; : >"$T/lookups"; : >"$T/shims.log"; }
+v_env() { printf 'OMB_SESSION_SCOPES=%s V_DETECT=%s V_EFFECTS=%s V_LOOKUPS=%s SHIM_LOG=%s %s' "${V_SCOPES:-plan}" "$T/detect" "$T/effects" "$T/lookups" "$T/shims.log" "${V_EXTRA:-}"; }
 # v_run RECORD... — validate, select action=${V_ACTION:-plan.save}, with RECORDs.
 v_run() { v_reset; C_ENV=$(v_env) c_run validate "select	action=${V_ACTION:-plan.save}" "$@"; }
 v_enc() { (. "$REPO/lib/records.sh" && rec_enc "$1"); }
@@ -117,6 +120,7 @@ v_done() {
   assert_eq "$(sed -n '$p' "$C_EV")" "$R_DONE" "$1: exact result"
   assert_eq "$(cat "$T/detect")" 'read 0' "$1: one capture under read intent and zero persistence"
   assert_empty_file "$T/effects" "$1: no effect reached"
+  assert_empty_file "$T/lookups" "$1: no action lookup"
 }
 
 # Oracles: the baseline's own owners over the same fixture, in a subshell.

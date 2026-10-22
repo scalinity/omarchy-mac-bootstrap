@@ -108,7 +108,6 @@ core_action_info() { printf 'effect action\n' >>"$P_TAPS"; return 99; }
 state_lock() { printf 'effect lock\n' >>"$P_TAPS"; return 99; }
 state_set() { printf 'effect state\n' >>"$P_TAPS"; return 99; }
 state_must_set() { printf 'effect state\n' >>"$P_TAPS"; return 99; }
-cfg_load() { printf 'effect config\n' >>"$P_TAPS"; return 99; }
 cfg_save() { printf 'effect config\n' >>"$P_TAPS"; return 99; }
 run() { printf 'effect run\n' >>"$P_TAPS"; return 99; }
 fetch_upstream() { printf 'effect download\n' >>"$P_TAPS"; return 99; }
@@ -156,7 +155,8 @@ assert_eq "$(p_owner "$REPO")" "$(p_owner "$T/base")" 'supporting: the planning 
 if t_plutil 'Validate BASE planning equivalence and proof'; then
   # --- Probes: hello's, then exactly BASE's planning entry (its survey, the
   # blockers, and the Asahi state only where an install is on the disk). No
-  # network reachability, state, saved choices or log are read.
+  # network reachability or log is read, and of the state only the saved
+  # choices, which are the choices' defaults.
   C_FIX=$FIX/mac-m1pro-1tb-roomy
   : >"$T/hello.probes"
   C_ENV="OMB_SESSION_SCOPES=plan G2_PROBES=$T/hello.probes" c_run hello
@@ -212,9 +212,12 @@ mac-m2-512 100 80
 mac-asahi-resized-only 200 40
 EOF
 
-  # --- Q4-plan-validation-basis-v1, rebuilt independently: the documented
-  # preimages from BASE's planning owners and the record encoder, byte for
-  # byte, and the review basis the SHA-256 of that omb-basis 1 document.
+  # --- The plan.save basis, rebuilt independently: the documented preimages
+  # from BASE's planning owners and the record encoder, byte for byte, and
+  # the review basis the SHA-256 of that omb-basis 1 document. The inputs are
+  # the two sizes and the nine choices at the text flow's own defaults (no
+  # saved choice here); free space, the floor and the resize limit are not
+  # bound.
   p_sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1"; else sha256sum "$1"; fi | awk '{ print $1 }'; }
   while read -r fx linux shared sv; do
     [ -n "$fx" ] || continue
@@ -234,6 +237,19 @@ EOF
         mac_detect
         mac_plan_compute "$shared"
         plan_layout $((linux * GB))
+        u=""
+        if valid_username "$MAC_USER" >/dev/null 2>&1; then u=$MAC_USER; fi
+        {
+          rec_line input name enc value 1
+          rec_line input name user value "$u"
+          rec_line input name host value omarchy
+          rec_line input name kmap value "$(mac_default_keymap)"
+          rec_line input name tz value "${MAC_TZ:-UTC}"
+          rec_line input name loc value "$(mac_default_locale)"
+          rec_line input name ssh value 0
+          rec_line input name gh value -
+          rec_line input name dev value 1
+        } >"$d/validate.inputs"
         {
           printf "omb-validate-geometry 1\n"
           rec_line disk size "$GEO_DISK_SIZE" block "$GEO_BLOCK" start "$GEO_USABLE_START" end "$GEO_USABLE_END"
@@ -241,9 +257,6 @@ EOF
             [ -z "$off" ] || rec_line part guid "$uuid" offset "$off" size "$size" content "$content" role "$role"
           done
           rec_line store guid "$MAC_STORE_UUID"
-          rec_line container size "$MAC_CONTAINER_SIZE" free "$MAC_CONTAINER_FREE" floor "$PLAN_MACOS_FLOOR"
-          rec_line limits known "$PLAN_LIMITS_KNOWN" value "$MAC_LIMIT_PREF"
-          rec_line resize available "$PLAN_RESIZE_OK" end "$PLAN_RZ_END"
           printf "%s\n" "$GEO_GAPS" | while IFS="|" read -r start size pred succ; do
             [ -z "$start" ] || rec_line gap start "$start" size "$size"
           done
@@ -261,11 +274,11 @@ EOF
       printf 'omb-basis 1\n'
       printf 'basis\taction=plan.save\tproto=1\tactor_uid=%s\thome=%s\tsource=%s\n' "$(cat "$C_FIX/cmd/id_u")" "$(p_enc "$T/tool")" "$src"
       printf 'input\tname=shared_size\tvalue=%s\ninput\tname=linux_size\tvalue=%s\n' $((shared * GB)) $((linux * GB))
+      cat "$T/rebuilt/validate.inputs"
       printf 'seen\tkey=geometry\tstate=value\tvalue=\tsha256=%s\tmode=\tlink=\n' "$(p_sha "$T/rebuilt/validate.geometry")"
       printf 'seen\tkey=plan\tstate=value\tvalue=\tsha256=%s\tmode=\tlink=\n' "$(p_sha "$T/rebuilt/validate.plan")"
       printf 'version\tkey=storage_contract\tvalue=%s\n' "$(p_enc "$(sed -n 's/^STORAGE_CONTRACT="\(.*\)"$/\1/p' "$T/base/lib/sources.sh")")"
       printf 'version\tkey=template\tvalue=%s\n' "$(p_enc 'Asahi Alarm Minimal (BTRFS)')"
-      printf 'version\tkey=rule\tvalue=Q4-plan-validation-basis-v1\n'
     } >"$T/rebuilt/validate.basis"
     for doc in geometry plan basis; do
       if cmp -s "$T/kept/validate.$doc" "$T/rebuilt/validate.$doc"; then ok; else fail "$fx $linux/$shared: the $doc preimage is the documented one, byte for byte"; fi
@@ -281,7 +294,8 @@ mac-m1-free-space 400 0 0
 EOF
 
   # --- One capture owns response and basis: the machine changing right after
-  # it changes neither; a later request sees the change; nothing re-reads.
+  # it changes neither; a later request sees the change (free space alone,
+  # which the basis does not bind, leaves it as it was); nothing re-reads.
   V=$(t_variant mac-m1pro-1tb-roomy)
   cp "$V/cmd/diskutil_info_root" "$T/root.original"
   sed 's#<key>APFSContainerFree</key><integer>700000000000</integer>#<key>APFSContainerFree</key><integer>600000000000</integer>#' "$T/root.original" >"$T/root.less"
@@ -299,10 +313,8 @@ EOF
     p_run "$(p_l 250GB)" "$(p_s 50GB)"
     if [ "$alt" = tight ]; then
       assert_eq "$(c_result)" 'refused unplannable' 'a later request: the changed machine cannot be planned on'
-    elif [ "$(c_result)" = 'done ok' ] && [ -n "$(p_basis)" ] && [ "$(p_basis)" != "$cb" ]; then
-      ok
     else
-      fail 'a later request: the changed geometry, another basis'
+      assert_eq "$(c_result) $(p_basis)" "done ok $cb" 'a later request: free space alone moved, the same plan and the same basis'
     fi
     cp "$T/root.original" "$V/cmd/diskutil_info_root"
     p_run "$(p_l 250GB)" "$(p_s 50GB)"
