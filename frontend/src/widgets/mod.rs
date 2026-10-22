@@ -259,8 +259,9 @@ pub fn banner(f: &mut Frame, area: Rect, t: &Theme) {
 /// A rail entry's label: short at the standard width.
 fn nav_label(s: Screen, short: bool) -> &'static str {
     match s {
-        Screen::Plan if short => "Plan",
         Screen::Operation if short => "Op",
+        Screen::Selection if short => "Select",
+        Screen::Inventory if short => "Items",
         s => s.title(),
     }
 }
@@ -291,16 +292,43 @@ pub fn nav_rail(f: &mut Frame, area: Rect, m: &Model, t: &Theme, short: bool) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-/// The navigation as one line (narrow widths).
+/// The navigation as one line (narrow widths): from the first screen, or
+/// from the one that keeps the current screen (or the rail's cursor) on the
+/// line, with a mark where screens are left out.
 pub fn nav_line(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
-    let mut spans = vec![Span::raw(" ")];
-    for (i, s) in NAV.iter().enumerate() {
+    let here = |s: &Screen| {
+        *s == m.screen || (m.back == *s && matches!(m.screen, Screen::Help | Screen::Gate))
+    };
+    let target = if m.region == Region::Nav {
+        m.nav
+    } else {
+        NAV.iter().position(here).unwrap_or(0)
+    };
+    let width = |s: &Screen| cells(nav_label(*s, true)) + 2;
+    let room = (area.width as usize).saturating_sub(3);
+    let mut start = 0;
+    while start < target && NAV[start..=target].iter().map(width).sum::<usize>() > room {
+        start += 1;
+    }
+    let more = if t.caps.unicode { "‹" } else { "<" };
+    let mut spans = vec![Span::styled(
+        if start > 0 { more } else { " " },
+        t.style(Token::Muted),
+    )];
+    let mut used = 1;
+    for (i, s) in NAV.iter().enumerate().skip(start) {
+        if used + width(s) > room + 1 {
+            spans.push(Span::styled(
+                if t.caps.unicode { "›" } else { ">" },
+                t.style(Token::Muted),
+            ));
+            break;
+        }
+        used += width(s);
         let label = nav_label(*s, true);
         let (mark, style) = if m.region == Region::Nav && i == m.nav {
             (t.g.pointer, t.style(Token::Focus))
-        } else if *s == m.screen
-            || (m.back == *s && matches!(m.screen, Screen::Help | Screen::Gate))
-        {
+        } else if here(s) {
             (t.g.here, t.style(Token::Accent))
         } else {
             (" ", t.style(Token::Muted))
@@ -310,6 +338,168 @@ pub fn nav_line(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         spans.push(Span::raw(" "));
     }
     line(area, f, Line::from(spans));
+}
+
+/// A size in bytes as a person reads it, in decimal units as the
+/// installer's questions count them (`482 GB`, `6.3 MB`); the exact bytes
+/// stay with the core's record.
+pub fn gb(bytes: u64) -> String {
+    for (unit, d) in [("GB", 1e9), ("MB", 1e6), ("kB", 1e3)] {
+        let v = bytes as f64 / d;
+        if v >= 1.0 {
+            return if v >= 10.0 {
+                format!("{} {unit}", v.round() as u64)
+            } else {
+                format!("{v:.1} {unit}")
+            };
+        }
+    }
+    format!("{bytes} B")
+}
+
+/// A region's glyph, token and name (docs/UX.md → *Glyphs*, *Tokens*):
+/// without colour the strip's letters, since macOS and Linux share a glyph.
+fn region_look<'a>(role: &str, t: &Theme) -> (&'a str, Token, &'a str) {
+    let u = t.caps.unicode && t.caps.depth != crate::theme::Depth::None;
+    match role {
+        "macos" => (if u { "█" } else { "M" }, Token::Macos, "macOS"),
+        "linux" => (if u { "█" } else { "L" }, Token::Linux, "Linux"),
+        "shared" => (if u { "▚" } else { "s" }, Token::Shared, "Shared"),
+        "free" => (if u { " " } else { "." }, Token::Free, "free"),
+        "apple" => (if u { "▒" } else { "b" }, Token::Boot, "Apple"),
+        "stub" => (if u { "▒" } else { "b" }, Token::Boot, "boot"),
+        "efi" => (if u { "▒" } else { "b" }, Token::Boot, "EFI"),
+        _ => (if u { "░" } else { "o" }, Token::Muted, "other"),
+    }
+}
+
+/// The disk strip, a scale bar (docs/UX.md → *Direction*): each region the
+/// core sent in proportion to its size, in its place's glyph and token; the
+/// scale under it; and what each place holds, in GB. Nothing is computed but
+/// the drawing.
+pub fn strip<'a>(regions: &[crate::read::DiskRegion], t: &Theme, width: usize) -> Vec<Line<'a>> {
+    let total: u128 = regions.iter().map(|r| r.size as u128).sum();
+    let w = width.saturating_sub(4);
+    if total == 0 || w < 8 {
+        return Vec::new();
+    }
+    // Each region's share of the cells, the remainders going to the largest.
+    let mut share: Vec<usize> = regions
+        .iter()
+        .map(|r| (r.size as u128 * w as u128 / total) as usize)
+        .collect();
+    let mut order: Vec<usize> = (0..regions.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(regions[i].size as u128 * w as u128 % total));
+    let mut used: usize = share.iter().sum();
+    for i in order {
+        if used >= w {
+            break;
+        }
+        share[i] += 1;
+        used += 1;
+    }
+    let (l, r) = if t.caps.unicode {
+        ("▕", "▏")
+    } else {
+        ("|", "|")
+    };
+    let mut bar = vec![Span::raw(" "), Span::styled(l, t.style(Token::Rule))];
+    for (reg, n) in regions.iter().zip(&share) {
+        let (g, tok, _) = region_look(&reg.role, t);
+        bar.push(Span::styled(g.repeat(*n), t.style(tok)));
+    }
+    bar.push(Span::styled(r, t.style(Token::Rule)));
+    let end = gb(total.min(u64::MAX as u128) as u64);
+    let half = gb((total / 2).min(u64::MAX as u128) as u64);
+    let mut scale = String::from("  0");
+    if w >= 30 {
+        let mid = (2 + w / 2).saturating_sub(cells(&half) / 2);
+        while cells(&scale) < mid {
+            scale.push(' ');
+        }
+        scale.push_str(&half);
+    }
+    let at = (2 + w).saturating_sub(cells(&end));
+    scale.push(' ');
+    while cells(&scale) < at {
+        scale.push(' ');
+    }
+    scale.push_str(&end);
+    // What each place holds, in the order the places first come: its glyph
+    // (the strip's letter in ASCII), its name and its size.
+    let mut names: Vec<(String, u64, &str)> = Vec::new();
+    for reg in regions {
+        let (g, _, name) = region_look(&reg.role, t);
+        let name = if reg.label.is_empty() {
+            name.to_string()
+        } else {
+            reg.label.clone()
+        };
+        match names.iter_mut().find(|n| n.0 == name) {
+            Some(n) => n.1 = n.1.saturating_add(reg.size),
+            None => names.push((name, reg.size, g)),
+        }
+    }
+    let legend: Vec<String> = names
+        .iter()
+        .map(|(n, s, g)| format!("{g} {n} {}", gb(*s)).trim_start().to_string())
+        .collect();
+    let mut out = vec![Line::from(bar), Line::styled(scale, t.style(Token::Muted))];
+    for l in wrap(
+        &legend.join(&format!(" {} ", t.g.dot)),
+        width.saturating_sub(2),
+    ) {
+        out.push(Line::styled(format!(" {l}"), t.style(Token::Text)));
+    }
+    out
+}
+
+/// A page's stepper: its sections joined by a line, numbered, the one in
+/// view marked (AT; none past the end). It says where the page is, never
+/// that a step is done: only the core could know that.
+pub fn stepper<'a>(steps: &[&str], at: usize, t: &Theme, width: usize) -> Vec<Line<'a>> {
+    let n = steps.len().max(1);
+    let glyph = |i: usize| {
+        if i == at {
+            Span::styled(t.g.current, t.style(Token::Accent))
+        } else {
+            Span::styled(t.g.todo, t.style(Token::Pending))
+        }
+    };
+    let labels: Vec<String> = steps
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("{} {s}", i + 1))
+        .collect();
+    let gap = labels.iter().map(|l| cells(l)).max().unwrap_or(0) + 2;
+    let need = 1 + gap * (n - 1) + labels.last().map_or(0, |l| cells(l));
+    if width < need {
+        let mut spans = vec![Span::raw(" ")];
+        for i in 0..n {
+            spans.push(glyph(i));
+            spans.push(Span::raw(" "));
+        }
+        if let Some(s) = steps.get(at) {
+            spans.push(Span::styled(
+                format!(" {} of {n} {} {s}", at + 1, t.g.dot),
+                t.style(Token::Muted),
+            ));
+        }
+        return vec![Line::from(spans)];
+    }
+    let mut top = vec![Span::raw(" ")];
+    let mut under = String::from(" ");
+    for (i, l) in labels.iter().enumerate() {
+        top.push(glyph(i));
+        if i + 1 < n {
+            top.push(Span::styled(t.g.rule.repeat(gap - 1), t.style(Token::Rule)));
+        }
+        while cells(&under) < 1 + i * gap {
+            under.push(' ');
+        }
+        under.push_str(l);
+    }
+    vec![Line::from(top), Line::styled(under, t.style(Token::Muted))]
 }
 
 /// The ten stations of the journey (docs/UX.md → *The rail*).

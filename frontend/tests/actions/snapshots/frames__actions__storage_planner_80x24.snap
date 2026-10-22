@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Plan ──────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Storage planner ─────────────────────────────────────────────┐
+│  Welcome     ││   The text flow's own plan.save.                             │
+│  Journey     ││                                                              │
+│  Machine     ││ ▕██████████████████████████████████████▚▚▚▚▚▚              ▏ │
+│  Status      ││  0                         500 GB                   1000 GB  │
+│  Health      ││ ▒ Apple 6.0 GB · █ macOS 400 GB · ▒ boot 3.0 GB · █ Linux    │
+│  Logs        ││ 250 GB · ▚ Shared 100 GB · free 241 GB                       │
+│▍ Plan        ││                                                              │
+│  Op          ││ ❯ Shared size     100GB▏                                     │
+│  Scan        ││   Linux size      not given                                  │
+│  Select      ││   Encryption      not given                                  │
+│  Items       ││   Username        not given                                  │
+│  Review      ││   Hostname        not given                                  │
+│  Install     ││   Keymap          not given                                  │
+│  Progress    ││   Timezone        not given                                  │
+│              ││   Locale          not given                                  │
+│              ││   SSH keys        not given                                  │
+│              ││   GitHub user     not given                                  │
+│              ││   Developer setup not given                                  │
+│              ││   a field left empty is not sent: the core answers its      ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ check  Tab next field  esc back                may act · 3 actions · fixture

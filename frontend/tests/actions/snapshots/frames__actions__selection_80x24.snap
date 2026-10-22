@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Selection ─────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Migration selection ─────────────────────────────────────────┐
+│  Welcome     ││   Items  5 items, 2 selected                                 │
+│  Journey     ││                                                              │
+│  Machine     ││ ❯ Software  ! 1 of 3 · 6.3 MB                                │
+│  Status      ││   Apps        0 of 1 · 0 B                                   │
+│  Health      ││   Folders     0 of 1 · 4.0 GB                                │
+│  Logs        ││                                                              │
+│  Plan        ││   ⏎ opens a category's items; space puts all of them in or   │
+│  Op          ││   out.                                                       │
+│  Scan        ││                                                              │
+│▍ Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ↑↓ move  space all in or out  ⏎ its items  ? help            may act · fixture

@@ -1,10 +1,9 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
  ◒ Journey ───────────────────────────────────────── v0.2.0
-  Welcome ▍Journey  Machine  Status  Health  Logs  Plan  Op
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Journey ─────────────────────────────────────────────────┐
 │ · · · · · · · · · ·                                      │
 │ No stage is derived yet: every station is later.         │
@@ -20,6 +19,6 @@ expression: f
 │   Surveyed        not yet · recorded                     │
 │   Plan            not yet · recorded                     │
 │                                                          │
-│ ▍Actions                                                ↓│
+│ ▍What you can do now                                    ↓│
 └──────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  r refresh  ? help   read-only · fixture

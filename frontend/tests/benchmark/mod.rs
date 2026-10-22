@@ -1531,6 +1531,7 @@ impl Loaded {
             (0..n)
                 .map(|i| Action {
                     id: format!("{prefix}-{i:04}"),
+                    scope: "journey".into(),
                     label: format!(
                         "{prefix}-{i:04}-{}",
                         if i % 10 == 0 { "match" } else { "other" }

@@ -390,7 +390,7 @@ fn fe01_failed_snapshot(outcome: Outcome) {
         let failed =
             "result\tstatus=failed\tcode=postcondition\ttext=Fixture%20effect%20absent.\tnext=\n";
         let snapshot = sent(&fe01_answer(&mut m, execute, failed));
-        assert!(matches!(snapshot, Req::Snapshot));
+        assert!(matches!(snapshot, Req::Snapshot(Scope::Journey)));
         assert!(go(&mut m, 7).is_empty(), "Execute follow-up is serialized");
         assert!(
             update(&mut m, Msg::Done(snapshot, outcome.clone())).is_empty(),
@@ -405,7 +405,7 @@ fn fe01_failed_snapshot(outcome: Outcome) {
         } else {
             fe01_no_finding(&mut m);
             let retry = sent(&press(&mut m, KeyCode::Char('r')));
-            assert!(matches!(retry, Req::Snapshot));
+            assert!(matches!(retry, Req::Snapshot(Scope::Journey)));
             assert!(update(&mut m, Msg::Done(retry, outcome.clone())).is_empty());
             fe01_no_finding(&mut m);
             assert!(go(&mut m, 1).is_empty());
@@ -492,7 +492,10 @@ fn d55_fe01_every_execute_outcome_keeps_the_finding_invalid() {
         let mut m = fe01_ready(true);
         let req = fe01_execute(&mut m, true);
         let cmds = update(&mut m, Msg::Done(req, outcome));
-        assert!(cmds.iter().all(|c| matches!(c, Cmd::Send(Req::Snapshot))));
+        assert!(
+            cmds.iter()
+                .all(|c| matches!(c, Cmd::Send(Req::Snapshot(Scope::Journey))))
+        );
         let d = m.detail(omb_tui::read::Kind::Operation).unwrap();
         assert!(!d.loaded && d.rows.is_empty() && !d.open);
     }
@@ -516,7 +519,7 @@ fn d55_fe01_every_execute_outcome_keeps_the_finding_invalid() {
         );
         assert!(matches!(
             sent(&fe01_answer(&mut m, req, &body)),
-            Req::Snapshot
+            Req::Snapshot(Scope::Journey)
         ));
         fe01_no_finding(&mut m);
     }
@@ -540,7 +543,7 @@ fn fe01_recovery(g: &str) {
             .is_empty()
         );
         let snapshot = sent(&press(&mut m, KeyCode::Char('r')));
-        assert!(matches!(snapshot, Req::Snapshot));
+        assert!(matches!(snapshot, Req::Snapshot(Scope::Journey)));
         // The explicitly requested refresh still reopens Operation if the
         // person navigates away while its Journey read is running.
         if cached {
@@ -753,7 +756,7 @@ fn d55_changed_refusal_reads_a_fresh_snapshot_before_any_new_detail() {
         "generation\tid={GEN2}\ttotal=4\nresult\tstatus=refused\tcode=changed\ttext=The%20journey%20dataset%20changed.\tnext=\n"
     );
     let c = answer(&mut m, req, &body);
-    assert!(matches!(sent(&c), Req::Snapshot));
+    assert!(matches!(sent(&c), Req::Snapshot(Scope::Journey)));
     let d = m.detail(Kind::Operation).unwrap();
     assert!(d.changed && !d.loaded && d.rows.is_empty());
     let c = answer(&mut m, sent(&c), &journey(GEN2));
@@ -764,7 +767,7 @@ fn d55_changed_refusal_reads_a_fresh_snapshot_before_any_new_detail() {
     );
     assert_eq!(m.generation(omb_tui::read::Scope::Journey), Some(GEN2));
     let c = press(&mut m, KeyCode::Char('r'));
-    assert!(matches!(sent(&c), Req::Snapshot));
+    assert!(matches!(sent(&c), Req::Snapshot(Scope::Journey)));
     let c = answer(&mut m, sent(&c), &journey(GEN2));
     let Req::Detail(p) = sent(&c) else {
         panic!("{c:?}")
@@ -888,7 +891,14 @@ fn d55_states_and_unknowns_are_words_from_rows_not_frontend_decisions() {
 fn d55_new_snapshot_or_failed_refresh_never_retains_an_operation_finding() {
     let (mut m, req) = d55_open();
     answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
-    assert_eq!(requests(&answer(&mut m, Req::Snapshot, &journey(GEN2))), 0);
+    assert_eq!(
+        requests(&answer(
+            &mut m,
+            Req::Snapshot(Scope::Journey),
+            &journey(GEN2)
+        )),
+        0
+    );
     let d = m.detail(Kind::Operation).unwrap();
     assert!(d.changed && !d.loaded && d.rows.is_empty());
     assert!(!frame(&m, 80, 24).contains("What it recorded"));
@@ -896,7 +906,7 @@ fn d55_new_snapshot_or_failed_refresh_never_retains_an_operation_finding() {
     let (mut m, req) = d55_open();
     answer(&mut m, req, &d55_body(GEN, 4, D55_ROWS));
     let c = press(&mut m, KeyCode::Char('r'));
-    assert!(matches!(sent(&c), Req::Snapshot));
+    assert!(matches!(sent(&c), Req::Snapshot(Scope::Journey)));
     assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
     let body = format!(
         "generation\tid={EMPTY}\ttotal=0\nresult\tstatus=error\tcode=io\ttext=Snapshot%20could%20not%20be%20read.\tnext=\n"
@@ -1461,7 +1471,7 @@ fact\tscope=journey\tkey=actions\tlabel=Actions\tvalue=none%20in%20this%20sessio
     }
     for c in &all {
         match c {
-            Cmd::Send(Req::Snapshot) | Cmd::ReadLogs => {}
+            Cmd::Send(Req::Snapshot(Scope::Journey)) | Cmd::ReadLogs => {}
             c => panic!("a startup check is never asked {c:?}"),
         }
     }
@@ -1766,7 +1776,7 @@ fn the_keyboard_reaches_every_screen_and_back() {
     press(&mut n, KeyCode::Char('s'));
     let f = frame(&n, 60, 24);
     assert!(
-        f.contains("This machine")
+        f.contains("System Overview")
             && f.contains("MacBookPro18,1")
             && !f.contains("Where it stands"),
         "{f}"
@@ -1795,7 +1805,7 @@ fn help_lists_the_keys_of_the_screen_it_was_opened_from() {
     // In the size field ? is text: the rail first, then help, which lists the
     // field's keys beside the rail's.
     press(&mut p, KeyCode::Char('?'));
-    assert_eq!(p.plan.linux, "?");
+    assert_eq!(p.plan.fields[0].value, "?");
     press(&mut p, KeyCode::Backspace);
     press(&mut p, KeyCode::Left);
     press(&mut p, KeyCode::Char('?'));
@@ -2082,7 +2092,7 @@ fn logs_source_and_lines_are_always_one_generation() {
         assert!(line_with(&f, "ONLY_A").contains("[SURVEY]"), "{f}");
         assert!(line_with(&f, "rows 1").contains(&ga[..12]), "{f}");
         let req = sent(&press(&mut m, KeyCode::Char('r')));
-        assert_eq!(req, Req::Read(Scope::Logs));
+        assert_eq!(req, Req::Snapshot(Scope::Logs));
         let page = sent(&answer(&mut m, req, &logs_snap(&gb, "B.log")));
         assert!(
             bytes(&page).contains(&format!("kind=log\tgeneration={gb}\toffset=0")),
@@ -2156,7 +2166,7 @@ fn health_counts_summarise_only_the_findings_shown() {
             "{f}"
         );
         let req = sent(&press(&mut m, KeyCode::Char('r')));
-        assert_eq!(req, Req::Read(Scope::Health));
+        assert_eq!(req, Req::Snapshot(Scope::Health));
         let page = sent(&answer(&mut m, req, &health_snap(&gb, 21, 4, 2)));
         assert!(bytes(&page).contains(&format!("kind=doctor\tgeneration={gb}\toffset=0")));
         (m, page)
@@ -2385,7 +2395,13 @@ fn every_detail_kinds_open_value_reaches_its_end() {
         1,
         &format!("row\tkind=operation\tkey=path\tcol=Path\tcol={v}\tcol=The%20record%20path.\n"),
     );
-    for kind in Kind::ALL {
+    for kind in [
+        Kind::Machine,
+        Kind::Status,
+        Kind::Doctor,
+        Kind::Log,
+        Kind::Operation,
+    ] {
         for (w, h) in [(60, 20), (100, 30), (120, 40)] {
             let mut m = match kind {
                 Kind::Machine => opened(2, &[&machine]),
@@ -2397,6 +2413,7 @@ fn every_detail_kinds_open_value_reaches_its_end() {
                     answer(&mut m, req, &operation);
                     m
                 }
+                k => unreachable!("{k:?} is not a Gate 2 read"),
             };
             let mut cmds = keys_drawn(&mut m, &[KeyCode::Enter], w, h);
             assert!(frame(&m, w, h).contains(START), "{kind:?} {w}x{h}");
@@ -2453,7 +2470,7 @@ fn a_retained_value_is_read_to_its_end_beside_a_newer_reads_refusal() {
         ),
     );
     let req = sent(&press(&mut m, KeyCode::Char('r')));
-    assert_eq!(req, Req::Read(Scope::Logs));
+    assert_eq!(req, Req::Snapshot(Scope::Logs));
     let page = sent(&answer(&mut m, req, &logs_snap(&gb, "B.log")));
     assert!(bytes(&page).contains(&format!("kind=log\tgeneration={gb}\toffset=0")));
     assert_eq!(requests(&answer(&mut m, page, OVERFLOW)), 0);

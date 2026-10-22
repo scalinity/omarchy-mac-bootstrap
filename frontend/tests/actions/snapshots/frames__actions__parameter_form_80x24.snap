@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Parameters ────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Take the Linux code ─────────────────────────────────────────┐
+│  Welcome     ││   The text flow's own shared.code.                           │
+│  Journey     ││                                                              │
+│  Machine     ││ ❯ code         OMBDONE-1A2B3C4D-8F2A41C0E9B7-F5F0▏           │
+│  Status      ││   a field left empty is not sent: the core answers its       │
+│  Health      ││   default                                                    │
+│  Logs        ││                                                              │
+│  Plan        ││   Sent: code OMBDONE-1A2B3C4D-8F2A41C0E9B7-F5F0              │
+│  Op          ││ ✓ checked                                                    │
+│  Scan        ││                                                              │
+│  Select      ││ ▍As the core reads them                                      │
+│  Items       ││   code  ombdone-1a2b3c4d-8f2a41c0e9b7-f5f0                   │
+│  Review      ││                                                              │
+│  Install     ││ ▍Review basis                                                │
+│  Progress    ││   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb   │
+│              ││   8acb8acb                                                   │
+│              ││   ⏎ Take the Linux code: the core asks this basis again,     │
+│              ││   then runs it.                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ check  Tab next field  esc back                 may act · 1 action · fixture

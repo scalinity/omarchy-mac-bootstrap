@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Selection ─────────────────────────────────────── v0.2.0
+‹ Machine  Status  Health  Logs  Plan  Op  Scan ▍Select ›
+┌ Migration selection ─────────────────────────────────────┐
+│   Items  5 items, 2 selected                             │
+│                                                          │
+│ ❯ Software  ! 1 of 3 · 6.3 MB                            │
+│   Apps        0 of 1 · 0 B                               │
+│   Folders     0 of 1 · 4.0 GB                            │
+│                                                          │
+│   ⏎ opens a category's items; space puts all of them in  │
+│   or out.                                                │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ move  space all in or out  ? help     may act · fixture

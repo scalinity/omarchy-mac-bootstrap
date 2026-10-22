@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Parameters ────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status  Health  Logs  Plan ›
+┌ Take the Linux code ─────────────────────────────────────┐
+│   The text flow's own shared.code.                       │
+│                                                          │
+│ ❯ code         OMBDONE-1A2B3C4D-8F2A41C0E9B7-F5F0▏       │
+│   a field left empty is not sent: the core answers its   │
+│   default                                                │
+│                                                          │
+│   Sent: code OMBDONE-1A2B3C4D-8F2A41C0E9B7-F5F0          │
+│ ✓ checked                                                │
+│                                                          │
+│ ▍As the core reads them                                  │
+│   code  ombdone-1a2b3c4d-8f2a41c0e9b7-f5f0               │
+│                                                          │
+│ ▍Review basis                                            │
+│   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb   │
+│   8acb8acb8acb                                          ↓│
+└──────────────────────────────────────────────────────────┘
+ ⏎ check  Tab next field  esc back        may act · fixture

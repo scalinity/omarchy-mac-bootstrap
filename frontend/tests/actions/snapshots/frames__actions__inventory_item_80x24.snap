@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Inventory ─────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Inventory ───────────────────────────────────────────────────┐
+│  Welcome     ││ ▍Software   Apps   Folders                                   │
+│  Journey     ││ ▍tailscale                                                   │
+│  Machine     ││   Source     cask                                            │
+│  Status      ││   Version    1.88                                            │
+│  Health      ││   Becomes    choose                                          │
+│  Logs        ││   State      decide                                          │
+│  Plan        ││   Class      config                                          │
+│  Op          ││   Why        two ways to bring it                            │
+│  Scan        ││   Size       52 MB                                           │
+│  Select      ││   Evidence   observed                                        │
+│▍ Items       ││   Requested  unknown                                         │
+│  Review      ││                                                              │
+│  Install     ││   ○ Flatpak com.tailscale (a guess)                          │
+│  Progress    ││ ❯ ◉ Leave it on macOS                                        │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ · mas never travels: only means something on macOS
+ ↑↓ choose  ⏎ pick  esc close  r refresh  L logs  ? help      may act · fixture

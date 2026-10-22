@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Welcome ───────────────────────────────────────── v0.2.0
+ ▍Welcome  Journey  Machine  Status  Health  Logs  Plan ›
+┌ Welcome ─────────────────────────────────────────────────┐
+│ ▍Welcome to Omarchy Mac Bootstrap                        │
+│   This session may act: an action runs only when you     │
+│   choose it, and the core checks it again first.         │
+│                                                          │
+│ ▍This machine                                            │
+│   Model      MacBookPro18,2                              │
+│                                                          │
+│ ▍The tool and the core                                   │
+│   Interface  frontend 0.2.0, protocol 1                  │
+│   Core       core 0.2.0, commit 0123456789ab             │
+│   System     macos, arm64, user                          │
+│   Session    act ceiling, fixture                        │
+│   Read       journey generation c0dec0dec0de             │
+│                                                          │
+│ ▍Where the journey stands                               ↓│
+└──────────────────────────────────────────────────────────┘
+ ⏎ the journey  ↑↓ scroll  ? help         may act · fixture

@@ -62,8 +62,7 @@ pub fn fault_lines<'a>(f: &Fault, t: &Theme, width: usize) -> Vec<Line<'a>> {
 fn is_reading(m: &Model, kind: Kind) -> bool {
     m.reading(|r| match r {
         Req::Detail(p) => p.kind == kind,
-        Req::Read(s) => *s == kind.scope(),
-        Req::Snapshot => kind.scope() == Scope::Journey,
+        Req::Snapshot(s) => *s == kind.scope(),
         _ => false,
     })
 }
@@ -198,6 +197,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                     Kind::Status => "The journey's read holds no status lines.",
                     Kind::Doctor => "The doctor reported no findings.",
                     Kind::Operation => "No operation finding was supplied.",
+                    Kind::Items | Kind::Choices | Kind::Review | Kind::Opaque => {
+                        "The core sent no rows."
+                    }
                     Kind::Log => {
                         let said = facts.is_some_and(|s| !s.messages.is_empty());
                         if said {
@@ -457,7 +459,9 @@ fn cells_of(
     let text = t.style(Token::Text);
     let muted = t.style(Token::Muted);
     match kind {
-        Kind::Machine => vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)],
+        Kind::Machine | Kind::Items | Kind::Choices | Kind::Review | Kind::Opaque => {
+            vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)]
+        }
         Kind::Operation => vec![
             (r.col(0).into(), muted, lw),
             (r.col(1).into(), text, 0),
@@ -527,9 +531,9 @@ fn rows(
     }
     let c = cols(d.kind, width);
     let label = |r: &Row| match d.kind {
-        Kind::Machine | Kind::Operation => cells(r.col(0)),
         Kind::Status | Kind::Doctor => cells(r.col(1)),
         Kind::Log => 0,
+        _ => cells(r.col(0)),
     };
     let lw = shown
         .iter()
@@ -578,10 +582,10 @@ fn rows(
         let n = parts.len();
         // The cell that carries the focus: the row's name, or a line's text.
         let focus_at = match d.kind {
-            Kind::Machine | Kind::Operation => 0,
             Kind::Status => usize::from(c.section),
             Kind::Doctor => 1,
             Kind::Log => n - 1,
+            _ => 0,
         };
         for (j, (text, style, w)) in parts.into_iter().enumerate() {
             let rest = width.saturating_sub(used + 2);

@@ -29,7 +29,25 @@ fn short(id: &str) -> &str {
 }
 
 pub fn items(m: &Model) -> Vec<Item<'_>> {
-    let mut v = vec![Item::Heading("This machine")];
+    let mut v = vec![Item::Heading("Welcome to Omarchy Mac Bootstrap")];
+    // What this session may do, from hello's ceiling and the snapshot's
+    // actions (docs/UX.md → *Layout*: the core says it).
+    if let Some(h) = &m.hello {
+        let actions = m.snap.as_ref().map_or(0, |s| s.actions.len());
+        v.push(Item::Text(
+            if h.ceiling == "read" && actions == 0 {
+                "This session is read-only: nothing on this machine changes.".into()
+            } else {
+                format!(
+                    "This session may {}: an action runs only when you choose it, and the core checks it again first.",
+                    h.ceiling
+                )
+            },
+            Token::Muted,
+        ));
+    }
+    v.push(Item::Blank);
+    v.push(Item::Heading("This machine"));
     let facts: Vec<_> = m
         .snap
         .as_ref()
@@ -88,6 +106,17 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             "The core has not said who it is yet.".into(),
             Token::Muted,
         )),
+    }
+    // The frontend's release as the core reads it (`frontend.*`): the
+    // verified version, target and digest, when the core sends them.
+    for f in facts.iter().filter(|f| f.key.starts_with("frontend.")) {
+        v.push(Item::Pair {
+            label: f.label.clone(),
+            value: f.value.clone(),
+            token: Token::Text,
+            state: &f.state,
+            recorded: false,
+        });
     }
     if let Some(g) = m.generation(crate::read::Scope::Journey) {
         v.push(pair("Read", format!("journey generation {}", short(g))));

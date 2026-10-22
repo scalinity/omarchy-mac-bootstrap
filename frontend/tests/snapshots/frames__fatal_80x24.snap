@@ -1,6 +1,5 @@
 ---
 source: tests/frames.rs
-assertion_line: 344
 expression: "text(&render(&m, &t, 80, 24))"
 ---
  ◒ No answer ─────────────────────────────────────────────────────────── v0.2.0
@@ -14,12 +13,12 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Logs        ││                                                              │
 │  Plan        ││                                                              │
 │  Op          ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

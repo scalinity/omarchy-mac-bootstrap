@@ -1,6 +1,5 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
  ◒ Logs ──────────────────────────────────────────────────────────────── v0.2.0
@@ -14,12 +13,12 @@ expression: f
 │▍ Logs        ││   the selected log's last lines, as `logs` shows them        │
 │  Plan        ││ ❯ info   [SURVEY]  reading the disk                          │
 │  Op          ││   warn   [PLAN]    Linux below recommended                   │
-│              ││                    not a log-shaped line                     │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Scan        ││                    not a log-shaped line                     │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

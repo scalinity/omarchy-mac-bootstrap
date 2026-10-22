@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Welcome ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Welcome ─────────────────────────────────────────────────────┐
+│▍ Welcome     ││ ▍Welcome to Omarchy Mac Bootstrap                            │
+│  Journey     ││   This session may act: an action runs only when you         │
+│  Machine     ││   choose it, and the core checks it again first.             │
+│  Status      ││                                                              │
+│  Health      ││ ▍This machine                                                │
+│  Logs        ││   Model      MacBookPro18,2                                  │
+│  Plan        ││                                                              │
+│  Op          ││ ▍The tool and the core                                       │
+│  Scan        ││   Interface  frontend 0.2.0, protocol 1                      │
+│  Select      ││   Core       core 0.2.0, commit 0123456789ab                 │
+│  Items       ││   System     macos, arm64, user                              │
+│  Review      ││   Session    act ceiling, fixture                            │
+│  Install     ││   Read       journey generation c0dec0dec0de                 │
+│  Progress    ││                                                              │
+│              ││ ▍Where the journey stands                                    │
+│              ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│              ││ survey      resolve     asahi       shared      verify       │
+│              ││       profile     plan        omarchy     restore     done   │
+│              ││ No stage is derived yet: every station is later.            ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ the journey  ↑↓ scroll  r refresh  ? help      may act · 3 actions · fixture
