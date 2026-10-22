@@ -210,11 +210,16 @@ for V_SCOPES in journey journey,health,logs disk shared; do
 done
 V_SCOPES=''
 assert_eq "$(sed -n '$p' "$C_EV")" "$(printf 'result\tstatus=refused\tcode=scope\ttext=%s\tnext=' "$(v_enc 'This session does not include the plan scope.')")" 'scope refusal: exact result'
+# A family no module owns reaches no lookup; a module row's family (one
+# without parameters) may look its row up, a read, and is still refused.
 for V_ACTION in test.read shared.create plan.saved plan; do
+  case "$V_ACTION" in shared.create) want_lookups=shared.create ;; *) want_lookups='' ;; esac
   v_run "$(v_l 250GB)" "$(v_s 0)"
   v_route "another select family ($V_ACTION)" refused unavailable
+  assert_eq "$(cat "$T/lookups")" "$want_lookups" "another select family ($V_ACTION): its lookups"
   V_SCOPES=journey v_run "$(v_l 250GB)" "$(v_s 0)"
   v_route "another select family ($V_ACTION) precedes the scope" refused unavailable
+  assert_eq "$(cat "$T/lookups")" "$want_lookups" "another select family ($V_ACTION) without the plan scope: its lookups"
 done
 V_ACTION=''
 assert_eq "$(sed -n '$p' "$C_EV")" "$(printf 'result\tstatus=refused\tcode=unavailable\ttext=%s\tnext=' "$(v_enc 'Validation answers plan.save on macOS, profile.save and export.write.')")" 'unavailable refusal: exact result'
