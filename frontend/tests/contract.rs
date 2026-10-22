@@ -779,6 +779,11 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
         "app.rs",
         "screens/mod.rs",
         "screens/table.rs",
+        "screens/plan.rs",
+        "screens/gate.rs",
+        "screens/install.rs",
+        "screens/migrate.rs",
+        "select.rs",
         "keys.rs",
         "widgets/mod.rs",
     ] {

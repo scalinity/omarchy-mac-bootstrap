@@ -120,17 +120,25 @@ pub fn sections(m: &Model, s: Screen) -> Vec<(usize, Item<'_>)> {
             }
             v.push((2, Item::Blank));
             v.push((2, Item::Heading("After the installer")));
-            if snap.guides.is_empty() {
+            // The boot guide: the core's guides other than its next step,
+            // which the sidebar shows.
+            let boot: Vec<_> = snap
+                .guides
+                .iter()
+                .zip(&snap.guide_ids)
+                .filter(|(_, id)| *id != "next")
+                .map(|(g, _)| g)
+                .collect();
+            if boot.is_empty() {
                 v.push((
                     2,
-                    text("The core gave no guide in this snapshot.", Token::Muted),
+                    text(
+                        "The core gave no boot guide in this snapshot.",
+                        Token::Muted,
+                    ),
                 ));
             }
-            v.extend(
-                snap.guides
-                    .iter()
-                    .map(|g| (2, text(g.clone(), Token::Text))),
-            );
+            v.extend(boot.into_iter().map(|g| (2, text(g.clone(), Token::Text))));
             v.push((3, Item::Blank));
             v.push((3, Item::Heading("Resume token")));
             tokens(snap, &mut v, 3);

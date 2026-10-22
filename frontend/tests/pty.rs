@@ -1520,9 +1520,9 @@ fn pty_gate2_reads_through_the_launcher() {
     ));
     for want in [
         "send Detail(Page { kind: Machine",
-        "send Read(Health)",
+        "send Snapshot(Health)",
         "send Detail(Page { kind: Doctor",
-        "send Read(Logs)",
+        "send Snapshot(Logs)",
         "send Detail(Page { kind: Log",
         "send Validate {",
     ] {
@@ -1545,7 +1545,7 @@ fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
         p.idle();
         let startup = std::fs::read_to_string(p.dir.join("trace")).unwrap();
         let sent: Vec<_> = startup.lines().filter(|l| l.starts_with("send ")).collect();
-        assert_eq!(sent, ["send Hello", "send Snapshot"]);
+        assert_eq!(sent, ["send Hello", "send Snapshot(Journey)"]);
         assert!(!p.dir.join("state").exists());
         p.send(b"\x1b[D");
         for _ in 0..8 {

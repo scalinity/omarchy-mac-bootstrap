@@ -91,6 +91,8 @@ pub struct Snapshot {
     pub generation: String,
     /// The core's guide: the next step, in its own words.
     pub guides: Vec<String>,
+    /// Each guide's id, in the same order (`next` is the next step).
+    pub guide_ids: Vec<String>,
     /// Codes (kind, value), such as the resume token.
     pub codes: Vec<(String, String)>,
     pub warnings: Vec<Blocker>,
@@ -793,7 +795,10 @@ pub fn snapshot_of(records: &[Record]) -> Snapshot {
                 text: text(r, "text"),
                 fix: text(r, "fix"),
             }),
-            "guide" => s.guides.push(text(r, "text")),
+            "guide" => {
+                s.guides.push(text(r, "text"));
+                s.guide_ids.push(text(r, "id"));
+            }
             "code" => s.codes.push((text(r, "kind"), text(r, "value"))),
             "answer" => s.answers.push((text(r, "prompt"), text(r, "value"))),
             "message" => s
@@ -1554,8 +1559,7 @@ fn open_gate(m: &mut Model, t: Target) -> Vec<Cmd> {
 /// holds, so what it shows next is read from the current one.
 fn fresh(m: &mut Model, kind: Kind) {
     let current = m.generation(kind.scope()).map(str::to_string);
-    if m
-        .detail(kind)
+    if m.detail(kind)
         .is_some_and(|d| Some(&d.generation) != current.as_ref() || d.changed)
     {
         m.details[kind.index()] = None;

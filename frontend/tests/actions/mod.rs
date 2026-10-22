@@ -179,7 +179,7 @@ pub fn mac_journey() -> String {
         "answer\tn=1\tprompt=New%20size%20for%20macOS\tvalue=532543MiB\tbytes=558411808768\n",
     );
     s.push_str("answer\tn=2\tprompt=New%20OS%20size\tvalue=244140MiB\tbytes=255999344640\n");
-    s.push_str("guide\tid=next\tstep=1\ttext=After%20the%20shutdown,%20hold%20the%20power%20button%20and%20choose%20Linux.\n");
+    s.push_str("guide\tid=boot\tstep=1\ttext=After%20the%20shutdown,%20hold%20the%20power%20button%20and%20choose%20Linux.\n");
     s.push_str(&format!("code\tkind=token\tvalue={TOKEN}\n"));
     s.push_str(&action("plan.save", "plan", "Save the plan", "", false, ""));
     s.push_str(&action(
