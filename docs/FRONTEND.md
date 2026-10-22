@@ -636,6 +636,14 @@ sequenceDiagram
   a suspend; an action is always submitted with the basis it was shown.
 - **Local work stays local.** Navigation, focus, scrolling, searching and
   filtering loaded data never call the core (docs/DECISIONS.md, D6).
+- **Generic requests.** `Hello`, `Snapshot(scope)`, `Detail(page)`,
+  `Validate{action, args}` and `Execute{action, args, basis, word}`;
+  arguments travel byte for byte as `arg` records. After an execute, the
+  scope the action came from is read again. The person's migration choices
+  travel as one `omb-select 1` document split into `select.1`…`select.14`
+  (docs/MIGRATION.md → *On the wire*; `frontend/src/select.rs`).
+- **Steppers show places, not progress.** Screens 14, 15 and 18 mark only the
+  section in view; what is done is the core's facts.
 
 ## The security boundary
 
