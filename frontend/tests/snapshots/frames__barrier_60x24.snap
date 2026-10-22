@@ -1,11 +1,10 @@
 ---
 source: tests/frames.rs
-assertion_line: 229
 expression: "text(&render(&m, &profile(\"color\"), w, h))"
 ---
  ◒ Journey ───────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
-  Welcome ▍Journey  Machine  Status  Health  Logs  Plan  Op
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Journey ─────────────────────────────────────────────────┐
 │ · · · · · · · · · ·                                      │
 │ No stage is derived yet: every station is later.         │
@@ -22,7 +21,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │   Fixture    mac-m1pro-1tb-roomy                         │
 │   Operation  ✗ test.mutate unsupervised                  │
 │                                                          │
-│ ▍Actions                                                 │
+│ ▍What you can do now                                     │
 │ ❯ Read the fixture (test)   read                         │
 │   Runs the fake read child.                              │
 └──────────────────────────────────────────────────────────┘

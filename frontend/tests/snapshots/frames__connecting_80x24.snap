@@ -1,6 +1,5 @@
 ---
 source: tests/frames.rs
-assertion_line: 285
 expression: "text(&render(&m, &t, 80, 24))"
 ---
  ◒ Connecting ────────────────────────────────────────────────────────── v0.2.0
@@ -14,12 +13,12 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Logs        ││                                                              │
 │  Plan        ││                                                              │
 │  Op          ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

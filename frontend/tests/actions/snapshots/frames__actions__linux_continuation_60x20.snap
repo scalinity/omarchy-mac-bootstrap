@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Install ───────────────────────────────────────── v0.2.0
+‹ Logs  Plan  Op  Scan  Select  Items  Review ▍Install ›
+┌ Linux continuation ──────────────────────────────────────┐
+│ ◆──────────────○──────────────○──────────────○           │
+│ 1 Token        2 Network      3 Omarchy Mac  4 Start     │
+│                                                          │
+│ ▍The plan this system was given                          │
+│   Username     alex · recorded                           │
+│                                                          │
+│ ▍Network                                                 │
+│   The text flow's own network.connect.                   │
+│   n runs Connect to a network; this terminal is the      │
+│   program's until it exits.                              │
+│                                                          │
+│ ▍Omarchy Mac                                             │
+│   The text flow's own omarchy.start.                     │
+│   ✓ Omarchy Mac  malik-na/omarchy-mac at 3f1c, read just │
+│                  now                                    ↓│
+└──────────────────────────────────────────────────────────┘
+ ⏎ continue  ? help                       may act · fixture

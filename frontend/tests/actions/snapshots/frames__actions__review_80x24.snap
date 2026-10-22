@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Review ────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Migration review ────────────────────────────────────────────┐
+│  Welcome     ││   Software      1    6.3 MB  installed with pacman           │
+│  Journey     ││   Apps          0       0 B  nothing comes                   │
+│  Machine     ││                                                              │
+│  Status      ││ ▍What you can do now                                         │
+│  Health      ││ ❯ Save these choices                     act                 │
+│  Logs        ││   Carry the chosen folders               act · type opaque   │
+│  Plan        ││                                                              │
+│  Op          ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│▍ Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ↑↓ move  ⏎ go on  r refresh  L logs  ? help  q quit          may act · fixture

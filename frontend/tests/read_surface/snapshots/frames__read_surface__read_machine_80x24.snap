@@ -1,6 +1,5 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
  ◒ Machine ───────────────────────────────────────────────────────────── v0.2.0
@@ -14,12 +13,12 @@ expression: f
 │  Logs        ││   macOS         14.6                                         │
 │  Plan        ││                                                              │
 │  Op          ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

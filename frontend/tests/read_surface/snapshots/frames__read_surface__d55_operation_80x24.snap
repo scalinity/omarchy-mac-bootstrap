@@ -13,12 +13,12 @@ expression: f
 │  Logs        ││                                                              │
 │  Plan        ││                                                              │
 │▍ Op          ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

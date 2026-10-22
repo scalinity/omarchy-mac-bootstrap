@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Inventory ─────────────────────────────────────── v0.2.0
+‹ Status  Health  Logs  Plan  Op  Scan  Select ▍Items ›
+┌ Inventory ───────────────────────────────────────────────┐
+│ ▍Software   Apps   Folders                               │
+│ ▍tailscale                                               │
+│   Source     cask                                        │
+│   Version    1.88                                        │
+│   Becomes    choose                                      │
+│   State      decide                                      │
+│   Class      config                                      │
+│   Why        two ways to bring it                        │
+│   Size       52 MB                                       │
+│   Evidence   observed                                    │
+│   Requested  unknown                                     │
+│                                                          │
+│   ○ Flatpak com.tailscale (a guess)                      │
+│ ❯ ◉ Leave it on macOS                                    │
+└──────────────────────────────────────────────────────────┘
+ · mas never travels: only means something on macOS
+ ↑↓ choose  ⏎ pick  esc close  ? help     may act · fixture

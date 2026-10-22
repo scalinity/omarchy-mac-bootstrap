@@ -29,6 +29,16 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         ));
         return v;
     };
+    // The station the core says is current, in its words.
+    for (name, _) in s.stages.iter().filter(|(_, st)| st == "current") {
+        v.push(Item::Pair {
+            label: "Current stage".into(),
+            value: name.clone(),
+            token: Token::Accent,
+            state: "info",
+            recorded: false,
+        });
+    }
     if s.guides.is_empty() {
         v.push(Item::Text(
             "The core gave no next step for this session.".into(),
@@ -41,10 +51,11 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     v.extend(s.blockers.iter().map(Item::Blocker));
     v.extend(s.warnings.iter().map(Item::Warning));
     v.extend(s.messages.iter().map(|(l, t)| Item::Message(*l, t)));
+    // A gate's facts are its gate's to show; the machine's, the sidebar's.
     let facts: Vec<_> = s
         .facts
         .iter()
-        .filter(|f| !f.key.starts_with("machine."))
+        .filter(|f| !f.key.starts_with("machine.") && !f.key.starts_with("gate."))
         .collect();
     if !facts.is_empty() {
         v.push(Item::Blank);
@@ -73,7 +84,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         }
     }
     v.push(Item::Blank);
-    v.push(Item::Heading("Actions"));
+    v.push(Item::Heading("What you can do now"));
     if s.actions.is_empty() {
         v.push(Item::Text("Nothing is available now.".into(), Token::Muted));
     }
@@ -103,7 +114,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     } else {
         (area, None)
     };
-    let reading = m.reading(|r| matches!(r, crate::app::Req::Snapshot));
+    let reading = m.reading(|r| *r == crate::app::Req::Snapshot(crate::read::Scope::Journey));
     let title = if reading {
         format!("Journey {} reading", t.g.dot)
     } else {
@@ -120,7 +131,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
         .flatten();
     draw_items(f, inner, &items, m.dash_scroll, focus, m, t);
     if let Some(side) = side {
-        let inner = widgets::panel(f, side, "This machine", t);
+        let inner = widgets::panel(f, side, "System Overview", t);
         f.render_widget(Paragraph::new(machine), inner);
     }
 }

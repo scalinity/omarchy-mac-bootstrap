@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Review ────────────────────────────────────────── v0.2.0
+‹ Health  Logs  Plan  Op  Scan  Select  Items ▍Review ›
+┌ Migration review ────────────────────────────────────────┐
+│   Software      1    6.3 MB  installed with pacman       │
+│   Apps          0       0 B  nothing comes               │
+│                                                          │
+│ ▍What you can do now                                     │
+│ ❯ Save these choices                     act             │
+│   Carry the chosen folders            act · type opaque  │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ move  ⏎ go on  r refresh  ? help      may act · fixture

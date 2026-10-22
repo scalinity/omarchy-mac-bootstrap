@@ -1,6 +1,5 @@
 ---
 source: tests/frames.rs
-assertion_line: 247
 expression: "text(&render(&m, &profile(\"color\"), w, h))"
 ---
  ◒ Journey · Gate ────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
@@ -12,26 +11,26 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
 │                                     M A C   B O O T S T R A P                /______________\                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ This machine ────────────────┐
+┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
 │  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ This session's snapshot      │
 │▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ holds no machine facts.      │
 │  Machine             ││       profile     plan        omarchy     restore     done   │└──────────────────────────────┘
 │  Status              ││ No stage is derived yet: every station is later.             │
 │  Health              ││                                                              │
 │  Logs                ││ ▍Where it stands                                             │
-│  Plan check          ││   The core gave no next step for this session.               │
+│  Plan                ││   The core gave no next step for this session.               │
 │  Operation           ││                                                              │
-│                      ││ ▍Facts                                                       │
-│                 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│                 │ ▍Change the fixture (test)                                                       │
-│                 │                                                                                  │
-│                 │   Does      Runs the fake mutating child under supervision.                      │
-│                 │   Touches   the fixture's test state folder only                                 │
-│                 │   Terminal  not needed: it runs with no terminal                                 │
-│                 │   Next      nothing asks after this                                              │
+│  Scan                ││ ▍Facts                                                       │
+│  Selection           ││   Interface  the foundation: test actions over fixtures      │
+│  Inventory      ┌──────────────────────────────────────────────────────────────────────────────────┐
+│  Review         │ ▍Change the fixture (test)                                                       │
+│  Install        │                                                                                  │
+│  Progress       │   Does        Runs the fake mutating child under supervision.                    │
+│                 │   Terminal    not needed: it runs with no terminal                               │
 │                 │                                                                                  │
 │                 │   Type test to continue    tes▏                                                  │
 │                 └──────────────────────────────────────────────────────────────────────────────────┘
+│                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │

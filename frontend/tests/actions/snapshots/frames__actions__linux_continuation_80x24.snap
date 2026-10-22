@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Install ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Linux continuation ──────────────────────────────────────────┐
+│  Welcome     ││ ◆──────────────○──────────────○──────────────○               │
+│  Journey     ││ 1 Token        2 Network      3 Omarchy Mac  4 Start         │
+│  Machine     ││                                                              │
+│  Status      ││ ▍The plan this system was given                              │
+│  Health      ││   Username     alex · recorded                               │
+│  Logs        ││                                                              │
+│  Plan        ││ ▍Network                                                     │
+│  Op          ││   The text flow's own network.connect.                       │
+│  Scan        ││   n runs Connect to a network; this terminal is the          │
+│  Select      ││   program's until it exits.                                  │
+│  Items       ││                                                              │
+│  Review      ││ ▍Omarchy Mac                                                 │
+│▍ Install     ││   The text flow's own omarchy.start.                         │
+│  Progress    ││   ✓ Omarchy Mac  malik-na/omarchy-mac at 3f1c, read just now │
+│              ││                                                              │
+│              ││ ▍Start                                                       │
+│              ││   ⏎ opens the gate: type start to run Start Omarchy Mac;     │
+│              ││   this terminal is the program's until it exits.             │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ continue  n network, where offered  ? help     may act · 2 actions · fixture

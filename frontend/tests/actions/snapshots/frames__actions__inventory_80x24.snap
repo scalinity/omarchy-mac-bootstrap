@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Inventory ─────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Inventory ───────────────────────────────────────────────────┐
+│  Welcome     ││ ▍Software   Apps   Folders                                   │
+│  Journey     ││ ❯ ◌ tailscale        choose                           decide │
+│  Machine     ││   ◉ ripgrep          pacman ripgrep                          │
+│  Status      ││   – mas              macOS only                        never │
+│  Health      ││                                                              │
+│  Logs        ││                                                              │
+│  Plan        ││                                                              │
+│  Op          ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│▍ Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││ rows 1–5 of 5 · 3 in this category                           │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ space include  ⏎ details  f category  r refresh  ? help      may act · fixture

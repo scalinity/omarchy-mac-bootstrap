@@ -11,6 +11,7 @@ pub mod keys;
 pub mod read;
 pub mod record;
 pub mod screens;
+pub mod select;
 pub mod terminal;
 pub mod theme;
 pub mod widgets;

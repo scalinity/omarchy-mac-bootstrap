@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Scan ──────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Environment scan ────────────────────────────────────────────┐
+│  Welcome     ││   State         scanned                                      │
+│  Journey     ││   Items         5 items, 2 selected                          │
+│  Machine     ││                                                              │
+│  Status      ││ ▍Sources                                                     │
+│  Health      ││   ✓ Homebrew      done · 3 items                             │
+│  Logs        ││   ! Applications  partial · 1 items                          │
+│  Plan        ││   ✗ Git and SSH   denied · 0 items                           │
+│  Op          ││                                                              │
+│▍ Scan        ││ ▍Reading now                                                 │
+│  Select      ││   homebrew      1 of 3                                       │
+│  Items       ││   apps          reading now 2 of 3                           │
+│  Review      ││                                                              │
+│  Install     ││   ⏎ Scan this Mac                                            │
+│  Progress    ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+                                                          Scan this Mac  2 of 3
+ ⏎ scan  ↑↓ scroll  r refresh  L logs  ? help  q quit         may act · fixture

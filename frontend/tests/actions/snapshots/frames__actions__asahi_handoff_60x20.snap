@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Install ───────────────────────────────────────── v0.2.0
+‹ Logs  Plan  Op  Scan  Select  Items  Review ▍Install ›
+┌ Asahi handoff ───────────────────────────────────────────┐
+│ ◆──────────○──────────○──────────○                       │
+│ 1 Check    2 Answers  3 Boot     4 Token                 │
+│                                                          │
+│ ▍Before the installer                                    │
+│   The text flow's own asahi.launch.                      │
+│   ✓ Installer           https://alx.sh read just now,    │
+│                         SHA-256 9e37 79b9                │
+│   ! Backup              not confirmed: the installer     │
+│                         asks you to confirm it           │
+│                                                          │
+│ ▍What the installer asks                                 │
+│   New size for macOS  you type 532543MiB                 │
+│   New OS size         you type 244140MiB                 │
+│                                                          │
+│ ▍After the installer                                    ↓│
+└──────────────────────────────────────────────────────────┘
+ ⏎ continue  ? help                       may act · fixture

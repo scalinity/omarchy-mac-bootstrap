@@ -1,6 +1,5 @@
 ---
 source: tests/frames.rs
-assertion_line: 229
 expression: "text(&render(&m, &profile(\"color\"), w, h))"
 ---
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
@@ -14,16 +13,16 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   The core gave no next step for this session.               │
 │  Op          ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
-│              ││              process it started may still be running.        │
-│              ││              Restart this Mac (or this Linux system), then   │
-│              ││              run the tool again.                             │
-│              ││                                                              │
-│              ││ ▍Facts                                                       │
-│              ││   Interface  the foundation: test actions over fixtures      │
+│  Scan        ││              process it started may still be running.        │
+│  Select      ││              Restart this Mac (or this Linux system), then   │
+│  Items       ││              run the tool again.                             │
+│  Review      ││                                                              │
+│  Install     ││ ▍Facts                                                       │
+│  Progress    ││   Interface  the foundation: test actions over fixtures      │
 │              ││   Fixture    mac-m1pro-1tb-roomy                             │
 │              ││   Operation  ✗ test.mutate unsupervised                      │
 │              ││                                                              │
-│              ││ ▍Actions                                                     │
+│              ││ ▍What you can do now                                         │
 │              ││ ❯ Read the fixture (test)   read                            ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  r refresh  L logs  ? help      may act · 1 action · fixture

@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Inventory ─────────────────────────────────────── v0.2.0
+‹ Status  Health  Logs  Plan  Op  Scan  Select ▍Items ›
+┌ Inventory ───────────────────────────────────────────────┐
+│ ▍Software   Apps   Folders                               │
+│ ❯ ◌ tailscale       choose                        decide │
+│   ◉ ripgrep         pacman ripgrep                       │
+│   – mas             macOS only                     never │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│ rows 1–5 of 5 · 3 in this category                       │
+└──────────────────────────────────────────────────────────┘
+ space include  ⏎ details  ? help         may act · fixture

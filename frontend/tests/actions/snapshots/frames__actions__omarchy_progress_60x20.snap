@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Progress ──────────────────────────────────────── v0.2.0
+‹ Op  Scan  Select  Items  Review  Install ▍Progress
+┌ Omarchy progress ────────────────────────────────────────┐
+│ ○──────────────○──────────────○──────────────○           │
+│ 1 Token        2 Network      3 Omarchy Mac  4 Start     │
+│                                                          │
+│ ▍Omarchy Mac's setup                                     │
+│   Omarchy Mac's setup runs on tty1 (Ctrl+Alt+F1) and     │
+│   keeps no log of its own; this page shows what the      │
+│   machine shows. r reads it again.                       │
+│   · Setup marker  absent                                 │
+│   ! Setup unit    activating                             │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ✓ network.connect: done
+ ↑↓ scroll  r refresh  L logs  ? help     may act · fixture

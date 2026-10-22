@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Install · Gate ────────────────────────────────── v0.2.0
+‹ Logs  Plan  Op  Scan  Select  Items  Review ▍Install ›
+ ▍Launch the Asahi installer
+
+   Does         The text flow's own asahi.launch.
+   Installer  ✓ https://alx.sh read just now, SHA-256 9e37
+                79b9
+   Backup     ! not confirmed: the installer asks you to
+                confirm it
+   Terminal     the program owns it until it exits; this
+                interface steps aside
+
+   Type yes to continue    ▏
+
+
+
+
+
+
+ ⏎ continue (exact word)  esc cancel      may act · fixture

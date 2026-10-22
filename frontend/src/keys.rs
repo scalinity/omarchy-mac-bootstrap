@@ -23,8 +23,26 @@ pub enum Place {
     Value,
     /// The core's diagnostics.
     Diagnostics,
-    /// The plan check's size fields.
+    /// The planner's fields.
     Plan,
+    /// Another action's parameters.
+    Form,
+    /// The Asahi handoff, the Linux continuation.
+    Install,
+    /// Omarchy Mac's progress.
+    Progress,
+    /// Shared creation.
+    Shared,
+    /// The environment scan.
+    Scan,
+    /// The migration selection's categories.
+    Selection,
+    /// The inventory's list.
+    Inventory,
+    /// An item's choices, open in the inventory.
+    Item,
+    /// The Migration Review and the profile's actions.
+    Review,
     Gate,
     Help,
     Connecting,
@@ -109,6 +127,13 @@ pub static KEYMAP: &[Binding] = &[
     b(Place::Diagnostics, "↑↓", "up/down", "scroll", 1),
     b(Place::Diagnostics, "Tab", "Tab", "the tool's log", 2),
     b(Place::Plan, "⏎", "enter", "check", 1),
+    b(
+        Place::Plan,
+        "⏎ again",
+        "enter again",
+        "save a review the core answered, where it offers plan.save",
+        0,
+    ),
     b(Place::Plan, "Tab", "Tab", "next field", 2),
     b(Place::Plan, "esc", "esc", "back", 3),
     b(
@@ -116,6 +141,13 @@ pub static KEYMAP: &[Binding] = &[
         "the size",
         "the size",
         "type it, as 250GB, 1.5TB or 30%",
+        0,
+    ),
+    b(
+        Place::Plan,
+        "space",
+        "space",
+        "the next choice, in a choice",
         0,
     ),
     b(Place::Plan, "Ctrl-U", "Ctrl-U", "clear", 0),
@@ -126,6 +158,61 @@ pub static KEYMAP: &[Binding] = &[
         "scroll the answer",
         0,
     ),
+    b(Place::Form, "⏎", "enter", "check", 1),
+    b(
+        Place::Form,
+        "⏎ again",
+        "enter again",
+        "go on with a review the core answered",
+        0,
+    ),
+    b(Place::Form, "Tab", "Tab", "next field", 2),
+    b(Place::Form, "esc", "esc", "back", 3),
+    b(Place::Form, "the value", "the value", "type it", 0),
+    b(
+        Place::Form,
+        "space",
+        "space",
+        "the next choice, in a choice",
+        0,
+    ),
+    b(Place::Form, "Ctrl-U", "Ctrl-U", "clear", 0),
+    b(
+        Place::Form,
+        "PgUp PgDn",
+        "PgUp PgDn",
+        "scroll the answer",
+        0,
+    ),
+    b(Place::Install, "⏎", "enter", "continue", 1),
+    b(Place::Install, "n", "n", "network, where offered", 2),
+    b(Place::Install, "↑↓", "up/down", "scroll", 0),
+    b(Place::Install, "PgUp PgDn", "PgUp PgDn", "scroll a page", 0),
+    b(Place::Progress, "↑↓", "up/down", "scroll", 1),
+    b(Place::Shared, "⏎", "enter", "continue", 1),
+    b(Place::Shared, "↑↓", "up/down", "scroll", 2),
+    b(Place::Scan, "⏎", "enter", "scan", 1),
+    b(Place::Scan, "↑↓", "up/down", "scroll", 2),
+    b(Place::Selection, "↑↓", "up/down", "move", 1),
+    b(Place::Selection, "space", "space", "all in or out", 2),
+    b(Place::Selection, "⏎", "enter", "its items", 3),
+    b(Place::Inventory, "space", "space", "include", 1),
+    b(Place::Inventory, "⏎", "enter", "details", 2),
+    b(Place::Inventory, "f", "f", "category", 3),
+    b(Place::Inventory, "/", "/", "filter", 4),
+    b(Place::Inventory, "↑↓", "up/down", "move", 0),
+    b(
+        Place::Inventory,
+        "PgUp PgDn",
+        "PgUp PgDn",
+        "a page; past the rows read, the next page",
+        0,
+    ),
+    b(Place::Item, "↑↓", "up/down", "choose", 1),
+    b(Place::Item, "⏎", "enter", "pick", 2),
+    b(Place::Item, "esc", "esc", "close", 3),
+    b(Place::Review, "↑↓", "up/down", "move", 1),
+    b(Place::Review, "⏎", "enter", "go on", 2),
     b(Place::Gate, "the word", "the word", "type it exactly", 0),
     b(Place::Gate, "⏎", "enter", "continue (exact word)", 1),
     b(Place::Gate, "Ctrl-U", "Ctrl-U", "clear", 0),
@@ -182,9 +269,17 @@ pub fn place(screen: Screen, region: Region, logs: LogsTab) -> Place {
         Screen::Dashboard => Place::Dashboard,
         Screen::Welcome => Place::Welcome,
         Screen::Plan => Place::Plan,
+        Screen::Form => Place::Form,
         Screen::Logs if logs == LogsTab::Diagnostics => Place::Diagnostics,
         Screen::Logs => Place::Logs,
         Screen::Machine | Screen::Status | Screen::Health | Screen::Operation => Place::Table,
+        Screen::Install => Place::Install,
+        Screen::Progress => Place::Progress,
+        Screen::Shared => Place::Shared,
+        Screen::Scan => Place::Scan,
+        Screen::Selection => Place::Selection,
+        Screen::Inventory => Place::Inventory,
+        Screen::Review => Place::Review,
     }
 }
 
@@ -193,7 +288,7 @@ pub fn place(screen: Screen, region: Region, logs: LogsTab) -> Place {
 fn frame_keys(place: Place) -> bool {
     !matches!(
         place,
-        Place::Plan | Place::Gate | Place::Help | Place::Connecting | Place::Fatal
+        Place::Plan | Place::Form | Place::Gate | Place::Help | Place::Connecting | Place::Fatal
     )
 }
 
@@ -263,7 +358,7 @@ pub fn help(place: Place, unicode: bool) -> Vec<(&'static str, &'static str)> {
 mod tests {
     use super::*;
 
-    const ALL: [Place; 12] = [
+    const ALL: [Place; 21] = [
         Place::Dashboard,
         Place::Welcome,
         Place::Nav,
@@ -272,6 +367,15 @@ mod tests {
         Place::Value,
         Place::Diagnostics,
         Place::Plan,
+        Place::Form,
+        Place::Install,
+        Place::Progress,
+        Place::Shared,
+        Place::Scan,
+        Place::Selection,
+        Place::Inventory,
+        Place::Item,
+        Place::Review,
         Place::Gate,
         Place::Help,
         Place::Connecting,
@@ -306,7 +410,7 @@ mod tests {
     /// field would take as text.
     #[test]
     fn fields_offer_no_letters() {
-        for place in [Place::Plan, Place::Gate] {
+        for place in [Place::Plan, Place::Form, Place::Gate] {
             for (k, _) in hints(place, true, 9).into_iter().chain(help(place, true)) {
                 assert!(
                     !(k.chars().count() == 1
