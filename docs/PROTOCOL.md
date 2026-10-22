@@ -1013,12 +1013,12 @@ after an append begins leaves an incomplete transport, without a second result.
 
 ### Future plan validation contract
 
-`validate select action=plan.save` belongs to scope `plan`, and the
-ordinary fixture-only Validate producer (`lib/validate.sh`) answers it.
-This section is how it judges the plan's two sizes, `shared_size` and
-`linux_size`; *plan.save* names the other inputs and the save. It answers
-only in ordinary macOS fixtures. Wrong platform/family/non-fixture is
-`refused unavailable`; a session without plan scope is `refused scope`.
+`validate select action=plan.save` belongs to scope `plan`, and
+`lib/validate.sh` answers it, on a real Mac and over a fixture alike. This
+section is how it judges the plan's two sizes, `shared_size` and
+`linux_size`; *plan.save* names the other inputs and the save. Wrong
+platform or family is `refused unavailable`; a session without plan scope
+is `refused scope`.
 Validation advertises no action, saves no state, runs no installer or
 `sudo`, takes no run lock and makes no operation record: a review is not
 execute authority.
@@ -1095,11 +1095,12 @@ they drift on a live Mac and would refuse every save. Device identifiers
 are not bound: macOS may renumber them.
 
 **The Validate implementation.** `core_read_op` answers `validate` in this
-order: a `select` naming anything but `plan.save`, a platform other than
-macOS, or a session outside fixture mode is `refused unavailable` (`Plan
-validation answers only plan.save, in macOS fixtures.`); then a session
-without `plan` is `refused scope` (`This session does not include the plan
-scope.`). The `select` value is kept apart from `execute`'s action. No action
+order: `profile.save` and `export.write` go to their modules, and any other
+row with parameters to its own `CA_FN_validate` (*The action table*); a
+`select` naming anything else but `plan.save`, or a platform other than
+macOS, is `refused unavailable` (`Validation answers plan.save on macOS,
+profile.save and export.write.`); then a session without `plan` is
+`refused scope` (`This session does not include the plan scope.`). The `select` value is kept apart from `execute`'s action. No action
 lookup, run lock, operation record or execute path is reached. The
 startup-check session and the foundation harness keep their own refusals.
 
@@ -1517,13 +1518,13 @@ profile's in `lib/migrate_profile.sh` (`prof_row`), export's in
 | `plan.save` | `plan` | macOS | managed | — | the eleven inputs (*plan.save*) |
 | `asahi.launch` | `asahi` | macOS | handoff | `yes` (`experimental` first on an experimental Mac) | — |
 | `shared.code` | `shared` | both | managed | — | `code`: the other system's code (`ombdone` on macOS, `ombshare` on Linux) |
-| `shared.create` | `shared` | macOS | handoff | `yes` | — |
+| `shared.create` | `shared` | macOS | handoff | `yes` (none when it only records a Shared partition already on the disk) | — |
 | `network.connect` | `network` | Linux | handoff | — | — |
 | `omarchy.start` | `omarchy` | Linux | handoff | `start` | — |
 | `omarchy.resume` | `omarchy` | Linux | handoff | `resume` | — |
 | `shared.activate` | `shared` | Linux | handoff | `mount` | — |
 | `shared.test` | `shared` | Linux | handoff | `test` | — |
-| `dev` | `dev` | Linux | handoff | — | — |
+| `dev` | `omarchy` | Linux | handoff | — | — |
 | `profile.scan` | `profile` | macOS | managed | — | — |
 | `profile.save` | `profile` | macOS | managed | — | `select.1` … `select.14` (docs/MIGRATION.md → *On the wire*) |
 | `profile.opaque` | `profile` | macOS | managed | `opaque` | — |
@@ -1552,6 +1553,12 @@ prefix of its five functions:
 - `CA_FN_judge` — on a fresh read, `CORE_FINDING`: `completed`,
   `no-effect` (proven), `absent` or `unexpected`, with `CORE_JUDGE_TEXT`;
   called with the run's status, or `reconcile` after a new boot.
+- `CA_FN_records` (optional) — the `region`, `answer` and `guide` records
+  the row's page shows beside its gate: the disk's regions for `plan.save`
+  and `shared.create`, the installer's answers and the boot guide
+  (`guide id=boot`) for `asahi.launch`.
+- `CA_FN_validate` (optional) — the review of a row with parameters other
+  than `plan.save`: `normal` and `review` records, or `invalid` ones.
 
 The journey snapshot lists the installer's rows the fresh read offers now,
 with their gate facts, parameters, and a fact and blocker for each of their
@@ -1566,7 +1573,12 @@ Managed, scope `plan`, no interface word, not cancellable (D56).
   `shared_size`, `linux_size`, `enc`, `user`, `host`, `kmap`, `tz`, `loc`,
   `ssh`, `gh` and `dev`, each judged by its owner in the text flow: the
   sizes as *Future plan validation contract* says, every other choice by
-  `cfg_field_ok`. It answers the layout, the installer's answers and a
+  its own validator. The sizes are required; an omitted choice takes the
+  text flow's default — the saved choice, then what the survey suggests —
+  and every input comes back as a `normal` record, so the frontend shows
+  the defaults. A choice that is "none" is written `-` (an empty value
+  cannot travel); execute turns it back into an empty choice. A choice
+  whose default fails its own check is `invalid` `required`. It answers the layout, the installer's answers and a
   basis over the normalised inputs, every partition's GUID, offset and
   size, and the computed plan. Free space, the resize limit and the floor
   are checked again at execute, never bound into the basis.
