@@ -397,7 +397,7 @@ _bndl_field() {
 _bndl_extract() {
   local n=$1 item=$2 class=$3 out=$BNDL_X/$1 line t src kind whole=0 id
   BNDL_WHY=""
-  for t in dir file link setting macpath skip obj ent; do : >"$BNDL_W/i.$t" || return 1; done
+  for t in dir file link setting macpath skip obj ent text; do : >"$BNDL_W/i.$t" || return 1; done
   mkdir -p "$out" || return 1
   _rec_dec_into id "$item"
   scan_extract "$id" "$out" || return 2
@@ -491,9 +491,33 @@ _bndl_extract() {
         _bndl_rec "$BNDL_W/i.skip" skip "$item" reason "$BNDL_V"
         ;;
     esac
+    _bndl_text "$line" || return 1
   done <"$out/carry"
+  # Every value the item's records would write — destinations, link text,
+  # macOS paths, setting names, reasons — is scanned too.
+  SCAN_HIT=""
+  if ! scan_secret_check "$BNDL_W/i.text"; then
+    kind=${SCAN_HIT//[!a-z0-9-]/}
+    BNDL_WHY="a credential shape (${kind:-unknown}) in what its records name"
+    return 1
+  fi
   BNDL_WHOLE=$whole
   return 0
+}
+
+# _bndl_text LINE — append LINE's decoded values, but a capture's place in
+# the scratch folder, to $BNDL_W/i.text.
+_bndl_text() {
+  local f IFS='	'
+  set -f
+  # shellcheck disable=SC2086 # split on TAB on purpose; globbing is off
+  set -- ${1#*	}
+  set +f
+  for f in "$@"; do
+    case "$f" in src=*) continue ;; esac
+    _rec_dec_into BNDL_V "${f#*=}"
+    printf '%s\n' "$BNDL_V" >>"$BNDL_W/i.text" || return 1
+  done
 }
 
 # _bndl_selected — BNDL_SELECTED: the bytes the profile records for its

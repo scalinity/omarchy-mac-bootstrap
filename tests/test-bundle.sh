@@ -90,6 +90,7 @@ mkfix() {
     item rclone brew-formula config
     item leaky file config
     item leaky-mcp mcp config
+    item leaky-path file config
     item sshkey file secret
     item enckey file secret
     item plainkey file secret
@@ -114,6 +115,11 @@ mkfix() {
   rec_line file dest .config/leaky/conf src f/conf mode 644 whole 1 | carry "$f" 3 leaky
   printf 'api_key = "%s"\n' "$PLANT_KEY" >"$f/scan/x/3/f/conf"
   rec_line setting kind mcp tool claude name github value "{\"env\":{\"TOKEN\":\"$PLANT_TOKEN\"}}" | carry "$f" 4 leaky-mcp
+  {
+    rec_line file dest .config/clean/conf src f/conf mode 644 whole 1
+    rec_line macpath dest .config/clean/conf path "/Users/alex/$PLANT_KEY/notes"
+  } | carry "$f" 11 leaky-path
+  printf 'clean = true\n' >"$f/scan/x/11/f/conf"
   rec_line file dest .ssh/id_ed25519 src f/key mode 600 whole 1 | carry "$f" 5 sshkey
   printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nPLANTEDKEYMATERIAL\n-----END OPENSSH PRIVATE KEY-----\n' >"$f/scan/x/5/f/key"
   rec_line file dest .ssh/id_enc src f/key mode 600 whole 1 | carry "$f" 9 enckey
@@ -217,6 +223,8 @@ assert_contains "$(blines "$M" item | grep 'id=enckey')" "class=secret" "marked 
 skips=$(blines "$M" skip)
 assert_contains "$skips" "item=leaky	reason=left%20behind:%20a%20credential%20shape%20%28anthropic-key%29" "secret-export-left-behind: a capture that fails the scan leaves its item behind, by kind"
 assert_contains "$skips" "item=leaky-mcp	reason=left%20behind:%20a%20credential%20shape%20%28github-token%29%20in%20a%20setting" "and a setting that does"
+assert_contains "$skips" "item=leaky-path	reason=left%20behind:%20a%20credential%20shape%20%28anthropic-key%29%20in%20what%20its%20records%20name" \
+  "and an item whose records would name one (a macOS path here)"
 assert_contains "$skips" "item=sshkey	reason=secret:" "a secret never travels without its typed carry"
 assert_contains "$skips" "item=plainkey	reason=left%20behind:%20the%20key" "a key whose captured bytes are not encrypted stays behind, carry or not"
 assert_contains "$skips" "item=gone	reason=gone:" "an item no longer on this Mac is reported and left out"
