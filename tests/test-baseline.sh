@@ -65,14 +65,25 @@ run_one() {
   touch "$d/record" "$d/shims.log"
 }
 
+# spin_out FILE — the transcript with each spinner's frames, however many a
+# run's timing drew before its line was cleared, as one SPIN[label] (once,
+# one extra "Checking GitHub" frame failed run 38146161907). Nothing else in
+# it changes.
+spin_out() {
+  # shellcheck disable=SC2016 # Perl source: perl expands its own variables
+  LC_ALL=C perl -CSD -pe 'BEGIN { $c = qr/(?:\e\[[0-9;]*m)*/; $g = qr/[\x{280B}\x{2819}\x{2839}\x{2838}\x{283C}\x{2834}\x{2826}\x{2827}\x{2807}\x{280F}|\/\-\\]/ }
+    s/(?:   $c$g$c $c([^\e\n]*?)$c)+(?=\e\[2K)/SPIN[$1]/g' "$1"
+}
+
 # normal TREE DIR — everything a run left, with only its per-run values
-# replaced: the run's folder, the tree's own path, times, suffixes and PIDs.
+# replaced: the run's folder, the tree's own path, times, suffixes and PIDs;
+# the transcript's spinner frames are one marker each (spin_out).
 normal() {
   local tree=$1 d=$2 f
   {
     echo "== rc $(cat "$d/rc")"
     echo "== out"
-    cat "$d/out"
+    spin_out "$d/out"
     echo "== record"
     cat "$d/record"
     echo "== shims"
@@ -145,9 +156,22 @@ N=$((N + 1))
 run_one "$REPO" "$T/runs/cand-$N" "" "" --help
 help_row='     frontend-check       check that the interface starts: downloads it once, changes nothing else'
 op_row="     operation SCOPE      what a scope's operation record shows and what stays unknown (read-only)"
+# Phase A's rows: operation clear and the migration's commands, each a named
+# delta (docs/TESTING.md → *Equivalence with the accepted baseline*).
+new_rows=$(printf '%s\n' \
+  "     operation clear SCOPE move an operation record that cannot be read aside, after typed clear" \
+  "     scan                 macOS: what this Mac holds that could come to Linux (read-only)" \
+  "     profile [show]       macOS: choose what comes to Linux and save it; show prints it (read-only)" \
+  "     export [DIR]         macOS: write the chosen environment to Shared or DIR")
 assert_eq "$(grep -cxF -- "$help_row" "$T/runs/cand-$N/out")" 1 "--help lists frontend-check with its one line"
 assert_eq "$(grep -cxF -- "$op_row" "$T/runs/cand-$N/out")" 1 "--help lists operation SCOPE with its one line"
-grep -vxF -e "$help_row" -e "$op_row" "$T/runs/cand-$N/out" >"$T/runs/cand-$N/out.less"
+while IFS= read -r row; do
+  assert_eq "$(grep -cxF -- "$row" "$T/runs/cand-$N/out")" 1 "--help lists [${row#     }] with its one line"
+done <<EOF_ROWS
+$new_rows
+EOF_ROWS
+printf '%s\n' "$help_row" "$op_row" "$new_rows" >"$T/runs/cand-$N/rows"
+grep -vxF -f "$T/runs/cand-$N/rows" "$T/runs/cand-$N/out" >"$T/runs/cand-$N/out.less"
 for tree in base pre; do
   run_one "$T/$tree" "$T/runs/$tree-$N" "" "" --help
   cmp -s "$T/runs/$tree-$N/out" "$T/runs/cand-$N/out.less" && [ "$(cat "$T/runs/$tree-$N/rc")" = "$(cat "$T/runs/cand-$N/rc")" ] && ok ||
@@ -158,8 +182,17 @@ same "an unknown flag" "" "" --frobnicate
 same "an unknown command" linux-alarm-fresh "" frobnicate
 # The commands of SPEC.md → Commands not built yet stay unknown commands, as
 # before; none became reachable through frontend-check.
-for c in scan profile export restore rescue debug qualify report; do
+for c in restore rescue debug qualify report; do
   same "$c (not built yet)" linux-alarm-fresh "" "$c"
+done
+# The migration's commands are macOS's: on Linux each refuses, changing
+# nothing (a named delta: the baseline knew none of them).
+for c in scan profile export; do
+  N=$((N + 1))
+  run_one "$REPO" "$T/runs/cand-$N" linux-alarm-fresh "" "$c"
+  assert_eq "$(cat "$T/runs/cand-$N/rc")" 1 "$c on Linux refuses"
+  assert_contains "$(cat "$T/runs/cand-$N/out")" "runs on macOS" "$c on Linux says where it runs"
+  assert_eq "$(cat "$T/runs/cand-$N/record")" "" "$c on Linux runs nothing"
 done
 same "sources" "" "" sources
 same "a malformed OMB_DRY_RUN" linux-alarm-fresh "" status --dry-run=2

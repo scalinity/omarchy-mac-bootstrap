@@ -107,6 +107,10 @@ usage() {
   _help_row "sources [--check]" "upstream URLs and versions; --check compares live (read-only)"
   _help_row "logs" "log location and recent entries (read-only)"
   _help_row "operation SCOPE" "what a scope's operation record shows and what stays unknown (read-only)"
+  _help_row "operation clear SCOPE" "move an operation record that cannot be read aside, after typed clear"
+  _help_row "scan" "macOS: what this Mac holds that could come to Linux (read-only)"
+  _help_row "profile [show]" "macOS: choose what comes to Linux and save it; show prints it (read-only)"
+  _help_row "export [DIR]" "macOS: write the chosen environment to Shared or DIR"
   _help_row "frontend-check" "check that the interface starts: downloads it once, changes nothing else"
   ui_section "Flags"
   _help_row "--dry-run" "show every step; change nothing, keep nothing"
@@ -139,7 +143,7 @@ on_interrupt() {
 }
 
 main() {
-  local cmd="" arg scope=""
+  local cmd="" arg scope="" op_clear=""
   local -a rest=()
   for arg in "$@"; do
     case "$arg" in
@@ -231,6 +235,11 @@ main() {
       # (docs/PROTOCOL.md → *The text interface*): no path is built from
       # anything else.
       [ "${#rest[@]}" = 1 ] && scope=${rest[0]}
+      # operation clear SCOPE (docs/PROTOCOL.md → *An operation record that
+      # cannot be read*): the same one scope name, after the word clear.
+      if [ "${#rest[@]}" = 2 ] && [ "${rest[0]}" = clear ]; then
+        scope=${rest[1]} op_clear=1
+      fi
       case "$scope" in
         journey | disk | plan | profile | resolve | asahi | network | omarchy | shared | export | restore | rescue | qualify | debug | health | logs) ;;
         *) _usage_error "operation takes one scope: journey, disk, plan, profile, resolve, asahi, network, omarchy, shared, export, restore, rescue, qualify, debug, health, logs" ; return 2 ;;
@@ -269,7 +278,10 @@ main() {
   # an action by the machine's state (run and fetch_upstream enforce it).
   OMB_CMD=${cmd:-default}
   case "$cmd" in
-    status | doctor | sources | logs | operation | scan) OMB_INTENT=read OMB_PERSIST=0 ;;
+    operation)
+      if [ -n "$op_clear" ]; then OMB_INTENT=act; else OMB_INTENT=read OMB_PERSIST=0; fi
+      ;;
+    status | doctor | sources | logs | scan) OMB_INTENT=read OMB_PERSIST=0 ;;
     profile)
       if [ "${rest[0]:-}" = show ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
       ;;
@@ -283,29 +295,30 @@ main() {
 
   platform_init
   state_init || return 1
-  # The frontend (docs/FRONTEND.md → When the frontend runs). No installer
-  # flow is exposed through the protocol yet, so the only flow it can finish
-  # is the foundation's own, over a fixture: the default run there, on a
-  # terminal. Everything else — and every frontend failure — is the text
-  # interface below. The frontend's session takes no lock of its own: each
-  # core request takes the run lock itself.
-  if [ -z "$cmd" ] && [ -n "${OMB_FIXTURE:-}" ] && [ -z "${OMB_NO_TUI:-}" ] &&
-    [ -t 0 ] && [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
+  # The frontend (docs/FRONTEND.md → When the frontend runs), for an
+  # interactive command on a terminal: over a fixture always, and on a real
+  # machine once the lock pins a release that runs the core's actions.
+  # Everything else — and every frontend failure — is the text interface
+  # below. The frontend's session takes no lock of its own: each core
+  # request takes the run lock itself.
+  if [ -z "${OMB_NO_TUI:-}" ] && [ -t 0 ] && [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
     # shellcheck source=lib/records.sh
     . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
     # shellcheck source=lib/core.sh
     . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
     # shellcheck source=lib/frontend.sh
     . "$OMB_HOME/lib/frontend.sh" || _omb_unloaded frontend
-    # The per-run scratch goes when the session ends; the text interface,
-    # if the frontend falls back, sets its own exit handling below.
-    trap omb_cleanup EXIT
-    if [ "$OMB_DRY_RUN" = 1 ]; then fe_run dry-run "$FE_ALL_SCOPES"; else fe_run act "$FE_ALL_SCOPES"; fi
-    case $? in
-      0) return 0 ;;
-      10) ;;
-      *) return 1 ;;
-    esac
+    if fe_session_for "$cmd" "${rest[*]:-}" && { [ -n "${OMB_FIXTURE:-}" ] || fe_releases_actions; }; then
+      # The per-run scratch goes when the session ends; the text interface,
+      # if the frontend falls back, sets its own exit handling below.
+      trap omb_cleanup EXIT
+      if [ "$OMB_DRY_RUN" = 1 ]; then fe_run dry-run "$FE_SCOPES"; else fe_run "$FE_INTENT" "$FE_SCOPES"; fi
+      case $? in
+        0) return 0 ;;
+        10) ;;
+        *) return 1 ;;
+      esac
+    fi
   fi
   trap on_interrupt INT TERM
   trap 'ui_cursor_restore; omb_cleanup' EXIT
@@ -329,7 +342,7 @@ main() {
       . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
       # shellcheck source=lib/operation.sh
       . "$OMB_HOME/lib/operation.sh" || _omb_unloaded operation
-      cmd_operation "$scope"
+      if [ -n "$op_clear" ]; then op_clear "$scope"; else cmd_operation "$scope"; fi
       return
       ;;
     doctor) cmd_doctor ; return ;;

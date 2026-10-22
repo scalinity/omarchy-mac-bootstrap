@@ -77,6 +77,34 @@ fe_lock_read() {
   fi
 }
 
+# The first release whose frontend runs the core's actions (docs/FRONTEND.md
+# → *When the frontend runs*): a lock that pins an older one keeps every
+# command in text on a real machine, so no command opens a frontend that
+# cannot finish it.
+FE_ACTIONS_VERSION=0.2.0
+
+# fe_session_for COMMAND ARGS — FE_SCOPES and FE_INTENT for an interactive
+# command the frontend runs; 1 for a command that stays in text. The journey
+# scope is always there: the dashboard every session opens on.
+fe_session_for() {
+  FE_SCOPES="" FE_INTENT=act
+  case "$1:$2" in
+    : | install: | resume:*) FE_SCOPES=$FE_ALL_SCOPES ;;
+    plan:) FE_SCOPES=journey,plan FE_INTENT=plan ;;
+    profile:) FE_SCOPES=journey,profile,resolve ;;
+    export:*) FE_SCOPES=journey,export ;;
+    shared:create* | shared:activate*) FE_SCOPES=journey,shared ;;
+    *) return 1 ;;
+  esac
+}
+
+# fe_releases_actions — 0 when the reviewed lock pins a frontend at least
+# FE_ACTIONS_VERSION, so a real machine's interactive commands may open it.
+fe_releases_actions() {
+  fe_lock_read 2>/dev/null || return 1
+  ver_ge "$FE_VERSION" "$FE_ACTIONS_VERSION"
+}
+
 # fe_cache_root — FE_CACHE: this user's frontend cache (root's on Linux as
 # root), and FE_ROOT_CACHE: root's, which an everyday user may start from.
 fe_cache_root() {

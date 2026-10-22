@@ -774,3 +774,91 @@ cmd_operation() {
     return 1
   fi
 }
+
+# ---------------------------------------------------------------------------
+# operation clear SCOPE (docs/PROTOCOL.md → *An operation record that cannot
+# be read*, D54)
+# ---------------------------------------------------------------------------
+
+# op_clear SCOPE — the way out of an unreadable operation record: under the
+# run lock the entrypoint took, a fresh inspection that finds the entry
+# unreadable, what the tool cannot know, the typed word clear, the entry
+# still the one shown, then one rename inside ops to a kept name no reader
+# takes for a record. The entry is never opened, followed, copied, edited
+# or deleted. 0 moved, or no record; 1 every refusal (nothing moved), or a
+# kept entry that is not the one checked.
+op_clear() {
+  local scope=$1 kind id size fp kept dest
+  # 2. The inspection, shown exactly as operation SCOPE shows it.
+  cmd_operation "$scope" || return 1
+  printf '\n'
+  case "$OP_STATE" in
+    none)
+      ui_ok "The $scope scope has no operation record: there is nothing to clear."
+      return 0
+      ;;
+    readable)
+      ui_fail "The $scope scope's operation record can be read, so it is not cleared: what it recorded decides the next step."
+      ui_note "./omarchy-bootstrap operation $scope names that step."
+      return 1
+      ;;
+    undetermined)
+      ui_fail "The record could not be inspected (its $OP_STAGE step did not finish), so nothing is moved."
+      return 1
+      ;;
+    unreadable) ;;
+    *) return 1 ;;
+  esac
+  kind=$OP_KIND id=$OP_ID size=$OP_SIZE fp=$OP_FP
+  kept="$scope.omb.unreadable-$(now_stamp)"
+  dest=$OMB_STATE_DIR/ops/$kept
+  if [ "$OMB_DRY_RUN" = 1 ]; then
+    ui_would "move $(tildify "$OP_PATH") aside to $(tildify "$dest"), after the typed word clear"
+    return 0
+  fi
+  # 3. What cannot be known, then the person's word.
+  ui_callout warn "What this tool cannot know" \
+    "Whether a process it started for the $scope scope still runs, and what that operation changed: the record that would say is the one that cannot be read." \
+    "A restart of this Mac (or this Linux system) ends every such process; when in doubt, restart first. Moving the record aside changes nothing else, and the next step in this scope reads the machine afresh."
+  if ! ui_confirm_word clear "Move the unreadable record aside."; then
+    printf '\n'
+    ui_info "Stopped. Nothing was moved."
+    return 1
+  fi
+  omb_pause_at clear-confirmed
+  # 4. The entry must still be the one shown.
+  if ! op_inspect "$scope"; then
+    ui_fail "$OP_IO_TEXT Nothing was moved."
+    return 1
+  fi
+  if [ "$OP_STATE" != unreadable ] || [ "$OP_KIND" != "$kind" ] || [ "$OP_ID" != "$id" ]; then
+    ui_fail "The record changed since it was shown; nothing was moved."
+    return 1
+  fi
+  if [ "$kind" = file ] && { [ "$OP_SIZE" != "$size" ] || [ "$OP_FP" != "$fp" ]; }; then
+    ui_fail "The record changed since it was shown; nothing was moved."
+    return 1
+  fi
+  # 5. One rename inside ops, never over a name already taken.
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    ui_fail "$(tildify "$dest") already exists; nothing was moved."
+    return 1
+  fi
+  if ! LC_ALL=C perl -e 'exit(rename($ARGV[0], $ARGV[1]) ? 0 : 1)' "$OP_PATH" "$dest" 2>/dev/null; then
+    ui_fail "The record could not be moved; nothing was moved."
+    return 1
+  fi
+  log_event record "operation record of scope $scope moved aside to ops/$kept ($kind $id)"
+  # 6. What was kept, and that it is the entry checked.
+  ui_ok "The unreadable record is kept at $(tildify "$dest")."
+  ui_kv "Kind" "$kind"
+  ui_kv "Size" "${size:-unknown} bytes"
+  ui_kv "Fingerprint" "${fp:-none}"
+  ui_note "Nothing else changed. This shows nothing about what the operation did; the kept file stays until you delete it."
+  OP_PATH=$dest
+  if ! _op_status || [ "$OP_ID" != "$id" ]; then
+    ui_fail "The kept entry is not the one checked (device and inode differ)."
+    return 1
+  fi
+  return 0
+}

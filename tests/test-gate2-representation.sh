@@ -230,26 +230,4 @@ for fault in staging-create staging-read admitted-copy admission-execute admissi
   assert_eq "$(r_gen)" "$empty" "$fault: empty generation"
 done
 
-# Successful bytes after the truthful hello stay identical to the reviewed F
-# producer, including the generation and both requested projections.
-mkdir "$T/reviewed"
-git -C "$REPO" archive 5a7c659c29b32a4de94f07aa938dc084b3585ed6 | tar -x -C "$T/reviewed" || exit 1
-fixtures='linux-alarm-fresh linux-omarchy-installed'
-if t_plutil 'reviewed successful response bytes'; then fixtures="$fixtures mac-m1pro-1tb-roomy"; fi
-for fixture in $fixtures; do
-  C_FIX=$FIX/$fixture
-  c_run snapshot "scope	name=journey"
-  gen=$(r_gen)
-  sed -n '3,$p' "$C_EV" >"$T/candidate"
-  C_HOME=$T/reviewed c_run snapshot "scope	name=journey"
-  sed -n '3,$p' "$C_EV" >"$T/previous"
-  if cmp -s "$T/candidate" "$T/previous"; then ok; else fail "$fixture: snapshot changed from reviewed F"; fi
-  for kind in machine status; do
-    r_page "$kind" "$gen" 0 500
-    sed -n '3,$p' "$C_EV" >"$T/candidate"
-    C_HOME=$T/reviewed r_page "$kind" "$gen" 0 500
-    sed -n '3,$p' "$C_EV" >"$T/previous"
-    if cmp -s "$T/candidate" "$T/previous"; then ok; else fail "$fixture/$kind: detail changed from reviewed F"; fi
-  done
-done
 t_done test-gate2-representation

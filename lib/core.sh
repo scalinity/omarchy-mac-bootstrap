@@ -935,12 +935,13 @@ core_arg_into() {
   local __i=0
   while [ "$__i" -lt "$CORE_REQ_ARGS" ]; do
     if [ "${CORE_REQ_ARG_NAME[__i]}" = "$1" ]; then
-      eval "$2=\${CORE_REQ_ARG_VALUE[__i]}"
+      printf -v "$2" '%s' "${CORE_REQ_ARG_VALUE[__i]}"
       return 0
     fi
     __i=$((__i + 1))
   done
-  eval "$2=''"
+  # '%s', never '%b', for the empty value (CLAUDE.md → Gotchas).
+  printf -v "$2" '%s' ''
   return 1
 }
 

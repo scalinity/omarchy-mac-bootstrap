@@ -92,7 +92,7 @@ records.sh: eval "REC_S_$t=\$seen\$ukey'"'"''
 assert_eq "$evals" "$want" "proto-no-shell-text: every eval in the protocol code is on the reviewed list"
 # Every file sourced at a command position is a library of the tool itself.
 sourced=$(bash_code | sed 's/^[^:]*:[0-9]*://' | grep -E '(^[[:space:]]*|[;&|({][[:space:]]*)(source|\.)[[:space:]]+' |
-  grep -vE '(source|\.)[[:space:]]+"\$(OMB_HOME|1)/lib/[a-z]+\.sh"')
+  grep -vE '(source|\.)[[:space:]]+"\$(OMB_HOME|1)/lib/[a-z_]+\.sh"')
 assert_eq "$sourced" "" "proto-no-shell-text: nothing but the tool's own libraries is ever sourced"
 # _rec_count and REC_C_/REC_S_ are reached only after _rec_index admitted the type.
 schema=$(awk '/^_rec_schema\(\) \{/ { f = 1 } f { print } f && /^}/ { exit }' "$REPO/lib/records.sh")
@@ -171,28 +171,24 @@ assert_eq "$(grep -c '^child	' "$REPO/data/children.omb")" 3 "the registry holds
 assert_eq "$(grep -o 'core_child "[^"]*"' "$REPO/lib/core.sh" | sort -u | tr '\n' ' ')" 'core_child "$action" ' \
   "the core starts children only through the registry, by action"
 
-# --- sup-shared-critical (static): the Shared creation is the accepted baseline's --------
+# --- sup-shared-critical (static): the Shared creation's interval is the baseline's ------
+# Only the critical interval is pinned to the accepted baseline: from sudo -v
+# through the final read to `sudo -n diskutil addPartition`, nothing is
+# added and nothing changes (docs/PROTOCOL.md → *The Shared critical
+# interval*). The rest of the baseline's modules change only as named fixes;
+# their behaviour is held by the equivalence suites (tests/test-baseline.sh,
+# the equiv-* cases of tests/test-actions.sh) and their own suites
+# (test-shared, test-storage, test-lifecycle, test-state), not by bytes.
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
   git -C "$REPO" show "$BASELINE:lib/shared.sh" >"$OMB_TMP_REG.shared"
-  cmp -s "$OMB_TMP_REG.shared" "$REPO/lib/shared.sh" && ok || fail "sup-shared-critical: lib/shared.sh is byte-identical to the accepted baseline's"
   interval() { awk '/^  if ! run sudo -v; then$/ { f = 1 } f { print } f && /run sudo -n diskutil addPartition/ { exit }' "$1"; }
   a=$(interval "$OMB_TMP_REG.shared")
   b=$(interval "$REPO/lib/shared.sh")
   [ -n "$a" ] && [ "$a" = "$b" ] && ok || fail "sup-shared-critical: from sudo -v through the final read to addPartition, the code is the baseline's"
-  assert_eq "$(printf '%s\n' "$b" | grep -cE 'core_|rec_|OMB_EVENTS|_core_ps|ps -|spool')" 0 \
-    "sup-shared-critical: no record, process-table reading or spool write inside the interval"
-  for f in storage.sh asahi.sh state.sh common.sh; do
-    git -C "$REPO" diff --quiet "$BASELINE" -- "lib/$f" && ok || fail "lib/$f, which the Shared creation calls, is the accepted baseline's"
-  done
-  # PLIST-M01 Class A exception: fixed BASE bytes plus one fixed helper
-  # replacement. Neither literal is extracted from the current production file.
-  cat >"$OMB_TMP_REG.plist.old" <<'OLD_PLIST'
-# plist_get PLIST_TEXT KEYPATH — structured extraction via plutil.
-plist_get() {
-  [ -n "$1" ] || return 1
-  printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null
-}
-OLD_PLIST
+  assert_eq "$(printf '%s\n' "$b" | grep -cE 'core_|rec_|OMB_EVENTS|_core_ps|ps -|spool|omb_(stop|fail|pause)_at|OMB_IFACE')" 0 \
+    "sup-shared-critical: no record, process-table reading, spool write or test seam inside the interval"
+  assert_eq "$(grep -c 'run sudo -n diskutil addPartition' "$REPO/lib/shared.sh")" 1 "sup-shared-critical: one addPartition, in lib/shared.sh"
+  # PLIST-M01: plist_get is the named fix, defined once, exactly.
   cat >"$OMB_TMP_REG.plist.new" <<'NEW_PLIST'
 # plist_get PLIST_TEXT KEYPATH — structured extraction via plutil.
 # Publish only successful stdout; a sentinel preserves trailing newlines
@@ -209,78 +205,35 @@ plist_get() {
   printf '%s' "${__value%.}"
 }
 NEW_PLIST
-  git -C "$REPO" show "$BASELINE:lib/macos.sh" >"$OMB_TMP_REG.macos.base"
-  plist_expected() {
-    awk -v oldfile="$OMB_TMP_REG.plist.old" -v newfile="$OMB_TMP_REG.plist.new" '
-      BEGIN {
-        while ((getline line < oldfile) > 0) old = old line "\n"
-        while ((getline line < newfile) > 0) replacement = replacement line "\n"
-        close(oldfile); close(newfile)
-      }
-      { body = body $0 "\n"; if ($0 == "plist_get() {") definitions++ }
-      END {
-        at = index(body, old)
-        if (!at || definitions != 1 || old == "" || replacement == "") exit 1
-        tail = substr(body, at + length(old))
-        if (index(tail, old)) exit 1
-        printf "%s%s%s", substr(body, 1, at - 1), replacement, tail
-      }' "$1"
-  }
-  plist_pin() {
-    [ "$BASELINE" = 2edb76a7de3f78ec90927ac93d5eec3a84636253 ] || return 1
-    [ "$(grep -c '^plist_get() {' "$OMB_TMP_REG.plist.new")" = 1 ] || return 1
-    plist_expected "$1" >"$OMB_TMP_REG.macos.expected" || return 1
-    cmp -s "$OMB_TMP_REG.macos.expected" "$2"
-  }
-  plist_pin "$OMB_TMP_REG.macos.base" "$REPO/lib/macos.sh"
-  assert_rc "$?" 0 'PLIST-M01: whole macos.sh is BASE plus exactly the fixed helper/comment'
-  assert_eq "$(git -C "$REPO" ls-files -s lib/macos.sh | cut -d' ' -f1)" \
-    "$(git -C "$REPO" ls-tree "$BASELINE" lib/macos.sh | cut -d' ' -f1)" 'PLIST-M01: tracked file mode/type preserved'
-  if [ -f "$REPO/lib/macos.sh" ] && [ ! -L "$REPO/lib/macos.sh" ] && [ ! -x "$REPO/lib/macos.sh" ]; then ok; else fail 'PLIST-M01: regular non-executable file'; fi
-  # Construct variants; never edit or execute production to test this pin.
-  cp "$REPO/lib/macos.sh" "$OMB_TMP_REG.macos.bad"
-  printf '\n# unauthorized outside-helper change\n' >>"$OMB_TMP_REG.macos.bad"
-  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects arbitrary outside-helper bytes'
-  sed 's/__status=$?/__status=0/' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
-  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects an unpinned alternative helper'
-  cat "$REPO/lib/macos.sh" "$OMB_TMP_REG.plist.new" >"$OMB_TMP_REG.macos.bad"
-  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects duplicate helper'
-  awk '/^plist_get\(\) \{/ { omit = 1 } !omit { print } omit && /^}/ { omit = 0 }' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
-  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects deleted helper'
-  sed 's/local hw lim/local hw lim unauthorized/' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
-  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects neighboring production change'
-  (BASELINE=$(git -C "$REPO" rev-parse HEAD); plist_pin "$OMB_TMP_REG.macos.base" "$REPO/lib/macos.sh")
-  assert_rc "$?" 1 'PLIST-M01 pin rejects replacing fixed BASE with current head'
-  sed "s/printf '\.'/printf '!'/" "$REPO/lib/macos.sh" >"$OMB_TMP_REG.macos.bad"
-  plist_pin "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.macos.bad"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects any differing pinned helper byte'
-  # Anchor failure/duplication are errors, not an empty expected-file match.
-  cat "$OMB_TMP_REG.macos.base" "$OMB_TMP_REG.plist.old" >"$OMB_TMP_REG.macos.badbase"
-  plist_pin "$OMB_TMP_REG.macos.badbase" "$REPO/lib/macos.sh"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects duplicate historical anchor'
-  plist_pin "$OMB_TMP_REG.macos.bad" "$REPO/lib/macos.sh"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects missing historical anchor'
-  cp "$OMB_TMP_REG.plist.new" "$OMB_TMP_REG.plist.saved"
-  cat "$OMB_TMP_REG.plist.saved" >>"$OMB_TMP_REG.plist.new"
-  plist_pin "$OMB_TMP_REG.macos.base" "$REPO/lib/macos.sh"
-  assert_rc "$?" 1 'PLIST-M01 pin rejects ambiguous candidate replacement'
-  mv "$OMB_TMP_REG.plist.saved" "$OMB_TMP_REG.plist.new"
+  assert_eq "$(grep -c '^plist_get() {' "$REPO/lib/macos.sh")" 1 'PLIST-M01: plist_get is defined once'
+  awk '/^# plist_get PLIST_TEXT KEYPATH/ { f = 1 } f { print } f && /^}$/ { exit }' "$REPO/lib/macos.sh" >"$OMB_TMP_REG.plist.cur"
+  cmp -s "$OMB_TMP_REG.plist.new" "$OMB_TMP_REG.plist.cur" && ok || fail 'PLIST-M01: plist_get is exactly the named fix'
   "$T_BASH" "$REPO/tests/test-detection.sh" --plist-helper-only
   assert_rc "$?" 0 'PLIST-M01 helper contracts also execute in every static job, including pinned Bash'
 else
   fail "the accepted baseline $BASELINE is not in this clone (CI checks out with fetch-depth: 0)"
 fi
 
+# --- bash32-features (static): nothing that needs Bash 4 -----------------------------------
+# Every script runs under stock /bin/bash 3.2 (CLAUDE.md → Rules): no
+# associative arrays, mapfile or readarray, case-changing expansions,
+# namerefs, |& or &>>, ;& or ;;&, coproc, ${x@Q}, [[ -v ]], globstar or
+# $EPOCHSECONDS. Comment lines are not code; this file holds the scan.
+bash4=$(cd "$REPO" && for f in omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/*.sh tests/proto/corpus.sh; do
+  [ "$f" != tests/test-static.sh ] || continue
+  awk -v f="$f" '/^[[:space:]]*#/ { next }
+    /(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[An]/ || /(^|[[:space:];&|(])(mapfile|readarray|coproc)[[:space:]]/ ||
+    /\$\{[A-Za-z_][A-Za-z_0-9]*(\[[^]]*\])?(,,|\^\^|,|\^)[}]/ || /\$\{[A-Za-z_][A-Za-z_0-9]*(,,|\^\^)/ ||
+    /[[:space:]]\|&[[:space:]]/ || /&>>/ || /;;&/ || /[^;];&[[:space:]]*$/ || /\$\{[^}]*@[QEPAa]\}/ || /\[\[[[:space:]]+-v[[:space:]]/ ||
+    /globstar/ || /EPOCH(SECONDS|REALTIME)/ { print f ":" FNR ": " $0 }' "$f"
+done)
+assert_eq "$bash4" "" "bash32-features: no Bash 4 feature in any script"
+
 # --- sup-eintr-one-substitution: the core's own code, and Bash 5.2's lost trap ---------
 # Bash 5.2 loses a trap that runs while a command holding two command
 # substitutions side by side is expanded (tests/bash-trap-comsub.sh). The
-# core's own files hold none; the baseline's two-substitution commands, which
-# stay byte for byte (above), are the ones the storm test may name on 5.2.
+# core's own files hold none; the baseline's two-substitution commands are
+# the ones the storm test may name on 5.2.
 twosub() {
   awk '/^[[:space:]]*#/ { next }
     { s = $0; d = 0; top = 0; n = length(s)

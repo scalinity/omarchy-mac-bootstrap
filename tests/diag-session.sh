@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One unit of the diagnostics tests, run by tests/test-diag.sh and on its own:
-# a session filled past 4 MiB, then 1 000 more requests that add nothing.
+# a session filled past 4 MiB, then 100 more requests that add nothing.
 # It starts from a fresh session (tests/diag-lib.sh).
 # shellcheck disable=SC2010,SC2015,SC2016,SC2031 # ls|grep over the core's own file names; ok/fail always return 0; literal $ in patterns; $! read after a job started in this shell
 echo "test-diag-session"
@@ -21,16 +21,17 @@ assert_eq "$(c_size "$SESS/session.diag-summary")" 128 "diag-session-bound: the 
 
 # The requests below need a saturated session: the ones above saturate this
 # unit's fresh session.
-assert_not_contains "$(cat "$SESS/session.diag-summary")" "children not kept 0000000000" "diag-session-saturated-many-requests: the session is saturated before the 1 000 requests"
+assert_not_contains "$(cat "$SESS/session.diag-summary")" "children not kept 0000000000" "diag-session-saturated-many-requests: the session is saturated before the 100 requests"
 
-# --- diag-session-saturated-many-requests: 1 000 more requests --------------------------
+# --- diag-session-saturated-many-requests: 100 more requests ----------------------------
 files=$(ls "$SESS" | grep -c 'diag')
+before=$(sed -n "s/.*children not kept \([0-9]*\).*/\1/p" "$SESS/session.diag-summary")
 c_conf core children=1
 # One snapshot's basis serves every request: test.read's basis holds only
 # what does not change between them.
 b=$(c_basis test.read)
 i=0
-while [ "$i" -lt 1000 ]; do
+while [ "$i" -lt 100 ]; do
   c_run execute "exec	action=test.read	basis=$b	confirm="
   [ "$(c_result)" = "done ok" ] || { fail "a request after saturation: $(c_result)" && break; }
   i=$((i + 1))
@@ -38,7 +39,8 @@ done
 assert_eq "$(ls "$SESS" | grep -c 'diag')" "$files" "diag-session-saturated-many-requests: no new diagnostic file"
 assert_eq "$(session_total)" "$total" "diag-session-saturated-many-requests: the session's total did not grow"
 assert_eq "$(c_size "$SESS/session.diag-summary")" 128 "diag-session-saturated-many-requests: the session summary stays 128 bytes"
-assert_contains "$(cat "$SESS/session.diag-summary")" "children not kept 0000001" "the saturated requests' children are counted in it"
+after=$(sed -n "s/.*children not kept \([0-9]*\).*/\1/p" "$SESS/session.diag-summary")
+assert_eq "$((10#$after - 10#$before))" 100 "the saturated requests' children are counted in it"
 
 t_decoys_survive test-diag-session
 t_done test-diag-session

@@ -18,7 +18,7 @@ GEN=9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15
 HELLO="hello	core=0.3.0	commit=2edb76a7de3f78ec90927ac93d5eec3a84636253	source=c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00	proto=1	platform=macos	arch=arm64	user=user	ceiling=act	dry_run=0	fixture=0"
 HELLO_PLAN=${HELLO/ceiling=act/ceiling=plan}
 RESULT="result	status=done	code=ok	text=	next="
-TOKEN="omb2:enc%3D1,user%3Dalex,host%3Dm1pro,kmap%3Dus,tz%3DAmerica/New_York,loc%3Den_US.UTF-8,ssh%3D0,gh%3Doctocat,linux%3D250,shared%3D150,dev%3D1,plan%3D1a2b3c4d,prof%3D3f09c2a1"
+TOKEN="omb2:enc%3D1,user%3Dalex,host%3Dm1pro,kmap%3Dus,tz%3DAmerica/New_York,loc%3Den_US.UTF-8,ssh%3D0,gh%3Doctocat,linux%3D250,shared%3D150,dev%3D1,plan%3D1a2b3c4d"
 
 # case NAME FAMILY OP EXPECTED — the document is stdin, taken byte for byte.
 case_() {
@@ -59,7 +59,6 @@ res "$HELLO_PLAN" "answer	n=1	prompt=New%20size%20for%20macOS	value=532543MiB	by
   "review	action=plan.save	basis=$H64" "$RESULT" | case_ proto-golden-validate.res res validate ok
 res "$HELLO_PLAN" "invalid	name=linux_size	code=leading-zero	text=Sizes%20cannot%20start%20with%200" \
   "result	status=refused	code=invalid	text=	next=" | case_ proto-golden-validate-refused.res res validate ok
-req "$REQ_EXEC" "exec	action=bundle.approve	basis=$H64	confirm=" "arg	name=code	value=ombbundle-3f09c2a1b7d45e60-26d1" | case_ proto-golden-approve.req req - ok
 req "$REQ_EXEC" "exec	action=shared.create	basis=$H64	confirm=create" | case_ proto-golden-execute.req req - ok
 res "$HELLO" "code	kind=ombshare	value=ombshare-1a2b3c4d-3c1f9e2d7a60-4149" "message	level=ok	text=Shared%20created%20as%20disk0s7" \
   "result	status=done	code=ok	text=	next=Boot%20Linux%20and%20run%20shared%20activate" | case_ proto-golden-execute.res res execute ok

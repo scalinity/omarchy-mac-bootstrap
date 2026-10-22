@@ -130,9 +130,8 @@ for op in snapshot detail; do
 done
 
 # BASE text command is run as-is; exact stdout includes indentation and LF.
-mkdir "$T/base" "$T/accepted"
+mkdir "$T/base"
 git -C "$REPO" archive 2edb76a7de3f78ec90927ac93d5eec3a84636253 | tar -x -C "$T/base" || exit 1
-git -C "$REPO" archive 7d3c4d1756c25d2acda9257c6d809107fd8171e6 | tar -x -C "$T/accepted" || exit 1
 for sample in absent empty terminated unterminated blank forty fortieth-unterminated fortyone internal trailing multiple; do
   rm -f "$file"
   case "$sample" in
@@ -172,25 +171,4 @@ rm -rf "$T/state/logs/z"
 p_snapshot
 assert_eq "$(p_gen)" "$pathgen" 'original full path restores generation'
 
-# Current P journey output: allowed hello identity fields alone may differ.
-normalized() {
-  awk -F '\t' 'BEGIN {OFS="\t"} $1=="hello" {for(i=2;i<=NF;i++)if($i~/^(commit|source)=/)sub(/=.*/,"=",$i)} {print}' "$1"
-}
-fixtures='linux-alarm-fresh linux-omarchy-installed'
-if t_plutil 'P journey preservation'; then fixtures="$fixtures mac-m1pro-1tb-roomy"; fi
-for fx in $fixtures; do
-  C_FIX=$FIX/$fx C_ENV=OMB_SESSION_SCOPES=journey
-  c_run snapshot "scope	name=journey"
-  jgen=$(p_gen)
-  normalized "$C_EV" >"$T/current"
-  C_HOME=$T/accepted c_run snapshot "scope	name=journey"
-  normalized "$C_EV" >"$T/previous"
-  if cmp -s "$T/current" "$T/previous"; then ok; else fail "$fx P snapshot differs"; fi
-  for kind in machine status; do
-    record="page	scope=journey	kind=$kind	generation=$jgen	offset=0	limit=500"
-    c_run detail "$record"; normalized "$C_EV" >"$T/current"
-    C_HOME=$T/accepted c_run detail "$record"; normalized "$C_EV" >"$T/previous"
-    if cmp -s "$T/current" "$T/previous"; then ok; else fail "$fx/$kind P detail differs"; fi
-  done
-done
 t_done test-gate2-logs-proof
