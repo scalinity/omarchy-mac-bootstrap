@@ -225,20 +225,18 @@ place, its adapter says so explicitly (the editors do).
 
 ## Paths
 
-Three rules rewrite macOS paths, and only inside fields an adapter parses
+Two rules rewrite macOS paths, and only inside fields an adapter parses
 and knows to be paths or commands (an MCP definition, Git settings,
 Ghostty's `key = value` lines):
 
 | Rule | From | To |
 | --- | --- | --- |
 | `p:home` | `/Users/<source user>/` | `/home/<target user>/`, or `~/` where the format expands it |
-| `p:brew-bin` | `/opt/homebrew/bin/<name>`, `/usr/local/bin/<name>` | `<name>`, found on `PATH`, only when `<name>` is an item that reaches Linux |
 | `p:shared` | `/Volumes/Shared/` (or the mount point recorded for Shared) | `/mnt/shared/` |
 
 A file carried whole is never rewritten: its macOS paths are listed in the
 review, with line numbers. Any other macOS path in a parsed field stays as
-it is and says why: a versioned Homebrew path (`/opt/homebrew/opt/…`,
-`Cellar`), "points into an app bundle" (`/Applications/…`), "Mac-only"
+it is and says why: a Homebrew path (`/opt/homebrew/…`, `/usr/local/…`), "points into an app bundle" (`/Applications/…`), "Mac-only"
 (`~/Library/…`), "refers to another disk" (`/Volumes/<other>/…`).
 
 ## From Zsh to Bash

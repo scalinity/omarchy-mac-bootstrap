@@ -1,7 +1,8 @@
 # Migration
 
-**Status: designed for Gate 4 (scanner, profile) and Gate 5 (bundle); not
-built.** Resolution: docs/RESOLVER.md; restoring: docs/RESTORE.md; the AI
+**Status: built in Gate 4 (scanner, profile: `lib/migrate_scan.sh`,
+`lib/toml.sh`, `lib/migrate_profile.sh`) and Gate 5 (bundle:
+`lib/migrate_bundle.sh`).** Resolution: docs/RESOLVER.md; restoring: docs/RESTORE.md; the AI
 tools: docs/AI-TOOLS.md; the screens: docs/UX.md; the record format:
 docs/PROTOCOL.md.
 
@@ -34,7 +35,7 @@ a `find -P` listing that never follows a link.
   Mail, Messages, Safari, other apps' containers (macOS 27 denies a
   container read without a prompt, so an empty result never means
   "nothing"). A folder the person chooses is read; a denial is `denied`.
-- **Uncertainty stays visible.** Running out of a time or entry budget is
+- **Uncertainty stays visible.** Running out of an entry budget is
   `partial`, never a short but complete list. Every item's evidence is
   `observed`, `inferred` (by a stated rule) or `unknown`; a shape outside
   the version an adapter reads (Homebrew receipts 4.3.11 to 7.x) or a
@@ -55,6 +56,19 @@ a `find -P` listing that never follows a link.
 | AI tools | Claude Code, Codex and OpenCode in full; others recognised and listed (docs/AI-TOOLS.md) | settings, instructions, skills, MCP servers, plugins |
 | chosen folders | names, sizes and types under `~` and `~/.config`; inside, only what the person opens (*Chosen folders*) | folders and files to carry |
 | projects | only folders the person names: a Git checkout's remote and branch | projects to clone again on Linux; never copied |
+
+The adapters run in this order: Homebrew, applications, language tools
+and runtimes, editors, shell, terminal settings, Git, the AI tools, chosen
+folders. An item's id names its adapter and name or its home-relative path
+and never a version (`brew:`, `cask:`, `tap:`, `app:<bundle id>`, `npm:`,
+`cargo:`, `uv:`, `go:<module>`, `vscode:ext:`, `claude:mcp:<name>`,
+`path:<path>`, `project:<path>`); a runtime's id carries its release line
+(`nvm:node@20.11`), so a patch update keeps it. Its `kind` is the migration
+map's source for software (docs/RESOLVER.md → *The migration map*), `ai`
+for the three AI tools, `git`, `mcp` or `plugin` for those settings, `tap`
+and `extension` for Homebrew taps and editor extensions. What runs code —
+hooks, a status line, Codex's `notify`, workflows — is listed with that
+reason and never carried.
 
 A receipt's `installed_on_request: true` is `requested=yes`, `false` is
 `no`, and a missing field or receipt is `requested=unknown`, for the person
