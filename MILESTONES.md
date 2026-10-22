@@ -989,6 +989,19 @@ the failure. The correction requires its own automatic exact-head six-job
 CI evidence; pending/failure cannot be called qualification, and no rerun,
 normalization change or CI repair is authorized here.
 
+CI from `beba63c` on (2026-10-11): pull request 1 merged `main`'s FAST/FULL
+workflow (`aa7d5cc`) into this branch as `fb4c89f`, whose FAST run
+38157512716 failed `test-ci`'s manifest checks because no shard ran
+`tests/test-operation.sh`; `beba63c` adds `suite:operation` to
+`tests/ci-manifest.tsv` (m2, l0). The correction `e94afcf` had passed its
+automatic legacy six-job run 38155507027. FULL run 38165090458 at `beba63c`
+passed every shard and its completeness guard. This branch, and every
+branch made from it, runs FAST/FULL: a push gets FAST, which is feedback
+only, and a candidate's CI acceptance evidence is a green FULL completeness
+guard at its exact SHA (`gh workflow run ci.yml --ref BRANCH -f
+candidate=SHA`; CLAUDE.md → *Verify*). The six-job wording above records
+the checkpoints of its time; it is not a requirement on later candidates.
+
 Starting foundations remain UR-Q4 1956f1b5d9666b5831b30cdb9da5b37e92056055,
 FJ-P5-1 c85470b2c973001c9df692eb04e17628d5c7f7f0,
 FJ-ED-1 f27ee84a4b28fe5ee3a93df53f79598192932468 and core/text
