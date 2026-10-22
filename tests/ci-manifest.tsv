@@ -24,7 +24,7 @@ lane	macos-bash32	macos-latest	Darwin	arm64	^3\.2\.	none	*
 lane	linux-bash5	ubuntu-24.04	Linux	x86_64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	*
 lane	target-bash53	ubuntu-24.04-arm	Linux	aarch64	^5\.3\.15\(1\)-release$	\(no plutil\)$	records core diag frontend static cp1 gate2-*
 lane	frontend	ubuntu-24.04	Linux	x86_64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	frontend-inputs
-lane	frontend-linux-arm64	ubuntu-24.04-arm	Linux	aarch64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	core diag frontend frontend-check static
+lane	frontend-linux-arm64	ubuntu-24.04-arm	Linux	aarch64	^5\.	\((no plutil|Bash 5\.2 upstream)\)$	frontend-check
 lane	frontend-macos-arm64	macos-15	Darwin	arm64	^3\.2\.	none	core frontend frontend-check static
 
 # macOS · stock /bin/bash 3.2 · BSD userland, plutil, no skip
@@ -72,6 +72,12 @@ unit	macos-bash32	m4	suite:gate2-validate-proof
 unit	macos-bash32	m4	suite:gate2-validate
 unit	macos-bash32	m4	suite:records
 unit	macos-bash32	m4	suite:shared
+unit	macos-bash32	m3	suite:resolve
+unit	macos-bash32	m3	suite:toml
+unit	macos-bash32	m4	suite:scan
+unit	macos-bash32	m1	suite:secrets
+unit	macos-bash32	m2	suite:profile
+unit	macos-bash32	m1	suite:bundle
 
 # Linux · bash 5 · ShellCheck 0.9.0, only the plutil-bound checks skip
 unit	linux-bash5	l0	check:fixtures
@@ -118,6 +124,12 @@ unit	linux-bash5	l3	suite:safety
 unit	linux-bash5	l3	suite:state
 unit	linux-bash5	l3	suite:static
 unit	linux-bash5	l3	suite:storage
+unit	linux-bash5	l3	suite:resolve
+unit	linux-bash5	l3	suite:bundle
+unit	linux-bash5	l0	suite:toml
+unit	linux-bash5	l1	suite:scan
+unit	linux-bash5	l2	suite:secrets
+unit	linux-bash5	l2	suite:profile
 
 # Linux target shell · GNU Bash 5.3.15 built from tests/bash-5.3.15.sha256's sources · aarch64
 unit	target-bash53	t1	diag:children
@@ -167,17 +179,9 @@ unit	frontend-linux-arm64	a1	step:compat
 unit	frontend-linux-arm64	a1	step:artifact-line
 unit	frontend-linux-arm64	a1	step:pty
 unit	frontend-linux-arm64	a1	step:units
-unit	frontend-linux-arm64	a1	suite:core
-unit	frontend-linux-arm64	a1	suite:frontend
 unit	frontend-linux-arm64	a1	suite:frontend-check
-unit	frontend-linux-arm64	a1	suite:static
 unit	frontend-linux-arm64	a1	step:frontend-check-native
 unit	frontend-linux-arm64	a1	step:cp1-released
-unit	frontend-linux-arm64	a2	diag:children
-unit	frontend-linux-arm64	a3	diag:bounds
-unit	frontend-linux-arm64	a3	diag:temp
-unit	frontend-linux-arm64	a3	diag:session
-unit	frontend-linux-arm64	a3	diag:capture
 
 # Frontend · macOS arm64 · build, PTY, contract under /bin/bash 3.2, frontend-compat-macos
 unit	frontend-macos-arm64	x1	step:checkout-exact

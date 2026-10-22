@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2015,SC2016 # ok/fail always return 0; literal $ in shims and stand-in functions
+# shellcheck disable=SC2015,SC2016,SC2031 # ok/fail always return 0; literal $ in shims and stand-in functions; $! read after a job started in this shell
 # The operation-record diagnostic (docs/PROTOCOL.md → *The operation-record
 # diagnostic*, D55; docs/TESTING.md → *Gate 3 operation-record diagnostic
 # tests*): DIA-01 to DIA-15 through the actual core, as the frontend drives
@@ -1514,5 +1514,71 @@ if [ -n "$save" ]; then
     assert_eq "$(c_admits_file "$op" "$save/$name.doc")" ok "DIA-14: $name admits"
   done <"$save/cases"
 fi
+
+# === actions-clear: operation clear SCOPE (docs/PROTOCOL.md → *An operation record that cannot be read*) ===
+# oc INPUT ARGS... — the text command with INPUT typed, over the fixture.
+oc() {
+  mkdir -p "$T/text-tmp"
+  printf '%b' "$1" | env -i "PATH=/usr/bin:/bin:/usr/sbin:/sbin" "HOME=$T/home" "TMPDIR=$T/text-tmp" "LANG=en_US.UTF-8" "TERM=dumb" \
+    "OMB_STATE_DIR=$T/state" "OMB_FIXTURE=$C_FIX" "${OC_ENV:-OMB_TEST_PAUSE_AT=}" "$T_BASH" "$REPO/omarchy-bootstrap" "${@:2}" >"$T/text.out" 2>"$T/text.err"
+  O_RC=$?
+  O_OUT=$(cat "$T/text.out")
+}
+# oc_kept — the names in ops beside the record, one line.
+oc_kept() { (cd "$T/state/ops" 2>/dev/null && find . -mindepth 1 -maxdepth 1 | sed 's#^\./##' | tr '\n' ' '); }
+C_FIX=$FIX/mac-m1pro-1tb-roomy
+rm -rf "$T/state"
+oc '' operation clear
+assert_eq "$O_RC" 2 'actions-clear-args: a missing scope is a usage error'
+oc '' operation clear nowhere
+assert_eq "$O_RC" 2 'actions-clear-args: an unknown scope is a usage error'
+oc 'clear\n' operation clear journey
+assert_eq "$O_RC" 0 'actions-clear-none: no record: nothing to do'
+assert_contains "$O_OUT" 'nothing to clear' 'actions-clear-none: and says so'
+o_rec running 1 x "$BOOT"
+oc 'clear\n' operation clear journey
+assert_eq "$O_RC" 1 'actions-clear-readable: a readable record is refused'
+assert_eq "$(oc_kept)" 'journey.omb ' 'actions-clear-readable: nothing moved'
+printf 'omb-op 1\ntorn' | o_raw
+before=$(o_hash "$OPS")
+oc 'no\n' operation clear journey
+assert_eq "$O_RC" 1 'actions-clear-word: any other word stops'
+assert_eq "$(oc_kept)" 'journey.omb ' 'actions-clear-word: nothing moved'
+oc '' operation clear journey
+assert_eq "$O_RC" 1 'actions-clear-word: the end of input stops'
+oc '' --dry-run operation clear journey
+assert_eq "$O_RC" 0 'actions-clear-dry: a dry run shows the move'
+assert_contains "$O_OUT" 'would run' 'actions-clear-dry: as would'
+assert_eq "$(oc_kept)" 'journey.omb ' 'actions-clear-dry: nothing moved'
+[ ! -e "$T/state/omarchy-bootstrap.lock" ] && ok || fail 'actions-clear-dry: no lock taken'
+oc 'clear\n' operation clear journey
+assert_eq "$O_RC" 0 'actions-clear-move: the typed word moves it'
+kept=$(cd "$T/state/ops" && find . -mindepth 1 -maxdepth 1 | sed 's#^\./##')
+case "$kept" in journey.omb.unreadable-[0-9]*T[0-9]*Z) ok ;; *) fail "actions-clear-move: one kept name in ops, not a record's: [$kept]" ;; esac
+assert_eq "$(o_hash "$T/state/ops/$kept")" "$before" 'actions-clear-move: the same bytes, never opened for writing'
+assert_contains "$(cat "$T"/state/logs/*.log)" "moved aside to ops/$kept" 'actions-clear-move: logged'
+oc '' operation journey
+assert_contains "$O_OUT" 'none' 'actions-clear-move: the scope then has no record'
+# A link is moved as the link; what it names is untouched.
+rm -rf "$T/state/ops" && mkdir -p "$T/state/ops" && printf 'target' >"$T/elsewhere" && ln -s "$T/elsewhere" "$OPS"
+oc 'clear\n' operation clear journey
+assert_eq "$O_RC" 0 'actions-clear-link: a link entry is moved'
+kept=$(cd "$T/state/ops" && find . -mindepth 1 -maxdepth 1 | sed 's#^\./##')
+[ -L "$T/state/ops/$kept" ] && [ "$(cat "$T/elsewhere")" = target ] && ok || fail 'actions-clear-link: moved as the link, its target untouched'
+# The entry changed between the word and the move: refused, nothing moved.
+rm -rf "$T/state/ops" && printf 'omb-op 1\ntorn' | o_raw
+rm -f "$C_FIX.go" "$C_FIX.at-clear-confirmed"
+TV=$(t_tmp)
+cp -R "$C_FIX" "$TV/fx"
+C_FIX=$TV/fx OC_ENV=OMB_TEST_PAUSE_AT=clear-confirmed oc 'clear\n' operation clear journey &
+oc_pid=$!
+i=0
+while [ ! -e "$TV/fx.at-clear-confirmed" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+printf 'omb-op 1\ntorn again' | o_raw
+: >"$TV/fx.go"
+wait "$oc_pid"
+assert_eq "$(oc_kept)" 'journey.omb ' 'actions-clear-changed: an entry changed since it was shown is not moved'
+assert_contains "$(cat "$T/text.out")" 'changed since it was shown' 'actions-clear-changed: and says so'
+rm -rf "$TV"
 
 t_done operation

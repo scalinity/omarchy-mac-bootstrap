@@ -213,7 +213,7 @@ for V_ACTION in test.read shared.create plan.saved plan; do
   v_route "another select family ($V_ACTION) precedes the scope" refused unavailable
 done
 V_ACTION=''
-assert_eq "$(sed -n '$p' "$C_EV")" "$(printf 'result\tstatus=refused\tcode=unavailable\ttext=%s\tnext=' "$(v_enc 'Validation answers plan.save on macOS and profile.save.')")" 'unavailable refusal: exact result'
+assert_eq "$(sed -n '$p' "$C_EV")" "$(printf 'result\tstatus=refused\tcode=unavailable\ttext=%s\tnext=' "$(v_enc 'Validation answers plan.save on macOS, profile.save and export.write.')")" 'unavailable refusal: exact result'
 for fx in linux-alarm-fresh linux-omarchy-installed; do
   C_FIX=$FIX/$fx
   v_run "$(v_l 250GB)" "$(v_s 0)"

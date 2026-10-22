@@ -114,7 +114,9 @@ C_ENV=OMB_SESSION_SCOPES=disk g_page machine "$fresh" 0 1
 assert_eq "$(c_result)" 'refused scope' 'detail outside session scope'
 c_uname_arm "$T/native"
 C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' g_page machine "$fresh" 0 1
-assert_eq "$(c_result)" 'refused unavailable' 'production detail unavailable'
+# A real machine's journey is another dataset: a fixture's generation is
+# refused as changed, never paged (Gate 3 answers real reads).
+assert_eq "$(c_result)" 'refused changed' 'production detail of a fixture generation is refused as changed'
 for ceiling in read plan act; do
   C_ENV="OMB_SESSION_INTENT=$ceiling" g_page status "$fresh" 0 500
   g_ok "detail at $ceiling ceiling"

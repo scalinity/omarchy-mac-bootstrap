@@ -91,10 +91,17 @@ impl Session {
                 ("session", self.id.as_bytes()),
             ],
         ));
+        let args = |out: &mut String, args: &[(String, Vec<u8>)]| {
+            for (name, value) in args {
+                out.push_str(&record::line(
+                    "arg",
+                    &[("name", name.as_bytes()), ("value", value)],
+                ));
+            }
+        };
         match req {
             Req::Hello => {}
-            Req::Snapshot => out.push_str(&record::line("scope", &[("name", b"journey")])),
-            Req::Read(scope) => {
+            Req::Snapshot(scope) => {
                 out.push_str(&record::line("scope", &[("name", scope.name().as_bytes())]))
             }
             Req::Detail(p) => out.push_str(&record::line(
@@ -107,35 +114,29 @@ impl Session {
                     ("limit", p.limit.to_string().as_bytes()),
                 ],
             )),
-            // The validation family alone: naming plan.save asks for no
-            // action, and the sizes go as they were typed.
-            Req::Validate {
-                linux_size,
-                shared_size,
-            } => {
-                out.push_str(&record::line("select", &[("action", b"plan.save")]));
-                for (name, value) in [("linux_size", linux_size), ("shared_size", shared_size)] {
-                    if !value.is_empty() {
-                        out.push_str(&record::line(
-                            "arg",
-                            &[("name", name.as_bytes()), ("value", value.as_bytes())],
-                        ));
-                    }
-                }
+            // The action whose parameters are judged: naming it asks for no
+            // action, and the arguments go as they were given.
+            Req::Validate { action, args: a } => {
+                out.push_str(&record::line("select", &[("action", action.as_bytes())]));
+                args(&mut out, a);
             }
             Req::Execute {
                 action,
+                args: a,
                 basis,
                 word,
                 ..
-            } => out.push_str(&record::line(
-                "exec",
-                &[
-                    ("action", action.as_bytes()),
-                    ("basis", basis.as_bytes()),
-                    ("confirm", word.as_bytes()),
-                ],
-            )),
+            } => {
+                out.push_str(&record::line(
+                    "exec",
+                    &[
+                        ("action", action.as_bytes()),
+                        ("basis", basis.as_bytes()),
+                        ("confirm", word.as_bytes()),
+                    ],
+                ));
+                args(&mut out, a);
+            }
         }
         out.into_bytes()
     }
@@ -276,7 +277,7 @@ fn read_bounded(p: &Path, max: u64) -> Option<Vec<u8>> {
 pub fn op_of(req: &Req) -> Op {
     match req {
         Req::Hello => Op::Hello,
-        Req::Snapshot | Req::Read(_) => Op::Snapshot,
+        Req::Snapshot(_) => Op::Snapshot,
         Req::Detail(_) => Op::Detail,
         Req::Validate { .. } => Op::Validate,
         Req::Execute { .. } => Op::Execute,

@@ -13,7 +13,9 @@
 
 use omb_tui::app::{Outcome, Req};
 use omb_tui::core::{Session, seal_inherited_descriptors};
+use omb_tui::read::Scope;
 use omb_tui::record::{self, Op, Record};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -128,12 +130,13 @@ fn basis(snapshot: &Outcome, action: &str) -> String {
 }
 
 fn exec(s: &mut Session, action: &str, word: &str, handoff: bool) -> Outcome {
-    let (snap, _) = run(s, &Req::Snapshot);
+    let (snap, _) = run(s, &Req::Snapshot(Scope::Journey));
     let b = basis(&snap, action);
     run(
         s,
         &Req::Execute {
             action: action.into(),
+            args: vec![],
             basis: b,
             word: word.into(),
             handoff,
@@ -157,6 +160,9 @@ fn the_rust_client_against_the_real_core() {
                 "--test-threads=1",
             ])
             .env("OMB_BENCH_CONTRACT_CHILD", "1")
+            // A group of its own: a core judges quiescence over its group,
+            // so another test's cores must never join this one's.
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "isolated existing contract: {status}");
@@ -259,7 +265,7 @@ fn the_rust_client_against_the_real_core() {
     );
 
     // --- the dashboard's snapshot ------------------------------------------
-    let (snap, _) = run(&mut s, &Req::Snapshot);
+    let (snap, _) = run(&mut s, &Req::Snapshot(Scope::Journey));
     let Outcome::Answer(recs) = &snap else {
         panic!("{snap:?}")
     };
@@ -313,12 +319,13 @@ fn the_rust_client_against_the_real_core() {
     probe("read", "test.read", "");
 
     // --- refusals the core decides, seen through the client -----------------
-    let (snap, _) = run(&mut s, &Req::Snapshot);
+    let (snap, _) = run(&mut s, &Req::Snapshot(Scope::Journey));
     let b = basis(&snap, "test.mutate");
     let (o, _) = run(
         &mut s,
         &Req::Execute {
             action: "test.mutate".into(),
+            args: vec![],
             basis: b.clone(),
             word: "tes".into(),
             handoff: false,
@@ -332,6 +339,7 @@ fn the_rust_client_against_the_real_core() {
         &mut s,
         &Req::Execute {
             action: "test.mutate".into(),
+            args: vec![],
             basis: stale,
             word: "test".into(),
             handoff: false,
@@ -357,11 +365,12 @@ fn the_rust_client_against_the_real_core() {
 
     // --- sup-slow-frontend: the channel held full, the core never waits ------
     std::fs::write(fix.join("test-children/core"), "progress=5000\n").unwrap();
-    let (snap, _) = run(&mut s, &Req::Snapshot);
+    let (snap, _) = run(&mut s, &Req::Snapshot(Scope::Journey));
     let b = basis(&snap, "test.mutate");
     let mut r = s
         .start(&Req::Execute {
             action: "test.mutate".into(),
+            args: vec![],
             basis: b,
             word: "test".into(),
             handoff: false,
@@ -466,6 +475,9 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
                 "--test-threads=1",
             ])
             .env("OMB_D55_CONTRACT_CHILD", "1")
+            // A group of its own: a core judges quiescence over its group,
+            // so another test's cores must never join this one's.
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "isolated D55 contract: {status}");
@@ -530,7 +542,10 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
         let Cmd::Send(req) = cmds.into_iter().next().unwrap() else {
             panic!("only Send")
         };
-        assert!(matches!(req, Req::Hello | Req::Snapshot | Req::Detail(_)));
+        assert!(matches!(
+            req,
+            Req::Hello | Req::Snapshot(Scope::Journey) | Req::Detail(_)
+        ));
         req
     };
     let press = |m: &mut Model, code| update(m, Msg::Key(KeyEvent::new(code, KeyModifiers::NONE)));
@@ -575,7 +590,7 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
         assert!(matches!(hello, Req::Hello));
         let (o, _) = run(&mut s, &hello);
         let snapshot = request(update(&mut m, Msg::Done(hello, o)));
-        assert!(matches!(snapshot, Req::Snapshot));
+        assert!(matches!(snapshot, Req::Snapshot(Scope::Journey)));
         let (o, _) = run(&mut s, &snapshot);
         assert!(
             update(&mut m, Msg::Done(snapshot, o)).is_empty(),
@@ -661,7 +676,7 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
             let (o, _) = run(&mut s, &req);
             assert_eq!(result(&o), ("refused".into(), "changed".into()));
             let fresh = request(update(&mut m, Msg::Done(req, o)));
-            assert!(matches!(fresh, Req::Snapshot));
+            assert!(matches!(fresh, Req::Snapshot(Scope::Journey)));
             assert!(m.detail(Kind::Operation).unwrap().rows.is_empty());
             let (o, _) = run(&mut s, &fresh);
             assert!(update(&mut m, Msg::Done(fresh, o)).is_empty());
@@ -710,7 +725,7 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
     unsafe {
         std::env::set_var("OMB_HOME", &old);
     }
-    let (snapshot, _) = run(&mut old_session, &Req::Snapshot);
+    let (snapshot, _) = run(&mut old_session, &Req::Snapshot(Scope::Journey));
     assert_eq!(result(&snapshot), ("done".into(), "ok".into()));
     let Outcome::Answer(recs) = &snapshot else {
         panic!("{snapshot:?}")
@@ -757,7 +772,7 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
     let hello = request(check.start());
     let (o, _) = run(&mut s, &hello);
     let snapshot = request(update(&mut check, Msg::Done(hello, o)));
-    assert!(check.check && matches!(snapshot, Req::Snapshot));
+    assert!(check.check && matches!(snapshot, Req::Snapshot(Scope::Journey)));
     let (o, _) = run(&mut s, &snapshot);
     assert!(update(&mut check, Msg::Done(snapshot, o)).is_empty());
     check.screen = Screen::Operation;
@@ -771,6 +786,11 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
         "app.rs",
         "screens/mod.rs",
         "screens/table.rs",
+        "screens/plan.rs",
+        "screens/gate.rs",
+        "screens/install.rs",
+        "screens/migrate.rs",
+        "select.rs",
         "keys.rs",
         "widgets/mod.rs",
     ] {
@@ -799,6 +819,9 @@ fn d55_fe01_failed_action_and_failed_snapshot_against_the_real_core() {
                 "--test-threads=1",
             ])
             .env("OMB_D55_FE01_CHILD", "1")
+            // A group of its own: a core judges quiescence over its group,
+            // so another test's cores must never join this one's.
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "isolated D55-FE-01 contract: {status}");
@@ -950,7 +973,7 @@ fn d55_fe01_failed_action_and_failed_snapshot_against_the_real_core() {
         assert!(String::from_utf8_lossy(&record).contains("state=failed"));
         assert!(!state.join("test/effect-mutate").exists());
         let snap = request(update(&mut m, Msg::Done(execute, o)));
-        assert!(matches!(snap, Req::Snapshot));
+        assert!(matches!(snap, Req::Snapshot(Scope::Journey)));
         // Change only the owned fixture input between completed requests.
         unsafe {
             std::env::set_var("OMB_FIXTURE", &unrepresentable);

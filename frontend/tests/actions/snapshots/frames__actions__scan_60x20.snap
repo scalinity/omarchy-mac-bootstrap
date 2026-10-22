@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Scan ──────────────────────────────────────────── v0.2.0
+‹ Journey  Machine  Status  Health  Logs  Plan  Op ▍Scan ›
+┌ Environment scan ────────────────────────────────────────┐
+│   State         scanned                                  │
+│   Items         5 items, 2 selected                      │
+│                                                          │
+│ ▍Sources                                                 │
+│   ✓ Homebrew      done · 3 items                         │
+│   ! Applications  partial · 1 items                      │
+│   ✗ Git and SSH   denied · 0 items                       │
+│                                                          │
+│   ⏎ Scan this Mac                                        │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ⏎ scan  ↑↓ scroll  r refresh  ? help     may act · fixture

@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Progress ──────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Omarchy progress ────────────────────────────────────────────┐
+│  Welcome     ││ ○──────────────○──────────────○──────────────○               │
+│  Journey     ││ 1 Token        2 Network      3 Omarchy Mac  4 Start         │
+│  Machine     ││                                                              │
+│  Status      ││ ▍Omarchy Mac's setup                                         │
+│  Health      ││   Omarchy Mac's setup runs on tty1 (Ctrl+Alt+F1) and keeps   │
+│  Logs        ││   no log of its own; this page shows what the machine        │
+│  Plan        ││   shows. r reads it again.                                   │
+│  Op          ││   · Setup marker  absent                                     │
+│  Scan        ││   ! Setup unit    activating                                 │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│▍ Progress    ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ✓ network.connect: done
+ ↑↓ scroll  r refresh  L logs  ? help  q quit     may act · 2 actions · fixture

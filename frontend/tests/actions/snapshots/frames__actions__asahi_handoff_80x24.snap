@@ -1,0 +1,28 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Install ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Asahi handoff ───────────────────────────────────────────────┐
+│  Welcome     ││ ◆──────────○──────────○──────────○                           │
+│  Journey     ││ 1 Check    2 Answers  3 Boot     4 Token                     │
+│  Machine     ││                                                              │
+│  Status      ││ ▍Before the installer                                        │
+│  Health      ││   The text flow's own asahi.launch.                          │
+│  Logs        ││   ✓ Installer           https://alx.sh read just now,        │
+│  Plan        ││                         SHA-256 9e37 79b9                    │
+│  Op          ││   ! Backup              not confirmed: the installer asks    │
+│  Scan        ││                         you to confirm it                    │
+│  Select      ││                                                              │
+│  Items       ││ ▍What the installer asks                                     │
+│  Review      ││   New size for macOS  you type 532543MiB                     │
+│▍ Install     ││   New OS size         you type 244140MiB                     │
+│  Progress    ││                                                              │
+│              ││ ▍After the installer                                         │
+│              ││   After the shutdown, hold the power button and choose       │
+│              ││   Linux.                                                     │
+│              ││                                                              │
+│              ││ ▍Resume token                                               ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ continue  n network, where offered  ? help     may act · 3 actions · fixture

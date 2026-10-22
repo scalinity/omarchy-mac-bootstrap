@@ -1,7 +1,8 @@
 # Migration
 
-**Status: designed for Gate 4 (scanner, profile) and Gate 5 (bundle); not
-built.** Resolution: docs/RESOLVER.md; restoring: docs/RESTORE.md; the AI
+**Status: built in Gate 4 (scanner, profile: `lib/migrate_scan.sh`,
+`lib/toml.sh`, `lib/migrate_profile.sh`) and Gate 5 (bundle:
+`lib/migrate_bundle.sh`).** Resolution: docs/RESOLVER.md; restoring: docs/RESTORE.md; the AI
 tools: docs/AI-TOOLS.md; the screens: docs/UX.md; the record format:
 docs/PROTOCOL.md.
 
@@ -34,7 +35,7 @@ a `find -P` listing that never follows a link.
   Mail, Messages, Safari, other apps' containers (macOS 27 denies a
   container read without a prompt, so an empty result never means
   "nothing"). A folder the person chooses is read; a denial is `denied`.
-- **Uncertainty stays visible.** Running out of a time or entry budget is
+- **Uncertainty stays visible.** Running out of an entry budget is
   `partial`, never a short but complete list. Every item's evidence is
   `observed`, `inferred` (by a stated rule) or `unknown`; a shape outside
   the version an adapter reads (Homebrew receipts 4.3.11 to 7.x) or a
@@ -55,6 +56,19 @@ a `find -P` listing that never follows a link.
 | AI tools | Claude Code, Codex and OpenCode in full; others recognised and listed (docs/AI-TOOLS.md) | settings, instructions, skills, MCP servers, plugins |
 | chosen folders | names, sizes and types under `~` and `~/.config`; inside, only what the person opens (*Chosen folders*) | folders and files to carry |
 | projects | only folders the person names: a Git checkout's remote and branch | projects to clone again on Linux; never copied |
+
+The adapters run in this order: Homebrew, applications, language tools
+and runtimes, editors, shell, terminal settings, Git, the AI tools, chosen
+folders. An item's id names its adapter and name or its home-relative path
+and never a version (`brew:`, `cask:`, `tap:`, `app:<bundle id>`, `npm:`,
+`cargo:`, `uv:`, `go:<module>`, `vscode:ext:`, `claude:mcp:<name>`,
+`path:<path>`, `project:<path>`); a runtime's id carries its release line
+(`nvm:node@20.11`), so a patch update keeps it. Its `kind` is the migration
+map's source for software (docs/RESOLVER.md → *The migration map*), `ai`
+for the three AI tools, `git`, `mcp` or `plugin` for those settings, `tap`
+and `extension` for Homebrew taps and editor extensions. What runs code —
+hooks, a status line, Codex's `notify`, workflows — is listed with that
+reason and never carried.
 
 A receipt's `installed_on_request: true` is `requested=yes`, `false` is
 `no`, and a missing field or receipt is `requested=unknown`, for the person
@@ -299,6 +313,34 @@ secret values replaced by variable references; Codex's travel in its
 `config.toml`), plugins, and packages (layer, method, target, version,
 whether a guess); the macOS paths found in files carried whole, listed and
 never rewritten; and what was skipped, with the reason.
+
+`bundle.omb` is an `omb-bundle 1` document, sealed, at most 16 MiB
+(`lib/migrate_bundle.sh` defines the family, `_recx_bundle`), its records
+in this order:
+
+| Record | Schema |
+| --- | --- |
+| `bundle` 1 | `at:utc host:hex16 model:text user:bytes home:bytes items:uint files:uint bytes:uint` |
+| `item` * | `id:bytes class:enum(…) whole:bool`, one per item carried |
+| `dir` * | `item:bytes dest:bytes mode:enum(0700\|0755)` |
+| `file` * | `item:bytes dest:bytes mode:enum(0600\|0644\|0700\|0755) sha256:hex64 size:uint whole:bool` |
+| `link` * | `item:bytes dest:bytes target:bytes` |
+| `setting` * | `item:bytes kind:enum(git\|mcp\|plugin) tool:id name:bytes value:bytes?` |
+| `package` * | `item:bytes layer:enum(packages\|runtimes\|tools\|ai) method:id target:bytes? version:bytes? guess:bool` |
+| `macpath` * | `item:bytes dest:bytes path:bytes` |
+| `skip` * | `item:bytes reason:text` |
+
+Export takes each item's carried form from the scanner (`scan_extract`),
+hashes each captured file and scans those bytes (`scan_secret_check`; for a
+key carried after `carry`, `scan_key_check`), and scans every value the
+item would write as well: one hit leaves the whole item behind, reported by
+kind. The writes stop and fail cleanly at three boundaries — each object,
+the manifest, the rename — and leave only the `.partial-*` folder. Before
+the rename the whole bundle passes the bundle check, `bndl_check DIR`,
+which restore runs again on Linux: the seal, every `dest` against the
+grammar and all of them together, each link's text (relative, never above
+the home), and each object a plain file of its recorded size, at most
+64 MiB, with its digest.
 
 Objects are plain regular files named by the lowercase hex SHA-256 of their
 bytes, at most 64 MiB each (a larger file is skipped as `too-large`): no

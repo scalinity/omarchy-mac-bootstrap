@@ -1,9 +1,8 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
- ◒ Plan check ────────────────────────────────────────────────────────── v0.2.0
+ ◒ Plan ──────────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Plan check ──────────────────────────────────────────────────┐
 │  Welcome     ││   The core checks two sizes against this Mac's disk and      │
@@ -14,14 +13,14 @@ expression: f
 │  Logs        ││ ❯ Shared size  100GB▏                                        │
 │▍ Plan        ││   as 250GB, 1.5TB or 30%; a size left empty is not sent      │
 │  Op          ││                                                              │
-│              ││   For Linux 250GB · Shared 100GB                             │
-│              ││ ✓ checked                                                    │
+│  Scan        ││   For Linux 250GB · Shared 100GB                             │
+│  Select      ││ ✓ checked                                                    │
+│  Items       ││                                                              │
+│  Review      ││ ▍The installer asks                                          │
+│  Install     ││   New size for macOS  you type 614730MiB                     │
+│  Progress    ││   New OS size         you type 238419MiB                     │
 │              ││                                                              │
-│              ││ ▍The installer asks                                          │
-│              ││   New size for macOS  you type 614730MiB                     │
-│              ││   New OS size         you type 238419MiB                     │
-│              ││                                                              │
-│              ││ ▍Sizes as the core reads them                                │
+│              ││ ▍As the core reads them                                      │
 │              ││   Linux size          250000000000 bytes                     │
 │              ││   Shared size         100000000000 bytes                     │
 │              ││                                                             ↓│

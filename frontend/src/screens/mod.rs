@@ -3,12 +3,14 @@
 
 mod dashboard;
 mod gate;
+mod install;
+mod migrate;
 mod notes;
 mod plan;
 mod table;
 mod welcome;
 
-use crate::app::{Blocker, Level, Model, Region, Screen};
+use crate::app::{Blocker, Fact, Level, Model, Region, Screen};
 use crate::keys;
 use crate::theme::{Theme, Token};
 use crate::widgets::{self, BANNER_H, MIN_H, MIN_W, Tier, tier};
@@ -85,33 +87,49 @@ pub fn draw(f: &mut Frame, m: &Model, t: &Theme, tick_ms: u32) {
     if tier == Tier::Narrow && m.side && !matches!(m.screen, Screen::Gate | Screen::Help) {
         sidebar(f, work, m, t);
     } else {
-        workspace(f, work, body, m, t, tier);
+        workspace(f, work, body, m, t, tier, m.screen);
     }
     if with_status {
         widgets::status(f, status, m, t, tick_ms);
     }
     let place = if m.region == Region::Work && crate::app::value_open(m, m.screen) {
         keys::Place::Value
+    } else if m.region == Region::Work && m.screen == Screen::Inventory && m.inv.open {
+        keys::Place::Item
     } else {
         keys::place(m.screen, m.region, m.logs_tab)
     };
     widgets::footer(f, footer, m, place, t);
 }
 
-fn workspace(f: &mut Frame, work: Rect, body: Rect, m: &Model, t: &Theme, tier: Tier) {
-    match m.screen {
+fn workspace(
+    f: &mut Frame,
+    work: Rect,
+    body: Rect,
+    m: &Model,
+    t: &Theme,
+    tier: Tier,
+    screen: Screen,
+) {
+    match screen {
         Screen::Connecting => notes::connecting(f, work, t),
         Screen::Welcome => welcome::draw(f, work, m, t),
         Screen::Dashboard => dashboard::draw(f, work, m, t, tier),
+        Screen::Inventory => migrate::inventory(f, work, m, t),
+        Screen::Review => migrate::review(f, work, m, t),
+        Screen::Scan => migrate::scan(f, work, m, t),
+        Screen::Selection => migrate::selection(f, work, m, t),
         Screen::Machine | Screen::Status | Screen::Health | Screen::Logs | Screen::Operation => {
             table::draw(f, work, m, t, tier)
         }
-        Screen::Plan => plan::draw(f, work, m, t),
+        Screen::Plan | Screen::Form => plan::draw(f, work, m, t, screen),
+        Screen::Install | Screen::Progress | Screen::Shared => install::draw(f, work, m, t, screen),
         Screen::Help => notes::help(f, work, m, t),
         Screen::Fatal => notes::fatal(f, work, m, t),
         Screen::Gate => {
-            if tier == Tier::Wide {
-                dashboard::draw(f, work, m, t, tier);
+            // At wide sizes the gate is drawn over the screen it came from.
+            if tier == Tier::Wide && m.back != Screen::Gate {
+                workspace(f, work, body, m, t, tier, m.back);
             }
             gate::draw(f, body, m, t);
         }
@@ -137,12 +155,12 @@ fn sidebar(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         let h = (machine.len() as u16 + 2).min(area.height);
         let [top, below] =
             Layout::vertical([Constraint::Length(h), Constraint::Min(0)]).areas(area);
-        let inner = widgets::panel(f, top, "This machine", t);
+        let inner = widgets::panel(f, top, "System Overview", t);
         f.render_widget(Paragraph::new(machine), inner);
         rest = below;
     }
     if rest.height >= 3 && show(&[Screen::Dashboard, Screen::Welcome]) {
-        let inner = widgets::panel(f, rest, "Next", t);
+        let inner = widgets::panel(f, rest, "Next steps", t);
         let mut lines = Vec::new();
         match m.snap.as_ref().map(|s| s.guides.as_slice()).unwrap_or(&[]) {
             [] => lines.push(Line::styled(
@@ -251,8 +269,12 @@ pub enum Item<'a> {
     Verdict(Level, String),
     /// A read's fault, in its own words.
     Fault(&'a crate::read::Fault),
-    /// The plan check's Nth size field.
+    /// The Nth field of the form shown.
     Field(usize),
+    /// A check-list line: the core's fact, its state's glyph first.
+    Check(&'a Fact),
+    /// The disk strip over the core's regions.
+    Strip(&'a [crate::read::DiskRegion]),
 }
 
 /// The number of blocks SCREEN holds: the scroll's bound.
@@ -260,7 +282,9 @@ pub fn blocks(m: &Model, s: Screen) -> usize {
     match s {
         Screen::Welcome => welcome::items(m).len(),
         Screen::Dashboard => dashboard::items(m).len(),
-        Screen::Plan => plan::items(m).len(),
+        Screen::Plan | Screen::Form => plan::items(m, s).len(),
+        Screen::Install | Screen::Progress | Screen::Shared => install::items(m, s).len(),
+        Screen::Scan => migrate::scan_items(m).len(),
         _ => 0,
     }
 }
@@ -270,6 +294,7 @@ fn label_width(items: &[Item]) -> usize {
         .iter()
         .filter_map(|i| match i {
             Item::Pair { label, .. } => Some(widgets::cells(label)),
+            Item::Check(f) => Some(widgets::cells(&f.label)),
             _ => None,
         })
         .max()
@@ -435,23 +460,63 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             .collect(),
         Item::Fault(f) => table::fault_lines(f, t, width),
         Item::Field(i) => {
-            let p = &m.plan;
-            let (label, value) = if *i == 0 {
-                ("Linux size", &p.linux)
+            let p = if m.screen == Screen::Form || m.back == Screen::Form {
+                &m.form
             } else {
-                ("Shared size", &p.shared)
+                &m.plan
             };
+            let Some(field) = p.fields.get(*i) else {
+                return Vec::new();
+            };
+            let label = plan::field_label(&field.name);
+            let value = &field.value;
             let here = m.region == crate::app::Region::Work && p.field == *i;
             let pointer = if here { t.g.pointer } else { " " };
+            let lw = p
+                .fields
+                .iter()
+                .map(|f| widgets::cells(&plan::field_label(&f.name)))
+                .max()
+                .unwrap_or(0)
+                .clamp(12, 18);
             let mut spans = vec![
                 Span::styled(format!(" {pointer} "), t.style(Token::Accent)),
-                Span::styled(format!("{label:<12} "), t.style(Token::Muted)),
+                Span::styled(
+                    format!("{:<lw$} ", widgets::fit(&label, lw, t.caps.unicode)),
+                    t.style(Token::Muted),
+                ),
             ];
-            if value.is_empty() && !here {
-                spans.push(Span::styled("not given", t.style(Token::Pending)));
+            if !field.choices.is_empty() {
+                // A choice: the core's choices, the one picked marked.
+                for c in &field.choices {
+                    let mark = if *c == *value {
+                        if t.caps.unicode { "◉" } else { "(x)" }
+                    } else if t.caps.unicode {
+                        "○"
+                    } else {
+                        "( )"
+                    };
+                    spans.push(Span::styled(
+                        format!("{mark} {c}  "),
+                        if *c == *value {
+                            t.style(Token::Selected)
+                        } else {
+                            t.style(Token::Text)
+                        },
+                    ));
+                }
+            } else if value.is_empty() && !here {
+                spans.push(Span::styled(
+                    if field.required {
+                        "not given (required)"
+                    } else {
+                        "not given"
+                    },
+                    t.style(Token::Pending),
+                ));
             } else {
                 spans.push(Span::styled(
-                    widgets::fit(value, width.saturating_sub(20), t.caps.unicode),
+                    widgets::fit(value, width.saturating_sub(lw + 8), t.caps.unicode),
                     if here {
                         t.style(Token::Gate)
                     } else {
@@ -459,7 +524,7 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
                     },
                 ));
             }
-            if here {
+            if here && field.choices.is_empty() {
                 spans.push(Span::styled(
                     if t.caps.unicode { "▏" } else { "_" },
                     t.style(Token::Gate),
@@ -467,6 +532,29 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             }
             vec![Line::from(spans)]
         }
+        Item::Check(fact) => {
+            let (style, glyph) = widgets::style_of(t, &fact.state);
+            let lw = w.label.max(8);
+            let room = width.saturating_sub(lw + 8).max(8);
+            let mut out = Vec::new();
+            for (i, l) in widgets::wrap(&t.say(&fact.value), room)
+                .into_iter()
+                .enumerate()
+            {
+                let (g, label) = if i == 0 {
+                    (glyph, widgets::fit(&t.say(&fact.label), lw, t.caps.unicode))
+                } else {
+                    (" ", String::new())
+                };
+                out.push(Line::from(vec![
+                    Span::styled(format!("   {g} "), style),
+                    Span::styled(format!("{label:<lw$}  "), t.style(Token::Muted)),
+                    Span::styled(l, t.style(Token::Text)),
+                ]));
+            }
+            out
+        }
+        Item::Strip(regions) => widgets::strip(regions, t, width),
     }
 }
 

@@ -255,13 +255,34 @@ fn cp1_compatibility_against_actual_frozen_admission() {
     );
     extract(S, &released, &["frontend/src/record.rs"]);
     let cases = corpus();
-    let old_cases = corpus_at(&old);
+    // Two named deltas since the frozen corpus (phase A): the bundle
+    // approval case is gone with its action (D39), and the resume token
+    // carries no prof field (D20). Everything else is unchanged.
+    let removed = ["proto-golden-approve.req"];
+    let old_cases: Vec<Case> = corpus_at(&old)
+        .into_iter()
+        .filter(|c| !removed.contains(&c.name.as_str()))
+        .collect();
     assert_eq!(cases.len(), old_cases.len() + 50);
+    let without_prof = |doc: &[u8]| -> Vec<u8> {
+        let field = b",prof%3D3f09c2a1";
+        let mut out = Vec::with_capacity(doc.len());
+        let mut i = 0;
+        while i < doc.len() {
+            if doc[i..].starts_with(field) {
+                i += field.len();
+            } else {
+                out.push(doc[i]);
+                i += 1;
+            }
+        }
+        out
+    };
     for c in &old_cases {
         let current = cases.iter().find(|n| n.name == c.name).unwrap();
         assert_eq!(
             (&current.doc, current.family, current.op, &current.want),
-            (&c.doc, c.family, c.op, &c.want),
+            (&without_prof(&c.doc), c.family, c.op, &c.want),
             "old corpus changed: {}",
             c.name
         );
@@ -483,7 +504,7 @@ fn golden_responses_decode() {
     let code = d.records.iter().find(|r| r.ty == "code").unwrap();
     assert_eq!(
         code.text("value").unwrap(),
-        "omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,loc=en_US.UTF-8,ssh=0,gh=octocat,linux=250,shared=150,dev=1,plan=1a2b3c4d,prof=3f09c2a1"
+        "omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=America/New_York,loc=en_US.UTF-8,ssh=0,gh=octocat,linux=250,shared=150,dev=1,plan=1a2b3c4d"
     );
     let act = d.records.iter().find(|r| r.ty == "action").unwrap();
     assert_eq!(act.text("label"), Some("Create Shared"));

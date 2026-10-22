@@ -1,0 +1,24 @@
+---
+source: tests/actions/mod.rs
+expression: "frame(m, w, h)"
+---
+ ◒ Shared ────────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status  Health  Logs  Plan ›
+┌ Shared creation ─────────────────────────────────────────┐
+│ ▍The disk                                                │
+│ ▕█████████████████████████████████████████████         ▏ │
+│  0                       465 GB                  929 GB  │
+│ ▒ Apple 6.0 GB · █ macOS 520 GB · ▒ boot 3.0 GB · █      │
+│ Linux 250 GB · free 150 GB                               │
+│                                                          │
+│ ▍Before Shared is created                                │
+│   The text flow's own shared.create.                     │
+│   · Where     after disk0s6 (Linux), 150.0 GB free, read │
+│               just now                                   │
+│                                                          │
+│   ⏎ opens the gate: type yes to run Create Shared;       │
+│   this terminal is the program's until it exits.         │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ⏎ continue  ↑↓ scroll  ? help            may act · fixture

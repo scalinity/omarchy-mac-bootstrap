@@ -8,12 +8,14 @@
 use crate::record::{self, Record};
 use std::cell::Cell;
 
-/// The read scopes the frontend presents.
+/// The scopes whose snapshots the frontend presents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
     Journey,
     Health,
     Logs,
+    /// The migration profile (docs/MIGRATION.md → *On the wire*).
+    Profile,
 }
 
 impl Scope {
@@ -22,6 +24,7 @@ impl Scope {
             Scope::Journey => "journey",
             Scope::Health => "health",
             Scope::Logs => "logs",
+            Scope::Profile => "profile",
         }
     }
 }
@@ -35,15 +38,27 @@ pub enum Kind {
     Doctor,
     Log,
     Operation,
+    /// The profile's items, decisions first.
+    Items,
+    /// The decisions the items offer, keyed by item id.
+    Choices,
+    /// The Migration Review, one row per category.
+    Review,
+    /// What a typed `opaque` would cover.
+    Opaque,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 5] = [
+    pub const ALL: [Kind; 9] = [
         Kind::Machine,
         Kind::Status,
         Kind::Doctor,
         Kind::Log,
         Kind::Operation,
+        Kind::Items,
+        Kind::Choices,
+        Kind::Review,
+        Kind::Opaque,
     ];
 
     pub fn scope(self) -> Scope {
@@ -51,6 +66,7 @@ impl Kind {
             Kind::Machine | Kind::Status | Kind::Operation => Scope::Journey,
             Kind::Doctor => Scope::Health,
             Kind::Log => Scope::Logs,
+            Kind::Items | Kind::Choices | Kind::Review | Kind::Opaque => Scope::Profile,
         }
     }
 
@@ -61,6 +77,20 @@ impl Kind {
             Kind::Doctor => "doctor",
             Kind::Log => "log",
             Kind::Operation => "operation",
+            Kind::Items => "items",
+            Kind::Choices => "choices",
+            Kind::Review => "review",
+            Kind::Opaque => "opaque",
+        }
+    }
+
+    /// The `row` kind its pages carry (docs/MIGRATION.md → *On the wire*:
+    /// `items` pages `item` rows, `choices` pages `choice` rows).
+    pub fn row(self) -> &'static str {
+        match self {
+            Kind::Items => "item",
+            Kind::Choices => "choice",
+            k => k.name(),
         }
     }
 
@@ -76,6 +106,10 @@ impl Kind {
             Kind::Doctor => "reading health findings",
             Kind::Log => "reading log lines",
             Kind::Operation => "reading the operation record diagnostic",
+            Kind::Items => "reading the inventory",
+            Kind::Choices => "reading the choices",
+            Kind::Review => "reading the review",
+            Kind::Opaque => "reading what opaque covers",
         }
     }
 }
@@ -85,8 +119,8 @@ impl Kind {
 /// accepted 40 lines — always arrives in one answer.
 pub const LIMIT: u64 = 500;
 
-/// One page request: the kind, the generation of the snapshot it was opened
-/// from, and the rows asked for.
+/// One page request, `Detail{scope, kind}`: the kind (which names its scope),
+/// the generation of that scope's last snapshot, and the rows asked for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Page {
     pub kind: Kind,
@@ -95,10 +129,12 @@ pub struct Page {
     pub limit: u64,
 }
 
-/// One row of a page: its key and its columns, as the core sent them.
+/// One row of a page: its key and its columns, as the core sent them; `id`
+/// is the key's own bytes, which a choice about the row sends back unchanged.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
     pub key: String,
+    pub id: Vec<u8>,
     pub cols: Vec<String>,
 }
 
@@ -157,6 +193,8 @@ pub struct Detail {
     pub editing: bool,
     /// Logs only: show lines of this level alone.
     pub level: Option<String>,
+    /// Items only: show this category's rows alone (its first column).
+    pub tab: Option<String>,
     /// The focused row's full values, wrapped; while open, the moving keys
     /// scroll them instead of the rows.
     pub open: bool,
@@ -183,6 +221,7 @@ impl Detail {
             filter: String::new(),
             editing: false,
             level: None,
+            tab: None,
             open: false,
             value_top: Cell::new(0),
             land: Land::First,
@@ -199,6 +238,11 @@ impl Detail {
                 self.level
                     .as_ref()
                     .is_none_or(|l| self.kind == Kind::Log && r.col(1) == l)
+            })
+            .filter(|r| {
+                self.tab
+                    .as_ref()
+                    .is_none_or(|c| self.kind == Kind::Items && r.col(0) == c)
             })
             .filter(|r| {
                 needle.is_empty() || r.cols.iter().any(|c| c.to_lowercase().contains(&needle))
@@ -252,20 +296,53 @@ impl Detail {
     }
 }
 
-/// A plan check as the core answered it (docs/PROTOCOL.md → *Future plan
-/// validation contract*): the inputs sent and every record of the answer,
-/// shown as they came. It is never a saved plan and grants nothing.
+/// The arguments of a request: each parameter's name and its bytes.
+pub type Args = Vec<(String, Vec<u8>)>;
+
+/// One region of a disk layout, as the core sent it (`region` records).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiskRegion {
+    pub start: u64,
+    pub size: u64,
+    pub role: String,
+    pub label: String,
+}
+
+/// The regions among RECORDS, in the order the core sent them.
+pub fn regions(records: &[Record]) -> Vec<DiskRegion> {
+    let n = |r: &Record, k: &str| r.text(k).and_then(|v| v.parse().ok()).unwrap_or(0);
+    records
+        .iter()
+        .filter(|r| r.ty == "region")
+        .map(|r| DiskRegion {
+            start: n(r, "start"),
+            size: n(r, "size"),
+            role: field(r, "role"),
+            label: field(r, "label"),
+        })
+        .collect()
+}
+
+/// A validation as the core answered it (`validate select action=…`): the
+/// arguments sent and every record of the answer, shown as they came. A
+/// review grants nothing by itself: an execute carries its basis and the
+/// core judges it afresh.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Checked {
-    pub linux: String,
-    pub shared: String,
+    pub action: String,
+    /// The arguments sent, as typed.
+    pub args: Args,
     pub status: String,
     pub code: String,
     pub text: String,
     /// The installer's questions and what to type: prompt, value, bytes.
     pub answers: Vec<(String, String, String)>,
-    /// Each size as the core normalised it, in bytes.
+    /// Each parameter as the core normalised it, for display.
     pub normals: Vec<(String, String)>,
+    /// The same, byte for byte: what an execute of the review sends.
+    pub normal_args: Args,
+    /// The layout the core computed, when it sent one.
+    pub regions: Vec<DiskRegion>,
     /// Name, code and text of a refused parameter.
     pub invalid: Vec<(String, String, String)>,
     /// Id, text and fix.
@@ -283,10 +360,11 @@ fn field(r: &Record, k: &str) -> String {
 }
 
 impl Checked {
-    pub fn of(records: &[Record], linux: &str, shared: &str) -> Checked {
+    pub fn of(records: &[Record], action: &str, args: &Args) -> Checked {
         let mut c = Checked {
-            linux: linux.to_string(),
-            shared: shared.to_string(),
+            action: action.to_string(),
+            args: args.clone(),
+            regions: regions(records),
             ..Checked::default()
         };
         for r in records {
@@ -295,7 +373,13 @@ impl Checked {
                     c.answers
                         .push((field(r, "prompt"), field(r, "value"), field(r, "bytes")))
                 }
-                "normal" => c.normals.push((field(r, "name"), field(r, "value"))),
+                "normal" => {
+                    c.normals.push((field(r, "name"), field(r, "value")));
+                    c.normal_args.push((
+                        r.text("name").unwrap_or("").to_string(),
+                        r.get("value").unwrap_or_default().to_vec(),
+                    ));
+                }
                 "invalid" => c
                     .invalid
                     .push((field(r, "name"), field(r, "code"), field(r, "text"))),
@@ -327,9 +411,10 @@ pub fn generation(records: &[Record]) -> Option<(String, u64)> {
 pub fn rows(records: &[Record], kind: Kind) -> Vec<Row> {
     records
         .iter()
-        .filter(|r| r.ty == "row" && r.text("kind") == Some(kind.name()))
+        .filter(|r| r.ty == "row" && r.text("kind") == Some(kind.row()))
         .map(|r| Row {
             key: field(r, "key"),
+            id: r.get("key").unwrap_or_default().to_vec(),
             cols: r
                 .list("col")
                 .into_iter()
@@ -351,6 +436,7 @@ mod tests {
         d.rows = (0..n)
             .map(|i| Row {
                 key: i.to_string(),
+                id: i.to_string().into_bytes(),
                 cols: vec![],
             })
             .collect();

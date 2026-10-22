@@ -1,6 +1,5 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
@@ -14,12 +13,12 @@ expression: f
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   Run ./omarchy-bootstrap to survey this Mac and plan        │
 │  Op          ││   storage.                                                   │
-│              ││                                                              │
-│              ││ ▍Facts                                                       │
-│              ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)       ↓│
-│              │└──────────────────────────────────────────────────────────────┘
-│              │┌ This machine ────────────────────────────────────────────────┐
-│              ││ Platform      macos                                          │
+│  Scan        ││                                                              │
+│  Select      ││ ▍Facts                                                       │
+│  Items       ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)       ↓│
+│  Review      │└──────────────────────────────────────────────────────────────┘
+│  Install     │┌ System Overview ─────────────────────────────────────────────┐
+│  Progress    ││ Platform      macos                                          │
 │              ││ Architecture  arm64                                          │
 │              ││ Model         MacBookPro18,1                                 │
 │              ││ Chip          Apple M1 Pro                                   │

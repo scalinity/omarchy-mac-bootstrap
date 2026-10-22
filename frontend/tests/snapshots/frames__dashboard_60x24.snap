@@ -1,11 +1,10 @@
 ---
 source: tests/frames.rs
-assertion_line: 221
 expression: text(&b)
 ---
  ◒ Journey ───────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
-  Welcome ▍Journey  Machine  Status  Health  Logs  Plan  Op
+  Welcome ▍Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Journey ─────────────────────────────────────────────────┐
 │ · · · · · · · · · ·                                      │
 │ No stage is derived yet: every station is later.         │
@@ -18,7 +17,7 @@ expression: text(&b)
 │   Fixture    mac-m1pro-1tb-roomy                         │
 │   Operation  ✓ none                                      │
 │                                                          │
-│ ▍Actions                                                 │
+│ ▍What you can do now                                     │
 │ ❯ Read the fixture (test)         read                   │
 │   Change the fixture (test)       act                    │
 │   Hand over the terminal (test)   act · handoff          │

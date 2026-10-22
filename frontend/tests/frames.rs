@@ -6,6 +6,7 @@
 //! the buffer; and every degraded profile (16 colours, no colour, ASCII).
 
 use omb_tui::app::{Cmd, Model, Msg, Outcome, Req, Screen, update};
+use omb_tui::read::Scope;
 use omb_tui::record::Record;
 use omb_tui::screens;
 use omb_tui::theme::{Caps, Depth, Theme, Token};
@@ -159,7 +160,10 @@ fn dashboard(barrier: bool) -> Model {
         ));
     }
     snap.push(result("done", "ok", ""));
-    update(&mut m, Msg::Done(Req::Snapshot, Outcome::Answer(snap)));
+    update(
+        &mut m,
+        Msg::Done(Req::Snapshot(Scope::Journey), Outcome::Answer(snap)),
+    );
     assert_eq!(m.screen, Screen::Dashboard);
     m
 }
@@ -311,6 +315,7 @@ fn the_foundations_states() {
     let mut m = dashboard(false);
     let req = Req::Execute {
         action: "test.handoff".into(),
+        args: vec![],
         basis: "5f2e".repeat(16),
         word: "test".into(),
         handoff: true,
@@ -320,10 +325,11 @@ fn the_foundations_states() {
         &mut m,
         Msg::Done(req, Outcome::Answer(vec![result("done", "ok", "")])),
     );
-    assert_eq!(c, vec![Cmd::Send(Req::Snapshot)]);
+    assert_eq!(c, vec![Cmd::Send(Req::Snapshot(Scope::Journey))]);
     insta::assert_snapshot!("handoff_returned_80x24", text(&render(&m, &t, 80, 24)));
     let req = Req::Execute {
         action: "test.mutate".into(),
+        args: vec![],
         basis: "5f2e".repeat(16),
         word: "test".into(),
         handoff: false,
@@ -547,3 +553,9 @@ fn degraded_profiles() {
 
 /// The Gate 2 read surface: its screens, states, sizes and profiles.
 mod read_surface;
+
+/// The installer's screens and the generic requests (Gate 3).
+mod actions;
+
+/// The migration's screens over the profile (Gate 4).
+mod migration;

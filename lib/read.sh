@@ -110,8 +110,9 @@ END_BLOCKERS
   # The installer's actions the fresh read offers now (core_rows_snapshot,
   # before this dataset): their gate facts, the barriers of their scopes,
   # the actions and their parameters, in the response's order.
-  if [ "${CORE_ROWS:-}" = 1 ]; then cat "$OMB_TMP/rows.facts" || return 1; fi
+  if [ "${CORE_ROWS:-}" = 1 ]; then cat "$OMB_TMP/rows.facts" "$OMB_TMP/rows.regions" "$OMB_TMP/rows.answers" || return 1; fi
   [ -z "$guide" ] || printf '%s\n' "$guide"
+  if [ "${CORE_ROWS:-}" = 1 ]; then cat "$OMB_TMP/rows.guides" || return 1; fi
   [ -z "$token" ] || printf '%s\n' "$token"
   printf '%s' "$blockers"
   if [ "${CORE_ROWS:-}" = 1 ]; then cat "$OMB_TMP/rows.blockers" "$OMB_TMP/rows.actions" "$OMB_TMP/rows.params" || return 1; fi

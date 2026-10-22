@@ -32,7 +32,7 @@ lint() {
     echo "shellcheck"
     # Per file for each file's own findings; cross-file "unused"/"unassigned"
     # codes are checked through the entrypoint, which sources everything.
-    "$sc" -S style -e SC2034,SC2154,SC2153 omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/generate.sh tests/proto/corpus.sh tests/children/* || status=1
+    "$sc" -S style -e SC2034,SC2154,SC2153 omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/*.sh tests/proto/corpus.sh tests/children/* || status=1
     "$sc" -x omarchy-bootstrap || status=1
     [ "$status" = 0 ] && echo "  ok"
   elif [ "${OMB_REQUIRE_SHELLCHECK:-0}" = 1 ]; then

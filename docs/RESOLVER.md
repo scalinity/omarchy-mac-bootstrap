@@ -1,7 +1,7 @@
 # Resolution
 
-**Status: designed for Gate 4, with the check on Linux in M15-A; not
-built.**
+**Status: built in Gate 4 (`lib/migrate_resolve.sh`,
+`data/migration-map.omb`); the check on Linux comes with M15-A.**
 
 The resolver answers one question for every selected item: *what should
 exist on Omarchy, on aarch64, and how does it get there?* It is a pure,
@@ -100,41 +100,49 @@ package lists at the verified commit (docs/UPSTREAM.md).
 ## The migration map
 
 `data/migration-map.omb` is an `omb-migration-map 1` document in the record
-format, admitted like every other (docs/PROTOCOL.md → §2) and reviewed like
-code. It is written for the owner's own inventory: what the owner's Mac
-has, and what each becomes on Omarchy. What it does not name is
-`unresolved`, and the person decides.
+format, sealed, at most 1 MiB, admitted like every other (docs/PROTOCOL.md
+→ §2) and reviewed like code. It is written for the owner's own inventory:
+what the everyday Mac holds, and what each becomes on Omarchy Mac on
+aarch64; every entry's `note` says where its target was confirmed (the Arch
+Linux ARM aarch64 databases, the `[omarchy]` repository, Omarchy Mac's
+package lists, Flathub, the tool's own releases). What it does not name is
+`unresolved`, and the person decides. `lib/migrate_resolve.sh` defines the
+family (`_recx_map`); the generator that writes and seals it is kept beside
+the map's review, not in the tool.
 
 ```text
 omb-migration-map 1
-note	text=ripgrep:%20the%20same%20program%20from%20either%20source
-map	id=ripgrep	source=brew-formula	name=ripgrep	disposition=EXACT	method=pacman	target=ripgrep	keep=	check=
-map	id=ripgrep-cargo	source=cargo	name=ripgrep	disposition=EXACT	method=pacman	target=ripgrep	keep=	check=
-map	id=node	source=brew-formula	name=node	disposition=RUNTIME	method=mise	target=node	keep=major	check=
-map	id=node-nvm	source=nvm	name=node	disposition=RUNTIME	method=mise	target=node	keep=major	check=
-map	id=rectangle	source=brew-cask	name=rectangle	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:hyprland
-map	id=iterm2	source=brew-cask	name=iterm2	disposition=ALTERNATIVE	method=	target=	keep=	check=
-choice	map=iterm2	id=keep-default	method=	target=
-choice	map=iterm2	id=ghostty	method=omarchy-helper	target=omarchy-install-terminal	arg=ghostty
-choice	map=iterm2	id=kitty	method=pacman	target=kitty
+note	text=…
+map	id=bat	source=brew-formula	name=bat	disposition=OMARCHY_PROVIDED	method=	target=	keep=	check=pkg:bat	note=…
+map	id=binutils	source=brew-formula	name=binutils	disposition=EXACT	method=pacman	target=binutils	keep=	check=	note=…
+map	id=cliclick	source=brew-formula	name=cliclick	disposition=ALTERNATIVE	method=	target=	keep=	check=	note=…
+choice	map=cliclick	id=keep-default	label=Leave%20it:%20Omarchy%27s%20wtype%20types%20keys	method=	target=
+choice	map=cliclick	id=ydotool	label=ydotool:%20keyboard%20and%20mouse%20input	method=pacman	target=ydotool
 ```
 
 | Record | Schema | Holds |
 | --- | --- | --- |
-| `map` * | `id:id source:enum(brew-formula\|brew-cask\|app\|cargo\|npm\|pnpm\|bun\|nvm\|mise\|asdf\|uv\|pipx\|go) name:bytes disposition:enum(EXACT\|OMARCHY_PROVIDED\|NATIVE_EQUIVALENT\|RUNTIME\|ECOSYSTEM\|ALTERNATIVE\|MACOS_ONLY\|UNSUPPORTED_ARCH) method:enum(pacman\|omarchy-helper\|mise\|mise-backend\|flatpak\|uv\|cargo-binstall\|go\|npm)? target:bytes? arg:bytes* keep:enum(major\|minor\|exact)? check:bytes?` | what one macOS item becomes: a method and target, how much of a runtime's version is kept, or the check that shows Omarchy provides it |
-| `choice` * | `map:id id:id method:enum(…)? target:bytes? arg:bytes*` | one option of an `ALTERNATIVE`; `keep-default`, with no method, keeps Omarchy's own |
 | `note` * | `text:text` | a note for people; the resolver ignores it |
+| `map` * | `id:id source:enum(brew-formula\|brew-cask\|app\|cargo\|npm\|pnpm\|bun\|nvm\|mise\|asdf\|uv\|pipx\|go\|ai) name:bytes disposition:enum(EXACT\|OMARCHY_PROVIDED\|NATIVE_EQUIVALENT\|RUNTIME\|ECOSYSTEM\|ALTERNATIVE\|MACOS_ONLY\|UNSUPPORTED_ARCH) method:enum(pacman\|mise\|mise-backend\|flatpak\|uv\|cargo-binstall\|go\|npm\|agent)? target:bytes? keep:enum(major\|minor\|exact)? check:bytes? note:text?` | what one macOS item becomes: a method and target, how much of a runtime's version is kept, or the check that shows Omarchy provides it |
+| `choice` * | `map:id id:id label:text method:enum(…)? target:bytes?` | one option of an `ALTERNATIVE`; `keep-default`, with no method, keeps Omarchy's own |
 
-Each `map` record is followed by its `choice` records, and `note` records
-stand anywhere. Entries with one method and target are one program, so
-Homebrew's `node` and nvm's are both mise's `node`.
+The records come in that order: notes, the entries, then the choices. An
+item's `source` is its kind in the inventory, and an application's `name`
+its bundle id; the AI tools are `source=ai` with `claude-code`, `codex` and
+`opencode`, installed by `method=agent` (docs/AI-TOOLS.md). Entries with one
+method and target are one program, so Homebrew's `node` and nvm's are both
+mise's `node`. A map that admits but breaks a rule — a source and name used
+twice, a target outside its method's grammar, a disposition without the
+method, target, keep or check it needs, a choice of an entry that is not an
+`ALTERNATIVE`, or an `ALTERNATIVE` without choices — is refused whole, and
+nothing resolves.
 
 ## Resolved on macOS, checked on Linux
 
-1. **On macOS**, in `profile`: the map and the person's decisions give
-   every selected item a disposition, method and target, saved in the
-   profile as `resolve` records. Nothing is fetched: whether a package
-   exists for aarch64 is decided on Linux.
+1. **On macOS**, in `profile`: `res_resolve` gives every selected item a
+   `resolution` record in the profile, from the map and the person's
+   decisions, in the inventory's order. Nothing is fetched: whether a
+   package exists for aarch64 is decided on Linux.
 2. **On Linux**, in `restore` (docs/RESTORE.md): before anything installs,
    each package is looked up with `LC_ALL=C pacman -Si <name>` (no root;
    it matches names only, so the map names the package itself), and each
@@ -144,19 +152,30 @@ Homebrew's `node` and nvm's are both mise's `node`.
 
 | Record | Schema |
 | --- | --- |
-| `resolve` (in the profile) | `id:bytes state:enum(unresolved\|needs-decision\|resolved\|unsupported) disposition:enum(…)? method:enum(…)? target:bytes? arg:bytes* version:bytes? guess:enum(yes\|no) by:enum(map\|decision)? map:id?` |
+| `resolution` (in the profile) | `id:bytes layer:enum(packages\|runtimes\|tools\|ai\|files\|settings\|none) method:id target:bytes? version:bytes? guess:bool state:enum(resolved\|unresolved\|needs-decision\|unsupported\|mac-only\|skipped) note:text?` |
+
+A resolution's method is the map's, or `provided` (Omarchy has it, with the
+entry's check), `carry` (a file the bundle carries), `git`, `mcp` or
+`plugin` (a setting), or `none`; its `note` names the map entry or decision
+that produced it. The layer follows the method: pacman and `provided` are
+packages; mise is runtimes; mise backends, Flathub, uv, cargo-binstall, go
+and npm are tools; `agent` is AI tools; `carry` is files; `git`, `mcp` and
+`plugin` are settings.
 
 ### The person's decisions
 
-What the map does not settle is a decision, recorded as `decision id:bytes
-answer:bytes`:
+What the map does not settle is a decision, recorded as `decision
+id:bytes choice:id value:bytes?` (the profile's choices,
+docs/MIGRATION.md → *On the wire*):
 
-- an `ALTERNATIVE`: one of its `choice` ids;
-- several versions of one runtime on the Mac: the one Linux gets
-  (`version:<V>`), since each runtime has one version;
-- an item the map does not name: `skip` (it is left out), or
-  `pacman:<NAME>`, trying that package: shown as a guess, and checked on
-  Linux like any other.
+- an `ALTERNATIVE`: one of its `choice` ids, `keep-default` among them;
+- several versions of one runtime on the Mac: `version:<V>`, one this Mac
+  has, since each runtime has one version;
+- an item the map does not name: `skip` (it is left out), or `pacman`
+  with the package name as its value, trying that package: shown as a
+  guess, and checked on Linux like any other.
+
+The `choices` detail lists what each open item offers (`res_choices`).
 
 ### Resolution states
 
@@ -164,13 +183,16 @@ answer:bytes`:
 | --- | --- |
 | `unresolved` | no map entry and no decision |
 | `needs-decision` | the map offers choices, or the Mac has several versions of one runtime, and the person has not chosen |
-| `resolved` | a disposition, method and target, from the map or a decision (a guess marked as one) |
-| `unsupported` | `MACOS_ONLY` or `UNSUPPORTED_ARCH`: shown with the reason, never installed |
+| `resolved` | a method and target, from the map or a decision (a guess marked as one) |
+| `unsupported` | `UNSUPPORTED_ARCH`: shown with the reason, never installed |
+| `mac-only` | `MACOS_ONLY`: shown with the reason, never installed |
+| `skipped` | the person chose to leave it out |
 | `ready` | on Linux, the check before installing passed |
 | `unavailable` | on Linux, that check failed; the reason is recorded, and nothing is tried in its place |
 
-A profile is `saved` when every included item is `resolved` or
-`unsupported`; restore installs an item only when it is `ready`.
+A profile is `saved` when every included item is `resolved`,
+`unsupported`, `mac-only` or `skipped`; restore installs an item only when
+it is `ready`.
 
 ## Layers
 
@@ -203,20 +225,18 @@ place, its adapter says so explicitly (the editors do).
 
 ## Paths
 
-Three rules rewrite macOS paths, and only inside fields an adapter parses
+Two rules rewrite macOS paths, and only inside fields an adapter parses
 and knows to be paths or commands (an MCP definition, Git settings,
 Ghostty's `key = value` lines):
 
 | Rule | From | To |
 | --- | --- | --- |
 | `p:home` | `/Users/<source user>/` | `/home/<target user>/`, or `~/` where the format expands it |
-| `p:brew-bin` | `/opt/homebrew/bin/<name>`, `/usr/local/bin/<name>` | `<name>`, found on `PATH`, only when `<name>` is an item that reaches Linux |
 | `p:shared` | `/Volumes/Shared/` (or the mount point recorded for Shared) | `/mnt/shared/` |
 
 A file carried whole is never rewritten: its macOS paths are listed in the
 review, with line numbers. Any other macOS path in a parsed field stays as
-it is and says why: a versioned Homebrew path (`/opt/homebrew/opt/…`,
-`Cellar`), "points into an app bundle" (`/Applications/…`), "Mac-only"
+it is and says why: a Homebrew path (`/opt/homebrew/…`, `/usr/local/…`), "points into an app bundle" (`/Applications/…`), "Mac-only"
 (`~/Library/…`), "refers to another disk" (`/Volumes/<other>/…`).
 
 ## From Zsh to Bash

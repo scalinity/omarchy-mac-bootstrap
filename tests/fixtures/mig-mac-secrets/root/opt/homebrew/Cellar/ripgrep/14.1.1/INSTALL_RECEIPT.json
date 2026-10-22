@@ -1,0 +1,1 @@
+{"installed_on_request":true,"runtime_dependencies":[{"full_name":"pcre2","version":"10.44"}],"source":{"tap":"homebrew/core","spec":"stable"}}

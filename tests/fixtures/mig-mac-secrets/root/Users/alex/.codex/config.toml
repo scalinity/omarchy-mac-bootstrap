@@ -1,0 +1,12 @@
+model = "gpt-5.5-codex"
+
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "server-github", "--token", "FIXTUREplantedCODEXarg0001"]
+bearer_token = "FIXTUREplantedBEARERtoken0001"
+
+[mcp_servers.github.env]
+GITHUB_TOKEN = "ghp_FIXTUREplantedCODEXtoken00000000001"
+
+[mcp_servers.github.http_headers]
+Authorization = "Bearer FIXTUREplantedCODEXheader0001"

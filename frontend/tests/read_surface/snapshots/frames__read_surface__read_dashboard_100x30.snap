@@ -1,6 +1,5 @@
 ---
 source: tests/read_surface/mod.rs
-assertion_line: 1051
 expression: f
 ---
  ◒ Journey ───────────────────────────────────────────────────────────────────────────────── v0.2.0
@@ -14,17 +13,17 @@ expression: f
 │  Logs        ││   Run ./omarchy-bootstrap to survey this Mac and plan storage.                   │
 │  Plan        ││                                                                                  │
 │  Op          ││ ▍Facts                                                                           │
-│              ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
-│              ││   Asahi install   none                                                           │
-│              ││   Safe Linux max  654 GB                                                         │
-│              ││   Surveyed        not yet · recorded                                             │
-│              ││   Plan            not yet · recorded                                             │
-│              ││                                                                                  │
-│              ││ ▍Actions                                                                         │
+│  Scan        ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
+│  Select      ││   Asahi install   none                                                           │
+│  Items       ││   Safe Linux max  654 GB                                                         │
+│  Review      ││   Surveyed        not yet · recorded                                             │
+│  Install     ││   Plan            not yet · recorded                                             │
+│  Progress    ││                                                                                  │
+│              ││ ▍What you can do now                                                             │
 │              ││   Nothing is available now.                                                      │
 │              ││                                                                                  │
 │              │└──────────────────────────────────────────────────────────────────────────────────┘
-│              │┌ This machine ────────────────────────────────────────────────────────────────────┐
+│              │┌ System Overview ─────────────────────────────────────────────────────────────────┐
 │              ││ Platform      macos                                                              │
 │              ││ Architecture  arm64                                                              │
 │              ││ Model         MacBookPro18,1                                                     │

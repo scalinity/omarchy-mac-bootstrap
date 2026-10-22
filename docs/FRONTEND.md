@@ -37,21 +37,21 @@ descriptors and supervision are defined once, in docs/PROTOCOL.md → §3.
 | `--no-tui`, stdin or stdout not a terminal, `TERM` unset or `dumb` | text; for `frontend-check`, a report that the check was not performed |
 | the frontend cannot be verified, cannot start, or refuses the handshake | the text recovery surface, saying why; for `frontend-check`, the check's own report that it was not completed, never another command's flow |
 
-Once released and pinned in `release/frontend.lock`, the frontend runs on
-real machines for the interactive commands; an unreleased build runs only
-against fixtures (docs/DECISIONS.md, D16). A command moves to the frontend
-only when every action its flow needs is exposed (MILESTONES.md): the
-installer's commands with Gate 3, `profile` and `export` with Gates 4 and
-5, `restore` with M15-A, `qualify` with M16. Until then a command stays in
-text, so no command opens a frontend that cannot finish it.
+The launcher opens the frontend for an interactive command on a terminal
+(`fe_session_for` in `lib/frontend.sh` gives each its session): the default
+run, `install` and `resume` with every scope; `plan` with the journey and
+plan scopes at intent `plan`; `profile` with journey, profile and resolve;
+`export` with journey and export; `shared create` and `shared activate`
+with journey and shared. Over a fixture it always does; on a real machine
+only once `release/frontend.lock` pins a release at least 0.2.0, the first
+whose frontend runs the core's actions (`FE_ACTIONS_VERSION`), so no
+command opens a frontend that cannot finish it. An unreleased build runs
+only against fixtures (docs/DECISIONS.md, D16).
 
 `frontend-check` meets the same rule rather than bending it: its whole flow
 is starting the interface — acquire or verify it, reach the core, show the
 foundation dashboard, leave — so a dashboard with no actions finishes it.
-It is an additional, explicit command and never becomes a default: the
-default run, `install`, `plan`, `resume`, `profile`, `export`, `restore`,
-`qualify`, `shared create` and `shared activate` keep their routing until
-the milestone above moves each of them.
+It is an additional, explicit command and never becomes a default.
 
 ## Starting
 

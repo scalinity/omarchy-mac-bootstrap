@@ -1,18 +1,25 @@
 //! The model, its messages and `update` (docs/FRONTEND.md → *Event loop and
 //! state*). `update` is a pure function of the model and one message: it
 //! performs no I/O and returns the commands the event loop carries out. The
-//! model keeps the last snapshot to draw from — a view, never the truth —
-//! and asks again after every action, on `r`, and after a handoff or a
-//! suspend. An action is always submitted with the basis it was shown.
+//! model keeps the last snapshot of each scope to draw from — a view, never
+//! the truth — and asks again after every action, on `r`, and after a
+//! handoff or a suspend. An action is always submitted with the basis it was
+//! shown.
 //!
-//! The read surface (docs/PROTOCOL.md → *The Gate 2 read surface*): each
-//! screen asks for what it shows the first time it is opened, one request at
-//! a time; a detail is always opened from its scope's last snapshot and names
-//! that generation; moving, scrolling and filtering what is loaded never ask
-//! the core anything (docs/DECISIONS.md → *Resolved review questions*, O1).
+//! The requests are generic (docs/PROTOCOL.md → *Request schemas*): a
+//! scope's snapshot, `Detail{scope, kind}`, `Validate{action, args}` and
+//! `Execute{action, args, word}`. Each screen asks for what it shows the first
+//! time it is opened, one request at a time; a detail is always opened from
+//! its scope's last snapshot and names that generation; moving, scrolling,
+//! filtering and choosing what is loaded never ask the core anything
+//! (docs/DECISIONS.md → *Resolved review questions*, O1). Only the actions a
+//! snapshot lists are offered, only the parameters they declare are asked
+//! for, and a typed word is compared here only so that an inexact one is
+//! never sent: the core checks it again.
 
-use crate::read::{Checked, Detail, Fault, Kind, LIMIT, Land, Page, Scope};
+use crate::read::{Args, Checked, Detail, Fault, Kind, LIMIT, Land, Page, Row, Scope};
 use crate::record::Record;
+use crate::select::{self, Pick};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// What the core said about itself and the session (the hello record).
@@ -44,9 +51,10 @@ pub struct Blocker {
 }
 
 /// An action the core listed as available now, with the basis it was shown.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Action {
     pub id: String,
+    pub scope: String,
     pub label: String,
     pub intent: String,
     pub gate: String,
@@ -56,41 +64,82 @@ pub struct Action {
     pub explain: String,
 }
 
+/// A parameter an action declares (`param`): only these are asked for.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Param {
+    pub action: String,
+    pub name: String,
+    pub ty: String,
+    pub kind: String,
+    pub required: bool,
+    pub choices: Vec<String>,
+}
+
 /// A snapshot of one scope, as the model keeps it to draw from.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub facts: Vec<Fact>,
     pub blockers: Vec<Blocker>,
     pub actions: Vec<Action>,
+    pub params: Vec<Param>,
+    /// A disk layout the core read (`region` records).
+    pub regions: Vec<crate::read::DiskRegion>,
+    /// The installer's questions and what to type (prompt, value).
+    pub answers: Vec<(String, String)>,
     pub stages: Vec<(String, String)>,
     /// The data set this snapshot read: compared for equality, nothing else.
     pub generation: String,
     /// The core's guide: the next step, in its own words.
     pub guides: Vec<String>,
+    /// Each guide's id, in the same order (`next` is the next step).
+    pub guide_ids: Vec<String>,
     /// Codes (kind, value), such as the resume token.
     pub codes: Vec<(String, String)>,
     pub warnings: Vec<Blocker>,
     pub messages: Vec<(Level, String)>,
 }
 
+impl Snapshot {
+    /// The listed action ID.
+    pub fn action(&self, id: &str) -> Option<&Action> {
+        self.actions.iter().find(|a| a.id == id)
+    }
+
+    /// The parameters action ID declares, in the core's order.
+    pub fn params_of(&self, id: &str) -> Vec<&Param> {
+        self.params.iter().filter(|p| p.action == id).collect()
+    }
+
+    /// The facts a gate for action ID shows: `gate.<id>.*`, in the core's
+    /// order.
+    pub fn gate_facts(&self, id: &str) -> Vec<&Fact> {
+        let prefix = format!("gate.{id}.");
+        self.facts
+            .iter()
+            .filter(|f| f.key.starts_with(&prefix))
+            .collect()
+    }
+}
+
 /// A request the event loop sends to a fresh core.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Req {
     Hello,
-    /// The journey scope's snapshot.
-    Snapshot,
-    /// The snapshot of another read scope (health or logs).
-    Read(Scope),
-    /// One page of a detail kind, from the generation it was opened from.
+    /// A scope's snapshot.
+    Snapshot(Scope),
+    /// `Detail{scope, kind}`: one page of a detail kind, from the generation
+    /// of its scope's last snapshot.
     Detail(Page),
-    /// `validate select action=plan.save`: the sizes are sent as typed and
-    /// judged by the core alone; an empty field is not sent at all.
+    /// `Validate{action, args}`: the arguments are sent as given and judged by
+    /// the core alone.
     Validate {
-        linux_size: String,
-        shared_size: String,
+        action: String,
+        args: Args,
     },
+    /// `Execute{action, args, word}`, with the basis the action was shown.
     Execute {
         action: String,
+        args: Args,
         basis: String,
         word: String,
         handoff: bool,
@@ -135,10 +184,27 @@ pub enum Screen {
     Health,
     /// Screen 24: the tool's log and the core's diagnostics.
     Logs,
-    /// A read-only check of the plan's sizes.
+    /// Screen 12: the storage planner, over `plan.save`'s parameters (or,
+    /// where the core lists no `plan.save`, a check of the two sizes).
     Plan,
     /// The Bash-owned operation-record diagnostic of the foundation journey.
     Operation,
+    /// Screen 3: the environment scan.
+    Scan,
+    /// Screen 4: the migration selection, by category.
+    Selection,
+    /// Screens 5–9 and 11: one list and detail, a tab per category.
+    Inventory,
+    /// The Migration Review, and the profile's actions.
+    Review,
+    /// Screen 14 on macOS (the Asahi handoff), 15 on Linux (the continuation).
+    Install,
+    /// Screen 18: Omarchy Mac's progress, as the machine shows it.
+    Progress,
+    /// Screen 19: Shared creation.
+    Shared,
+    /// The parameters of an action other than `plan.save`.
+    Form,
     Gate,
     Help,
     /// The core could not be reached or answered with an error.
@@ -146,7 +212,7 @@ pub enum Screen {
 }
 
 /// The navigation rail's screens, in order.
-pub const NAV: [Screen; 8] = [
+pub const NAV: [Screen; 14] = [
     Screen::Welcome,
     Screen::Dashboard,
     Screen::Machine,
@@ -155,6 +221,12 @@ pub const NAV: [Screen; 8] = [
     Screen::Logs,
     Screen::Plan,
     Screen::Operation,
+    Screen::Scan,
+    Screen::Selection,
+    Screen::Inventory,
+    Screen::Review,
+    Screen::Install,
+    Screen::Progress,
 ];
 
 impl Screen {
@@ -168,8 +240,16 @@ impl Screen {
             Screen::Status => "Status",
             Screen::Health => "Health",
             Screen::Logs => "Logs",
-            Screen::Plan => "Plan check",
+            Screen::Plan => "Plan",
             Screen::Operation => "Operation",
+            Screen::Scan => "Scan",
+            Screen::Selection => "Selection",
+            Screen::Inventory => "Inventory",
+            Screen::Review => "Review",
+            Screen::Install => "Install",
+            Screen::Progress => "Progress",
+            Screen::Shared => "Shared",
+            Screen::Form => "Parameters",
             Screen::Gate => "Gate",
             Screen::Help => "Keys",
             Screen::Fatal => "No answer",
@@ -184,7 +264,23 @@ impl Screen {
             Screen::Health => Some(Kind::Doctor),
             Screen::Logs => Some(Kind::Log),
             Screen::Operation => Some(Kind::Operation),
+            Screen::Inventory => Some(Kind::Items),
+            Screen::Review => Some(Kind::Review),
             _ => None,
+        }
+    }
+
+    /// The scope whose snapshot a screen presents.
+    pub fn scope(self) -> Option<Scope> {
+        match self {
+            Screen::Scan | Screen::Selection => Some(Scope::Profile),
+            Screen::Dashboard
+            | Screen::Welcome
+            | Screen::Plan
+            | Screen::Install
+            | Screen::Progress
+            | Screen::Shared => Some(Scope::Journey),
+            s => s.kind().map(Kind::scope),
         }
     }
 }
@@ -205,8 +301,8 @@ pub enum LogsTab {
     Diagnostics,
 }
 
-/// One scope's read (health, logs): its last snapshot and why there is no
-/// current one.
+/// One scope's read (health, logs, the profile): its last snapshot and why
+/// there is no current one.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScopeRead {
     pub snap: Option<Snapshot>,
@@ -220,16 +316,124 @@ pub struct ScopeRead {
     pub asked: bool,
 }
 
-/// The plan check's form: the two sizes as typed, which field has the keys,
-/// and the core's last answer.
+/// One field of an action's parameter form: a parameter the action declares,
+/// and what the person typed or chose for it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PlanForm {
-    pub linux: String,
-    pub shared: String,
-    /// 0 the Linux size, 1 the Shared size.
+pub struct Field {
+    pub name: String,
+    pub ty: String,
+    pub choices: Vec<String>,
+    pub required: bool,
+    pub value: String,
+}
+
+/// An action's parameters as typed, which field has the keys, and the core's
+/// last answer to them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Form {
+    pub action: String,
+    pub fields: Vec<Field>,
     pub field: usize,
     pub checked: Option<Checked>,
     pub fault: Option<Fault>,
+    /// The scope that listed the action, and the screen the form came from.
+    pub scope: Scope,
+    pub back: Screen,
+}
+
+impl Default for Form {
+    fn default() -> Form {
+        Form {
+            action: String::new(),
+            fields: Vec::new(),
+            field: 0,
+            checked: None,
+            fault: None,
+            scope: Scope::Journey,
+            back: Screen::Dashboard,
+        }
+    }
+}
+
+/// The two sizes the plan check sends where the core lists no `plan.save`
+/// (docs/PROTOCOL.md → *Future plan validation contract*).
+pub const PLAN_SIZES: [&str; 2] = ["linux_size", "shared_size"];
+
+impl Form {
+    /// The planner's form before the core has declared anything: the sizes.
+    pub fn sizes() -> Form {
+        Form {
+            action: "plan.save".into(),
+            fields: PLAN_SIZES
+                .iter()
+                .map(|n| Field {
+                    name: n.to_string(),
+                    ty: "text".into(),
+                    ..Field::default()
+                })
+                .collect(),
+            ..Form::default()
+        }
+    }
+
+    /// The arguments as typed: each field that holds anything.
+    pub fn args(&self) -> Args {
+        self.fields
+            .iter()
+            .filter(|f| !f.value.is_empty())
+            .map(|f| (f.name.clone(), f.value.clone().into_bytes()))
+            .collect()
+    }
+
+    /// The last answer is for exactly what the fields hold now.
+    pub fn current(&self) -> bool {
+        self.checked.as_ref().is_some_and(|c| c.args == self.args())
+    }
+
+    /// Take PARAMS as the fields, keeping what was typed for a name that
+    /// stays; nothing changes when the names are the same.
+    fn declare(&mut self, params: &[(String, String, Vec<String>, bool)]) {
+        let same = self.fields.len() == params.len()
+            && self.fields.iter().zip(params).all(|(f, p)| f.name == p.0);
+        if same {
+            return;
+        }
+        let old = std::mem::take(&mut self.fields);
+        self.fields = params
+            .iter()
+            .map(|(name, ty, choices, required)| Field {
+                name: name.clone(),
+                ty: ty.clone(),
+                choices: choices.clone(),
+                required: *required,
+                value: old
+                    .iter()
+                    .find(|f| &f.name == name)
+                    .map(|f| f.value.clone())
+                    .unwrap_or_default(),
+            })
+            .collect();
+        self.field = 0;
+    }
+}
+
+/// An action about to be sent: what it is, its arguments and basis, the scope
+/// that listed it, and the screen to return to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Target {
+    pub action: Action,
+    pub args: Args,
+    pub basis: String,
+    pub scope: Scope,
+    pub back: Screen,
+}
+
+/// The inventory's place: the category tab, and an item's choices open.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Inv {
+    pub tab: usize,
+    pub open: bool,
+    pub choice: usize,
 }
 
 /// A request in flight.
@@ -278,13 +482,32 @@ pub struct Model {
     /// The sidebar's panels shown in place of the workspace (narrow widths).
     pub side: bool,
     /// The details opened, by kind.
-    pub details: [Option<Detail>; 5],
+    pub details: [Option<Detail>; 9],
     /// An action invalidated Operation; only an admitted Journey read clears it.
     pub operation_stale: bool,
     pub health: ScopeRead,
     pub logread: ScopeRead,
+    pub profile: ScopeRead,
     pub logs_tab: LogsTab,
-    pub plan: PlanForm,
+    /// The storage planner: `plan.save`'s parameters.
+    pub plan: Form,
+    /// Another action's parameters.
+    pub form: Form,
+    /// The action a gate's word would send.
+    pub gate: Option<Target>,
+    /// The action a yes/no question would send (default no).
+    pub ask: Option<Target>,
+    /// The person's migration choices made in this session.
+    pub picks: Vec<Pick>,
+    /// The core's answer to the last check of those choices.
+    pub save_check: Option<Checked>,
+    pub inv: Inv,
+    /// The steps the running action reported (label, done, total), and its
+    /// messages: kept until the next action.
+    pub steps: Vec<(String, u64, u64)>,
+    pub notes: Vec<(Level, String)>,
+    /// The scope read again after the action in flight.
+    pub exec_scope: Scope,
     /// A detail to reopen once its scope's fresh snapshot is in (`r`).
     pub reopen: Option<Kind>,
     /// The rows asked for per page.
@@ -294,6 +517,11 @@ pub struct Model {
     pub welcome_scroll: usize,
     pub help_scroll: usize,
     pub plan_scroll: usize,
+    /// The first block shown of the other free-form screens.
+    pub page_scroll: usize,
+    /// The cursors of the Selection's categories and the Review's actions.
+    pub sel: usize,
+    pub rev: usize,
 }
 
 /// What the event loop does next.
@@ -326,6 +554,8 @@ pub const MESSAGES_MAX: usize = 500;
 /// Rows moved by PgUp and PgDn.
 pub const PAGE_STEP: usize = 10;
 
+const BUSY: &str = "One thing at a time: this runs once the current request ends.";
+
 impl Default for Model {
     fn default() -> Model {
         Model {
@@ -350,18 +580,31 @@ impl Default for Model {
             region: Region::Work,
             nav: 1,
             side: false,
-            details: [None, None, None, None, None],
+            details: Default::default(),
             operation_stale: false,
             health: ScopeRead::default(),
             logread: ScopeRead::default(),
+            profile: ScopeRead::default(),
             logs_tab: LogsTab::Tool,
-            plan: PlanForm::default(),
+            plan: Form::sizes(),
+            form: Form::default(),
+            gate: None,
+            ask: None,
+            picks: Vec::new(),
+            save_check: None,
+            inv: Inv::default(),
+            steps: Vec::new(),
+            notes: Vec::new(),
+            exec_scope: Scope::Journey,
             reopen: None,
             limit: LIMIT,
             dash_scroll: 0,
             welcome_scroll: 0,
             help_scroll: 0,
             plan_scroll: 0,
+            page_scroll: 0,
+            sel: 0,
+            rev: 0,
         }
     }
 }
@@ -388,6 +631,7 @@ impl Model {
     pub fn scope(&self, s: Scope) -> &ScopeRead {
         match s {
             Scope::Logs => &self.logread,
+            Scope::Profile => &self.profile,
             _ => &self.health,
         }
     }
@@ -395,18 +639,64 @@ impl Model {
     fn scope_mut(&mut self, s: Scope) -> &mut ScopeRead {
         match s {
             Scope::Logs => &mut self.logread,
+            Scope::Profile => &mut self.profile,
             _ => &mut self.health,
+        }
+    }
+
+    /// The last snapshot of a scope.
+    pub fn snap_of(&self, s: Scope) -> Option<&Snapshot> {
+        match s {
+            Scope::Journey => self.snap.as_ref(),
+            _ => self.scope(s).snap.as_ref(),
         }
     }
 
     /// The generation of a scope's last snapshot.
     pub fn generation(&self, s: Scope) -> Option<&str> {
-        let snap = match s {
-            Scope::Journey => self.snap.as_ref(),
-            _ => self.scope(s).snap.as_ref(),
-        };
-        snap.map(|s| s.generation.as_str())
+        self.snap_of(s)
+            .map(|s| s.generation.as_str())
             .filter(|g| !g.is_empty())
+    }
+
+    /// The action ID as the last snapshot of SCOPE lists it.
+    pub fn offered(&self, scope: Scope, id: &str) -> Option<Action> {
+        self.snap_of(scope).and_then(|s| s.action(id)).cloned()
+    }
+
+    /// The profile's categories, from its `category.<id>` facts in the core's
+    /// order: each id with its fact.
+    pub fn categories(&self) -> Vec<(String, &Fact)> {
+        self.profile
+            .snap
+            .as_ref()
+            .map(|s| {
+                s.facts
+                    .iter()
+                    .filter_map(|f| f.key.strip_prefix("category.").map(|c| (c.to_string(), f)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The inventory row the cursor is on.
+    pub fn item(&self) -> Option<&Row> {
+        let d = self.detail(Kind::Items).filter(|d| d.loaded)?;
+        let shown = d.shown();
+        shown
+            .get(d.cursor.min(shown.len().saturating_sub(1)))
+            .copied()
+    }
+
+    /// The choices the focused item offers: (choice id, label, guess).
+    pub fn item_choices(&self) -> Vec<&Row> {
+        let Some(item) = self.item() else {
+            return Vec::new();
+        };
+        self.detail(Kind::Choices)
+            .filter(|d| d.loaded)
+            .map(|d| d.rows.iter().filter(|r| r.id == item.id).collect())
+            .unwrap_or_default()
     }
 
     /// Whether the request in flight is REQ's kind of read for this view.
@@ -419,6 +709,8 @@ impl Model {
             self.invalidate_operation(Fault::NoAnswer(
                 "An action was submitted; a fresh Journey snapshot is required.".into(),
             ));
+            self.steps.clear();
+            self.notes.clear();
         }
         self.pending = Some(Pending {
             req: req.clone(),
@@ -441,16 +733,25 @@ impl Model {
     }
 
     fn refresh(&mut self) -> Vec<Cmd> {
-        self.send(Req::Snapshot, true, "reading the journey")
+        self.send(Req::Snapshot(Scope::Journey), true, "reading the journey")
     }
 
     fn read(&mut self, s: Scope) -> Vec<Cmd> {
         self.scope_mut(s).asked = true;
         let label = match s {
             Scope::Logs => "reading the log",
+            Scope::Profile => "reading the profile",
             _ => "reading health",
         };
-        self.send(Req::Read(s), true, label)
+        self.send(Req::Snapshot(s), true, label)
+    }
+
+    /// Read SCOPE again: the journey, or another scope's snapshot.
+    fn reread(&mut self, s: Scope) -> Vec<Cmd> {
+        match s {
+            Scope::Journey => self.refresh(),
+            s => self.read(s),
+        }
     }
 
     fn page(&mut self, p: Page, land: Land) -> Vec<Cmd> {
@@ -460,6 +761,11 @@ impl Model {
         }
         self.send(Req::Detail(p), true, label)
     }
+
+    fn busy(&mut self) -> Vec<Cmd> {
+        self.status = Some((Level::Info, BUSY.into()));
+        Vec::new()
+    }
 }
 
 fn text(r: &Record, k: &str) -> String {
@@ -468,7 +774,10 @@ fn text(r: &Record, k: &str) -> String {
 
 /// The records of a snapshot answer, as the model keeps them.
 pub fn snapshot_of(records: &[Record]) -> Snapshot {
-    let mut s = Snapshot::default();
+    let mut s = Snapshot {
+        regions: crate::read::regions(records),
+        ..Snapshot::default()
+    };
     for r in records {
         match r.ty.as_str() {
             "generation" => s.generation = text(r, "id"),
@@ -486,14 +795,19 @@ pub fn snapshot_of(records: &[Record]) -> Snapshot {
                 text: text(r, "text"),
                 fix: text(r, "fix"),
             }),
-            "guide" => s.guides.push(text(r, "text")),
+            "guide" => {
+                s.guides.push(text(r, "text"));
+                s.guide_ids.push(text(r, "id"));
+            }
             "code" => s.codes.push((text(r, "kind"), text(r, "value"))),
+            "answer" => s.answers.push((text(r, "prompt"), text(r, "value"))),
             "message" => s
                 .messages
                 .push((level_of(r.text("level").unwrap_or("")), text(r, "text"))),
             "stage" => s.stages.push((text(r, "name"), text(r, "state"))),
             "action" => s.actions.push(Action {
                 id: text(r, "id"),
+                scope: text(r, "scope"),
                 label: text(r, "label"),
                 intent: text(r, "intent"),
                 gate: text(r, "gate"),
@@ -501,6 +815,18 @@ pub fn snapshot_of(records: &[Record]) -> Snapshot {
                 cancel: r.text("cancel") == Some("1"),
                 basis: text(r, "basis"),
                 explain: text(r, "explain"),
+            }),
+            "param" => s.params.push(Param {
+                action: text(r, "action"),
+                name: text(r, "name"),
+                ty: text(r, "type"),
+                kind: text(r, "kind"),
+                required: r.text("required") == Some("1"),
+                choices: r
+                    .list("choice")
+                    .into_iter()
+                    .map(|c| String::from_utf8_lossy(c).into_owned())
+                    .collect(),
             }),
             _ => {}
         }
@@ -545,6 +871,16 @@ fn level_of(s: &str) -> Level {
 
 /// The one update function.
 pub fn update(m: &mut Model, msg: Msg) -> Vec<Cmd> {
+    let cmds = step(m, msg);
+    // The inventory's rows follow its tab, whatever moved either.
+    let tab = m.categories().get(m.inv.tab).map(|(c, _)| c.clone());
+    if let Some(d) = m.detail_mut(Kind::Items) {
+        d.tab = tab;
+    }
+    cmds
+}
+
+fn step(m: &mut Model, msg: Msg) -> Vec<Cmd> {
     match msg {
         Msg::Tick => {
             if let Some(p) = m.pending.as_mut() {
@@ -571,14 +907,27 @@ pub fn update(m: &mut Model, msg: Msg) -> Vec<Cmd> {
             Vec::new()
         }
         Msg::Live(r) => {
+            let acting = m.reading(|q| matches!(q, Req::Execute { .. }));
             match r.ty.as_str() {
                 "progress" => {
                     let n = |k| r.text(k).and_then(|v| v.parse().ok()).unwrap_or(0);
-                    m.progress = Some((text(&r, "action"), n("done"), n("total")));
+                    let (done, total) = (n("done"), n("total"));
+                    m.progress = Some((text(&r, "action"), done, total));
+                    let label = text(&r, "label");
+                    if m.steps.last().is_some_and(|s| s.0 == label) {
+                        if let Some(s) = m.steps.last_mut() {
+                            (s.1, s.2) = (done, total);
+                        }
+                    } else if m.steps.len() < MESSAGES_MAX {
+                        m.steps.push((label, done, total));
+                    }
                 }
                 "message" if m.messages.len() < MESSAGES_MAX => {
-                    m.messages
-                        .push((level_of(r.text("level").unwrap_or("")), text(&r, "text")));
+                    let msg = (level_of(r.text("level").unwrap_or("")), text(&r, "text"));
+                    if acting {
+                        m.notes.push(msg.clone());
+                    }
+                    m.messages.push(msg);
                 }
                 _ => {}
             }
@@ -589,37 +938,61 @@ pub fn update(m: &mut Model, msg: Msg) -> Vec<Cmd> {
     }
 }
 
+/// The details a screen shows, in the order they are read.
+fn wants(m: &Model) -> Vec<Kind> {
+    match m.screen {
+        Screen::Logs if m.logs_tab == LogsTab::Diagnostics => Vec::new(),
+        Screen::Selection => vec![Kind::Items],
+        Screen::Inventory if m.inv.open => vec![Kind::Items, Kind::Choices],
+        // The review's rows, and the inventory a save's document is made of.
+        Screen::Review => vec![Kind::Review, Kind::Items],
+        Screen::Gate
+            if m.gate
+                .as_ref()
+                .is_some_and(|g| g.action.id == "profile.opaque") =>
+        {
+            vec![Kind::Opaque]
+        }
+        s => s.kind().into_iter().collect(),
+    }
+}
+
 /// What the screen shown still needs read, when nothing runs: a screen asks
-/// for its data the first time it is opened, and a failed read is not
-/// repeated by itself — the person asks with `r`.
+/// for its scope's snapshot and its data the first time it is opened, and a
+/// failed read is not repeated by itself — the person asks with `r`.
 fn demand(m: &mut Model) -> Vec<Cmd> {
     if m.pending.is_some() || m.lost || m.check {
         return Vec::new();
     }
-    let kind = match m.screen {
-        Screen::Logs if m.logs_tab == LogsTab::Diagnostics => return Vec::new(),
-        s => match s.kind() {
-            Some(k) => k,
-            None => return Vec::new(),
-        },
-    };
-    let scope = kind.scope();
-    if kind == Kind::Operation && m.operation_stale {
+    if m.screen == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
         return Vec::new();
     }
-    if scope != Scope::Journey && !m.scope(scope).asked {
+    let scope = match m.screen {
+        Screen::Gate => m.gate.as_ref().map(|g| g.scope),
+        s => s.scope(),
+    };
+    if let Some(scope) = scope
+        && scope != Scope::Journey
+        && !m.scope(scope).asked
+    {
         return m.read(scope);
     }
-    if m.detail(kind).is_some() {
-        return Vec::new();
+    for kind in wants(m) {
+        if kind == Kind::Operation && m.operation_stale {
+            return Vec::new();
+        }
+        if m.detail(kind).is_some() {
+            continue;
+        }
+        let Some(id) = m.generation(kind.scope()).map(str::to_string) else {
+            return Vec::new();
+        };
+        let d = Detail::new(kind, &id);
+        let p = d.page(0, detail_limit(kind, m.limit));
+        m.details[kind.index()] = Some(d);
+        return m.page(p, Land::First);
     }
-    let Some(id) = m.generation(scope).map(str::to_string) else {
-        return Vec::new();
-    };
-    let d = Detail::new(kind, &id);
-    let p = d.page(0, detail_limit(kind, m.limit));
-    m.details[kind.index()] = Some(d);
-    m.page(p, Land::First)
+    Vec::new()
 }
 
 /// Quit if asked to; otherwise what the screen still needs.
@@ -733,7 +1106,7 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             };
             vec![Cmd::Quit(10, why)]
         }
-        Req::Snapshot => {
+        Req::Snapshot(Scope::Journey) => {
             if m.operation_stale && (status != "done" || code != "ok") {
                 m.invalidate_operation(Fault::Said {
                     status: status.clone(),
@@ -771,7 +1144,7 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             m.status = Some((Level::Warn, if text.is_empty() { code } else { text }));
             settle(m, Vec::new())
         }
-        Req::Read(scope) => {
+        Req::Snapshot(scope) => {
             let c = if status == "done" {
                 let s = snapshot_of(&records);
                 let id = s.generation.clone();
@@ -890,13 +1263,9 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             }
             settle(m, Vec::new())
         }
-        Req::Validate {
-            linux_size,
-            shared_size,
-        } => {
-            m.plan.checked = Some(Checked::of(&records, &linux_size, &shared_size));
-            m.plan.fault = None;
-            settle(m, Vec::new())
+        Req::Validate { action, args } => {
+            let c = Checked::of(&records, &action, &args);
+            validated(m, c)
         }
         Req::Execute { action, .. } => {
             m.invalidate_operation(Fault::Said {
@@ -936,10 +1305,62 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                 line.push_str(&next);
             }
             m.status = Some((lvl, line));
-            // Every action is followed by a fresh read.
-            let c = m.refresh();
+            if status == "done" {
+                // What was reviewed for it has been used.
+                for f in [&mut m.plan, &mut m.form] {
+                    if f.action == action {
+                        f.checked = None;
+                    }
+                }
+                if action == "profile.save" {
+                    m.picks.clear();
+                    m.save_check = None;
+                }
+            }
+            // Every action is followed by a fresh read of its scope.
+            let c = m.reread(m.exec_scope);
             settle(m, c)
         }
+    }
+}
+
+/// The core's answer to a validation: the planner's, another form's, or the
+/// check of the migration choices — which, reviewed, is asked to be saved.
+fn validated(m: &mut Model, c: Checked) -> Vec<Cmd> {
+    if c.action == "profile.save" {
+        let basis = (c.status == "done").then(|| c.basis.clone()).flatten();
+        let args = c.args.clone();
+        m.save_check = Some(c);
+        if let (Some(basis), Some(action)) = (basis, m.offered(Scope::Profile, "profile.save")) {
+            ask(
+                m,
+                Target {
+                    action,
+                    args,
+                    basis,
+                    scope: Scope::Profile,
+                    back: m.screen,
+                },
+            );
+        }
+        return settle(m, Vec::new());
+    }
+    let f = if c.action == m.plan.action {
+        &mut m.plan
+    } else {
+        &mut m.form
+    };
+    f.checked = Some(c);
+    f.fault = None;
+    settle(m, Vec::new())
+}
+
+/// The form a validation of ACTION answers.
+fn form_for<'a>(m: &'a mut Model, action: &str) -> &'a mut Form {
+    if action == m.plan.action {
+        &mut m.plan
+    } else {
+        &mut m.form
     }
 }
 
@@ -954,12 +1375,12 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             m.fatal = format!("The core stopped without a complete answer ({why}).");
             settle(m, Vec::new())
         }
-        Req::Snapshot if m.snap.is_none() => {
+        Req::Snapshot(Scope::Journey) if m.snap.is_none() => {
             m.screen = Screen::Fatal;
             m.fatal = format!("The core stopped without a complete answer ({why}).");
             settle(m, Vec::new())
         }
-        Req::Snapshot => {
+        Req::Snapshot(Scope::Journey) => {
             if m.operation_stale {
                 m.invalidate_operation(fault);
             }
@@ -970,7 +1391,7 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             ));
             settle(m, Vec::new())
         }
-        Req::Read(s) => {
+        Req::Snapshot(s) => {
             m.reopen = None;
             m.scope_mut(s).fault = Some(fault);
             settle(m, Vec::new())
@@ -982,8 +1403,17 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             }
             settle(m, Vec::new())
         }
-        Req::Validate { .. } => {
-            m.plan.fault = Some(fault);
+        Req::Validate { action, .. } => {
+            if action == "profile.save" {
+                m.status = Some((
+                    Level::Warn,
+                    format!(
+                        "The core stopped without a complete answer ({why}); nothing was saved."
+                    ),
+                ));
+            } else {
+                form_for(m, &action).fault = Some(fault);
+            }
             settle(m, Vec::new())
         }
         Req::Execute { .. } => {
@@ -994,7 +1424,7 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
                     "The core stopped without a complete answer ({why}); reading the machine again."
                 ),
             ));
-            let c = m.refresh();
+            let c = m.reread(m.exec_scope);
             settle(m, c)
         }
     }
@@ -1007,7 +1437,17 @@ fn not_sent(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             m.screen = Screen::Fatal;
             m.fatal = format!("The core could not be started ({why}).");
         }
-        Req::Read(s) => {
+        Req::Snapshot(Scope::Journey) | Req::Execute { .. } => {
+            if m.operation_stale {
+                m.invalidate_operation(fault);
+            }
+            m.reopen = None;
+            m.status = Some((
+                Level::Fail,
+                format!("The request was not delivered ({why}); nothing ran."),
+            ));
+        }
+        Req::Snapshot(s) => {
             m.reopen = None;
             m.scope_mut(s).fault = Some(fault);
         }
@@ -1017,16 +1457,15 @@ fn not_sent(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
                 d.fault = Some(fault);
             }
         }
-        Req::Validate { .. } => m.plan.fault = Some(fault),
-        Req::Snapshot | Req::Execute { .. } => {
-            if m.operation_stale {
-                m.invalidate_operation(fault);
+        Req::Validate { action, .. } => {
+            if action == "profile.save" {
+                m.status = Some((
+                    Level::Fail,
+                    format!("The request was not delivered ({why}); nothing ran."),
+                ));
+            } else {
+                form_for(m, &action).fault = Some(fault);
             }
-            m.reopen = None;
-            m.status = Some((
-                Level::Fail,
-                format!("The request was not delivered ({why}); nothing ran."),
-            ));
         }
     }
     settle(m, Vec::new())
@@ -1065,9 +1504,178 @@ fn close_value(d: &mut Detail) {
     d.value_top.set(0);
 }
 
-/// A text field has the keys: the plan's sizes or a filter.
+/// A text field has the keys: a form's fields or a filter.
 fn typing(m: &Model) -> bool {
-    (m.screen == Screen::Plan && m.region == Region::Work && !m.check) || editing(m).is_some()
+    (matches!(m.screen, Screen::Plan | Screen::Form) && m.region == Region::Work && !m.check)
+        || editing(m).is_some()
+}
+
+/// Ask whether to run T: one line, and only `y` goes on (docs/UX.md →
+/// *Confirmation*: yes / no, default no).
+fn ask(m: &mut Model, t: Target) {
+    let q = match t.action.id.as_str() {
+        "plan.save" => "Save this plan?".to_string(),
+        "profile.save" => "Save these choices?".to_string(),
+        _ => format!("{}?", t.action.label),
+    };
+    m.status = Some((
+        Level::Info,
+        format!("{q} y goes on; any other key does not."),
+    ));
+    m.ask = Some(t);
+}
+
+/// Send T with WORD, and return to the screen it was chosen on.
+fn execute(m: &mut Model, t: Target, word: String) -> Vec<Cmd> {
+    m.exec_scope = t.scope;
+    m.screen = t.back;
+    let label = t.action.label.clone();
+    m.send(
+        Req::Execute {
+            action: t.action.id,
+            args: t.args,
+            basis: t.basis,
+            word,
+            handoff: t.action.handoff,
+            cancel: t.action.cancel,
+        },
+        t.action.cancel,
+        &label,
+    )
+}
+
+/// The gate for T: one field, no button.
+fn open_gate(m: &mut Model, t: Target) -> Vec<Cmd> {
+    m.gate_input.clear();
+    m.gate_note = None;
+    m.back = t.back;
+    m.gate = Some(t);
+    m.screen = Screen::Gate;
+    fresh(m, Kind::Opaque);
+    demand(m)
+}
+
+/// Drop a detail of KIND opened from a generation its scope no longer
+/// holds, so what it shows next is read from the current one.
+fn fresh(m: &mut Model, kind: Kind) {
+    let current = m.generation(kind.scope()).map(str::to_string);
+    if m.detail(kind)
+        .is_some_and(|d| Some(&d.generation) != current.as_ref() || d.changed)
+    {
+        m.details[kind.index()] = None;
+    }
+}
+
+/// Choose action A, listed by SCOPE's snapshot: its parameters first, its
+/// page where it has one, then its gate, a question, or the request itself.
+fn choose(m: &mut Model, a: Action, scope: Scope) -> Vec<Cmd> {
+    if m.pending.is_some() {
+        return m.busy();
+    }
+    let back = m.screen;
+    if a.id == "profile.save" {
+        return save_choices(m);
+    }
+    let params: Vec<(String, String, Vec<String>, bool)> = m
+        .snap_of(scope)
+        .map(|s| {
+            s.params_of(&a.id)
+                .into_iter()
+                .map(|p| (p.name.clone(), p.ty.clone(), p.choices.clone(), p.required))
+                .collect()
+        })
+        .unwrap_or_default();
+    if a.id == "plan.save" {
+        return open(m, Screen::Plan);
+    }
+    if !params.is_empty() {
+        if m.form.action != a.id {
+            m.form = Form {
+                action: a.id.clone(),
+                ..Form::default()
+            };
+        }
+        m.form.declare(&params);
+        m.form.scope = scope;
+        m.form.back = back;
+        m.screen = Screen::Form;
+        m.region = Region::Work;
+        return demand(m);
+    }
+    match a.id.as_str() {
+        "asahi.launch" if back != Screen::Install => return open(m, Screen::Install),
+        "shared.create" if back != Screen::Shared => {
+            m.screen = Screen::Shared;
+            m.page_scroll = 0;
+            return Vec::new();
+        }
+        _ => {}
+    }
+    let t = Target {
+        basis: a.basis.clone(),
+        action: a,
+        args: Vec::new(),
+        scope,
+        back,
+    };
+    if t.action.gate.is_empty() {
+        execute(m, t, String::new())
+    } else {
+        open_gate(m, t)
+    }
+}
+
+/// The person's migration choices, checked by the core before any save: one
+/// `omb-select 1` document of them, split into `select.1` … `select.14`.
+fn save_choices(m: &mut Model) -> Vec<Cmd> {
+    let rows = m
+        .detail(Kind::Items)
+        .filter(|d| d.loaded)
+        .map(|d| d.rows.clone())
+        .unwrap_or_default();
+    let doc = select::document(&rows, &m.picks);
+    let Some(args) = select::split(&doc) else {
+        m.status = Some((
+            Level::Warn,
+            format!(
+                "These choices are more than one save carries ({} parts of {} bytes); nothing was sent.",
+                select::PARTS,
+                select::PART_MAX
+            ),
+        ));
+        return Vec::new();
+    };
+    m.save_check = None;
+    m.send(
+        Req::Validate {
+            action: "profile.save".into(),
+            args,
+        },
+        true,
+        "checking the choices",
+    )
+}
+
+/// The planner's fields: `plan.save`'s parameters where the core lists it,
+/// the two sizes of the plan check where it does not.
+fn plan_fields(m: &mut Model) {
+    let mut params: Vec<(String, String, Vec<String>, bool)> = m
+        .snap
+        .as_ref()
+        .map(|s| {
+            s.params_of("plan.save")
+                .into_iter()
+                .map(|p| (p.name.clone(), p.ty.clone(), p.choices.clone(), p.required))
+                .collect()
+        })
+        .unwrap_or_default();
+    if params.is_empty() {
+        params = PLAN_SIZES
+            .iter()
+            .map(|n| (n.to_string(), "text".to_string(), Vec::new(), false))
+            .collect();
+    }
+    m.plan.declare(&params);
 }
 
 fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
@@ -1107,6 +1715,15 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
         }
         return vec![Cmd::Suspend];
     }
+    // A yes/no question: only y goes on, and any other key answers no.
+    if let Some(t) = m.ask.take() {
+        if k.code == KeyCode::Char('y') && m.pending.is_none() {
+            m.status = None;
+            return execute(m, t, String::new());
+        }
+        m.status = Some((Level::Info, "Not sent: nothing changed.".into()));
+        return Vec::new();
+    }
     match m.screen {
         Screen::Gate => gate_key(m, k),
         Screen::Help => {
@@ -1139,11 +1756,17 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
 /// Open SCREEN in the workspace, and read what it needs if this is its
 /// first time.
 fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
+    if m.screen != s {
+        m.page_scroll = 0;
+    }
     m.screen = s;
     m.region = Region::Work;
     m.side = false;
     if let Some(i) = NAV.iter().position(|n| *n == s) {
         m.nav = i;
+    }
+    if s == Screen::Plan {
+        plan_fields(m);
     }
     let mut cmds = Vec::new();
     if s == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
@@ -1234,6 +1857,8 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                 m.side = false;
             } else if m.region == Region::Nav {
                 m.region = Region::Work;
+            } else if m.screen == Screen::Inventory && m.inv.open {
+                m.inv.open = false;
             } else if value_open(m, m.screen) {
                 let k = m.screen.kind().expect("a detail is shown");
                 close_value(m.detail_mut(k).expect("a detail is shown"));
@@ -1260,6 +1885,18 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                     scroll_key(&mut m.scroll, n, &k);
                     Vec::new()
                 }
+                Screen::Install => page_key(
+                    m,
+                    k,
+                    Scope::Journey,
+                    &["asahi.launch", "omarchy.start", "omarchy.resume"],
+                ),
+                Screen::Shared => page_key(m, k, Scope::Journey, &["shared.create"]),
+                Screen::Scan => page_key(m, k, Scope::Profile, &["profile.scan"]),
+                Screen::Progress => page_key(m, k, Scope::Journey, &[]),
+                Screen::Selection => selection_key(m, k),
+                Screen::Inventory => inventory_key(m, k),
+                Screen::Review => review_key(m, k),
                 s => match s.kind() {
                     Some(kind) => table_key(m, kind, k),
                     None => Vec::new(),
@@ -1284,6 +1921,11 @@ fn scroll_key(at: &mut usize, n: usize, k: &KeyEvent) {
     .min(last);
 }
 
+/// A cursor over N rows.
+fn cursor_key(at: &mut usize, n: usize, k: &KeyEvent) {
+    scroll_key(at, n, k);
+}
+
 fn nav_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
     let last = NAV.len() - 1;
     match k.code {
@@ -1302,52 +1944,58 @@ fn nav_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
 /// page is admitted.
 fn refresh(m: &mut Model) -> Vec<Cmd> {
     if m.pending.is_some() {
-        m.status = Some((
-            Level::Info,
-            "One thing at a time: this runs once the current request ends.".into(),
-        ));
-        return Vec::new();
+        return m.busy();
     }
     match m.screen {
         Screen::Logs if m.logs_tab == LogsTab::Diagnostics => vec![Cmd::ReadLogs],
-        Screen::Plan => match &m.plan.checked {
-            Some(c) if !m.check => {
-                let (l, s) = (c.linux.clone(), c.shared.clone());
-                validate(m, l, s)
+        Screen::Plan | Screen::Form => {
+            let f = if m.screen == Screen::Plan {
+                &m.plan
+            } else {
+                &m.form
+            };
+            match &f.checked {
+                Some(c) if !m.check => {
+                    let (action, args) = (c.action.clone(), c.args.clone());
+                    validate(m, action, args)
+                }
+                _ => Vec::new(),
             }
-            _ => Vec::new(),
-        },
+        }
         s => match s.kind() {
             Some(k) if !m.check => {
                 if let Some(d) = m.detail_mut(k) {
                     discard_operation(d);
                 }
                 m.reopen = Some(k);
-                match k.scope() {
-                    Scope::Journey => m.refresh(),
-                    scope => m.read(scope),
-                }
+                m.reread(k.scope())
             }
             Some(_) => Vec::new(),
-            None => m.refresh(),
+            None => match s.scope() {
+                Some(Scope::Profile) if !m.check => {
+                    if s == Screen::Selection {
+                        m.reopen = Some(Kind::Items);
+                    }
+                    m.read(Scope::Profile)
+                }
+                _ => m.refresh(),
+            },
         },
     }
 }
 
-fn validate(m: &mut Model, linux_size: String, shared_size: String) -> Vec<Cmd> {
-    m.send(
-        Req::Validate {
-            linux_size,
-            shared_size,
-        },
-        true,
-        "checking the plan",
-    )
+fn validate(m: &mut Model, action: String, args: Args) -> Vec<Cmd> {
+    let label = if action == "plan.save" {
+        "checking the plan"
+    } else {
+        "checking the parameters"
+    };
+    m.send(Req::Validate { action, args }, true, label)
 }
 
 /// A text field's keys: typed text, Backspace, Ctrl-U, Enter, Esc — and for
-/// the plan's sizes, Tab between them. None: not a field key (the frame's
-/// arrows and Tab keep their meaning).
+/// a form, Tab between its fields and Space through a choice. None: not a
+/// field key (the frame's arrows and Tab keep their meaning).
 fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
     if let Some(kind) = editing(m) {
         let d = m.detail_mut(kind).expect("editing");
@@ -1372,53 +2020,98 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
         d.cursor = d.cursor.min(n.saturating_sub(1));
         return Some(Vec::new());
     }
+    let plan = m.screen == Screen::Plan;
     if matches!(
         k.code,
         KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End
     ) {
         // The answer scrolls; the fields keep the typing keys.
-        let n = crate::screens::blocks(m, Screen::Plan);
+        let n = crate::screens::blocks(m, m.screen);
         scroll_key(&mut m.plan_scroll, n, k);
         return Some(Vec::new());
     }
     m.plan_scroll = 0;
-    let p = &mut m.plan;
-    let field = if p.field == 0 {
-        &mut p.linux
-    } else {
-        &mut p.shared
-    };
+    let p = if plan { &mut m.plan } else { &mut m.form };
+    let last = p.fields.len().saturating_sub(1);
+    let at = p.field.min(last);
     match k.code {
-        KeyCode::Char('u') if k.modifiers.contains(KeyModifiers::CONTROL) => field.clear(),
-        KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-            if field.chars().count() < 64 {
-                field.push(c);
-            }
-        }
-        KeyCode::Backspace => {
-            field.pop();
-        }
-        KeyCode::Tab | KeyCode::Down => p.field = 1,
-        KeyCode::BackTab | KeyCode::Up => p.field = 0,
-        // Back, as everywhere; the sizes stay as typed.
+        KeyCode::Tab | KeyCode::Down => p.field = (at + 1).min(last),
+        KeyCode::BackTab | KeyCode::Up => p.field = at.saturating_sub(1),
+        // Back, as everywhere; the fields stay as typed.
         KeyCode::Esc => {
-            m.screen = Screen::Dashboard;
-            m.nav = 1;
-        }
-        KeyCode::Enter => {
-            if m.pending.is_some() {
-                m.status = Some((
-                    Level::Info,
-                    "One thing at a time: this runs once the current request ends.".into(),
-                ));
-                return Some(Vec::new());
+            if plan {
+                m.screen = Screen::Dashboard;
+                m.nav = 1;
+            } else {
+                m.screen = p.back;
             }
-            let (l, s) = (p.linux.clone(), p.shared.clone());
-            return Some(validate(m, l, s));
         }
-        _ => return None,
+        KeyCode::Enter => return Some(form_enter(m, plan)),
+        _ => {
+            let f = p.fields.get_mut(at)?;
+            match k.code {
+                // A choice: Space steps through the core's choices.
+                KeyCode::Char(' ') if !f.choices.is_empty() => {
+                    let i = f.choices.iter().position(|c| *c == f.value);
+                    f.value = match i {
+                        Some(i) if i + 1 < f.choices.len() => f.choices[i + 1].clone(),
+                        Some(_) => String::new(),
+                        None => f.choices[0].clone(),
+                    };
+                }
+                _ if !f.choices.is_empty() => return Some(Vec::new()),
+                KeyCode::Char('u') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    f.value.clear()
+                }
+                KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if f.value.chars().count() < 64 {
+                        f.value.push(c);
+                    }
+                }
+                KeyCode::Backspace => {
+                    f.value.pop();
+                }
+                _ => return None,
+            }
+        }
     }
     Some(Vec::new())
+}
+
+/// Enter in a form: a review the core answered for exactly what is typed,
+/// of an action it still lists, goes on — to its gate, or to a question —
+/// with the arguments as the core normalised them and the review's basis;
+/// otherwise the core checks what is typed.
+fn form_enter(m: &mut Model, plan: bool) -> Vec<Cmd> {
+    if m.pending.is_some() {
+        return m.busy();
+    }
+    let f = if plan { &m.plan } else { &m.form };
+    let (action, scope, args) = (f.action.clone(), f.scope, f.args());
+    if let Some(c) = f.checked.as_ref().filter(|_| f.current())
+        && c.status == "done"
+        && let Some(basis) = c.basis.clone()
+        && let Some(a) = m.offered(scope, &action)
+    {
+        let args = if c.normal_args.is_empty() {
+            c.args.clone()
+        } else {
+            c.normal_args.clone()
+        };
+        let t = Target {
+            action: a,
+            args,
+            basis,
+            scope,
+            back: m.screen,
+        };
+        if t.action.gate.is_empty() {
+            ask(m, t);
+            return Vec::new();
+        }
+        return open_gate(m, t);
+    }
+    validate(m, action, args)
 }
 
 /// The keys of a detail table: the cursor over the rows shown, a page past
@@ -1507,13 +2200,7 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
     }
     match want {
         Some((p, land)) if m.pending.is_none() => m.page(p, land),
-        Some(_) => {
-            m.status = Some((
-                Level::Info,
-                "One thing at a time: this runs once the current request ends.".into(),
-            ));
-            Vec::new()
-        }
+        Some(_) => m.busy(),
         None => Vec::new(),
     }
 }
@@ -1537,39 +2224,11 @@ fn dashboard_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             m.focus = n.saturating_sub(1);
             Vec::new()
         }
-        KeyCode::Enter if m.pending.is_some() && n > 0 => {
-            // One request at a time: say so rather than do nothing.
-            m.status = Some((
-                Level::Info,
-                "One thing at a time: this runs once the current request ends.".into(),
-            ));
-            Vec::new()
-        }
         KeyCode::Enter => {
             let Some(a) = m.focused().cloned() else {
                 return Vec::new();
             };
-            if a.gate.is_empty() {
-                let label = a.label.clone();
-                m.send(
-                    Req::Execute {
-                        action: a.id,
-                        basis: a.basis,
-                        word: String::new(),
-                        handoff: a.handoff,
-                        cancel: a.cancel,
-                    },
-                    a.cancel,
-                    &label,
-                )
-            } else {
-                // A typed-word gate: the gate screen, one field, no button.
-                m.gate_input.clear();
-                m.gate_note = None;
-                m.back = Screen::Dashboard;
-                m.screen = Screen::Gate;
-                Vec::new()
-            }
+            choose(m, a, Scope::Journey)
         }
         _ => {
             let n = crate::screens::blocks(m, Screen::Dashboard);
@@ -1579,10 +2238,170 @@ fn dashboard_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
     }
 }
 
+/// The keys of a page that offers one of IDS from SCOPE's snapshot (the
+/// first listed): Enter chooses it; `n` chooses `network.connect` where it is
+/// listed; the moving keys scroll.
+fn page_key(m: &mut Model, k: KeyEvent, scope: Scope, ids: &[&str]) -> Vec<Cmd> {
+    match k.code {
+        KeyCode::Enter => match ids.iter().find_map(|id| m.offered(scope, id)) {
+            Some(a) => choose(m, a, scope),
+            None => {
+                m.status = Some((
+                    Level::Info,
+                    "Nothing on this page is offered now: the core lists no such action.".into(),
+                ));
+                Vec::new()
+            }
+        },
+        KeyCode::Char('n') if m.screen == Screen::Install => {
+            match m.offered(Scope::Journey, "network.connect") {
+                Some(a) => choose(m, a, Scope::Journey),
+                None => Vec::new(),
+            }
+        }
+        _ => {
+            let n = crate::screens::blocks(m, m.screen);
+            scroll_key(&mut m.page_scroll, n, &k);
+            Vec::new()
+        }
+    }
+}
+
+/// The Selection's keys: a category, all of its items in or out, its list.
+fn selection_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
+    let cats: Vec<String> = m.categories().into_iter().map(|(c, _)| c).collect();
+    match k.code {
+        KeyCode::Char(' ') => {
+            let Some(cat) = cats.get(m.sel) else {
+                return Vec::new();
+            };
+            let Some(d) = m.detail(Kind::Items).filter(|d| d.loaded) else {
+                m.status = Some((
+                    Level::Info,
+                    "The inventory is not read yet: its items are chosen once it is.".into(),
+                ));
+                return Vec::new();
+            };
+            let rows: Vec<Row> = d
+                .rows
+                .iter()
+                .filter(|r| r.col(0) == cat && select::state(r, &m.picks) != "never")
+                .cloned()
+                .collect();
+            let all_in = rows.iter().all(|r| select::state(r, &m.picks) == "include");
+            let to = if all_in { "exclude" } else { "include" };
+            for r in &rows {
+                select::set_state(&mut m.picks, r, to);
+            }
+            Vec::new()
+        }
+        KeyCode::Enter if m.sel < cats.len() => {
+            m.inv.tab = m.sel;
+            m.inv.open = false;
+            if let Some(d) = m.detail_mut(Kind::Items) {
+                d.cursor = 0;
+            }
+            open(m, Screen::Inventory)
+        }
+        _ => {
+            cursor_key(&mut m.sel, cats.len(), &k);
+            Vec::new()
+        }
+    }
+}
+
+/// The inventory's keys: an item in or out, the next category, an item's
+/// choices; the table's keys for moving and filtering.
+fn inventory_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
+    if m.inv.open {
+        let n = m.item_choices().len();
+        match k.code {
+            KeyCode::Enter => {
+                let pick = m.item().cloned().zip(
+                    m.item_choices()
+                        .get(m.inv.choice)
+                        .map(|c| c.col(0).to_string()),
+                );
+                if let Some((row, choice)) = pick {
+                    select::set_decision(&mut m.picks, &row, &choice);
+                }
+            }
+            _ => cursor_key(&mut m.inv.choice, n, &k),
+        }
+        return Vec::new();
+    }
+    match k.code {
+        KeyCode::Char(' ') => {
+            if let Some(row) = m.item().cloned() {
+                let to = match select::state(&row, &m.picks) {
+                    "never" => {
+                        m.status = Some((
+                            Level::Info,
+                            format!("{} never travels: {}", row.col(1), row.col(8)),
+                        ));
+                        return Vec::new();
+                    }
+                    "include" => "exclude",
+                    _ => "include",
+                };
+                select::set_state(&mut m.picks, &row, to);
+            }
+            Vec::new()
+        }
+        KeyCode::Char('f') => {
+            let n = m.categories().len();
+            if n > 0 {
+                m.inv.tab = (m.inv.tab + 1) % n;
+            }
+            if let Some(d) = m.detail_mut(Kind::Items) {
+                d.cursor = 0;
+            }
+            Vec::new()
+        }
+        KeyCode::Enter if m.item().is_some() => {
+            m.inv.open = true;
+            m.inv.choice = 0;
+            fresh(m, Kind::Choices);
+            demand(m)
+        }
+        _ => table_key(m, Kind::Items, k),
+    }
+}
+
+/// The profile's actions the Review offers: every one its snapshot lists but
+/// the scan, which has its own screen.
+pub fn review_actions(m: &Model) -> Vec<Action> {
+    m.profile
+        .snap
+        .as_ref()
+        .map(|s| {
+            s.actions
+                .iter()
+                .filter(|a| a.id != "profile.scan")
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn review_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
+    let actions = review_actions(m);
+    match k.code {
+        KeyCode::Enter => match actions.get(m.rev).cloned() {
+            Some(a) => choose(m, a, Scope::Profile),
+            None => Vec::new(),
+        },
+        _ => {
+            cursor_key(&mut m.rev, actions.len(), &k);
+            Vec::new()
+        }
+    }
+}
+
 fn gate_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
     match k.code {
         KeyCode::Esc => {
-            m.screen = Screen::Dashboard;
+            m.screen = m.gate.take().map_or(Screen::Dashboard, |g| g.back);
             m.gate_input.clear();
             m.gate_note = None;
             Vec::new()
@@ -1605,30 +2424,25 @@ fn gate_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         KeyCode::Enter => {
-            let Some(a) = m.focused().cloned() else {
+            let Some(t) = m.gate.clone() else {
                 m.screen = Screen::Dashboard;
                 return Vec::new();
             };
+            if m.pending.is_some() {
+                return m.busy();
+            }
             // Only the exact word continues; anything else says so and
             // does nothing (the core checks the word again).
-            if m.gate_input != a.gate {
-                m.gate_note = Some(format!("Only the exact word \"{}\" continues.", a.gate));
+            if m.gate_input != t.action.gate {
+                m.gate_note = Some(format!(
+                    "Only the exact word \"{}\" continues.",
+                    t.action.gate
+                ));
                 return Vec::new();
             }
             let word = std::mem::take(&mut m.gate_input);
-            m.screen = Screen::Dashboard;
-            let label = a.label.clone();
-            m.send(
-                Req::Execute {
-                    action: a.id,
-                    basis: a.basis,
-                    word,
-                    handoff: a.handoff,
-                    cancel: a.cancel,
-                },
-                a.cancel,
-                &label,
-            )
+            m.gate = None;
+            execute(m, t, word)
         }
         _ => Vec::new(),
     }
@@ -1705,14 +2519,17 @@ mod tests {
                 Outcome::Answer(vec![hello, result("done", "ok")]),
             ),
         );
-        assert_eq!(c, vec![Cmd::Send(Req::Snapshot)]);
+        assert_eq!(c, vec![Cmd::Send(Req::Snapshot(Scope::Journey))]);
         let snap = vec![
             action("test.read", "", false),
             action("test.mutate", "test", false),
             action("test.handoff", "test", true),
             result("done", "ok"),
         ];
-        update(&mut m, Msg::Done(Req::Snapshot, Outcome::Answer(snap)));
+        update(
+            &mut m,
+            Msg::Done(Req::Snapshot(Scope::Journey), Outcome::Answer(snap)),
+        );
         assert_eq!(m.screen, Screen::Dashboard);
         m
     }
@@ -1762,6 +2579,7 @@ mod tests {
             c,
             vec![Cmd::Send(Req::Execute {
                 action: "test.mutate".into(),
+                args: vec![],
                 basis: "ab".repeat(32),
                 word: "test".into(),
                 handoff: false,
@@ -1826,7 +2644,7 @@ mod tests {
             &mut m,
             Msg::Done(req, Outcome::Answer(vec![result("done", "ok")])),
         );
-        assert_eq!(c, vec![Cmd::Send(Req::Snapshot)]);
+        assert_eq!(c, vec![Cmd::Send(Req::Snapshot(Scope::Journey))]);
         assert_eq!(m.status.as_ref().unwrap().0, Level::Ok);
     }
 
@@ -1838,7 +2656,7 @@ mod tests {
             _ => panic!(),
         };
         let c = update(&mut m, Msg::Done(req, Outcome::Unknown("no result".into())));
-        assert_eq!(c, vec![Cmd::Send(Req::Snapshot)]);
+        assert_eq!(c, vec![Cmd::Send(Req::Snapshot(Scope::Journey))]);
         let (lvl, s) = m.status.clone().unwrap();
         assert_eq!(lvl, Level::Warn);
         assert!(s.contains("without a complete answer"));
@@ -1878,7 +2696,10 @@ mod tests {
         let mut m = ready();
         let c = update(
             &mut m,
-            Msg::Done(Req::Snapshot, Outcome::Unknown("schema at line 0".into())),
+            Msg::Done(
+                Req::Snapshot(Scope::Journey),
+                Outcome::Unknown("schema at line 0".into()),
+            ),
         );
         assert_eq!(c, vec![], "no loop of reads");
         assert!(m.status.as_ref().unwrap().1.contains("r reads again"));
@@ -1894,7 +2715,10 @@ mod tests {
         );
         let c = update(
             &mut m,
-            Msg::Done(Req::Snapshot, Outcome::Unknown("eof at line 0".into())),
+            Msg::Done(
+                Req::Snapshot(Scope::Journey),
+                Outcome::Unknown("eof at line 0".into()),
+            ),
         );
         assert_eq!(c, vec![]);
         assert_eq!(
@@ -1909,6 +2733,7 @@ mod tests {
         let mut m = ready();
         let req = Req::Execute {
             action: "test.mutate".into(),
+            args: vec![],
             basis: String::new(),
             word: "test".into(),
             handoff: false,
@@ -1942,7 +2767,7 @@ mod tests {
         assert_eq!(update(&mut m, ctrlk('c')), vec![Cmd::Cancel]);
         let mut m = ready();
         m.pending = Some(Pending {
-            req: Req::Snapshot,
+            req: Req::Snapshot(Scope::Journey),
             cancellable: false,
             label: String::new(),
             ticks: 0,
@@ -1962,7 +2787,7 @@ mod tests {
     fn terminate_waits_for_a_non_cancellable_request() {
         let mut m = ready();
         m.pending = Some(Pending {
-            req: Req::Snapshot,
+            req: Req::Snapshot(Scope::Journey),
             cancellable: false,
             label: String::new(),
             ticks: 0,
@@ -1970,7 +2795,10 @@ mod tests {
         assert_eq!(update(&mut m, Msg::Terminate), vec![]);
         let c = update(
             &mut m,
-            Msg::Done(Req::Snapshot, Outcome::Answer(vec![result("done", "ok")])),
+            Msg::Done(
+                Req::Snapshot(Scope::Journey),
+                Outcome::Answer(vec![result("done", "ok")]),
+            ),
         );
         assert_eq!(c, vec![Cmd::Quit(0, String::new())]);
     }

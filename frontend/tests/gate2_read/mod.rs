@@ -19,7 +19,7 @@
 
 use omb_tui::app::{Cmd, Model, Msg, Outcome, Req, Screen, update};
 use omb_tui::core::{Running, Session, seal_inherited_descriptors};
-use omb_tui::read::{Fault, Kind, Page};
+use omb_tui::read::{Fault, Kind, Page, Scope};
 use omb_tui::screens;
 use omb_tui::theme::{Caps, Depth, Theme};
 use ratatui::Terminal;
@@ -368,7 +368,10 @@ fn the_read_surface_against_the_real_core() {
     // is admitted.
     let c = key(&mut m, KeyCode::Char('r'));
     let reqs = drive(&mut m, &mut s, c);
-    assert_eq!(reqs, vec![Req::Snapshot, page(Kind::Status, &g, 0)]);
+    assert_eq!(
+        reqs,
+        vec![Req::Snapshot(Scope::Journey), page(Kind::Status, &g, 0)]
+    );
     sent.extend(reqs);
     assert!(!m.detail(Kind::Status).unwrap().changed);
     // An offset past the end: refused `invalid`, its words kept.
@@ -387,7 +390,7 @@ fn the_read_surface_against_the_real_core() {
     let c = go(&mut m, 4);
     let reqs = drive(&mut m, &mut s, c);
     assert!(
-        matches!(&reqs[..], [Req::Read(_), Req::Detail(p)] if p.kind == Kind::Doctor),
+        matches!(&reqs[..], [Req::Snapshot(_), Req::Detail(p)] if p.kind == Kind::Doctor),
         "{reqs:?}"
     );
     sent.extend(reqs);
@@ -469,8 +472,7 @@ fn the_read_surface_against_the_real_core() {
         );
         let f = frame(&m, 120, 40);
         assert!(
-            f.contains("refused · unavailable")
-                && f.contains("Plan validation answers only plan.save"),
+            f.contains("refused · unavailable") && f.contains("Validation answers plan.save"),
             "{f}"
         );
     }
@@ -595,7 +597,7 @@ fn a_session_without_the_health_and_logs_scopes() {
         let c = go(&mut m, open);
         let reqs = drive(&mut m, &mut s, c);
         assert!(
-            matches!(&reqs[..], [Req::Read(_)]),
+            matches!(&reqs[..], [Req::Snapshot(_)]),
             "no detail without a data set: {reqs:?}"
         );
         let f = frame(&m, 120, 40);
@@ -607,6 +609,132 @@ fn a_session_without_the_health_and_logs_scopes() {
     }
     assert_eq!(m.screen, Screen::Logs);
     let _ = std::fs::remove_dir_all(&t);
+}
+
+/// actions-requests: the generic requests (docs/DECISIONS.md → D7) against
+/// the real core. A profile snapshot and its detail; the plan's validation
+/// with its eleven inputs and the profile's with its `select` part; an
+/// execute with arguments — each written by the frontend's own request
+/// writer, admitted by the core whole (an inadmissible request would end
+/// with exit status 2 and an `error` result), and answered in its
+/// operation's response schema with the core's own status: done, or a
+/// refusal naming why. No execute here is one the core accepts, so the state
+/// folder is left as it was.
+#[test]
+fn the_generic_requests_reach_the_real_core() {
+    if !own_process("the_generic_requests_reach_the_real_core") {
+        return;
+    }
+    let w = world();
+    let t = w.t.clone();
+    let name = primary();
+    // SAFETY: this process runs this test alone; nothing runs beside it.
+    unsafe {
+        std::env::set_var("OMB_SESSION_INTENT", "act");
+    }
+    let mut s = w.session(name, "journey,health,logs,plan,profile,shared");
+    let before = listing(&w.state(name));
+    let answered = |s: &mut Session, req: &Req| {
+        let o = wait(&mut s.start(req).expect("start the core"));
+        let Outcome::Answer(recs) = o else {
+            panic!("{req:?}: no admitted answer: {o:?}")
+        };
+        let last = recs.last().unwrap();
+        let get = |k| last.text(k).unwrap_or("").to_string();
+        eprintln!(
+            "D7 {:?}: {} {}",
+            omb_tui::core::op_of(req),
+            get("status"),
+            get("code")
+        );
+        (get("status"), get("code"), recs)
+    };
+    let args = |v: &[(&str, &str)]| -> Vec<(String, Vec<u8>)> {
+        v.iter()
+            .map(|(n, v)| (n.to_string(), v.as_bytes().to_vec()))
+            .collect()
+    };
+    // A profile snapshot, then a page of its items from that generation.
+    let (status, code, recs) = answered(&mut s, &Req::Snapshot(Scope::Profile));
+    assert!(
+        status == "done" || status == "refused",
+        "{status} {code}: {recs:?}"
+    );
+    let generation = recs
+        .iter()
+        .find(|r| r.ty == "generation")
+        .and_then(|r| r.text("id"))
+        .expect("a snapshot answer holds its generation")
+        .to_string();
+    let (status, code, _) = answered(&mut s, &page_of(Kind::Items, &generation));
+    assert!(status == "done" || status == "refused", "{status} {code}");
+    // The plan's validation with its eleven inputs, as typed.
+    let plan = args(&[
+        ("shared_size", "100GB"),
+        ("linux_size", "250GB"),
+        ("enc", "1"),
+        ("user", "alex"),
+        ("host", "omarchy"),
+        ("kmap", "us"),
+        ("tz", "America/New_York"),
+        ("loc", "en_US.UTF-8"),
+        ("ssh", "0"),
+        ("gh", "octocat"),
+        ("dev", "1"),
+    ]);
+    let (status, code, recs) = answered(
+        &mut s,
+        &Req::Validate {
+            action: "plan.save".into(),
+            args: plan.clone(),
+        },
+    );
+    assert!(
+        status == "done" || status == "refused",
+        "{status} {code}: {recs:?}"
+    );
+    // A refused parameter is one the request carried: the core read them.
+    for r in recs.iter().filter(|r| r.ty == "invalid") {
+        let n = r.text("name").unwrap();
+        assert!(plan.iter().any(|(a, _)| a == n), "{n}");
+    }
+    // The profile's validation with one select part.
+    let doc = "omb-select 1\nselect\tid=brew:ripgrep\tstate=exclude\n";
+    let select = args(&[("select.1", doc)]);
+    let (status, code, _) = answered(
+        &mut s,
+        &Req::Validate {
+            action: "profile.save".into(),
+            args: select.clone(),
+        },
+    );
+    assert!(status == "done" || status == "refused", "{status} {code}");
+    // Executes with arguments, against a basis no review gave: refused.
+    for (action, args) in [("plan.save", plan), ("profile.save", select)] {
+        let (status, code, recs) = answered(
+            &mut s,
+            &Req::Execute {
+                action: action.into(),
+                args,
+                basis: "0".repeat(64),
+                word: String::new(),
+                handoff: false,
+                cancel: false,
+            },
+        );
+        assert_eq!(status, "refused", "{action} {code}: {recs:?}");
+    }
+    assert_eq!(listing(&w.state(name)), before, "nothing was written");
+    let _ = std::fs::remove_dir_all(&t);
+}
+
+fn page_of(kind: Kind, generation: &str) -> Req {
+    Req::Detail(Page {
+        kind,
+        generation: generation.into(),
+        offset: 0,
+        limit: 500,
+    })
 }
 
 /// Over the fixtures of part PART (`FIXTURE_PARTS`), what the core says
