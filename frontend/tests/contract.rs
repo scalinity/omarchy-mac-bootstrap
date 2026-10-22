@@ -15,6 +15,7 @@ use omb_tui::app::{Outcome, Req};
 use omb_tui::core::{Session, seal_inherited_descriptors};
 use omb_tui::read::Scope;
 use omb_tui::record::{self, Op, Record};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -159,6 +160,9 @@ fn the_rust_client_against_the_real_core() {
                 "--test-threads=1",
             ])
             .env("OMB_BENCH_CONTRACT_CHILD", "1")
+            // A group of its own: a core judges quiescence over its group,
+            // so another test's cores must never join this one's.
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "isolated existing contract: {status}");
@@ -471,6 +475,9 @@ fn d55_foundation_journey_reads_the_bash_owned_finding() {
                 "--test-threads=1",
             ])
             .env("OMB_D55_CONTRACT_CHILD", "1")
+            // A group of its own: a core judges quiescence over its group,
+            // so another test's cores must never join this one's.
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "isolated D55 contract: {status}");
@@ -812,6 +819,9 @@ fn d55_fe01_failed_action_and_failed_snapshot_against_the_real_core() {
                 "--test-threads=1",
             ])
             .env("OMB_D55_FE01_CHILD", "1")
+            // A group of its own: a core judges quiescence over its group,
+            // so another test's cores must never join this one's.
+            .process_group(0)
             .status()
             .unwrap();
         assert!(status.success(), "isolated D55-FE-01 contract: {status}");
