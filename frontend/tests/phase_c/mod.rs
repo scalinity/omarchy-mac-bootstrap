@@ -215,6 +215,26 @@ fn rail_preserves_states_provenance_reasons_and_old_core_later() {
 }
 
 #[test]
+fn linux_remote_choices_keep_their_todo_reason() {
+    let body = stages("omarchy")
+        .replace(
+            "name=profile\tstate=done\tbasis=machine\tby=\tat=\tdetail=",
+            "name=profile\tstate=todo\tbasis=machine\tby=\tat=\tdetail=chosen%20on%20macOS",
+        )
+        .replace(
+            "name=resolve\tstate=done\tbasis=machine\tby=\tat=\tdetail=",
+            "name=resolve\tstate=todo\tbasis=machine\tby=\tat=\tdetail=chosen%20on%20macOS",
+        );
+    let m = ready_on("linux", &body);
+    let snap = m.snap.as_ref().expect("remote choices are valid stages");
+    for name in ["profile", "resolve"] {
+        let stage = snap.stages.iter().find(|s| s.name == name).unwrap();
+        assert_eq!(stage.state, "todo");
+        assert_eq!(stage.detail, "chosen on macOS");
+    }
+}
+
+#[test]
 fn invalid_stage_snapshots_are_never_partly_adopted() {
     let valid = stages("verify");
     let lines: Vec<_> = valid.lines().collect();

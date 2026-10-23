@@ -128,6 +128,10 @@ fn stages_ok(records: &[Record]) -> bool {
                             !detail.is_empty()
                         } else {
                             detail.is_empty()
+                                || (matches!(name, "profile" | "resolve")
+                                    && r.text("state") == Some("todo")
+                                    && r.text("basis") == Some("machine")
+                                    && detail == "chosen on macOS")
                         }
                 }))
 }

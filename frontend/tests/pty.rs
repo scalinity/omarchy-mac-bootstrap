@@ -1643,11 +1643,8 @@ fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
     }
 }
 
-// Only this journey depends on the new core producers. Rust's ignored-test
-// report names the dependency on every ordinary run; integration enables it
-// with --include-ignored (or --ignored for this test alone).
+// Exercise the integrated journey, qualification and report through the launcher.
 #[test]
-#[ignore = "needs integrated Phase C core stage/qualify/report records; enable with --include-ignored"]
 fn pty_phase_c_journey_qualification_and_completion() {
     // macOS fixtures need Apple's plutil. Linux CI takes the Linux fixture;
     // neither branch substitutes a fake core for the launcher.
@@ -1702,16 +1699,48 @@ fn pty_phase_c_journey_qualification_and_completion() {
         let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
         assert!(trace.contains("send Snapshot(Qualify)"));
         assert!(trace.contains("kind: Step"));
-        assert!(
-            trace.contains("qualify.state")
-                && trace.contains("qualify.shared")
-                && trace.contains("qualify.due")
-        );
-        assert!(
-            trace.contains("macOS writes")
-                && trace.contains("Linux checks and writes")
-                && trace.contains("macOS checks")
-        );
+        // Record values are byte vectors in Debug traces. Assert the decoded
+        // values from admitted spools, as the screen does.
+        let records = |p: &Pty, op| {
+            let mut records = Vec::new();
+            for session in p.sessions() {
+                for entry in std::fs::read_dir(session).unwrap() {
+                    let path = entry.unwrap().path();
+                    if path.extension().and_then(|s| s.to_str()) != Some("events") {
+                        continue;
+                    }
+                    if let Ok(doc) = omb_tui::record::admit(
+                        omb_tui::record::Family::Res,
+                        Some(op),
+                        &std::fs::read(path).unwrap(),
+                    ) {
+                        records.extend(doc.records);
+                    }
+                }
+            }
+            records
+        };
+        let facts = records(&p, omb_tui::record::Op::Snapshot);
+        for key in ["qualify.state", "qualify.shared", "qualify.due"] {
+            assert!(
+                facts
+                    .iter()
+                    .any(|r| r.ty == "fact" && r.text("key") == Some(key))
+            );
+        }
+        let mut steps: Vec<_> = records(&p, omb_tui::record::Op::Detail)
+            .into_iter()
+            .filter(|r| r.ty == "row" && r.text("kind") == Some("step"))
+            .collect();
+        steps.sort_by_key(|r| r.text("key").unwrap().to_string());
+        assert_eq!(steps.len(), 3);
+        for (row, label) in
+            steps
+                .iter()
+                .zip(["macOS writes", "Linux checks and writes", "macOS checks"])
+        {
+            assert_eq!(row.list("col")[1], label.as_bytes());
+        }
         // Enter requests exactly one fresh qualify snapshot. Same-generation
         // steps stay held; a new generation is paged by the normal lifecycle.
         let n = trace.matches("send Snapshot(Qualify)").count();
@@ -1733,27 +1762,10 @@ fn pty_phase_c_journey_qualification_and_completion() {
         p.wait_for("Report:");
         let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
         assert!(trace.contains("send Snapshot(Health)") && trace.contains("kind: Report"));
-        let mut rows = Vec::new();
-        for session in p.sessions() {
-            for entry in std::fs::read_dir(session).unwrap() {
-                let path = entry.unwrap().path();
-                if path.extension().and_then(|s| s.to_str()) != Some("events") {
-                    continue;
-                }
-                let bytes = std::fs::read(path).unwrap();
-                if let Ok(doc) = omb_tui::record::admit(
-                    omb_tui::record::Family::Res,
-                    Some(omb_tui::record::Op::Detail),
-                    &bytes,
-                ) {
-                    rows.extend(
-                        doc.records
-                            .into_iter()
-                            .filter(|r| r.ty == "row" && r.text("kind") == Some("report")),
-                    );
-                }
-            }
-        }
+        let rows: Vec<_> = records(&p, omb_tui::record::Op::Detail)
+            .into_iter()
+            .filter(|r| r.ty == "row" && r.text("kind") == Some("report"))
+            .collect();
         assert_eq!(
             rows.len(),
             8,

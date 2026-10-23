@@ -658,8 +658,9 @@ sequenceDiagram
 
 The journey snapshot's stage projection is atomic: exactly ten stations in
 canonical rail order, at most one current station, recorded stages naming
-`by=macos|linux`, machine stages without `by`, and reasons only for skipped
-or blocked stages. An invalid projection supplies no new snapshot. An
+`by=macos|linux`, machine stages without `by`, and reasons for skipped
+or blocked stages. Linux's todo profile and resolve stages also carry the
+fixed reason `chosen on macOS`. An invalid projection supplies no new snapshot. An
 older core without stage records retains the ten *later* stations. State,
 provenance and reasons travel together in the model; the frontend derives
 none of them. The dashboard's `[` and `]` select a station and Enter opens
@@ -691,18 +692,16 @@ passing report produces no receipt.
 admission and the model, then checks requests and frames at 80×24 and
 60×20 in colour and ASCII. The real-launcher test
 `pty_phase_c_journey_qualification_and_completion` in `frontend/tests/pty.rs`
-is explicitly ignored until the integrated core emits stages, qualification
-and report rows. Enable that test after integration with:
+runs in the ordinary PTY suite against the integrated stage, qualification
+and report producers. Select it alone with:
 
 ```bash
 # From frontend/, with the normal external CARGO_TARGET_DIR:
 OMB_TEST_BASH=/bin/bash cargo test --locked --features test-hooks --test pty \
-  pty_phase_c_journey_qualification_and_completion -- --ignored --nocapture
+  pty_phase_c_journey_qualification_and_completion -- --nocapture
 ```
 
-`--include-ignored` enables it alongside the rest of the PTY suite. The
-ordinary test report prints its integration dependency as the ignore
-reason. It uses macOS fixtures when Apple's `/usr/bin/plutil` is present;
+It uses macOS fixtures when Apple's `/usr/bin/plutil` is present;
 Linux CI uses the Linux fixture branch. Both Unicode and Linux VT ASCII
 terminal profiles traverse the rail, read Qualification, explicitly read
 again, open Completion, inspect report rows and quit with no receipt for an
