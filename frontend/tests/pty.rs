@@ -1754,6 +1754,9 @@ fn pty_phase_c_journey_qualification_and_completion() {
         });
         p.idle();
         p.send(b"\x1b");
+        // A lone Esc must be read alone: ESC followed by ] begins an OSC
+        // sequence, and the terminal parser would take the keys after it.
+        p.idle();
         p.keys("]"); // verify -> done
         p.send(b"\r");
         p.wait_for("Journey stages");
