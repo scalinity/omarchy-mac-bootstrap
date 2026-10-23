@@ -1030,14 +1030,15 @@ act_resume_judge() {
   case "$rc" in
     126 | 127)
       f=$(sys_path "$OMS_SELF")
-      # One stat, following a link as exec does: 1 cleanly absent (ENOENT),
-      # 2 there but not an executable regular file, 0 executable, 3 the
-      # lookup itself failed. Only 1 and 2 show the command could not run.
+      # One stat, following a link as exec does, reported as a word on a
+      # successful exit: absent (ENOENT), other (there, but not an
+      # executable regular file), executable, or failed. Perl failing to
+      # start, or anything else printed, is no observation at all. Only
+      # absent and other show the command could not have run.
       # shellcheck disable=SC2016 # Perl source: perl expands its own variables
-      LC_ALL=C perl -e 'my @s = stat($ARGV[0]); exit($!{ENOENT} ? 1 : 3) unless @s; exit((-f _ && ($s[2] & 0111)) ? 0 : 2)' -- "$f"
-      st=$?
+      st=$(LC_ALL=C perl -e 'my @s = stat($ARGV[0]); if (!@s) { print $!{ENOENT} ? "absent" : "failed"; exit 0 } print((-f _ && ($s[2] & 0111)) ? "executable" : "other"); exit 0' -- "$f" 2>/dev/null) || st=""
       case "$st" in
-        1 | 2)
+        absent | other)
           act_judged no-effect "omarchy-mac-setup could not be executed; $OMS_SELF is missing or not executable."
           return 0
           ;;

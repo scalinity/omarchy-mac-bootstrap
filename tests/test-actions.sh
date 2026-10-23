@@ -69,9 +69,14 @@ a_resume_observe() (
     case "$fault:$*" in setup-read:*/etc/omarchy-mac-setup.conf) return 1 ;; esac
     command cat "$@"
   }
-  # The executable's lookup itself failing (an I/O error): status 3.
+  # The executable's lookup itself failing (an I/O error), and Perl failing
+  # to start at all (an unloadable PERL5OPT module): neither is an
+  # observation of the executable.
   perl() {
-    case "$fault" in self-lookup) return 3 ;; esac
+    case "$fault" in
+      self-lookup) printf 'failed' && return 0 ;;
+      perl-start) return 2 ;;
+    esac
     command perl "$@"
   }
   lx_detect() {
@@ -147,7 +152,9 @@ a_resume_claims() {
     "setup-conf-unreadable|$present|$present|0|setup-read|unexpected" \
     "setup-conf-unreadable-127|$present|$present|127|setup-read|unexpected" \
     "present-127-lookup-fails|$present|$present|127|self-lookup|unexpected" \
-    "missing-127-lookup-fails|$present|$missing|127|self-lookup|unexpected"; do
+    "missing-127-lookup-fails|$present|$missing|127|self-lookup|unexpected" \
+    "present-127-perl-fails|$present|$present|127|perl-start|unexpected" \
+    "present-126-perl-fails|$present|$present|126|perl-start|unexpected"; do
     IFS='|' read -r label prior after status fault want <<EOF
 $row
 EOF
