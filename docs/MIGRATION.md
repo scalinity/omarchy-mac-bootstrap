@@ -136,6 +136,13 @@ because Unicode spellings can hide a credential filename on the Mac. The
 item names this reason. The encrypted SSH-key exception does not override
 the path rule.
 
+Every regular file carried from macOS has exactly one name. A file with
+other names (hard links) is refused, because another name could hide a
+refused one. This applies inside adapter-owned and opaque trees, to single
+files and to encrypted SSH keys. The link count and file type come from
+one `lstat`, which never follows a link; directories and symbolic links
+keep their own rules.
+
 Never carried, whatever is selected: SSH private keys (except below), the
 tools' sign-in and token files, `.env` files, cloud and container
 credentials (`~/.aws`, `~/.docker/config.json`, `~/.kube/config`), `.netrc`,
@@ -174,11 +181,12 @@ key:
   `aes256-gcm@openssh.com` or `chacha20-poly1305@openssh.com`; its KDF is
   `bcrypt` with a salt of at least 16 bytes and at least 16 rounds;
 - its single public blob is complete: `ssh-ed25519` has a 32-byte key;
-  `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384` and `ecdsa-sha2-nistp521`
-  name their own curve and have an uncompressed point beginning with 0x04
-  of exactly 65, 97 or 133 bytes respectively; `ssh-rsa` has two canonical
-  positive mpints, e and n, with n at least 2048 bits. Security-key (`sk-`)
-  and DSA types are refused;
+  `ssh-rsa` has two canonical positive mpints, e and n, with n at least
+  2048 bits. Security-key (`sk-`)
+  and DSA types are refused. ECDSA private keys (`ecdsa-sha2-nistp256`,
+  `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`) are refused: the scanner
+  cannot check that their public point is on its curve without big-number
+  arithmetic. Re-create the key on Linux, or carry an Ed25519 or RSA key;
 - the private section is at least the minimum encoding for its public type:
   two check integers, its type and required key strings or mpints, a comment
   string, and padding. Ed25519 needs at least 132 bytes before rounding up

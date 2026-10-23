@@ -96,6 +96,19 @@ _scan_size() {
   SCAN_SIZE=$((SCAN_SIZE + 0))
 }
 
+# _scan_one_name PATH — one lstat, as in sys_walk: never follow a link or
+# search for its other names. A regular file travels only with one name.
+_scan_one_name() {
+  # shellcheck disable=SC2016 # Perl uses the one lstat's cached type and count
+  LC_ALL=C perl -e 'my @s = lstat($ARGV[0]); exit 1 unless @s && -f _ && $s[3] > 0; exit($s[3] > 1 ? 2 : 0)' -- "$1" 2>/dev/null
+  case $? in
+    0) return 0 ;;
+    2) SCAN_HIT="a file with other names (hard links) is not carried, because another name could hide a refused one" ;;
+    *) SCAN_HIT="its file type and number of names cannot be checked" ;;
+  esac
+  return 1
+}
+
 # _scan_tree MACHINE-PATH — SCAN_TREE_BYTES and SCAN_TREE_FILES over a folder,
 # by sys_walk (no file is opened); SCAN_TREE_ST is sys_walk's status.
 _scan_tree() {
@@ -296,7 +309,7 @@ scan_value_ok() {
 # scan_ssh_key FILE — an SSH private key's envelope, parsed and never
 # decrypted (*The one secret exception*): SCAN_KEY is encrypted (a supported
 # cipher and bcrypt with at least 16 rounds: the one key that may travel),
-# plain, unsupported, pem or malformed; SCAN_KEY_CIPHER, SCAN_KEY_KDF and
+# plain, ecdsa, unsupported, pem or malformed; SCAN_KEY_CIPHER, SCAN_KEY_KDF and
 # SCAN_KEY_ROUNDS as the envelope says. The key is read by awk alone and
 # nothing of it is printed but those names and the number.
 # shellcheck disable=SC2016 # awk source
@@ -413,6 +426,9 @@ END {
     # ChaCha20); an authenticated cipher keeps its 16-byte tag after it.
     bs = (cipher == "chacha20-poly1305@openssh.com") ? 8 : 16
     if (priv % bs != 0) bad()
+    # Point length and prefix cannot establish that an ECDSA point is on
+    # its curve; this scanner has no big-number arithmetic to check it.
+    if (type ~ /^ecdsa-sha2-/) { print "ecdsa " cipher " " kdf " " rounds; exit 0 }
     print "encrypted " cipher " " kdf " " rounds; exit 0
   }
   print "unsupported " cipher " " kdf " " rounds
@@ -426,9 +442,12 @@ scan_ssh_key() {
   r=$(LC_ALL=C awk -v size="$SCAN_SIZE" "$_SCAN_KEY_AWK" "$1")
   # shellcheck disable=SC2086 # four words, split on purpose
   set -- $r
-  case "${1:-}" in encrypted | plain | unsupported | pem | malformed) SCAN_KEY=$1 ;; *) return 1 ;; esac
+  case "${1:-}" in encrypted | plain | ecdsa | unsupported | pem | malformed) SCAN_KEY=$1 ;; *) return 1 ;; esac
   SCAN_KEY_CIPHER=${2:-} SCAN_KEY_KDF=${3:-}
   case "${4:-0}" in *[!0-9]*) SCAN_KEY_ROUNDS=0 ;; *) SCAN_KEY_ROUNDS=${4:-0} ;; esac
+  if [ "$SCAN_KEY" = ecdsa ]; then
+    SCAN_HIT="an ECDSA private key: re-create the key on Linux, or carry an Ed25519 or RSA key"
+  fi
   [ "$SCAN_KEY" = encrypted ]
 }
 
@@ -519,7 +538,7 @@ _scan_whole() {
   fi
   if [ -f "$p" ]; then
     _scan_size "$p" && size=$SCAN_SIZE
-    if scan_refused "$rel"; then
+    if scan_refused "$rel" || ! _scan_one_name "$p"; then
       class=secret note="never carried: $SCAN_HIT"
     else
       scan_secret_check "$p"
@@ -551,7 +570,7 @@ _scan_folder_check() {
     [ "$t" = f ] || continue
     n=$((n + 1))
     path=$(rec_dec "$path")
-    if scan_refused "$rel/$path" || ! scan_secret_check "$(sys_path "$root/$path")"; then
+    if scan_refused "$rel/$path" || ! _scan_one_name "$(sys_path "$root/$path")" || ! scan_secret_check "$(sys_path "$root/$path")"; then
       [ -n "$SCAN_HIT" ] || continue
       out=$((out + 1))
       [ -n "$first" ] || first="$path ($SCAN_HIT)"
@@ -1195,6 +1214,10 @@ _scan_ad_git() {
     rel=.ssh/$name
     if [ -L "$f/$name" ] || [ -d "$f/$name" ]; then continue; fi
     [ -f "$f/$name" ] || continue
+    if ! _scan_one_name "$f/$name"; then
+      _scan_item "path:$rel" file git-ssh "$name" "" "" yes observed secret "$rel" "" "never carried: $SCAN_HIT"
+      continue
+    fi
     if scan_refused "$rel"; then
       case "$rel:$SCAN_HIT" in
         .ssh/*:an\ SSH\ private\ key | .ssh/*:a\ key\ or\ certificate\ file) ;;
@@ -1220,6 +1243,7 @@ _scan_ad_git() {
           else
             case "$SCAN_KEY" in
               plain) note="an SSH private key without a passphrase: never carried" ;;
+              ecdsa) note="$SCAN_HIT: never carried" ;;
               pem) note="an SSH private key in the older PEM format: never carried" ;;
               unsupported) note="an SSH private key encrypted with $SCAN_KEY_CIPHER, $SCAN_KEY_KDF $SCAN_KEY_ROUNDS rounds (not a supported policy): never carried" ;;
               *) note="an SSH private key whose envelope could not be read: never carried" ;;
@@ -1568,6 +1592,14 @@ _scan_x_macpaths() {
 # bytes classified (the bytes scanned are the bytes carried).
 _scan_x_file() {
   local src=$1 dest=$2 class=$3 mode=0644
+  if ! _scan_one_name "$src"; then
+    _scan_x skip reason "$dest: $SCAN_HIT"
+    return 0
+  fi
+  if [ "$class" = opaque ] && ! _scan_x_source "$src"; then
+    _scan_x skip reason "$dest: $SCAN_HIT"
+    return 0
+  fi
   _scan_size "$src" || { _scan_x skip reason "$dest: could not be read"; return 0; }
   if [ "$SCAN_SIZE" -gt "$SCAN_FILE_MAX" ]; then
     _scan_x skip reason "$dest: too-large"
@@ -1625,10 +1657,6 @@ _scan_x_tree() {
     case "$t" in
       d) _scan_x dir dest "$dest/$path" mode "$dmode" ;;
       f)
-        if [ "$class" = opaque ] && ! _scan_x_source "$(sys_path "$root/$path")"; then
-          _scan_x skip reason "$dest/$path: $SCAN_HIT"
-          continue
-        fi
         _scan_x_file "$(sys_path "$root/$path")" "$dest/$path" "$class"
         ;;
       l)
@@ -1712,7 +1740,7 @@ _scan_x_path() {
   if scan_refused "$rel"; then
     case "$rel:$SCAN_HIT" in
       .ssh/*:an\ SSH\ private\ key | .ssh/*:a\ key\ or\ certificate\ file)
-        if scan_ssh_key "$p" && _scan_x_put "$p"; then
+        if _scan_one_name "$p" && scan_ssh_key "$p" && _scan_x_put "$p"; then
           # The bytes captured are the bytes whose envelope is checked.
           if scan_ssh_key "$SCAN_XO/$SCAN_OBJ"; then
             _scan_x file dest "$SCAN_DEST" src "$SCAN_OBJ" mode 0600 whole 1
@@ -1728,10 +1756,10 @@ _scan_x_path() {
   case "$rel" in
     .ssh/*)
       if _scan_is_key "$p"; then
-        if scan_ssh_key "$p" && _scan_x_put "$p" && scan_ssh_key "$SCAN_XO/$SCAN_OBJ"; then
+        if _scan_one_name "$p" && scan_ssh_key "$p" && _scan_x_put "$p" && scan_ssh_key "$SCAN_XO/$SCAN_OBJ"; then
           _scan_x file dest "$SCAN_DEST" src "$SCAN_OBJ" mode 0600 whole 1
         else
-          _scan_x skip reason "$SCAN_DEST: an SSH private key that is not a supported encrypted key"
+          _scan_x skip reason "$SCAN_DEST: ${SCAN_HIT:-an SSH private key that is not a supported encrypted key}"
         fi
         return 0
       fi
@@ -1762,7 +1790,7 @@ _scan_x_path() {
   # A chosen root is held to the refusals where it really is, not only
   # under the name it was chosen by.
   SCAN_SRCREL=$rel
-  if [ "$SCAN_CLASS" = opaque ] && ! _scan_x_source "$p"; then
+  if [ -d "$p" ] && [ "$SCAN_CLASS" = opaque ] && ! _scan_x_source "$p"; then
     _scan_x skip reason "$SCAN_DEST: $SCAN_HIT"
     return 0
   fi
@@ -1885,7 +1913,7 @@ _scan_x_source() {
     return 1
   fi
   while IFS= read -r alias; do
-    alias=$(rec_dec "$alias")
+    _rec_dec_into alias "$alias"
     case "$alias" in
       .) SCAN_HIT="it leads to the home folder itself, which is never carried" ;;
       Library | Library/*) SCAN_HIT="it leads into the Library folder" ;;
