@@ -626,8 +626,12 @@ _scan_brew_taps() {
   _scan_list "$root/Library/Taps" 2 2 d "$SCAN_TMP/taps"
   while IFS= read -r tap; do
     case "$tap" in */homebrew-*) ;; *) continue ;; esac
-    url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' \
-      "$root/Library/Taps/$tap/.git/config" 2>/dev/null)
+    url=""
+    # A remote is read only from a tap's own .git, never through a link.
+    if [ ! -L "$root/Library/Taps/$tap/.git" ] && [ ! -L "$root/Library/Taps/$tap/.git/config" ]; then
+      url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' \
+        "$root/Library/Taps/$tap/.git/config" 2>/dev/null)
+    fi
     note=""
     if [ -n "$url" ]; then
       if _scan_url_ok "$url"; then note="remote $url"; else note="its remote holds a credential: not shown"; fi
@@ -1322,6 +1326,9 @@ _scan_project() {
   # a protected folder included.
   [ ! -L "$(_scan_h "$rel")" ] || return 1
   g=$(_scan_h "$rel/.git")
+  # Nor below it: when .git, its config or its HEAD is a link, none of
+  # them is read and the folder is no project.
+  if [ -L "$g" ] || [ -L "$g/config" ] || [ -L "$g/HEAD" ]; then return 1; fi
   [ -f "$g/config" ] && [ -f "$g/HEAD" ] || return 1
   url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' "$g/config")
   head=$(head -n 1 "$g/HEAD")
