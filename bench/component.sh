@@ -56,5 +56,9 @@ done
 printf 'ready\n'
 IFS= read -r command
 [ "$command" = go ]
+# The core runs under set -u alone, as the entrypoint starts it: a status
+# its code tests (state_get's for an unset key) is not an error there.
+set +e
 core_validate_op
+set -e
 printf 'complete\n'
