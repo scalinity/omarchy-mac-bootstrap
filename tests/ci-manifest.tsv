@@ -206,3 +206,5 @@ unit	frontend-macos-arm64	x1	suite:frontend-check
 unit	frontend-macos-arm64	x1	suite:static
 unit	frontend-macos-arm64	x1	step:frontend-check-native
 unit	frontend-macos-arm64	x1	step:cp1-released
+unit	macos-bash32	m4	suite:journey
+unit	linux-bash5	l3	suite:journey

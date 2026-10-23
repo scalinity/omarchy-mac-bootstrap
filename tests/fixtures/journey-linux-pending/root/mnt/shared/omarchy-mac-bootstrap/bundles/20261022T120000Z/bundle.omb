@@ -1,0 +1,5 @@
+omb-bundle 1
+bundle	at=2026-10-22T12:00:00Z	host=0123456789abcdef	model=MacBook%20Pro%20M1%20Pro	user=alex	home=/Users/alex	items=1	files=1	bytes=22
+item	id=config:journey	class=config	whole=1
+file	item=config:journey	dest=.config/journey.conf	mode=0644	sha256=14014e665b0d7785fc18c81b9e524553bc3e40f2aab5ce580f350e5fa663b92e	size=22	whole=1
+seal	sha256=79f28e4aeda3d50e907bb073972998931196dc5875c0b81b53ec3fd603eabc67
