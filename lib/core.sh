@@ -903,6 +903,9 @@ core_mod_for() {
 CORE_LIB=${BASH_SOURCE[0]%/*}
 
 # core_mod_load MODULE — sources the module and what it builds on, once.
+# ShellCheck is not sent into the modules from here: each is linted as its
+# own file, and following them made every file that sources the core
+# analyse the whole program (three times the memory; CI ran out of it).
 core_mod_load() {
   local OMB_HOME=${OMB_HOME:-} __h=${CORE_LIB%lib}
   __h=${__h%/}
@@ -910,24 +913,24 @@ core_mod_load() {
   case "$1" in
     actions)
       [ "${CORE_LOADED_actions:-}" = 1 ] && return 0
-      # shellcheck source=lib/actions.sh
+      # shellcheck source=/dev/null
       . "$OMB_HOME/lib/actions.sh" || _omb_unloaded actions
       CORE_LOADED_actions=1
       ;;
     profile | export)
       [ "${CORE_LOADED_migrate:-}" = 1 ] || {
-        # shellcheck source=lib/toml.sh
+        # shellcheck source=/dev/null
         . "$OMB_HOME/lib/toml.sh" || _omb_unloaded toml
-        # shellcheck source=lib/migrate_scan.sh
+        # shellcheck source=/dev/null
         . "$OMB_HOME/lib/migrate_scan.sh" || _omb_unloaded migrate_scan
-        # shellcheck source=lib/migrate_resolve.sh
+        # shellcheck source=/dev/null
         . "$OMB_HOME/lib/migrate_resolve.sh" || _omb_unloaded migrate_resolve
-        # shellcheck source=lib/migrate_profile.sh
+        # shellcheck source=/dev/null
         . "$OMB_HOME/lib/migrate_profile.sh" || _omb_unloaded migrate_profile
         CORE_LOADED_migrate=1
       }
       if [ "$1" = export ] && [ "${CORE_LOADED_export:-}" != 1 ]; then
-        # shellcheck source=lib/migrate_bundle.sh
+        # shellcheck source=/dev/null
         . "$OMB_HOME/lib/migrate_bundle.sh" || _omb_unloaded migrate_bundle
         CORE_LOADED_export=1
       fi
@@ -1189,7 +1192,6 @@ core_main() {
     return 2
   fi
   if ! rec_admit_copied req - "$copy"; then
-    # shellcheck disable=SC2031 # set by the admission just above, in this shell; a module's subshell admission never reaches here
     core_result error "$REC_REASON" "The request was refused at line $REC_AT ($REC_REASON)."
     return 2
   fi
