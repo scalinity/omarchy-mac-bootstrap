@@ -26,6 +26,9 @@ MIB=1048576
 ZERO=$(printf '%064d' 0)
 A_ALL=journey,plan,asahi,shared,network,omarchy
 REAL_SED=$(command -v sed)
+REAL_MV=$(command -v mv)
+# The console Omarchy Mac's setup writes to (lib/sources.sh).
+OMARCHY_SETUP_TTY=$(sed -n 's/^OMARCHY_SETUP_TTY=//p' "$REPO/lib/sources.sh")
 c_session
 
 # The tool under test.
@@ -510,10 +513,28 @@ if t_plutil "the macOS rows"; then
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
   assert_contains "$C_OUT" "reconciled:%20completed" "actions-asahi.launch-reconcile: the first stage done is completed"
   assert_eq "$(c_result) $(a_ops)" "refused unavailable " "actions-asahi.launch-reconcile: the record goes; no second install is offered"
-  a_use "$T/asahi-boot2" "$R"
+  # actions-asahi.launch-reconcile-layout: "nothing changed" after a new boot
+  # is the whole layout recorded before the launch, every partition's GUID,
+  # offset and size; macOS's size alone proves nothing.
+  a_plan_state "$T/asahi-boot2" "$R" 250 0
+  a_exec_tty '\nn\n\004\004\004' asahi.launch yes
+  assert_eq "$(c_result)" "failed no-effect" "actions-asahi.launch-reconcile-layout: declined at launch, nothing changed"
+  assert_contains "$(a_state)" "asahi_prelaunch_layout=" "actions-asahi.launch-reconcile-layout: the layout is recorded before the launch"
+  cp -p "$A_DIR/state/state.env" "$T/asahi-layout.env"
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
-  assert_contains "$C_OUT" "reconciled:%20no-effect" "actions-asahi.launch-reconcile: no Asahi partition and macOS as it was is no effect"
+  assert_contains "$C_OUT" "reconciled:%20no-effect" "actions-asahi.launch-reconcile-layout: the same layout is no effect"
+  # Recovery replaced while macOS kept its size: not the layout recorded.
+  VL=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's/4A7B1C2D-0003-4E5F-8A9B-000000000003/4A7B1C2D-0009-4E5F-8A9B-000000000009/' "$VL/cmd/diskutil_list_disk0" "$VL/cmd/diskutil_info_disk0s3" &&
+    rm -f "$VL/cmd/diskutil_list_disk0.bak" "$VL/cmd/diskutil_info_disk0s3.bak"
+  assert_eq "$(grep -c '4A7B1C2D-0009' "$VL/cmd/diskutil_list_disk0")" 1 "actions-asahi.launch-reconcile-layout: the variant replaces Recovery's partition"
+  a_use "$T/asahi-boot-layout" "$VL"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state" && cp -p "$T/asahi-layout.env" "$A_DIR/state/state.env"
+  a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
+  a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
+  assert_eq "$(c_result)" "refused unsupervised" "actions-asahi.launch-reconcile-layout: another partition changed while macOS kept its size: unexpected"
+  [ -e "$A_DIR/state/ops/asahi.omb" ] && ok || fail "actions-asahi.launch-reconcile-layout: its record stays"
   a_use "$T/asahi-boot-resized" "$FIX/mac-asahi-resized-only"
   mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
   printf 'asahi_prelaunch_macos_size=994610155520\n' >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
@@ -772,6 +793,9 @@ a_unavailable dev "" "$FIX/linux-setup-in-progress"
 #     is the run's narration, never state a decision reads.
 #   - ops/: the core's operation records live there and each is removed when
 #     its action ends; the folder stays, empty.
+#   - asahi_prelaunch_layout in state.env: what the launch began from,
+#     recorded before it runs, so a reconciliation after a new boot can
+#     prove what changed.
 # ---------------------------------------------------------------------------
 mkdir -p "$T/base"
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
@@ -830,7 +854,8 @@ e_norm() {
     -e 's/[0-9]{8}T[0-9]{6}Z/STAMP/g' \
     -e 's/(omarchy-bootstrap|\.state\.env|downloads\/[a-z-]+\.sh-STAMP|shared-[a-z-]+\.env)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(-STAMP)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
-    -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g'
+    -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g' \
+    -e '/^asahi_prelaunch_layout=/d'
 }
 
 # e_agree ID — the baseline's side and the core's side left the same.

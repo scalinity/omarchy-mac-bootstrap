@@ -177,6 +177,14 @@ act_mac_plannable() {
   return 1
 }
 
+# act_layout_digest — the SHA-256 of the disk's layout on the last read:
+# every partition's offset, size and GUID, in disk order.
+act_layout_digest() {
+  local l
+  l=$(geo_canon | cut -d'|' -f1-3)
+  sha256_str "$l"
+}
+
 # act_lx_seen — what the Omarchy classifier sees, on one line.
 act_lx_seen() {
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$LX_OMARCHY_STATE" "$LX_ENC_STATE" "$LX_SETUP_CONF" "$LX_SETUP_BIN" \
@@ -438,7 +446,7 @@ act_asahi_basis() { return 1; }
 # mac_main's install path from its gates: the survey and gates (mac_start),
 # the plan saved as the review saves it, the backup gate, the handoff.
 act_asahi_run() {
-  local rc
+  local rc layout
   ACT_BEFORE=""
   mac_start
   rc=$?
@@ -448,6 +456,11 @@ act_asahi_run() {
     return 1
   fi
   [ "$rc" = 0 ] || return 1
+  # The whole layout the launch begins from (mac_handoff holds the disk to
+  # it before running the installer), recorded before anything changes, so
+  # a reconciliation after a new boot can prove the disk is as it was.
+  layout=$(act_layout_digest)
+  state_must_set asahi_prelaunch_layout "$layout" || return 1
   mac_save_plan || return 1
   mac_backup_gate || return 1
   mac_handoff
@@ -480,11 +493,11 @@ act_asahi_judge() {
           return 0
         fi
       else
-        # After a new boot: no Asahi partition, and the container is the
-        # size recorded before the launch (or no launch was recorded).
-        before=$(state_get asahi_prelaunch_macos_size)
-        if [ "$GEO_OK" = 1 ] && geo_part "$MAC_STORE_UUID" && { [ -z "$before" ] || [ "$GP_SIZE" = "$before" ]; }; then
-          act_judged no-effect "No Asahi partition is on the disk and macOS is the size it was: the installer changed nothing."
+        # After a new boot: every partition (its GUID, offset and size) is
+        # where the layout recorded before the launch had it.
+        before=$(state_get asahi_prelaunch_layout)
+        if [ "$GEO_OK" = 1 ] && [ -n "$before" ] && [ "$(act_layout_digest)" = "$before" ]; then
+          act_judged no-effect "Every partition is where it was before the launch: the installer changed nothing."
           return 0
         fi
       fi
