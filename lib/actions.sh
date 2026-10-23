@@ -1021,20 +1021,57 @@ act_resume_run() {
   lx_in_progress
 }
 
-# act_resume_seen — the SHA-256 of what shows the setup's progress: the
-# classifier's signals, its service, and upstream's own status (as root).
+# act_resume_seen — where the setup stands (act_resume_stage), then the
+# SHA-256 of all the classifier reads (act_lx_seen). The service's state
+# and upstream's status text are in neither: a service that failed, or a
+# status that could not be read, is no step of the setup.
 act_resume_seen() {
-  local seen status=""
+  local stage seen
+  stage=$(act_resume_stage)
   seen=$(act_lx_seen)
-  if [ "$LX_SETUP_BIN" = 1 ] && [ "$OMB_UID" = 0 ]; then status=$(lx_upstream_status_text); fi
-  sha256_str "$seen|${LX_UNIT_STATE:-}
-$status"
+  seen=$(sha256_str "$seen")
+  printf '%s %s' "$stage" "$seen"
+}
+
+# act_resume_stage — the classifier's stage of the setup, one rank per step
+# in the order it takes them (docs/UPSTREAM.md → What the setup does):
+# /boot on its own partition (0, 1); the root's encryption (0 none, 1
+# staged, 2 re-encrypting, 3 complete; ? when it cannot be read); Omarchy's
+# runtime (0, 1).
+act_resume_stage() {
+  local boot=0 enc='?' omarchy=0
+  [ -n "$LX_BOOT_SRC" ] && boot=1
+  case "$LX_ENC_STATE" in
+    none) enc=0 ;;
+    migrating) if [ "$LX_ROOT_CRYPT" = 1 ]; then enc=2; else enc=1; fi ;;
+    complete) enc=3 ;;
+  esac
+  [ -n "$LX_OMARCHY_VERSION" ] && omarchy=1
+  printf '%s%s%s' "$boot" "$enc" "$omarchy"
+}
+
+# act_stage_move BEFORE NOW — ACT_MOVE: forward (a step further and none
+# back), same, or other (a step back, or a stage that could not be read).
+act_stage_move() {
+  local i
+  ACT_MOVE=other
+  case "$1" in [01][0-3][01]) ;; *) return 0 ;; esac
+  case "$2" in [01][0-3][01]) ;; *) return 0 ;; esac
+  if [ "$1" = "$2" ]; then
+    ACT_MOVE=same
+    return 0
+  fi
+  for i in 0 1 2; do
+    if [ "${2:i:1}" -lt "${1:i:1}" ]; then return 0; fi
+  done
+  ACT_MOVE=forward
 }
 
 # Omarchy's classification on a fresh read. Installed is completed; still
-# under way is completed only when the machine shows the setup advanced
-# since the resume began. A setup that could not be run (exit 126 or 127,
-# or its executable gone) is never completed: no effect when nothing reads
+# under way is completed only when the classifier's stage moved forward
+# since the resume began; a service that failed or a status that could not
+# be read never is. A setup that could not be run (exit 126 or 127, or its
+# executable gone) is never completed: no effect when nothing reads
 # otherwise than before, else unexpected; so is a resume never run.
 act_resume_judge() {
   local before seen
@@ -1042,6 +1079,7 @@ act_resume_judge() {
   lx_detect
   before=$(state_get omarchy_resume_seen)
   seen=$(act_resume_seen)
+  act_stage_move "${before%% *}" "${seen%% *}"
   case "$1" in
     126 | 127)
       if [ -n "$before" ] && [ "$seen" = "$before" ]; then
@@ -1073,10 +1111,12 @@ act_resume_judge() {
     else
       act_judged unexpected "$OMS_SELF is not there, and the machine does not read as it did before."
     fi
-  elif [ "$seen" != "$before" ]; then
-    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, further than before."
-  else
+  elif [ "$ACT_MOVE" = forward ]; then
+    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, a step further than before."
+  elif [ "$seen" = "$before" ]; then
     act_judged no-effect "omarchy-mac-setup ran, and nothing it changes reads otherwise than before."
+  else
+    act_judged unexpected "omarchy-mac-setup ran and got no step further, and the machine does not read as it did before."
   fi
 }
 

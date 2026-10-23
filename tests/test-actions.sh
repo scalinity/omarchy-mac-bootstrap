@@ -803,10 +803,30 @@ rm -f "$VR/root/usr/local/bin/omarchy-mac-setup"
 a_use "$T/resume-gone" "$VR"
 a_exec_tty '\004\004\004' omarchy.resume resume
 assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: no executable is not completed"
-# Ran, and nothing the classifier or upstream's status reads moved: no effect.
+# Ran, and nothing the classifier reads moved: no effect.
 a_use "$T/resume-same" "$FIX/linux-setup-in-progress"
 a_exec_tty '\004\004\004' omarchy.resume resume
 assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: nothing advanced is not completed"
+# actions-omarchy.resume-stage: completed only when the classifier's stage
+# moved forward (encryption staged, then re-encrypting). The setup service
+# turned failed, or a status read that failed after a resume that exited 1,
+# is no step further.
+VF=$(t_variant linux-setup-in-progress)
+printf 'failed\n' >"$VF/cmd/unit_active"
+VS=$(t_variant linux-setup-in-progress)
+: >"$VS/cmd/setup_status"
+printf '1\n' >"$VS/cmd/setup_status.rc"
+for case in "forward|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-reencrypting|0" "failed|$FIX/linux-setup-in-progress|$VF|0" \
+  "unread|$FIX/linux-setup-in-progress|$VS|1"; do
+  a_use "$T/resume-${case%%|*}" "$(printf '%s' "$case" | cut -d'|' -f2)"
+  A_ENV="OMB_TEST_AFTER=$(printf '%s' "$case" | cut -d'|' -f3) OMB_TEST_RC=${case##*|}" a_exec_tty '\004\004\004' omarchy.resume resume
+  if [ "${case%%|*}" = forward ]; then
+    assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-stage: a step further is completed ($(a_text))"
+  else
+    assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-stage: ${case%%|*} is no step further"
+    assert_eq "$(a_ops)" "" "actions-omarchy.resume-stage: ${case%%|*}: no record bars the scope"
+  fi
+done
 a_unavailable omarchy.resume resume "$FIX/linux-setup-active"
 a_unavailable omarchy.resume resume "$FIX/linux-alarm-fresh"
 
