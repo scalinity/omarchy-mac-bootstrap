@@ -401,7 +401,8 @@ EOF
                     "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOA"}},
            "embedded":{"type":"local","command":["server","--url=https://alice:harborpassEMB7@example.test/r","--port","6060"]}},
     "provider":{"corp.ai":{"options":{"apiKey":"harborpassPROV1"}},
-                "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"}}}}' \
+                "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"},
+                             "models":{"example":{"name":"Example","options":{"apiKey":"harborpassMOD1"},"headers":{"Authorization":"Bearer harborpassMOD2"}}}}}}' \
     >"$V/root/Users/alex/.config/opencode/opencode.json"
   (
     OMB_FIXTURE=$V
@@ -419,6 +420,11 @@ EOF
   assert_contains "$oc" '"baseURL":"https:\/\/api.example.test"' "secret-opencode-dotted: a provider keeps its base URL"
   assert_contains "$(cat "$T/x-oc/carry")" "opencode%20mcp%20local:%20needs-secret" "secret-opencode-command: and the server needs its secrets set again"
   if grep -rq harborpassEMB "$T/x-oc"; then fail "secret-args-embedded-url: a URL inside FLAG=VALUE reached OpenCode's command"; else ok; fi
+  # secret-opencode-provider-models: a provider carries only its baseURL; its
+  # models, with their options and headers, stay behind.
+  if grep -rq harborpassMOD "$T/x-oc"; then fail "secret-opencode-provider-models: a model's credential reached OpenCode's file"; else ok; fi
+  assert_contains "$oc" '"anthropic":{"options":{"baseURL":"https:\/\/api.example.test"}}' "secret-opencode-provider-models: the provider carries its baseURL alone"
+  assert_contains "$(cat "$T/x-oc/carry")" "opencode%20provider%20anthropic:%20models%20left%20behind" "secret-opencode-provider-models: its models are listed as left behind"
   assert_contains "$oc" '"command":["server","--port","6060"]' "secret-args-embedded-url: OpenCode keeps the rest"
   rm -rf "$V"
 

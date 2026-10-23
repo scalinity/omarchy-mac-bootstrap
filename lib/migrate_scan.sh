@@ -2128,27 +2128,25 @@ _scan_oc_server() {
   SCAN_OC="{$out}"
 }
 
-# _scan_oc_provider NAME — SCAN_OC: one OpenCode provider rebuilt from its
-# allowlisted fields (npm, name, models, and options.baseURL under the URL
-# rule); its other options, the API key among them, are left behind.
+# _scan_oc_provider NAME — SCAN_OC: one OpenCode provider carrying only its
+# baseURL, under the URL rule (docs/AI-TOOLS.md → *OpenCode*); everything
+# else, its models and their options and headers, its API key, is left
+# behind and listed. 1 when there is no base URL to carry.
 _scan_oc_provider() {
-  local b="provider.$1" k v out="" sep=""
+  local b="provider.$1" k v out=""
   _scan_pl "$SCAN_OC_FILE" "$b" >"$SCAN_XO/oc.fields" 2>/dev/null || return 1
   while IFS= read -r k; do
     case "$k" in
-      npm | name | models)
-        _scan_json_of "$SCAN_OC_FILE" "$b.$k" || continue
-        out="$out$sep\"$k\":$SCAN_JV" sep=,
-        ;;
       options)
         if _scan_pl_into v "$SCAN_OC_FILE" "$b.options.baseURL" && _scan_url_ok "$v" && _scan_json_str "$v"; then
-          out="$out$sep\"options\":{\"baseURL\":$SCAN_JS}" sep=,
+          out="\"options\":{\"baseURL\":$SCAN_JS}"
         fi
         _scan_x skip reason "opencode provider $1: options other than baseURL left behind (an API key is set again on Linux)"
         ;;
       *) _scan_text "$k" && _scan_x skip reason "opencode provider $1: $SCAN_TX left behind" ;;
     esac
   done <"$SCAN_XO/oc.fields"
+  [ -n "$out" ] || return 1
   SCAN_OC="{$out}"
 }
 
