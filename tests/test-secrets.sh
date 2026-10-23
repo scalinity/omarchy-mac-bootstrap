@@ -39,6 +39,16 @@ printf 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJGSVhUVVJFcGxhbnRlZCJ9.c2
 check "$T/jwt" "a JSON Web Token"
 printf 'xoxb-FIXTUREplanted-0001\n' >"$T/slack"
 check "$T/slack" "a Slack token"
+# secret-shape-line-start (S5): the 20-byte AKIA and 39-byte AIza shapes,
+# at the start of a line and alone on it, are found.
+printf 'AKIAFIXTUREPLANTED01\n' >"$T/aws-alone"
+check "$T/aws-alone" "an AWS access key"
+printf 'AKIAFIXTUREPLANTED01 is the id\n' >"$T/aws-start"
+check "$T/aws-start" "an AWS access key"
+printf 'AIzaFIXTUREplantedGOOGLEkey000000000000\n' >"$T/google-alone"
+check "$T/google-alone" "a Google API key"
+printf 'AIzaFIXTUREplantedGOOGLEkey000000000000, the key\n' >"$T/google-start"
+check "$T/google-start" "a Google API key"
 # The whole length: a credential past a long clean prefix is still found.
 awk 'BEGIN { for (i = 0; i < 50000; i++) print "clean line " i; print "token = \"ghp_FIXTUREplantedLATEtoken000000000001\"" }' >"$T/long"
 check "$T/long" "a GitHub token"
@@ -57,6 +67,11 @@ for rel in .env .env.local .envrc .netrc .ssh/id_rsa .aws/config .docker/config.
 done
 scan_refused .ssh/id_rsa.pub
 assert_rc $? 1 "secret-refused: a public key is not"
+# secret-refused-env (S8): every name that starts with .env.
+for rel in .env-production .envrc.local .myscripts/.envfile .env_prod; do
+  scan_refused "$rel"
+  assert_eq "$? $SCAN_HIT" "0 an environment file (.env)" "secret-refused-env: $rel is refused by its path"
+done
 
 # --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
 for k in id_ed25519:encrypted id_plain:plain id_weak:unsupported id_legacy:pem; do

@@ -158,7 +158,7 @@ scan_refused() {
     id_*.pub) ;;
     id_*) SCAN_HIT="an SSH private key" ;;
     *.pem | *.key | *.p12 | *.pfx | *.jks | *.keystore) SCAN_HIT="a key or certificate file" ;;
-    .env | .env.* | .envrc) SCAN_HIT="an environment file (.env)" ;;
+    .env*) SCAN_HIT="an environment file (.env)" ;;
     credentials | credentials.json | .credentials.json | .git-credentials | .pypirc) SCAN_HIT="a credentials file" ;;
     hosts.yml | auth.json | mcp-auth.json) SCAN_HIT="a sign-in file" ;;
     .netrc | _netrc) SCAN_HIT="a .netrc file" ;;
@@ -177,23 +177,28 @@ scan_refused() {
 # shellcheck disable=SC2016 # awk source
 _SCAN_SECRET_AWK='
 function hit(k) { print k; found = 1; exit 0 }
-function tok(re, min, k,   s) {
+# A shape is measured without the delimiter before it, so one at the start
+# of a line, or alone on it, is held to the same length as one after a
+# space or a quote: MIN is the length of the token alone.
+function tok(re, min, k,   s, n) {
   s = line
   while (match(s, re)) {
-    if (RLENGTH >= min) hit(k)
+    n = RLENGTH
+    if (substr(s, RSTART, 1) ~ /[^A-Za-z0-9]/) n--
+    if (n >= min) hit(k)
     s = substr(s, RSTART + RLENGTH)
   }
 }
 {
   line = $0
   if (line ~ /-----BEGIN[ A-Z0-9]*PRIVATE KEY( BLOCK)?-----/) hit("a private key")
-  tok("(^|[^A-Za-z0-9])sk-ant-[A-Za-z0-9_-]+", 28, "an Anthropic API key")
-  tok("(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]+", 24, "an API key (sk-)")
-  tok("(^|[^A-Za-z0-9])gh[pousr]_[A-Za-z0-9]+", 40, "a GitHub token")
-  tok("(^|[^A-Za-z0-9])github_pat_[A-Za-z0-9_]+", 33, "a GitHub token")
-  tok("(^|[^A-Za-z0-9])xox[abposr]-[A-Za-z0-9-]+", 15, "a Slack token")
-  tok("(^|[^A-Za-z0-9])AKIA[0-9A-Z]+", 21, "an AWS access key")
-  tok("(^|[^A-Za-z0-9])AIza[0-9A-Za-z_-]+", 40, "a Google API key")
+  tok("(^|[^A-Za-z0-9])sk-ant-[A-Za-z0-9_-]+", 27, "an Anthropic API key")
+  tok("(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]+", 23, "an API key (sk-)")
+  tok("(^|[^A-Za-z0-9])gh[pousr]_[A-Za-z0-9]+", 39, "a GitHub token")
+  tok("(^|[^A-Za-z0-9])github_pat_[A-Za-z0-9_]+", 32, "a GitHub token")
+  tok("(^|[^A-Za-z0-9])xox[abposr]-[A-Za-z0-9-]+", 14, "a Slack token")
+  tok("(^|[^A-Za-z0-9])AKIA[0-9A-Z]+", 20, "an AWS access key")
+  tok("(^|[^A-Za-z0-9])AIza[0-9A-Za-z_-]+", 39, "a Google API key")
   tok("eyJ[A-Za-z0-9_-]+[.]eyJ[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+", 40, "a JSON Web Token")
   low = tolower(line)
   while (match(low, /(pass(word|wd|phrase)?|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth)[a-z0-9_]*["\047]?[ \t]*[:=][ \t]*["\047]?[a-z0-9+\/=_.-]+/)) {
