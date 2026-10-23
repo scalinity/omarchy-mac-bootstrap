@@ -1008,15 +1008,16 @@ hello=$(printf '%s\n' "$C_OUT" | sed -n 2p)
 assert_contains "$hello" "	ceiling=read	dry_run=0	fixture=0" "frontend-check-no-fixture: the hello says read, not a dry run, no fixture"
 ck snapshot "scope	name=journey"
 assert_eq "$(c_admits snapshot)" ok "frontend-check-snapshot: admitted by the Bash admission"
-assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | tr '\n' ' ')" "omb-res 1 hello generation fact fact fact fact result " "frontend-check-snapshot: hello, generation, four facts, result"
+assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | tr '\n' ' ')" "omb-res 1 hello generation stage stage stage stage stage stage stage stage stage stage fact fact fact fact result " "M16-stage-records: frontend-check-snapshot: hello, generation, ten stages, four facts, result"
+assert_eq "$(grep '^stage	' "$C_EV")" "$(cat "$TESTS_DIR/cp1/startup-check.stages")" "M16-stage-records: frontend-check-snapshot: exact fixed blocked stages"
 ck_first=$(sed -n '3,$p' "$C_EV")
 ck_corpus=$(t_tmp)
 "$T_BASH" "$REPO/tests/proto/corpus.sh" "$ck_corpus" >/dev/null || fail "the corpus generator failed"
 assert_eq "$ck_first" "$(sed -n '3,$p' "$ck_corpus/frontend-check-snapshot.doc")" \
   "frontend-check-snapshot: after hello, byte for byte the corpus case both admissions read (tests/proto/corpus.sh)"
-facts=$(sed -n '4,7p' "$C_EV")
+facts=$(awk -F '\t' '$1 == "stage" || $1 == "fact"' "$C_EV")
 assert_eq "$(sed -n 3p "$C_EV")" "generation	id=$( (printf '%s' "$facts") | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)	total=0" \
-  "frontend-check-snapshot: the generation is the SHA-256 of the records after it"
+  "M16-stage-records: frontend-check-snapshot: the generation is the SHA-256 of the stage and fact lines"
 ck snapshot "scope	name=journey"
 assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-snapshot: a refresh is byte-identical after hello"
 c_session
@@ -1044,7 +1045,8 @@ mkdir -p "$CK_STATE/ops"
 ck_before=$(t_snapshot "$CK_STATE")
 ck snapshot "scope	name=journey"
 assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-zero-actions: the same snapshot whatever operation records exist"
-assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | grep -cE '^(action|param|stage|blocker|warning)$')" 0 "frontend-check-zero-actions: no action, param, stage, blocker or warning"
+assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | grep -cE '^(action|param|blocker|warning)$')" 0 "M16-stage-records: frontend-check-zero-actions: no action, param, blocker or warning"
+assert_eq "$(grep '^stage	' "$C_EV")" "$(cat "$TESTS_DIR/cp1/startup-check.stages")" "M16-stage-records: frontend-check-zero-actions: exactly the ten fixed blocked stages"
 assert_eq "$(t_snapshot "$CK_STATE")" "$ck_before" "frontend-check-zero-actions: both records byte-identical after it"
 
 # frontend-check-forbidden-scope: every other scope refused, with the
