@@ -178,7 +178,7 @@ a URL server using OAuth starts a browser sign-in a console cannot complete.
 
 | On macOS | Treatment |
 | --- | --- |
-| `~/.config/opencode/opencode.json` | read with `plutil`. Omarchy seeds this folder on Linux, so the person's entries are merged into Omarchy's file with `jq` (constant filters, values as arguments): their `mcp`, `agent`, `command`, `instructions` and `permission` entries are added where Omarchy's file lacks them; `provider` entries carry without credential fields; `plugin` entries run code and are item by item. Secret values become `{env:NAME}` substitutions |
+| `~/.config/opencode/opencode.json` | read with `plutil`. Omarchy seeds this folder on Linux, so the person's entries are merged into Omarchy's file with `jq` (constant filters, values as arguments): their `mcp`, `agent`, `command`, `instructions` and `permission` entries are added where Omarchy's file lacks them; `provider` entries carry only their `baseURL`; `plugin` entries run code and are item by item. The file is rebuilt from these allowlisted fields, never copied: a server, provider or key whose name holds a dot or an unusual byte, `oauth`, and every other field stay behind and are listed. Each server's `command` passes the argument rule (docs/MIGRATION.md); environment and header values become `{env:NAME}` substitutions without being read |
 | `opencode.jsonc` with comments | `plutil` cannot read it: not carried, and listed |
 | `agents/`, `commands/`, `skills/`, `themes/`, `AGENTS.md` | files |
 | `plugins/`, `tools/`, `package.json` | runs code (OpenCode installs `package.json` with Bun at start): item by item |
