@@ -978,30 +978,77 @@ act_resume_params() { :; }
 act_resume_basis() { return 1; }
 
 act_resume_run() {
+  local seen
   ACT_PRE=$(state_get omarchy_resumed_at)
   lx_begin "" || return 1
   if [ "$LX_OMARCHY_STATE" != in-progress ]; then
     ui_fail "omarchy-mac-setup is not part-way through ($LX_OMARCHY_STATE); there is nothing to resume."
     return 1
   fi
+  # Where the setup stands before it is resumed, recorded first, so the
+  # judgement (also after a new boot) can tell whether it advanced.
+  seen=$(act_resume_seen)
+  state_must_set omarchy_resume_seen "$seen" || return 1
   lx_in_progress
 }
 
-# Omarchy's classification on a fresh read: still under way, or done, is
-# where upstream continues from; a resume never run changed nothing.
+# act_resume_seen — the SHA-256 of what shows the setup's progress: the
+# classifier's signals, its service, and upstream's own status (as root).
+act_resume_seen() {
+  local seen status=""
+  seen=$(act_lx_seen)
+  if [ "$LX_SETUP_BIN" = 1 ] && [ "$OMB_UID" = 0 ]; then status=$(lx_upstream_status_text); fi
+  sha256_str "$seen|${LX_UNIT_STATE:-}
+$status"
+}
+
+# Omarchy's classification on a fresh read. Installed is completed; still
+# under way is completed only when the machine shows the setup advanced
+# since the resume began. A setup that could not be run (exit 126 or 127,
+# or its executable gone) is never completed: no effect when nothing reads
+# otherwise than before, else unexpected; so is a resume never run.
 act_resume_judge() {
+  local before seen
   ACT_READ=""
   lx_detect
-  case "$LX_OMARCHY_STATE" in
-    installed | in-progress)
-      if [ "$1" != reconcile ] && [ "$(state_get omarchy_resumed_at)" = "${ACT_PRE:-}" ]; then
-        act_judged no-effect "omarchy-mac-setup was not resumed; nothing changed."
+  before=$(state_get omarchy_resume_seen)
+  seen=$(act_resume_seen)
+  case "$1" in
+    126 | 127)
+      if [ -n "$before" ] && [ "$seen" = "$before" ]; then
+        act_judged no-effect "omarchy-mac-setup could not be run (exit $1); nothing changed."
       else
-        act_judged completed "omarchy-mac-setup is $LX_OMARCHY_STATE."
+        act_judged unexpected "omarchy-mac-setup could not be run (exit $1), and the machine does not read as it did before."
       fi
+      return 0
       ;;
-    *) act_judged unexpected "Omarchy is $LX_OMARCHY_STATE after the resume." ;;
   esac
+  case "$LX_OMARCHY_STATE" in
+    installed)
+      act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
+      return 0
+      ;;
+    in-progress) ;;
+    *)
+      act_judged unexpected "Omarchy is $LX_OMARCHY_STATE after the resume."
+      return 0
+      ;;
+  esac
+  if [ "$1" != reconcile ] && [ "$(state_get omarchy_resumed_at)" = "${ACT_PRE:-}" ]; then
+    act_judged no-effect "omarchy-mac-setup was not resumed; nothing changed."
+  elif [ -z "$before" ]; then
+    act_judged unexpected "Where the setup stood before the resume is not recorded, so whether it advanced cannot be told."
+  elif [ "$LX_SETUP_BIN" != 1 ]; then
+    if [ "$seen" = "$before" ]; then
+      act_judged no-effect "$OMS_SELF is not there, so the setup could not resume; nothing changed."
+    else
+      act_judged unexpected "$OMS_SELF is not there, and the machine does not read as it did before."
+    fi
+  elif [ "$seen" != "$before" ]; then
+    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, further than before."
+  else
+    act_judged no-effect "omarchy-mac-setup ran, and nothing it changes reads otherwise than before."
+  fi
 }
 
 # ---------------------------------------------------------------------------

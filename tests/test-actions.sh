@@ -717,13 +717,30 @@ assert_eq "$(c_result) $(c_admits snapshot)" "done ok ok" "actions-omarchy.resum
 assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.state	label=Omarchy	value=in-progress	state=info" "actions-omarchy.resume-facts: Omarchy's state"
 assert_contains "$C_OUT" "key=omarchy.encryption	" "actions-omarchy.resume-facts: its encryption"
 assert_contains "$C_OUT" "key=omarchy.upstream.1	label=Upstream	value=" "actions-omarchy.resume-facts: upstream's own status, read as root"
+assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.console	label=Console	value=$(a_enc "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})")	state=info" \
+  "actions-omarchy-console: the console the setup writes to, on its progress page"
 a_common omarchy.resume resume
 a_barriers omarchy.resume omarchy resume
-a_exec_tty '\004\004\004' omarchy.resume resume
-assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-success: resumed ($(a_text))"
+A_ENV="OMB_TEST_AFTER=$FIX/linux-omarchy-finishing" a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-success: resumed, and the machine shows it advanced ($(a_text))"
 assert_eq "$(cat "$A_DIR/record")" "/usr/local/bin/omarchy-mac-setup --resume" "actions-omarchy.resume-success: upstream's resume runs"
 assert_contains "$(a_state)" "omarchy_resumed_at=" "actions-omarchy.resume-success: recorded first"
 a_umask actions-omarchy.resume-umask
+# actions-omarchy.resume-not-run: the setup could not be run (exit 127), or
+# its executable is gone: never completed, whatever was stamped.
+a_use "$T/resume-127" "$FIX/linux-setup-in-progress"
+A_ENV="OMB_TEST_RC=127" a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: exit 127 is not completed"
+assert_contains "$(a_state)" "omarchy_resumed_at=" "actions-omarchy.resume-not-run: though the resume was stamped"
+VR=$(t_variant linux-setup-in-progress)
+rm -f "$VR/root/usr/local/bin/omarchy-mac-setup"
+a_use "$T/resume-gone" "$VR"
+a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: no executable is not completed"
+# Ran, and nothing the classifier or upstream's status reads moved: no effect.
+a_use "$T/resume-same" "$FIX/linux-setup-in-progress"
+a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: nothing advanced is not completed"
 a_unavailable omarchy.resume resume "$FIX/linux-setup-active"
 a_unavailable omarchy.resume resume "$FIX/linux-alarm-fresh"
 
@@ -813,9 +830,9 @@ a_unavailable dev "" "$FIX/linux-setup-in-progress"
 #     is the run's narration, never state a decision reads.
 #   - ops/: the core's operation records live there and each is removed when
 #     its action ends; the folder stays, empty.
-#   - asahi_prelaunch_layout in state.env: what the launch began from,
-#     recorded before it runs, so a reconciliation after a new boot can
-#     prove what changed.
+#   - asahi_prelaunch_layout and omarchy_resume_seen in state.env: what the
+#     launch and the resume began from, recorded before either runs, so a
+#     reconciliation after a new boot can prove what changed.
 # ---------------------------------------------------------------------------
 mkdir -p "$T/base"
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
@@ -875,7 +892,7 @@ e_norm() {
     -e 's/(omarchy-bootstrap|\.state\.env|downloads\/[a-z-]+\.sh-STAMP|shared-[a-z-]+\.env)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(-STAMP)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g' \
-    -e '/^asahi_prelaunch_layout=/d'
+    -e '/^asahi_prelaunch_layout=/d' -e '/^omarchy_resume_seen=/d'
 }
 
 # e_agree ID — the baseline's side and the core's side left the same.
