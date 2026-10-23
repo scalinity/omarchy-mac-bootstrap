@@ -626,6 +626,24 @@ sudo -n diskutil addPartition disk0s6 ExFAT Shared $SH_BYTES" "actions-shared.cr
   [ ! -e "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-success: the creation record is removed"
   assert_eq "$(a_ops)" "" "actions-shared.create-success: its operation record is removed"
   a_umask actions-shared.create-umask
+  # actions-shared.create-unrecorded: the partition made, but its result not
+  # recorded (the state disk full at shared_uuid's write): never completed.
+  a_shared_state "$T/create-unrecorded"
+  printf 'shared_linux_done=%s\n' "$CODE" >>"$A_DIR/state/state.env"
+  cat >"$A_SHIMS/mv" <<EOF
+#!/bin/sh
+last='' prev=''
+for a in "\$@"; do prev=\$last; last=\$a; done
+case "\$last" in */state.env) if grep -q '^shared_uuid=' "\$prev" 2>/dev/null; then exit 1; fi ;; esac
+exec $REAL_MV "\$@"
+EOF
+  chmod +x "$A_SHIMS/mv"
+  A_ENV="OMB_TEST_AFTER=$FIX/mac-shared-created" a_exec_tty 'create\n\004\004\004' shared.create yes
+  rm -f "$A_SHIMS/mv"
+  assert_eq "$(c_result)" "failed postcondition" "actions-shared.create-unrecorded: a partition whose result was not recorded is not completed"
+  assert_not_contains "$(a_state)" "shared_uuid=" "actions-shared.create-unrecorded: the result write failed"
+  assert_contains "$(cat "$A_DIR/state/ops/shared.omb" 2>/dev/null)" "	state=failed	finding=unexpected	" "actions-shared.create-unrecorded: the barrier stays"
+  [ -f "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-unrecorded: the creation record says what happened"
   # A partition on the disk whose record was lost: recorded, with no word.
   a_shared_state "$T/create-lost"
   printf 'shared_linux_done=%s\n' "$CODE" >>"$A_DIR/state/state.env"

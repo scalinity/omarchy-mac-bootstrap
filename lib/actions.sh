@@ -731,14 +731,23 @@ act_create_basis() { return 1; }
 act_create_run() { shared_create ""; }
 
 # The Shared state on a fresh read: the partition the creation was allowed
-# to make (by its record or on the disk); the region still free with no
-# creation record left (nothing was created); anything else stops.
+# to make (by its record or on the disk) and its result recorded (the saved
+# shared_uuid is that partition's) is completed; the partition with its
+# result unrecorded keeps the barrier; the region still free with no
+# creation record left (nothing was created) is no effect; anything else
+# stops.
 act_create_judge() {
   SHARED_TYPED_RECEIPT=""
   act_mac_read again
   shared_mac_state
   case "$SHARED_STATE" in
-    created) act_judged completed "Shared storage is on the disk: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT." ;;
+    created)
+      if [ "$(state_get shared_uuid)" = "$SHARED_UUID" ]; then
+        act_judged completed "Shared storage is on the disk and recorded: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT."
+      else
+        act_judged unexpected "Shared storage is on the disk ($SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT), but its result is not recorded; the creation record keeps what happened."
+      fi
+      ;;
     awaiting-macos-creation)
       if [ -e "$OMB_STATE_DIR/$SHARED_TXN_FILE" ] || [ -L "$OMB_STATE_DIR/$SHARED_TXN_FILE" ]; then
         act_judged unexpected "A creation record remains, and the disk does not show what it was allowed to produce."
