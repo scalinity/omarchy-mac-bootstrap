@@ -16,7 +16,7 @@ git -C "$REPO" archive deaa62c62348ecd4274b74b6b3a00f506c9f243d | tar -x -C "$T/
 printf '\n. %q\n' "$TESTS_DIR/gate2-probe-taps.sh" >>"$T/tool/lib/common.sh"
 cat >>"$T/tool/lib/core.sh" <<'TAPS'
 eval "$(declare -f core_action_info | sed '1s/core_action_info/cp1_original_action_info/')"
-core_action_info() { printf 'lookup\n' >>"$CP1_LOOKUPS"; cp1_original_action_info "$@"; }
+core_action_info() { printf 'lookup %s\n' "$1" >>"$CP1_LOOKUPS"; cp1_original_action_info "$@"; }
 eval "$(declare -f cmd_doctor | sed '1s/cmd_doctor/cp1_original_doctor/')"
 cmd_doctor() { printf 'doctor %s %s\n' "$OMB_INTENT" "$OMB_PERSIST" >>"$CP1_OWNERS"; cp1_original_doctor; }
 cmd_logs() { printf 'logs\n' >>"$CP1_OWNERS"; return 99; }
@@ -47,7 +47,13 @@ held() {
     fi
   elif cmp -s "$T/probes" "$T/hello.probes"; then ok; else fail "$1: probes differ from existing hello setup"; fi
   assert_eq "$(cat "$T/owners")" "${2:-}" "$1: only authorized producer, read intent, zero persistence"
-  assert_empty_file "$T/lookups" "$1: no action lookup"
+  # Health publishes its one action row, agents.mcp (docs/PROTOCOL.md); a
+  # read consults no other row of the action table.
+  if grep -v '^lookup agents\.mcp$' "$T/lookups" | grep -q .; then
+    fail "$1: an action lookup other than Health's agents.mcp: $(tr '\n' ';' <"$T/lookups")"
+  else
+    ok
+  fi
   assert_eq "$(t_snapshot "$T/state")" "$before" "$1: no state/log/lock/operation/effect"
   assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' "$1: no child residue"
   assert_eq "$(grep -c '^action	' "$C_EV")" 0 "$1: no advertised action"
