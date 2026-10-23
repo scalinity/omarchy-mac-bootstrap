@@ -267,6 +267,11 @@ pub fn run(args: &[String]) -> i32 {
             }
         }
         if terminal_gone {
+            if let Some(quit) = gone_with_nothing_to_wait_for(&model, running.is_some()) {
+                trace.line("terminal gone with no request running; exiting");
+                cmds.push(quit);
+                continue;
+            }
             // Follow the request to its outcome without touching the dead terminal.
             std::thread::sleep(Duration::from_millis(TICK_MS as u64));
             continue;
@@ -302,6 +307,14 @@ pub fn run(args: &[String]) -> i32 {
             }
         }
     }
+}
+
+/// A lost terminal only follows a request to its end. With none pending and
+/// none running there is nothing to wait for and nothing will ever end it:
+/// the session exits, as a termination with nothing pending does.
+fn gone_with_nothing_to_wait_for(model: &Model, running: bool) -> Option<Cmd> {
+    (model.pending.is_none() && !running)
+        .then(|| Cmd::Quit(if model.lost { 1 } else { 0 }, String::new()))
 }
 
 /// A lost terminal follows the same request shutdown as a termination signal.
@@ -455,5 +468,44 @@ impl Trace {
         if let Some(f) = self.0.as_mut() {
             let _ = writeln!(f, "{s}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use app::Pending;
+
+    fn pending() -> Pending {
+        Pending {
+            req: Req::Hello,
+            cancellable: false,
+            label: String::new(),
+            ticks: 0,
+        }
+    }
+
+    #[test]
+    fn a_lost_terminal_never_waits_with_nothing_to_wait_for() {
+        let mut m = Model::default();
+        assert_eq!(
+            gone_with_nothing_to_wait_for(&m, false),
+            Some(Cmd::Quit(0, String::new()))
+        );
+        m.lost = true;
+        assert_eq!(
+            gone_with_nothing_to_wait_for(&m, false),
+            Some(Cmd::Quit(1, String::new())),
+            "a core it lost track of is exit 1, as a termination says"
+        );
+    }
+
+    #[test]
+    fn a_lost_terminal_follows_a_request_to_its_end() {
+        let mut m = Model::default();
+        assert_eq!(gone_with_nothing_to_wait_for(&m, true), None);
+        m.pending = Some(pending());
+        assert_eq!(gone_with_nothing_to_wait_for(&m, true), None);
+        assert_eq!(gone_with_nothing_to_wait_for(&m, false), None);
     }
 }

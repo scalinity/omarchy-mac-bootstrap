@@ -79,7 +79,12 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             v.push(pair("Bootstrap", format!("version {}", h.core)));
             v.push(pair(
                 "System",
-                format!("{}{dot}{}{dot}{}", h.platform, h.arch, h.user),
+                format!(
+                    "{}{dot}{}{dot}{}",
+                    h.platform,
+                    h.arch,
+                    crate::theme::verbatim(&h.user)
+                ),
             ));
             v.push(pair(
                 "Session",

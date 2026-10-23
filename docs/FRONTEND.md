@@ -643,6 +643,16 @@ sequenceDiagram
 - **Snapshots are views, not truth.** The frontend keeps the last snapshot to
   draw from and asks again after every action, on `r`, and after a handoff or
   a suspend; an action is always submitted with the basis it was shown.
+- **One request at a time, followed to its end.** `Model::send` is the only
+  place a request starts, and it starts none while one is pending, whoever
+  asks. A screen that needs data when it opens while a request runs gets it
+  when that request settles: the planner's first check is owed (`Form::due`)
+  and sent by the same step that reads what any screen still needs, once.
+- **A quit asked for wins over any answer.** A terminate (SIGTERM, SIGHUP, a
+  lost terminal) or `q` then `y` while a request runs ends the session when
+  its answer is in, whatever the answer leads to — a gate, a question, a
+  read — and starts nothing. A lost terminal with nothing pending or running
+  exits at once, since nothing remains to wait for.
 - **Local work stays local.** Navigation, focus, scrolling, searching and
   filtering loaded data never call the core (docs/DECISIONS.md, D6).
 - **Generic requests.** `Hello`, `Snapshot(scope)`, `Detail(page)`,

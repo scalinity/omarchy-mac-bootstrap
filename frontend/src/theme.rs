@@ -79,10 +79,51 @@ pub fn detect(env: &dyn Fn(&str) -> Option<String>, stdout_tty: bool) -> Caps {
     }
 }
 
+/// Marks the run of text after it as a name to show as given. `say` and
+/// `human_text` drop it and leave the run alone; a screen that shows the
+/// owner's user name or a code puts it there, so the shown text never
+/// depends on what the name happens to spell. Zero width, so it is invisible
+/// wherever it might reach a screen.
+const VERBATIM: char = '\u{2060}';
+
+/// NAME (one run, no spaces) marked to be shown exactly as it is.
+pub fn verbatim(name: &str) -> String {
+    format!("{VERBATIM}{name}")
+}
+
 /// Display protocol system names as product names, retaining record bytes.
-/// Paths, commands and embedded identifiers stay intact.
+///
+/// Only prose is rewritten. The text is read as runs between spaces, and a
+/// run is left exactly as given when it is something the owner may have to
+/// type, compare or copy:
+/// - a field, `name=value`: any run holding `=`, which takes in the whole
+///   resume token (`omb2:enc=1,user=linux,…,linux=250,…`), `--host=linux`
+///   and the like;
+/// - a path, file name or command word: a run holding `/`, `\` or `~`
+///   (`./omarchy-bootstrap`, `/home/linux/bin`, `~/linux`);
+/// - an address: a run holding `@` (`alex@linux`);
+/// - a name its screen marked with `verbatim`.
+///
+/// In the other runs a word is a product name only when it stands alone, so
+/// `macos.omb` and `linux-bin` stay as they are while `macos,` and `(linux)`
+/// read macOS and Linux.
 pub fn human_text(s: &str) -> String {
-    s.split_inclusive(|c: char| !c.is_ascii_alphanumeric() && !"_/.-".contains(c))
+    s.split_inclusive(char::is_whitespace)
+        .map(|run| {
+            if run.contains(VERBATIM) {
+                return run.replace(VERBATIM, "");
+            }
+            if run.contains(['=', '/', '\\', '~', '@']) {
+                return run.to_string();
+            }
+            prose(run)
+        })
+        .collect()
+}
+
+/// A run of prose with its system names written as people read them.
+fn prose(run: &str) -> String {
+    run.split_inclusive(|c: char| !c.is_ascii_alphanumeric() && !"_/.-".contains(c))
         .map(|part| {
             let end = part
                 .trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && !"_/-".contains(c))
@@ -331,6 +372,65 @@ mod tests {
         assert_eq!(
             human_text("macos, linux. macos.omb linux.omb ./omarchy-bootstrap /home/linux/bin"),
             "macOS, Linux. macos.omb linux.omb ./omarchy-bootstrap /home/linux/bin"
+        );
+    }
+
+    /// The resume token is typed back by hand: `token_decode` is
+    /// case-sensitive, so no part of it may be written as prose.
+    #[test]
+    fn what_the_owner_types_is_not_prose() {
+        let token = "omb2:enc=1,user=linux,host=macos,kmap=us,tz=America/New_York,loc=en_US.UTF-8,ssh=0,gh=octocat,linux=250,shared=150,dev=1,plan=1a2b3c4d";
+        for typed in [
+            token,
+            "linux=250",
+            "user=linux",
+            "host=macos",
+            "--host=linux",
+            "alex@linux",
+            "alex@macos:~",
+            "~/linux",
+            "./omarchy-bootstrap resume omb2:linux=250",
+            "plan=1a2b3c4d5e6f7a8b",
+        ] {
+            assert_eq!(human_text(typed), typed, "{typed}");
+        }
+        assert_eq!(
+            human_text(&format!("Type {token}, then macos and linux.")),
+            format!("Type {token}, then macOS and Linux.")
+        );
+        assert_eq!(
+            human_text(&format!("run (user=linux) or linux {}", verbatim("linux"))),
+            "run (user=linux) or Linux linux"
+        );
+        for caps in [
+            Caps {
+                depth: Depth::None,
+                truecolor: false,
+                unicode: true,
+                console: false,
+            },
+            Caps {
+                depth: Depth::None,
+                truecolor: false,
+                unicode: false,
+                console: true,
+            },
+        ] {
+            let t = Theme::new(caps);
+            assert_eq!(t.say(token), token);
+            assert_eq!(t.say(&verbatim("macos")), "macos");
+        }
+    }
+
+    #[test]
+    fn prose_reads_as_people_read_it() {
+        assert_eq!(
+            human_text("macos, (linux) and macos-linux; linux."),
+            "macOS, (Linux) and macos-linux; Linux."
+        );
+        assert_eq!(
+            human_text("waiting-for-linux, survey: not-started"),
+            "waiting for Linux, survey: not started"
         );
     }
 
