@@ -264,31 +264,55 @@ k_u32() {
   done
 }
 k_str() { k_u32 "${#1}" && printf '%s' "$1"; }
-k_key() { # FILE PARTS — a synthetic envelope, its key's strings cut after PARTS of: pub, private, a short private
+# k_key FILE CIPHER PUB PRIV TAG — a synthetic envelope shaped as OpenSSH
+# writes one (bcrypt, 16 rounds), its key's parts chosen: PUB real (an
+# ssh-ed25519 type and 32 key bytes), text (a placeholder string) or none;
+# PRIV the private section's length in bytes, short (a length past the end)
+# or none; TAG 1 for the 16 bytes an authenticated cipher keeps after it.
+k_key() {
   {
     printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n'
     {
       printf 'openssh-key-v1\000'
-      k_str aes256-ctr && k_str bcrypt && k_u32 24 && k_u32 16 && printf 'FIXTURESALT00000' && k_u32 16 && k_u32 1
-      case "$2" in
-        pub) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" ;;
-        whole) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" && k_str "FIXTURE PRIVATE SECTION, NOT A KEY" ;;
-        short) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" && k_u32 400 && printf 'FIXTURE PRIVATE SECTION' ;;
+      k_str "$2" && k_str bcrypt && k_u32 24 && k_u32 16 && printf 'FIXTURESALT00000' && k_u32 16 && k_u32 1
+      case "$3" in
+        real) k_u32 51 && k_str ssh-ed25519 && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY ;;
+        text) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" ;;
       esac
+      case "$4" in
+        none) ;;
+        short) k_u32 400 && printf 'FIXTURE PRIVATE SECTION' ;;
+        *) k_u32 "$4" && head -c "$4" /dev/zero | tr '\0' 'F' ;;
+      esac
+      if [ "$5" = 1 ]; then printf 'FIXTURE TAG 0016'; fi
     } | base64 | tr -d '\n' | fold -w 70
     printf '\n-----END OPENSSH PRIVATE KEY-----\n'
   } >"$1"
 }
-for parts in none pub short; do
-  k_key "$T/torn-$parts" "$parts"
-  scan_ssh_key "$T/torn-$parts"
+for parts in "none none" "real none" "real short"; do
+  # shellcheck disable=SC2086 # two words, split on purpose
+  k_key "$T/torn" aes256-ctr $parts 0
+  scan_ssh_key "$T/torn"
   assert_eq "$SCAN_KEY" malformed "secret-ssh-torn: an envelope cut after its key count ($parts) is malformed"
-  scan_key_check "$T/torn-$parts"
+  scan_key_check "$T/torn"
   assert_rc $? 1 "secret-ssh-torn: and is never carried ($parts)"
 done
-k_key "$T/torn-whole" whole
-scan_key_check "$T/torn-whole"
-assert_rc $? 0 "secret-ssh-torn: the same envelope whole is an encrypted key"
+# secret-ssh-padded: the public key begins with a key type OpenSSH writes,
+# and the private section is whole cipher blocks with an authenticated
+# cipher's tag after it; anything else is malformed, never carried.
+for c in "aes256-ctr real 1 0" "aes256-ctr real 17 0" "aes256-ctr text 160 0" "aes256-gcm@openssh.com real 160 0" \
+  "chacha20-poly1305@openssh.com real 12 1" "chacha20-poly1305@openssh.com real 168 0"; do
+  # shellcheck disable=SC2086 # four words, split on purpose
+  k_key "$T/padded" $c
+  scan_ssh_key "$T/padded"
+  assert_eq "$SCAN_KEY" malformed "secret-ssh-padded: $c is malformed"
+done
+for c in "aes256-ctr real 160 0" "aes256-gcm@openssh.com real 160 1" "chacha20-poly1305@openssh.com real 168 1"; do
+  # shellcheck disable=SC2086 # four words, split on purpose
+  k_key "$T/padded" $c
+  scan_key_check "$T/padded"
+  assert_rc $? 0 "secret-ssh-padded: $c, shaped as OpenSSH writes it, is an encrypted key"
+done
 { cat "$S/.ssh/id_ed25519"; head -c 17000 /dev/zero | tr '\0' 'A'; } >"$T/big"
 scan_key_check "$T/big"
 assert_rc $? 1 "secret-ssh: a key over 16 KiB is refused"

@@ -326,10 +326,14 @@ END {
   if (p + 4 > n) bad(); ol = u32(p); p += 4; if (p + ol > n) bad(); opts = p; p += ol
   if (p + 4 > n || u32(p) != 1) bad()
   p += 4
-  # One key: its public-key string, then the (encrypted) private section,
-  # each present in full; a torn envelope is malformed.
-  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
-  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
+  # One key: its public-key blob, which begins with a key type OpenSSH
+  # writes, then the (encrypted) private section, each present in full; a
+  # torn envelope is malformed.
+  if (p + 4 > n) bad(); pl = u32(p); p += 4; if (pl < 5 || p + pl > n) bad()
+  tl = u32(p); if (tl < 1 || tl > 64 || tl + 4 > pl) bad()
+  if (sstr(p + 4, tl) !~ /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh[.]com|sk-ecdsa-sha2-nistp256@openssh[.]com)$/) bad()
+  p += pl
+  if (p + 4 > n) bad(); priv = u32(p); p += 4; if (priv < 1 || p + priv > n) bad(); p += priv
   l = ol
   if (cipher !~ /^[a-z0-9@.-]+$/ || kdf !~ /^[a-z0-9@.-]+$/) bad()
   rounds = 0
@@ -340,6 +344,11 @@ END {
   }
   if (cipher == "none" && kdf == "none") { print "plain none none 0"; exit 0 }
   if ((cipher == "aes256-ctr" || cipher == "aes256-gcm@openssh.com" || cipher == "chacha20-poly1305@openssh.com") && kdf == "bcrypt" && rounds >= 16) {
+    # The private section is whole cipher blocks (16 bytes for AES, 8 for
+    # ChaCha20); an authenticated cipher keeps its 16-byte tag after it.
+    bs = (cipher == "chacha20-poly1305@openssh.com") ? 8 : 16
+    if (priv % bs != 0) bad()
+    if (cipher != "aes256-ctr" && p + 16 > n) bad()
     print "encrypted " cipher " " kdf " " rounds; exit 0
   }
   print "unsupported " cipher " " kdf " " rounds
