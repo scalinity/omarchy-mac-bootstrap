@@ -1469,9 +1469,6 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             if kind == Kind::Items && m.whole(Kind::Items) {
                 recheck_picks(m);
             }
-            if matches!(kind, Kind::Conflicts | Kind::Diff) {
-                recheck_replacements(m);
-            }
             settle(m, Vec::new())
         }
         Req::Validate { action, args } => {
@@ -2007,23 +2004,9 @@ fn save_go_on(m: &mut Model) -> Vec<Cmd> {
 
 /// A stale review returns to the conflicts before another validation or gate.
 fn restore_changed(m: &mut Model) -> Vec<Cmd> {
-    m.rest.previous.clear();
-    if m.whole(Kind::Conflicts) && m.whole(Kind::Diff) {
-        let conflicts = &m.detail(Kind::Conflicts).expect("whole").rows;
-        let diff = &m.detail(Kind::Diff).expect("whole").rows;
-        m.rest.previous = conflicts
-            .iter()
-            .filter(|r| crate::restore::replacing(&m.rest.replacements, &r.id))
-            .map(|r| {
-                let rows = crate::restore::diff_rows(diff, &r.id)
-                    .into_iter()
-                    .cloned()
-                    .collect();
-                (r.clone(), rows)
-            })
-            .collect();
-    }
     m.rest.checked = None;
+    // Sizes and bounded display rows cannot identify destination bytes.
+    // Every Replace needs another explicit choice after the fresh read.
     m.rest.replacements.clear();
     m.rest.bundle.clear();
     m.rest.conflict = 0;
@@ -2043,27 +2026,6 @@ fn restore_changed(m: &mut Model) -> Vec<Cmd> {
         "Restore changed since you looked; review the conflicts again.".into(),
     ));
     m.reread(Scope::Restore)
-}
-
-/// Retain a replacement only when its newly read conflict and diff match.
-fn recheck_replacements(m: &mut Model) {
-    if !m.whole(Kind::Conflicts) || !m.whole(Kind::Diff) {
-        return;
-    }
-    let previous = std::mem::take(&mut m.rest.previous);
-    for (before, diff) in previous {
-        let unchanged = m
-            .detail(Kind::Conflicts)
-            .expect("whole")
-            .rows
-            .contains(&before)
-            && !diff.is_empty()
-            && crate::restore::diff_rows(&m.detail(Kind::Diff).expect("whole").rows, &before.id)
-                == diff.iter().collect::<Vec<_>>();
-        if unchanged {
-            crate::restore::choose(&mut m.rest.replacements, &before.id, true);
-        }
-    }
 }
 
 /// The whole current review and conflicts form one replacement document.

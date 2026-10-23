@@ -17,8 +17,6 @@ pub struct Restore {
     pub side_scroll: usize,
     /// Wrapped lines in the unified view; drawing bounds End to the page.
     pub line_scroll: Cell<usize>,
-    /// Chosen conflicts and their displayed diffs awaiting a fresh review.
-    pub previous: Vec<(Row, Vec<Row>)>,
     pub checked: Option<Checked>,
     pub action: usize,
 }
