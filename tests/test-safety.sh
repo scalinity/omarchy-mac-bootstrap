@@ -105,29 +105,55 @@ for cmd in $runs; do
   esac
 done
 quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
-assert_eq "$quoted" 'run "$AG_PATH" "$@"
+assert_eq "$quoted" 'run "$@"
+run "$AG_PATH" "$@"
 run "$OMS_SELF" --resume' "indirect commands are the observed agent handoff and omarchy-mac-setup --resume"
 assert_eq "$(grep -hE 'run systemctl ' $CODE | sed 's/^[[:space:]]*//; s/[[:space:]]*>.*$//')" \
   'run systemctl disable --now sshd' "the direct systemctl mutation only stops and disables image SSH"
-# Restore removes only its admitted staging names. The transfer helper has
-# three callers, each passing that stage; no original or backup is removed.
+# Restore removes only its matched staging names, and every rename/link has
+# exact-destination semantics. Plain mv/ln must fail these restore pins.
 restore=$REPO/lib/migrate_restore.sh
 assert_eq "$(grep -oE 'run rm [^;|&>]*' "$restore" | sed 's/[[:space:]]*$//' | LC_ALL=C sort)" \
   'run rm -- "$src"
 run rm -- "$src"
+run rm -r -- "$stage"
 run rm -r -- "$stage"' 'restore removes only completed or read-back-matched stages'
 assert_eq "$(grep -E '^[[:space:]]*(path=.* stage=|stage=)' "$restore" | sed 's/^[[:space:]]*//')" \
   'path=$RST_HOME/$dest stage=$RST_HOME/$dest.omb-new-$RST_RUN
-stage=$path.omb-undo-$RST_RUN
+stage=$RST_HOME/${RST_DEST[n]}.omb-new-$RST_RUN
 stage=$path.omb-undo-$RST_RUN' 'restore stage names are the destination plus omb-new/omb-undo and the manifest SHA'
 assert_eq "$(grep -E '_rst_transfer ' "$restore" | sed 's/^[[:space:]]*//')" \
   'if ! _rst_parents "$dest" 0 || ! _rst_checkpoint restore.place || ! _rst_transfer "$stage" "$path" "$new"; then
 _rst_transfer "$stage" "$path" "$old" || return 1
 if [ "$old" != absent ]; then _rst_transfer "$stage" "$path" "$old" || return 1; fi' 'restore transfer removes only those stages'
-assert_eq "$(grep -F '_rst_stage ' "$restore" | sed 's/^[[:space:]]*//')" \
-  '_rst_stage "$n" "$stage" || { _rst_mark "$n" failed '\''The private stage could not be written or read back.'\''; return; }' 'restore stage cleanup has only its placement caller'
+restore_no_clobber() {
+  local moves links
+  moves=$(grep -v '^[[:space:]]*#' "$1" | grep -oE '(^|[[:space:]])mv [^;|&>]*' | sed 's/^[[:space:]]*//')
+  links=$(grep -v '^[[:space:]]*#' "$1" | grep -oE '(^|[[:space:]])ln [^;|&>]*' | sed 's/^[[:space:]]*//')
+  [ -n "$moves" ] && [ -n "$links" ] || return 1
+  ! printf '%s\n' "$moves" | grep -qv '^mv -T --update=none-fail -- ' &&
+    ! printf '%s\n' "$links" | grep -qvE '^ln (-s )?-T -- '
+}
+restore_no_clobber "$restore"
+assert_eq "$?" 0 restore-all-moves-and-links-no-clobber
+pin_tmp=$(t_tmp)
+for primitive in mv ln; do
+  cp "$restore" "$pin_tmp/restore.sh"
+  printf 'run %s "$source" "$destination"\n' "$primitive" >>"$pin_tmp/restore.sh"
+  restore_no_clobber "$pin_tmp/restore.sh"
+  assert_eq "$?" 1 "restore-plain-$primitive-refused"
+done
+rm -rf "$pin_tmp"
 assert_eq "$(grep -E '^[[:space:]]*RST_RUN=\$' "$restore" | sed 's/^[[:space:]]*//')" \
   'RST_RUN=$BNDL_SHA' 'the stage suffix comes from the checked manifest SHA'
+# Restore's setting value positions are deliberately withheld at the existing
+# run boundary; no unmasked Git write or MCP add-json can bypass this pin.
+assert_eq "$(grep -E 'run(_withheld [0-9]+)? (git config|claude mcp add-json)' "$restore" | sed 's/^[[:space:]]*//')" \
+  'run_withheld 8 git config --file "$RST_HOME/.gitconfig" --no-includes -- "$name" "$value" >/dev/null 2>&1 || :
+run_withheld 5 claude mcp add-json "$name" "$value" --scope user >/dev/null 2>&1 || :
+run_withheld 8 git config --file "$RST_HOME/.gitconfig" --no-includes -- "$name" "$RST_SAVED_VALUE" >/dev/null 2>&1 || :
+else run git config --file "$RST_HOME/.gitconfig" --no-includes --unset-all -- "$name" >/dev/null 2>&1 || :; fi
+run_withheld 5 claude mcp add-json "$name" "$RST_SAVED_VALUE" --scope user >/dev/null 2>&1 || :' 'restore withholds every setting value'
 sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | LC_ALL=C sort -u | tr '\n' ';')
 assert_eq "$sudos" "run sudo cp -p;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, the Shared mount, and the one Shared creation"
 assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \

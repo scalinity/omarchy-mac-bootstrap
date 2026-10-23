@@ -166,7 +166,13 @@ log_event() {
 # Upstream output is never captured, so nothing typed into it can be logged.
 run() {
   local argv
-  argv=$(quote_argv "$@")
+  local withheld=${OMB_RUN_WITHHELD:-0} i=0 arg
+  local -a shown=()
+  for arg in "$@"; do
+    i=$((i + 1))
+    if [ "$i" = "$withheld" ]; then shown+=( '<withheld>' ); else shown+=( "$arg" ); fi
+  done
+  argv=$(quote_argv ${shown[@]+"${shown[@]}"})
   # plan, status, doctor, sources and logs never change the machine. Reaching
   # here from one of them is a routing mistake; refuse instead of trusting it.
   if [ "$OMB_INTENT" != act ]; then
@@ -205,6 +211,16 @@ run() {
   OMB_RUNNING=""
   log_event exit "$rc"
   return "$rc"
+}
+
+# N counts from CMD (argument 1). Only the displayed/recorded argv is masked;
+# the command receives the original arguments through the same run boundary.
+run_withheld() {
+  local OMB_RUN_WITHHELD=$1
+  shift
+  case "$OMB_RUN_WITHHELD" in '' | 0* | *[!0-9]*) return 1 ;; esac
+  [ "$OMB_RUN_WITHHELD" -le "$#" ] || return 1
+  run "$@"
 }
 
 # ---------------------------------------------------------------------------

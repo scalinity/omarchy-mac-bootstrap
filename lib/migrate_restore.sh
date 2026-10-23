@@ -111,7 +111,7 @@ _rst_safe_rel() {
 _rst_dest_ok() {
   local p
   _rst_safe_rel "$1" || return 1
-  for p in .local/state/omarchy .local/state/omarchy-mac-bootstrap .config/omarchy/defaults/agent .local/bin/claude .local/bin/codex .local/bin/opencode; do
+  for p in .local/state/omarchy .local/state/omarchy-mac-bootstrap .config/omarchy/defaults/agent .local/bin/claude .local/bin/codex .local/bin/opencode .agents/skills/omarchy .claude/skills/omarchy .codex/skills/omarchy .config/opencode/skills/omarchy; do
     case "$1/" in "$p/"*) return 1 ;; esac
     case "$p/" in "$1/"*) return 1 ;; esac
   done
@@ -136,14 +136,15 @@ _rst_home() {
 # The whole existing prefix must be owned real folders on the home device.
 # Create missing parents one at a time only after consent.
 _rst_parents() {
-  local rel=$1 create=$2 p=$RST_HOME part rest
+  local rel=$1 create=$2 p=$RST_HOME part rest mode=0700
+  case "$rel" in .local/* | .config/*) mode=0755 ;; esac
   rest=${rel%/*}; [ "$rest" != "$rel" ] || return 0
   while [ -n "$rest" ]; do
     part=${rest%%/*}; if [ "$rest" = "$part" ]; then rest=''; else rest=${rest#*/}; fi
     p=$p/$part
     if [ ! -e "$p" ] && [ ! -L "$p" ]; then
       [ "$create" = 1 ] || return 0
-      run mkdir -m 0700 -- "$p" >/dev/null || return 1
+      run mkdir -p -m "$mode" -- "$p" >/dev/null || return 1
     fi
     [ -d "$p" ] && [ ! -L "$p" ] && [ -O "$p" ] || return 1
     _rst_meta "$p" || return 1
@@ -217,7 +218,8 @@ _rst_bundle() {
       rec_get_into at "$REC_AT_I" at
       rec_get_into items "$REC_AT_I" items
       rec_get_into size "$REC_AT_I" bytes
-      if [ -z "$RST_BUNDLE" ] && { [ -z "$wanted" ] || [ "$wanted" = "${p##*/}" ]; }; then
+      _bndl_sha "$p/bundle.omb" || return 1
+      if [ -z "$RST_BUNDLE" ] && { [ -z "$wanted" ] || [ "$wanted" = "${p##*/}" ] || [ "$wanted" = "$BNDL_SHA" ]; }; then
         RST_BUNDLE=$p RST_ORIGIN=$origin RST_AT=$at
       fi
     else check=$BNDL_WHY; fi
@@ -276,9 +278,9 @@ _rst_history() {
   done <"$RST_W/events"
 }
 
-# These two writers are invoked only through run; argv contains no file bytes
-# or setting values. noclobber creates an exclusive stage; each journal line
-# is flushed. An interrupted tail is framed and ignored before the next record.
+# These writers receive scratch paths or fingerprint-only journal lines through
+# run. Setting commands use run_withheld so their values never enter its argv
+# display or log. Each journal line is flushed; interrupted tails are framed.
 rst_stage_write() (
   umask 077
   set -C
@@ -388,7 +390,7 @@ _rst_units() {
                         _bndl_sha "$src/$rel" && [ "$BNDL_SHA" = "$target" ] || return 1
                         _rst_field "${RST_BL[j]}" mode target
                         chmod "$target" "$src/$rel" || return 1 ;;
-                      link) _rst_field "${RST_BL[j]}" target target; ln -s -- "$target" "$src/$rel" || return 1 ;;
+                      link) _rst_field "${RST_BL[j]}" target target; ln -s -T -- "$target" "$src/$rel" || return 1 ;;
                     esac
                     ;;
                 esac
@@ -467,7 +469,7 @@ _rst_pkg_ok() {
   esac
 }
 _rst_pkg_present() {
-  local p base v
+  local p base v executable
   case "$RST_METHOD" in
     pacman) sys_cmd "rst_q_$RST_TARGET" pacman -Q "$RST_TARGET" >/dev/null ;;
     provided)
@@ -487,8 +489,14 @@ _rst_pkg_present() {
       [ -d "$base" ] && [ ! -L "$base" ] || return 1
       for p in "$base"/*; do
         [ -d "$p" ] && [ ! -L "$p" ] && [ "${p##*/}" != latest ] || continue
-        if [ -z "$RST_VERSION" ]; then return 0; fi
-        case "${p##*/}" in "$RST_VERSION" | "$RST_VERSION".*) return 0 ;; esac
+        if [ -n "$RST_VERSION" ]; then
+          case "${p##*/}" in "$RST_VERSION" | "$RST_VERSION".*) ;; *) continue ;; esac
+        fi
+        executable=${RST_TARGET##*/}
+        case "$executable" in python) executable=python3 ;; rust) executable=rustc ;; erlang) executable=erl ;; esac
+        for v in "$p/bin/$executable" "$p/$executable"; do
+          [ -f "$v" ] && [ -x "$v" ] && return 0
+        done
       done
       return 1 ;;
     uv)
@@ -541,7 +549,7 @@ END_NAMES
 _rst_setting_now() {
   local kind tool name f
   _rst_field "$1" kind kind; _rst_field "$1" tool tool; _rst_field "$1" name name
-  RST_VALUE=''
+  RST_VALUE='' RST_SETTING_PRESENT=0
   [ "${#name}" -le 512 ] || return 1
   _whole "$name" '^[A-Za-z][A-Za-z0-9._/:@+-]*$' || return 1
   case "$kind:$tool" in
@@ -553,7 +561,7 @@ _rst_setting_now() {
       f=$RST_HOME/.gitconfig
       _rst_parents .gitconfig 0 && { [ ! -e "$f" ] || { [ -f "$f" ] && [ ! -L "$f" ]; }; } || return 1
       sys_cmd "rst_git_$name" git config --file "$f" --no-includes --get "$name" >"$RST_W/git.value"
-      case $? in 0 | 1) ;; *) return 1 ;; esac
+      case $? in 0) RST_SETTING_PRESENT=1 ;; 1) ;; *) return 1 ;; esac
       RST_VALUE=$(cat "$RST_W/git.value"; printf '.')
       RST_VALUE=${RST_VALUE%.}
       RST_VALUE=${RST_VALUE%$'\n'}
@@ -564,16 +572,16 @@ _rst_setting_now() {
       _rst_parents .claude.json 0 || return 1
       if [ -e "$f" ] || [ -L "$f" ]; then
         [ -f "$f" ] && [ ! -L "$f" ] || return 1
-        RST_VALUE=$(jq -cS --arg k "$name" '.mcpServers[$k] // null' "$f") || return 1
-        [ "$RST_VALUE" != null ] || RST_VALUE=''
+        RST_VALUE=$(jq -cS --arg k "$name" '.mcpServers[$k] // null' "$f" 2>/dev/null) || return 1
+        if [ "$RST_VALUE" = null ]; then RST_VALUE=''; else RST_SETTING_PRESENT=1; fi
       fi
       ;;
     *) return 1 ;;
   esac
-  RST_SETTING_FP=$(sha256_str "$RST_VALUE")
+  RST_SETTING_FP=$(sha256_str "$RST_SETTING_PRESENT:$RST_VALUE")
 }
 _rst_review_one() {
-  local n=$1 kind=${RST_KIND[$1]} dest=${RST_DEST[$1]} path src v key
+  local n=$1 kind=${RST_KIND[$1]} dest=${RST_DEST[$1]} path src v key mode
   RST_ACTION[n]=place RST_STATUS[n]=ready RST_REASON[n]='' RST_OLD[n]=absent RST_NEW[n]=''
   case "$kind" in
     file | dir | link | bashrc)
@@ -608,6 +616,19 @@ _rst_review_one() {
           RST_STATUS[n]=blocked RST_REASON[n]='OpenCode JSON could not be merged.'; return; }
         src=$v RST_SRC[n]=$v
       fi
+      # Never widen the permissions of a replaced file or folder.
+      v=${RST_OLD[n]}
+      _rst_history "$dest"
+      _rst_backup_name "$dest"
+      if [ "$v" = absent ] && [ "$RST_H_STEP" != undone ] &&
+        _rst_node "$RST_BACKUP" && [ "$RST_NODE" = "$RST_H_BEFORE" ]; then v=$RST_NODE; fi
+      case "$kind:$v" in
+        file:file:* | bashrc:file:* | dir:dir:*)
+          mode=${v#*:}; mode=${mode%%:*}
+          printf -v mode '%04o' "$((0$mode & 0${RST_MODE[n]}))"
+          RST_MODE[n]=$mode
+          if [ "$kind" = dir ]; then chmod "$mode" "$src" || return 1; fi ;;
+      esac
       if [ "$kind" = link ]; then
         rec_enc_v "$src"; RST_NEW[n]=link:$REC_ENC
       elif [ "$kind" = dir ]; then
@@ -616,6 +637,20 @@ _rst_review_one() {
         _bndl_sha "$src" || return 1; RST_NEW[n]=file:${RST_MODE[n]}:$BNDL_SHA
       fi
       _rst_history "$dest"
+      _rst_backup_name "$dest"
+      if [ "$RST_H_STEP" != undone ] && [ -n "$RST_H_BEFORE" ] && [ "$RST_H_BEFORE" != absent ] &&
+        { [ -e "$RST_BACKUP" ] || [ -L "$RST_BACKUP" ]; }; then
+        RST_REASON[n]="The original is in $RST_BACKUP; undo returns it when the destination is free."
+        case "$RST_H_STEP:$RST_H_STATE" in
+          prepare:* | status:blocked | status:failed)
+            if [ "${RST_OLD[n]}" != absent ] && [ "${RST_OLD[n]}" != "${RST_NEW[n]}" ] && [ "${RST_OLD[n]}" != "$RST_H_BEFORE" ]; then
+              # Keep must not replace an unfinished placement's history with
+              # the intervening object's fingerprint: undo still owes the original.
+              RST_ACTION[n]=blocked RST_STATUS[n]=blocked
+              return
+            fi ;;
+        esac
+      fi
       if [ "${RST_OLD[n]}" = "${RST_NEW[n]}" ]; then
         RST_ACTION[n]=in-place RST_STATUS[n]=in-place
       elif [ "$RST_H_STEP" = kept ] && [ "$RST_H_AFTER" = "${RST_OLD[n]}" ]; then
@@ -652,9 +687,9 @@ _rst_review_one() {
         RST_OLD[n]=$RST_SETTING_FP
         _rst_field "${RST_SRC[n]}" kind key
         if [ "$key" = mcp ]; then v=$(printf '%s' "$v" | jq -cS .) || return 1; fi
-        RST_NEW[n]=$(sha256_str "$v")
+        RST_NEW[n]=$(sha256_str "1:$v")
         if [ "${RST_OLD[n]}" = "${RST_NEW[n]}" ]; then RST_ACTION[n]=in-place RST_STATUS[n]=in-place
-        elif [ -n "$RST_VALUE" ]; then RST_ACTION[n]=conflict
+        elif [ "$RST_SETTING_PRESENT" = 1 ]; then RST_ACTION[n]=conflict
         else RST_ACTION[n]=install; fi
         if [ "${RST_STATUS[n]}" = in-place ] && [ "$key" = mcp ]; then
           _rst_secrets_needed "$v"
@@ -683,7 +718,10 @@ _rst_load() {
   local wanted=${1:-} n=0
   RST_STATE=blocked RST_WHY='' RST_N=0 RST_BUNDLE='' RST_RUN='' RST_HOME='' RST_ORIGIN='' RST_AT='' RST_COUNTS='0 items'
   omb_tmp_init || return 1
+  case "$OMB_TMP" in */omarchy-bootstrap.*) ;; *) RST_WHY='Restore needs its own private scratch.'; return 1 ;; esac
+  [ -d "$OMB_TMP" ] && [ ! -L "$OMB_TMP" ] && [ -O "$OMB_TMP" ] || return 1
   RST_W=$OMB_TMP/restore
+  [ ! -L "$RST_W" ] && [ ! -L "$RST_W/want" ] || return 1
   rm -rf "$RST_W/want" || return 1
   mkdir -p "$RST_W/want" || return 1
   : >"$RST_W/events"
@@ -764,6 +802,20 @@ _rst_replacing() {
   return 1
 }
 _rst_backup_name() { RST_BACKUP=$RST_BACK/$(sha256_str "$1"); }
+# Retain unexpected/partial bytes and older completed cycles without ever
+# reusing an occupied name. The no-clobber move checks the chosen name too.
+_rst_preserve() {
+  local src=$1 base=$2 spare=$2 i=0
+  while [ -e "$spare" ] || [ -L "$spare" ]; do i=$((i + 1)); spare=$base.$i; done
+  run mv -T --update=none-fail -- "$src" "$spare" >/dev/null
+}
+_rst_stage_clean() {
+  local stage=$1 path=$2 expected=$3
+  [ -e "$stage" ] || [ -L "$stage" ] || return 0
+  _rst_node "$path" && [ "$RST_NODE" = "$expected" ] || return 1
+  _rst_node "$stage" && [ "$RST_NODE" = "$expected" ] || return 1
+  run rm -r -- "$stage" >/dev/null
+}
 _rst_checkpoint() { omb_fail_at "$1" && return 1; return 0; }
 _rst_mark() {
   RST_STATUS[$1]=$2 RST_REASON[$1]=${3:-}
@@ -787,19 +839,20 @@ _rst_stage() {
   if [ -e "$stage" ] || [ -L "$stage" ]; then
     # A stale stage can only be ours if its journal plan binds its bytes.
     _rst_history "${RST_DEST[n]}"
-    _rst_node "$stage" || return 1
     [ "$RST_H_AFTER" = "${RST_NEW[n]}" ] || return 1
-    if [ "$RST_NODE" = "${RST_NEW[n]}" ]; then run rm -r -- "$stage" >/dev/null || return 1
+    if _rst_node "$stage" && [ "$RST_NODE" = "${RST_NEW[n]}" ]; then run rm -r -- "$stage" >/dev/null || return 1
     else
       # A short write may leave only part of the stage. Preserve those bytes
       # whole, including an unexpected entry, rather than guessing ownership.
       _rst_backup_name "${RST_DEST[n]}"
-      run mv -T --update=none-fail -- "$stage" "$RST_BACKUP.stage" >/dev/null || return 1
+      _rst_preserve "$stage" "$RST_BACKUP.stage" || return 1
     fi
   fi
   case "$kind" in
     file | bashrc) run rst_stage_write "${RST_SRC[n]}" "$stage" "${RST_MODE[n]}" >/dev/null || return 1 ;;
-    dir) run mkdir -m 0700 -- "$stage" >/dev/null && run cp -a -- "${RST_SRC[n]}/." "$stage/" >/dev/null || return 1 ;;
+    dir)
+      [ ! -e "$stage" ] && [ ! -L "$stage" ] || return 1
+      run cp -a -T -- "${RST_SRC[n]}" "$stage" >/dev/null || return 1 ;;
     link) run ln -s -T -- "${RST_SRC[n]}" "$stage" >/dev/null || return 1 ;;
     *) return 1 ;;
   esac
@@ -821,8 +874,19 @@ _rst_place() {
     # Resume only a recorded rename of the exact reviewed original. A second
     # replacement never overwrites that original or reuses its backup name.
     _rst_node "$backup" || return 1
-    if [ "$old" != absent ] || [ "$RST_H_BEFORE" != "$RST_NODE" ] || [ "$RST_H_AFTER" != "$new" ]; then
+    if [ "$RST_H_STEP" = undone ] && [ "$old" = "$RST_NODE" ]; then
+      _rst_preserve "$backup" "$backup.previous" || return 1
+      _rst_log prepare "${RST_ITEM[n]}" "$dest" "$old" "$new" ready || return 1
+    elif [ "$RST_H_BEFORE" = "$RST_NODE" ] && [ "$RST_H_AFTER" = "$new" ] && [ "$old" = absent ]; then
+      # Settle an interrupted backup move before retrying the placement.
+      run mv -T --update=none-fail -- "$backup" "$path" >/dev/null || return 1
+      old=$RST_H_BEFORE RST_OLD[n]=$RST_H_BEFORE
+    elif [ "$RST_H_BEFORE" != "$RST_NODE" ] || [ "$RST_H_AFTER" != "$new" ]; then
       _rst_mark "$n" blocked 'A prior backup needs attention; it will never be overwritten.'; return
+    elif [ "$old" = "$RST_NODE" ]; then
+      _rst_preserve "$backup" "$backup.previous" || return 1
+    else
+      _rst_mark "$n" blocked "The original is in $backup; undo returns it when the destination is free."; return
     fi
   else
     _rst_log prepare "${RST_ITEM[n]}" "$dest" "$old" "$new" ready || return 1
@@ -846,7 +910,10 @@ _rst_place() {
   fi
   omb_pause_at restore.place
   if ! _rst_parents "$dest" 0 || ! _rst_checkpoint restore.place || ! _rst_transfer "$stage" "$path" "$new"; then
-    _rst_mark "$n" blocked 'No-clobber placement refused; the original remains in its backup.'; return
+    if [ "$old" != absent ] && _rst_parents "$dest" 0 && [ ! -e "$path" ] && [ ! -L "$path" ]; then
+      run mv -T --update=none-fail -- "$backup" "$path" >/dev/null || :
+    fi
+    _rst_mark "$n" blocked "Placement refused. The original is at $path or its backup $backup; undo returns a backup when the destination is free."; return
   fi
   run sync >/dev/null || return 1
   omb_stop_at restore.place
@@ -855,27 +922,44 @@ _rst_place() {
   RST_STATUS[n]=placed
 }
 _rst_install() {
-  local n=$1 spec id kind tool name value before
+  local n=$1 spec id kind tool name value
   if [ "${RST_KIND[n]}" = setting ]; then
     _rst_setting_now "${RST_SRC[n]}" && [ "$RST_SETTING_FP" = "${RST_OLD[n]}" ] || {
       _rst_mark "$n" blocked 'The setting changed since the review.'; return; }
-    before=$RST_VALUE
     _rst_field "${RST_SRC[n]}" kind kind
     _rst_field "${RST_SRC[n]}" tool tool
     _rst_field "${RST_SRC[n]}" name name
     _rst_field "${RST_SRC[n]}" value value
+    _rst_backup_name "${RST_DEST[n]}"
+    RST_BACKUP=$RST_BACKUP.setting
+    _rst_history "${RST_DEST[n]}"
+    if [ -e "$RST_BACKUP" ] || [ -L "$RST_BACKUP" ]; then
+      if [ "$RST_H_STEP" = undone ]; then _rst_preserve "$RST_BACKUP" "$RST_BACKUP.previous" || return 1
+      elif ! _rst_setting_saved "${RST_OLD[n]}"; then
+        if [ -z "$RST_H_STEP" ] || [ "$RST_H_BEFORE" = "${RST_OLD[n]}" ]; then
+          # A short backup write precedes its prepare event; the original is
+          # still the freshly checked setting, so preserve and rebuild it.
+          _rst_preserve "$RST_BACKUP" "$RST_BACKUP.partial" || return 1
+        else _rst_mark "$n" blocked 'The previous setting backup cannot be verified.'; return; fi
+      fi
+    fi
+    if [ ! -e "$RST_BACKUP" ] && [ ! -L "$RST_BACKUP" ]; then
+      (umask 077; printf '%s' "$RST_VALUE" >"$RST_W/setting.value") || return 1
+      _rst_checkpoint restore.setting || return 1
+      run rst_stage_write "$RST_W/setting.value" "$RST_BACKUP" 0600 >/dev/null || return 1
+      run sync >/dev/null || return 1
+      omb_stop_at restore.setting
+    fi
     _rst_log prepare "${RST_ITEM[n]}" "${RST_DEST[n]}" "${RST_OLD[n]}" "${RST_NEW[n]}" ready || return 1
     if [ "$kind" = git ]; then
-      run git config --file "$RST_HOME/.gitconfig" --no-includes -- "$name" "$value" || :
-      if [ -z "$before" ]; then _rst_say info "Undo by hand: $(quote_argv git config --global --unset "$name")"
-      else _rst_say info "Undo by hand: $(quote_argv git config --global "$name" "$before")"; fi
+      run_withheld 8 git config --file "$RST_HOME/.gitconfig" --no-includes -- "$name" "$value" >/dev/null 2>&1 || :
     else
       declare -F agent_observe >/dev/null || { _rst_mark "$n" blocked 'The AI tool table is unavailable.'; return; }
       agent_observe claude-code >/dev/null
       if [ "${AG_INSTALLED:-none}" = none ]; then _rst_mark "$n" blocked 'Claude Code is not installed.'; return; fi
-      run claude mcp add-json "$name" "$value" --scope user || :
-      _rst_say info "Undo this MCP server by hand: claude mcp remove $name --scope user"
+      run_withheld 5 claude mcp add-json "$name" "$value" --scope user >/dev/null 2>&1 || :
     fi
+    _rst_say info "Undo uses the private setting backup $RST_BACKUP (restore undo)."
     if _rst_setting_now "${RST_SRC[n]}" && [ "$RST_SETTING_FP" = "${RST_NEW[n]}" ]; then
       _rst_mark "$n" placed
     else _rst_mark "$n" failed 'The setting did not read back.'; fi
@@ -906,6 +990,46 @@ _rst_install() {
     if [ "$RST_METHOD" = agent ] && ! _rst_agent_signed "$RST_TARGET"; then _rst_mark "$n" needs-sign-in 'Installed files are present; sign in with the tool.'
     else _rst_mark "$n" placed; fi
   else _rst_mark "$n" failed 'The installed files are not present.'; fi
+}
+# Private values are read only for their owner command, never interpolated into
+# a journal event, message or reversal hint. Preserve empty/trailing-newline values.
+_rst_setting_saved() {
+  local expected=$1
+  _rst_node "$RST_BACKUP" || return 1
+  case "$RST_NODE" in file:0600:*) ;; *) return 1 ;; esac
+  [ -O "$RST_BACKUP" ] || return 1
+  RST_SAVED_VALUE=$(cat "$RST_BACKUP"; printf '.')
+  RST_SAVED_VALUE=${RST_SAVED_VALUE%.}
+  RST_SAVED_PRESENT=1
+  if [ "$(sha256_str "1:$RST_SAVED_VALUE")" = "$expected" ]; then return 0; fi
+  RST_SAVED_PRESENT=0
+  [ -z "$RST_SAVED_VALUE" ] && [ "$(sha256_str '0:')" = "$expected" ]
+}
+_rst_undo_setting() {
+  local n=$1 kind name old=$RST_H_BEFORE after=$RST_H_AFTER
+  _rst_setting_now "${RST_SRC[n]}" || return 1
+  if [ "$RST_SETTING_FP" = "$old" ]; then
+    _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone; return
+  fi
+  [ "$RST_SETTING_FP" = "$after" ] || return 1
+  _rst_backup_name "${RST_DEST[n]}"; RST_BACKUP=$RST_BACKUP.setting
+  _rst_setting_saved "$old" || return 1
+  _rst_field "${RST_SRC[n]}" kind kind
+  _rst_field "${RST_SRC[n]}" name name
+  _rst_log undo-plan "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" ready || return 1
+  _rst_checkpoint restore.undo || return 1
+  if [ "$kind" = git ]; then
+    if [ "$RST_SAVED_PRESENT" = 1 ]; then
+      run_withheld 8 git config --file "$RST_HOME/.gitconfig" --no-includes -- "$name" "$RST_SAVED_VALUE" >/dev/null 2>&1 || :
+    else run git config --file "$RST_HOME/.gitconfig" --no-includes --unset-all -- "$name" >/dev/null 2>&1 || :; fi
+  else
+    if [ "$RST_SAVED_PRESENT" = 1 ]; then
+      run_withheld 5 claude mcp add-json "$name" "$RST_SAVED_VALUE" --scope user >/dev/null 2>&1 || :
+    else run claude mcp remove "$name" --scope user >/dev/null 2>&1 || :; fi
+  fi
+  omb_stop_at restore.undo
+  _rst_setting_now "${RST_SRC[n]}" && [ "$RST_SETTING_FP" = "$old" ] || return 1
+  _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone
 }
 _rst_commands() {
   local n=$1 kind tool name value
@@ -938,6 +1062,9 @@ _rst_progress() {
 _rst_apply() {
   local n=0 layer kind needed=0 pkg_failed=0 total=${RST_N:-0} line level text
   local -a packages=() pkg_indexes=()
+  local review=${RST_REVIEW:-} bundle=${RST_BUNDLE##*/} stage
+  _rst_load "$bundle" && _rst_dataset || return 1
+  if [ "$review" != "$RST_GEN" ]; then _rst_say fail 'Restore refused: the review changed.'; return 1; fi
   [ "$RST_STATE" != blocked ] || return 1
   RST_LOG_FAILED=0
   local expected_run=$RST_RUN
@@ -945,6 +1072,21 @@ _rst_apply() {
   bndl_check "$RST_BUNDLE" && _bndl_sha "$RST_BUNDLE/bundle.omb" && [ "$BNDL_SHA" = "$expected_run" ] || return 1
   if [ "$OMB_DRY_RUN" = 1 ]; then _rst_say info 'Dry run: the review is unchanged; no package, file or log is written.'; return 0; fi
   ui_confirm_word restore 'Apply this reviewed restore? Type restore' || return 1
+  while [ "$n" -lt "$total" ]; do
+    case "${RST_KIND[n]}" in file | dir | link | bashrc)
+      stage=$RST_HOME/${RST_DEST[n]}.omb-new-$RST_RUN
+      _rst_history "${RST_DEST[n]}"
+      if [ "${RST_OLD[n]}" = "${RST_NEW[n]}" ] && [ "$RST_H_AFTER" = "${RST_NEW[n]}" ] &&
+        { [ -e "$stage" ] || [ -L "$stage" ]; }; then
+        if ! _rst_stage_clean "$stage" "$RST_HOME/${RST_DEST[n]}" "${RST_NEW[n]}"; then
+          _rst_backup_name "${RST_DEST[n]}"
+          _rst_ready && _rst_preserve "$stage" "$RST_BACKUP.stage" || return 1
+        fi
+      fi ;;
+    esac
+    n=$((n + 1))
+  done
+  n=0
   # A completed rerun performs no mutation, including log appends or chmod.
   while [ "$n" -lt "$total" ]; do
     case "${RST_STATUS[n]}:${RST_ACTION[n]}" in
@@ -1044,64 +1186,93 @@ _rst_apply() {
   [ "$RST_STATE" = complete ]
 }
 
+# Rebuild a stopped copy only after preserving its partial bytes.
+_rst_undo_stage() {
+  local stage=$1 backup=$2 old=$3
+  if [ -e "$stage" ] || [ -L "$stage" ]; then
+    if _rst_node "$stage" && [ "$RST_NODE" = "$old" ]; then return 0; fi
+    _rst_preserve "$stage" "$backup.undo-stage" || return 1
+  fi
+  run cp -a -T -- "$backup" "$stage" >/dev/null || return 1
+  _rst_node "$stage" && [ "$RST_NODE" = "$old" ]
+}
+_rst_undo_file() {
+  local n=$1 path=$RST_HOME/${RST_DEST[$1]} stage backup old=$RST_H_BEFORE after=$RST_H_AFTER current step=$RST_H_STEP
+  _rst_backup_name "${RST_DEST[n]}"; backup=$RST_BACKUP
+  stage=$path.omb-undo-$RST_RUN
+  _rst_parents "${RST_DEST[n]}" 0 && _rst_node "$path" || return 1
+  current=$RST_NODE
+  if [ "$step" = undo-plan ] && [ "$current" = absent ] && { [ -e "$backup.placed" ] || [ -L "$backup.placed" ]; }; then
+    if ! _rst_node "$backup.placed" || [ "$RST_NODE" != "$after" ]; then
+      run mv -T --update=none-fail -- "$backup.placed" "$path" >/dev/null || return 1
+      _rst_say warn "Undo refused: the changed destination was put back from $backup.placed."
+      return 1
+    fi
+  fi
+  if [ "$current" = "$old" ]; then
+    if [ -e "$stage" ] || [ -L "$stage" ]; then
+      if ! _rst_stage_clean "$stage" "$path" "$old"; then _rst_preserve "$stage" "$backup.undo-stage" || return 1; fi
+    fi
+    _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone; return
+  fi
+  # A stopped/failed placement still owns the original in its named backup.
+  # Return it directly when free; never overwrite an intervening editor save.
+  if [ "$current" = absent ] && [ "$old" != absent ] &&
+    { [ "$step" = prepare ] || [ "$step" = undo-plan ] || { [ "$step" = status ] && [ "$RST_H_STATE" != placed ]; }; }; then
+    _rst_node "$backup" && [ "$RST_NODE" = "$old" ] || return 1
+    if [ "$step" = undo-plan ]; then
+      _rst_node "$backup.placed" && [ "$RST_NODE" = "$after" ] || return 1
+      _rst_undo_stage "$stage" "$backup" "$old" || return 1
+      _rst_transfer "$stage" "$path" "$old" || return 1
+    else run mv -T --update=none-fail -- "$backup" "$path" >/dev/null || return 1; fi
+    run sync >/dev/null || return 1
+    _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone; return
+  fi
+  if [ "$current" != "$after" ]; then
+    _rst_say warn "Undo refused: ${RST_DEST[n]} changed since placement; any original remains in $backup."
+    return 1
+  fi
+  if [ "$old" != absent ]; then
+    _rst_node "$backup" && [ "$RST_NODE" = "$old" ] || return 1
+  fi
+  _rst_ready || return 1
+  _rst_log undo-plan "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" ready || return 1
+  if [ "$old" != absent ]; then _rst_undo_stage "$stage" "$backup" "$old" || return 1; fi
+  _rst_checkpoint restore.undo && _rst_parents "${RST_DEST[n]}" 0 || return 1
+  if [ -e "$backup.placed" ] || [ -L "$backup.placed" ]; then
+    _rst_preserve "$backup.placed" "$backup.placed.previous" || return 1
+  fi
+  # Judge the bytes that actually moved, after moving them. If an editor saved
+  # between the read and rename, put that save back before refusing this item.
+  run mv -T --update=none-fail -- "$path" "$backup.placed" >/dev/null || return 1
+  if ! _rst_node "$backup.placed" || [ "$RST_NODE" != "$after" ]; then
+    run mv -T --update=none-fail -- "$backup.placed" "$path" >/dev/null || {
+      _rst_say warn "Undo refused; the changed destination is preserved in $backup.placed."; return 1; }
+    _rst_say warn "Undo refused: ${RST_DEST[n]} changed while moving and was put back."
+    return 1
+  fi
+  if [ "$old" != absent ]; then _rst_transfer "$stage" "$path" "$old" || return 1; fi
+  run sync >/dev/null || return 1
+  omb_stop_at restore.undo
+  _rst_node "$path" && [ "$RST_NODE" = "$old" ] || return 1
+  _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone
+}
 _rst_undo() {
-  local n=$RST_N path stage backup old after current changed=0
-  ui_confirm_word undo 'Undo unchanged restored files? Type undo' || return 1
-  [ "$OMB_DRY_RUN" != 1 ] || { _rst_say info 'Dry run: no restored files are changed.'; return 0; }
+  local n=$RST_N changed=0
+  [ "$RST_STATE" != blocked ] && [ "$n" -gt 0 ] || return 1
+  ui_confirm_word undo 'Undo unchanged restored files and settings? Type undo' || return 1
+  [ "$OMB_DRY_RUN" != 1 ] || { _rst_say info 'Dry run: no restored items are changed.'; return 0; }
+  RST_LOG_FAILED=0
   while [ "$n" -gt 0 ]; do
     n=$((n - 1))
-    case "${RST_KIND[n]}" in file | dir | link | bashrc) ;; *) continue ;; esac
     _rst_history "${RST_DEST[n]}"
     case "$RST_H_STEP" in prepare | placed | status | undo-plan) ;; *) continue ;; esac
-    old=$RST_H_BEFORE after=$RST_H_AFTER
-    [ -n "$after" ] || continue
-    path=$RST_HOME/${RST_DEST[n]}
-    _rst_backup_name "${RST_DEST[n]}"; backup=$RST_BACKUP
-    if ! _rst_parents "${RST_DEST[n]}" 0 || ! _rst_node "$path"; then changed=1; continue; fi
-    current=$RST_NODE
-    # A stopped undo, or a placement stopped before moving the original.
-    if [ "$current" = "$old" ]; then
-      _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone || return 1
-      continue
-    fi
-    if [ "$RST_H_STEP" = undo-plan ] && [ "$current" = absent ] && [ "$old" != absent ]; then
-      _rst_node "$backup.placed" && [ "$RST_NODE" = "$after" ] || return 1
-      stage=$path.omb-undo-$RST_RUN
-      if [ ! -e "$stage" ] && [ ! -L "$stage" ]; then run cp -a -- "$backup" "$stage" >/dev/null || return 1; fi
-      _rst_node "$stage" && [ "$RST_NODE" = "$old" ] || return 1
-      _rst_transfer "$stage" "$path" "$old" || return 1
-      run sync >/dev/null || return 1
-      _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone || return 1
-      continue
-    fi
-    if [ "$current" != "$after" ]; then
-      _rst_say warn "Undo refused: ${RST_DEST[n]} changed since placement ($current)."; changed=1; continue
-    fi
-    if [ "$old" != absent ]; then
-      if ! _rst_node "$backup" || [ "$RST_NODE" != "$old" ]; then
-        _rst_say warn "Undo refused: the backup for ${RST_DEST[n]} changed."; changed=1; continue
-      fi
-    fi
-    _rst_ready || return 1
-    _rst_log undo-plan "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" ready || return 1
-    stage=$path.omb-undo-$RST_RUN
-    if [ "$old" != absent ]; then
-      if [ -e "$stage" ] || [ -L "$stage" ]; then
-        _rst_node "$stage" && [ "$RST_NODE" = "$old" ] || return 1
-      else run cp -a -- "$backup" "$stage" >/dev/null || return 1; fi
-      _rst_node "$stage" && [ "$RST_NODE" = "$old" ] || return 1
-    fi
-    _rst_checkpoint restore.undo || return 1
-    _rst_parents "${RST_DEST[n]}" 0 && _rst_node "$path" && [ "$RST_NODE" = "$after" ] || return 1
-    # Keep the placed version whole as well. An interrupted undo can resume
-    # from the journal without deleting anything it cannot identify.
-    run mv -T --update=none-fail -- "$path" "$backup.placed" >/dev/null || return 1
-    _rst_node "$backup.placed" && [ "$RST_NODE" = "$after" ] || return 1
-    if [ "$old" != absent ]; then _rst_transfer "$stage" "$path" "$old" || return 1; fi
-    run sync >/dev/null || return 1
-    omb_stop_at restore.undo
-    _rst_node "$path" && [ "$RST_NODE" = "$old" ] || return 1
-    _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone || return 1
+    [ -n "$RST_H_AFTER" ] || continue
+    case "${RST_KIND[n]}" in
+      file | dir | link | bashrc) _rst_undo_file "$n" || changed=1 ;;
+      setting) _rst_undo_setting "$n" || { _rst_say warn "Undo refused for setting ${RST_DEST[n]}; its private backup is retained."; changed=1; } ;;
+    esac
+    [ "$RST_LOG_FAILED" != 1 ] || return 1
   done
   [ "$changed" = 0 ]
 }
@@ -1159,7 +1330,7 @@ _rst_rows() {
         file:file:* | bashrc:file:*)
           diffout=$RST_W/diff.out
           LC_ALL=C diff -u -- "$RST_HOME/$dest" "${RST_SRC[n]}" 2>/dev/null |
-            LC_ALL=C awk 'NR <= 164 { print substr($0, 1, 1025) } NR == 164 { exit }' >"$diffout" || :
+            LC_ALL=C awk 'NR > 2 && NR <= 166 { print substr($0, 1, 1025) } NR == 166 { exit }' >"$diffout" || :
           k=0
           while IFS= read -r line && [ "$k" -lt 160 ]; do
             op=${line:0:1}; text=${line:1:1024}
@@ -1200,7 +1371,7 @@ rst_row() {
   CA_SCOPE=restore CA_INTENT=act CA_TERMINAL=handoff CA_CANCEL=0 CA_PLATFORM=linux CA_PHASE=restore CA_LIMIT=3 CA_EXPLAIN='Rechecked bundle bytes and home destinations; Keep is the default.'
   case "$1" in
     restore.apply)
-      CA_FN=rst_apply CA_GATE=restore CA_LABEL='Restore the environment' CA_PARAMS=bundle
+      CA_FN=rst_apply CA_GATE=restore CA_LABEL='Restore the environment' CA_PARAMS='bundle review'
       local i=1
       while [ "$i" -le 14 ]; do CA_PARAMS="$CA_PARAMS replace.$i"; i=$((i + 1)); done ;;
     restore.undo) CA_FN=rst_undo CA_GATE=undo CA_LABEL='Undo unchanged restored files' CA_PARAMS='' ;;
@@ -1218,18 +1389,23 @@ rst_apply_facts() {
 rst_apply_params() {
   local i=1
   rec_line param action restore.apply name bundle type bytes kind '' required 1
+  rec_line param action restore.apply name review type bytes kind '' required 1
   while [ "$i" -le 14 ]; do
     rec_line param action restore.apply name "replace.$i" type bytes kind omb-replace required 0
     i=$((i + 1))
   done
 }
 rst_apply_basis() {
-  local bundle
+  local bundle review
+  CORE_BASIS='' RST_INVALID='' RST_INVALID_CODE=invalid
   core_arg_into bundle bundle || return 1
+  core_arg_into review review && _whole "$review" '^[0-9a-f]{64}$' || return 1
   _rst_load "$bundle" || return 1
   [ -n "${RST_BUNDLE:-}" ] && [ "${RST_BUNDLE##*/}" = "$bundle" ] || return 1
-  _rst_replace_doc || return 1
   _rst_dataset || return 1
+  if [ "$review" != "$RST_GEN" ]; then RST_INVALID='The restore review changed.' RST_INVALID_CODE=changed; return 1; fi
+  [ "$RST_STATE" != blocked ] && [ "$RST_N" -gt 0 ] || return 1
+  _rst_replace_doc || return 1
   _bndl_sha "$RST_W/replace" || return 1
   CORE_BASIS=$(sha256_str "restore.apply:$RST_RUN:$RST_GEN:$BNDL_SHA")
 }
@@ -1240,17 +1416,18 @@ rst_apply_validate() {
   mkdir -p "$RST_W" || return 1
   body=$RST_W/validate
   if rst_apply_basis; then
-    { rec_line normal name bundle value "${RST_BUNDLE##*/}" && rec_line review action restore.apply basis "$CORE_BASIS"; } >"$body" || return 1
+    { rec_line normal name bundle value "${RST_BUNDLE##*/}" && rec_line normal name review value "$RST_GEN" && rec_line review action restore.apply basis "$CORE_BASIS"; } >"$body" || return 1
     _rst_respond validate "$body" 'done' ok
   else
-    rec_line invalid name bundle code invalid text "${RST_INVALID:-No checked bundle or valid review is available.}" >"$body" || return 1
-    _rst_respond validate "$body" refused invalid
+    rec_line invalid name review code "${RST_INVALID_CODE:-invalid}" text "${RST_INVALID:-No checked bundle or valid review is available.}" >"$body" || return 1
+    _rst_respond validate "$body" refused "${RST_INVALID_CODE:-invalid}"
   fi
 }
 rst_apply_run() {
   local bundle
   RST_CORE=1
   core_arg_into bundle bundle || return 1
+  core_arg_into review RST_REVIEW || return 1
   [ "$bundle" = "${RST_BUNDLE##*/}" ] || return 1
   _rst_apply
 }
@@ -1263,25 +1440,44 @@ rst_apply_judge() {
   [ "$RST_STATE" != complete ] || CORE_FINDING=completed
 }
 rst_undo_offer() {
-  _rst_load || return 1
-  CA_WHY=$RST_WHY
-  [ "$RST_STATE" != blocked ] && [ -f "$RST_LOG" ]
+  CA_WHY='No readable restore run is available.'
+  (_rst_undo_load && [ "$RST_STATE" != blocked ] && [ "$RST_N" -gt 0 ] && [ -f "$RST_LOG" ])
 }
-rst_undo_facts() {
+rst_undo_facts() (
+  _rst_undo_load || return 1
   rec_line fact scope restore key gate.restore.undo.bundle label Bundle value "${RST_RUN:-none}" state info
   _rst_dataset || return 1
   rec_line fact scope restore key gate.restore.undo.review label 'Current destinations' value "$RST_GEN" state info
-}
+)
 rst_undo_params() { :; }
-rst_undo_run() { RST_CORE=1; _rst_load && _rst_undo; }
+# Undo follows the most recently written run, even after another bundle was
+# exported. A missing bundle for that run blocks undo instead of choosing one.
+_rst_undo_load() {
+  local log latest='' wanted
+  _rst_load || return 1
+  [ -n "$RST_HOME" ] || return 0
+  _rst_parents "${OMB_STATE_DIR#"$RST_HOME"/}/restore/runs/x" 0 || { RST_STATE=blocked RST_N=0; return 0; }
+  for log in "$OMB_STATE_DIR/restore/runs/"*.log; do
+    [ -f "$log" ] && [ ! -L "$log" ] && [ -O "$log" ] || continue
+    wanted=${log##*/}; wanted=${wanted%.log}
+    _whole "$wanted" '^[0-9a-f]{64}$' || continue
+    if [ -z "$latest" ] || [ "$log" -nt "$latest" ]; then latest=$log; fi
+  done
+  if [ -z "$latest" ]; then RST_STATE=blocked RST_N=0 RST_WHY='No restore run is available to undo.'; return 0; fi
+  wanted=${latest##*/}; wanted=${wanted%.log}
+  _rst_load "$wanted"
+}
+rst_undo_run() { RST_CORE=1; _rst_undo_load && [ "$RST_STATE" != blocked ] && [ "$RST_N" -gt 0 ] && _rst_undo; }
 rst_undo_judge() {
   local n=0 path bad=0
-  _rst_load || return 1
+  CORE_FINDING=unexpected CORE_JUDGE_TEXT='The restore run could not be read for undo.'
+  _rst_undo_load || return 1
+  [ "$RST_STATE" != blocked ] && [ "$RST_N" -gt 0 ] || return 1
   while [ "$n" -lt "${RST_N:-0}" ]; do
     case "${RST_KIND[n]}" in
-      file | dir | link | bashrc)
+      file | dir | link | bashrc | setting)
         _rst_history "${RST_DEST[n]}"
-        if [ -n "$RST_H_AFTER" ] && [ "$RST_H_STEP" != undone ]; then bad=1; fi ;;
+        case "$RST_H_STEP" in kept | undone) ;; *) [ -z "$RST_H_AFTER" ] || bad=1 ;; esac ;;
     esac
     n=$((n + 1))
   done
@@ -1336,7 +1532,7 @@ rst_core_op() {
 rst_cmd() {
   local what=${1:-} n=0 line folder origin at check
   case "$what" in status | undo | '') ;; *) OMB_RESTORE_DIR=$what ;; esac
-  _rst_load || { _rst_say fail 'The restore could not be read.'; return 1; }
+  if [ "$what" = undo ]; then _rst_undo_load; else _rst_load; fi || { _rst_say fail 'The restore could not be read.'; return 1; }
   while IFS= read -r line; do
     _rst_field "$line" key folder
     # Repeated col fields are encoded fields; decode the selected positions.
@@ -1355,5 +1551,7 @@ rst_cmd() {
   done
   [ "$what" != status ] || return 0
   RST_REPLACE=()
+  _rst_dataset || return 1
+  RST_REVIEW=$RST_GEN
   _rst_apply
 }
