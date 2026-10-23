@@ -30,9 +30,22 @@ case "$MODE" in
       n=$((n + 1))
       rec_line row kind doctor key "$n" col "$1" col "$2" col "${3:-}" >&3
     }
+    # A named M15-C delta: compare the unchanged owner path independently
+    # of doc_ssh, whose full findings are tested in the complete capture.
+    if [ "${G2_NO_SSH:-0}" = 1 ]; then doc_ssh() { :; }; fi
     cmd_doctor >/dev/null
     st=$?
-    printf '%s %s %s %s\n' "$st" "$DOC_PASS" "$DOC_WARN" "$DOC_FAIL" >"$G2_PROBES.summary"
+    owner_summary="$st $DOC_PASS $DOC_WARN $DOC_FAIL"
+    if [ "${G2_EXTENSIONS:-0}" = 1 ]; then
+      . "$TREE/lib/core.sh"
+      . "$TREE/lib/read.sh"
+      . "$TREE/lib/health.sh"
+      omb_tmp_init || exit 1
+      core_health_extensions >&3 || exit 1
+      OMB_SESSION_SCOPES=health OMB_SESSION_INTENT=act
+      core_rows_snapshot 'agents.mcp' >/dev/null || exit 1
+    fi
+    printf '%s\n' "$owner_summary" >"$G2_PROBES.summary"
     ;;
   render)
     while IFS=$'\t' read -r _ _ _ s l d; do

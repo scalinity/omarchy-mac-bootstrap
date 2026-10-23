@@ -10,6 +10,7 @@
 core_health_extensions() (
   local counts verified kept failed pending extra
   [ "$OMB_PLATFORM" = linux ] || return 0
+  core_mod_load agents || return 1
   core_mod_load restore || return 1
   if declare -F agent_health_rows >/dev/null; then agent_health_rows || return 1; fi
   if declare -F rst_status_counts >/dev/null; then
@@ -98,10 +99,13 @@ core_health_capture() {
   core_read_rows "$OMB_TMP/health.rows" "$(printf '%064d' 0)"
   st=$?
   [ "$st" = 0 ] || return "$st"
+  core_rows_snapshot 'agents.mcp' >/dev/null || return 1
   {
     rec_line fact scope health key doctor.pass label Passed value "$pass" state info &&
       rec_line fact scope health key doctor.warn label Warnings value "$warn" state info &&
-      rec_line fact scope health key doctor.fail label Failures value "$fail" state info
+      rec_line fact scope health key doctor.fail label Failures value "$fail" state info &&
+      cat "$OMB_TMP/rows.facts" "$OMB_TMP/rows.blockers" \
+        "$OMB_TMP/rows.actions" "$OMB_TMP/rows.params"
   } >"$OMB_TMP/health.snapshot" || return 1
   core_read_stage snapshot "$(printf '%064d' 0)" 0 "$OMB_TMP/health.snapshot"
   st=$?

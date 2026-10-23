@@ -131,6 +131,7 @@ fe_call() {
       . "$1/lib/common.sh"; . "$1/lib/ui.sh"; . "$1/lib/state.sh"; . "$1/lib/records.sh"; . "$1/lib/core.sh"; . "$1/lib/frontend.sh"
       OMB_HOME=$1; shift
       OMB_COLOR=never; ui_init; platform_init; state_init
+      fe_scopes_test() { fe_session_for "$1" "$2" || return 1; printf "%s\n" "$FE_SCOPES"; }
       fe_restore_test() {
         fe_session_for restore "$1" || return 1
         if [ "${2:-}" = run ]; then
@@ -736,6 +737,15 @@ assert_contains "$(cat "$T"/state-report/logs/*.log 2>/dev/null)" "frontend stat
 
 # fe-session-args: restore carries a checked folder through its session;
 # other commands given an argument stay in text, where it is read.
+for entry in 'plan:|journey,plan,debug' 'profile:|journey,profile,resolve,debug' \
+  'export:|journey,export,debug' 'shared:create|journey,shared,debug' 'shared:activate|journey,shared,debug'; do
+  c=${entry%%|*} scopes=${entry#*|}
+  r=$(fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
+  assert_eq "${r%%|*}" 0 "fe-session-debug: $c opens"
+  # fe_call reports scopes separately through the direct helper below.
+  r=$(fe_call '' fe_scopes_test "${c%%:*}" "${c#*:}")
+  assert_contains "$(cat "$T/tmp/fe-out")" "$scopes" "fe-session-debug: $c admits debug"
+done
 for c in resume: export: shared:create shared:activate; do
   r=$(fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
   assert_eq "${r%%|*}" 0 "fe-session-args: ${c%%:*} ${c#*:} opens the frontend"
@@ -749,7 +759,7 @@ mkdir -p "$restore_dir"
 for arg in '' "$restore_dir"; do
   r=$(FE_FIX="$FIX/linux-omarchy-installed" fe_call '' fe_restore_test "$arg")
   assert_eq "${r%%|*}" 0 "fe-session-restore: restore $arg opens the frontend"
-  assert_contains "$(cat "$T/tmp/fe-out")" "act|journey,restore|$arg" 'restore session has its scopes and exact folder'
+  assert_contains "$(cat "$T/tmp/fe-out")" "act|journey,restore,health,debug|$arg" 'restore session has its scopes and exact folder'
 done
 for c in restore:status restore:undo debug: restore:relative "restore:$restore_dir/missing"; do
   r=$(FE_FIX="$FIX/linux-omarchy-installed" fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
@@ -762,7 +772,7 @@ r=$(FE_FIX="$FIX/linux-omarchy-installed" FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_cal
 assert_eq "${r%%|*}" 0 'fe-session-restore: a restore session finishes'
 e=$(cat "$T/fake-env")
 assert_contains "$e" "OMB_RESTORE_DIR=$restore_dir" 'restore folder reaches the frontend environment byte for byte'
-assert_contains "$e" 'OMB_SESSION_SCOPES=journey,restore' 'restore scopes reach the frontend environment'
+assert_contains "$e" 'OMB_SESSION_SCOPES=journey,restore,health,debug' 'restore scopes reach the frontend environment'
 r=$(FE_FIX="$FIX/linux-omarchy-installed" FE_ENV="OMB_FRONTEND_DEV=$FAKE OMB_RESTORE_DIR=/inherited" fe_call '' fe_restore_test '' run)
 assert_eq "${r%%|*}" 0 'fe-session-restore: bare restore finishes'
 assert_eq "$(grep -c '^OMB_RESTORE_DIR=' "$T/fake-env")" 0 'bare restore clears an inherited restore folder'

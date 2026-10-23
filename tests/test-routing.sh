@@ -92,8 +92,8 @@ for arg in '' "$restore_dir" status undo; do
   else
     t_cli linux-omarchy-installed '' restore
   fi
-  assert_rc "$T_RC" 1 "restore $arg reaches the stand-in"
-  assert_contains "$(t_flat "$T_OUT")" "Restore is not built yet." "restore $arg reports unavailable"
+  assert_rc "$T_RC" 1 "restore $arg reaches the implementation and checks the home"
+  assert_contains "$(t_flat "$T_OUT")" "The home is not a real folder owned by this user." "restore $arg reports the home refusal"
   assert_empty_file "$T_DIR/record" "restore $arg runs nothing"
   if [ "$arg" = status ]; then
     assert_eq "$(t_snapshot "$T_DIR/state")" '(absent)' 'restore status is read-only'
@@ -127,8 +127,8 @@ fi
 for fx in linux-omarchy-installed $mac_debug; do
   before=$(t_snapshot "$FIX/$fx")
   t_cli "$fx" '' debug
-  assert_rc "$T_RC" 1 "debug on $fx reaches the stand-in"
-  assert_contains "$(t_flat "$T_OUT")" 'Debugging help is not built yet.' "debug on $fx reports unavailable"
+  assert_rc "$T_RC" 0 "debug on $fx reaches the implementation"
+  assert_contains "$(t_flat "$T_OUT")" '# Brief: omarchy-mac-bootstrap' "debug on $fx prints the fixed brief"
   expect_pure "debug on $fx" "$fx" "$before"
 done
 
@@ -140,11 +140,11 @@ printf 'unreadable\n' >"$bar_state/ops/restore.omb"
 for arg in "$restore_dir" undo; do
   T_ENV="OMB_STATE_DIR=$bar_state" t_cli linux-omarchy-installed '' restore "$arg"
   assert_rc "$T_RC" 1 'restore action is barred by its operation record'
-  assert_not_contains "$T_OUT" 'Restore is not built yet.' 'the operation barrier runs before restore'
+  assert_not_contains "$T_OUT" 'The home is not a real folder owned by this user.' 'the operation barrier runs before restore'
 done
 before=$(t_snapshot "$bar_state")
 T_ENV="OMB_STATE_DIR=$bar_state" t_cli linux-omarchy-installed '' restore status
-assert_contains "$(t_flat "$T_OUT")" 'Restore is not built yet.' 'restore status remains readable through a barrier'
+assert_contains "$(t_flat "$T_OUT")" 'The home is not a real folder owned by this user.' 'restore status reads through the barrier and checks the home'
 assert_eq "$(t_snapshot "$bar_state")" "$before" 'restore status changes no state or log'
 
 T=$(t_tmp)
@@ -154,21 +154,24 @@ c_session
 C_FIX=$FIX/linux-omarchy-installed
 C_ENV='OMB_SESSION_SCOPES=restore,debug'
 for scope in restore debug; do
-  case "$scope" in
-    restore) text='Restore%20is%20not%20built%20yet.' ;;
-    debug) text='Debugging%20help%20is%20not%20built%20yet.' ;;
-  esac
   c_run snapshot "scope	name=$scope"
-  assert_eq "$(c_answered snapshot 'refused unavailable')" '' "$scope snapshot refusal is admitted"
-  assert_contains "$C_OUT" "text=$text" "$scope snapshot reaches its stand-in"
+  assert_eq "$(c_answered snapshot 'done ok')" '' "$scope snapshot is admitted"
+  case "$scope" in
+    restore) assert_contains "$C_OUT" 'key=restore.state	label=Restore	value=blocked' 'restore snapshot exposes its home blocker' ;;
+    debug) assert_contains "$C_OUT" 'generation	id=' 'debug snapshot exposes a generation' ;;
+  esac
   c_run detail "page	scope=$scope	kind=brief	generation=$(printf '%064d' 0)	offset=0	limit=10"
-  assert_eq "$(c_answered detail 'refused unavailable')" '' "$scope detail refusal is admitted"
+  if [ "$scope" = restore ]; then
+    assert_eq "$(c_answered detail 'refused unavailable')" '' 'restore refuses an unsupported detail kind'
+  else
+    assert_eq "$(c_answered detail 'refused changed')" '' 'debug requires the current generation'
+  fi
   C_ENV='OMB_SESSION_SCOPES=journey' c_run snapshot "scope	name=$scope"
   assert_eq "$(c_answered snapshot 'refused scope')" '' "$scope admission is checked before loading its producer"
 done
 c_run validate 'select	action=restore.apply'
-assert_eq "$(c_answered validate 'refused unavailable')" '' 'restore validation refusal is admitted'
-assert_contains "$C_OUT" 'text=Restore%20is%20not%20built%20yet.' 'restore validation reaches its stand-in'
+assert_eq "$(c_answered validate 'refused invalid')" '' 'restore validation refusal is admitted'
+assert_contains "$C_OUT" 'invalid	name=bundle	code=invalid' 'restore validation requires a checked bundle'
 
 # --- The guard itself: run and downloads refuse outside an action command ---------------
 t_load

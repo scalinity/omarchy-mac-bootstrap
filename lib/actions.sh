@@ -194,10 +194,28 @@ act_resized_digest() {
   sha256_str "$l"
 }
 
+# The service and enablement states form one observed SSH effect.
+act_ssh_seen() {
+  local active enabled ar er
+  active=$(sys_cmd sshd_active systemctl is-active sshd)
+  ar=$?
+  enabled=$(sys_cmd sshd_enabled systemctl is-enabled sshd)
+  er=$?
+  case "$active:$ar:$enabled:$er" in
+    active:0:enabled:0 | active:0:disabled:1 | active:0:masked:1 | \
+    inactive:3:enabled:0 | inactive:3:disabled:1 | inactive:3:masked:1)
+      printf '%s:%s:%s:%s' "$active" "$ar" "$enabled" "$er"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 # act_lx_seen — what the Omarchy classifier sees, on one line.
 act_lx_seen() {
-  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$LX_OMARCHY_STATE" "$LX_ENC_STATE" "$LX_SETUP_CONF" "$LX_SETUP_BIN" \
-    "$LX_ROOT_CRYPT" "$LX_ROOT_SRC" "$LX_ROOT_FS" "$LX_BOOT_SRC" "$LX_BOOT_FS" "$LX_OMARCHY_VERSION"
+  local ssh
+  ssh=$(act_ssh_seen) || return 1
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$LX_OMARCHY_STATE" "$LX_ENC_STATE" "$LX_SETUP_CONF" "$LX_SETUP_BIN" \
+    "$LX_ROOT_CRYPT" "$LX_ROOT_SRC" "$LX_ROOT_FS" "$LX_BOOT_SRC" "$LX_BOOT_FS" "$LX_OMARCHY_VERSION" "$ssh"
 }
 
 # act_took — ACT_TOOK: 1 when the step reached its typed-word prompt (the
@@ -897,6 +915,7 @@ act_start_facts() {
     act_fact omarchy.start now "Now" "Omarchy's package is present but its install did not finish; the setup redoes only what is unfinished" warn || return 1
   fi
   act_fact omarchy.start does "Does" "sets the keymap, hostname and user, then (with encryption) moves /boot to EFI and encrypts the Linux root in place, then installs Omarchy, rebooting between steps" || return 1
+  act_fact omarchy.start ssh "SSH" "stops and disables the image's SSH service before setup" || return 1
   act_fact omarchy.start leaves "Leaves" "macOS, untouched" || return 1
   act_console_fact
 }
@@ -933,6 +952,13 @@ act_start_judge() {
   lx_detect
   case "$LX_OMARCHY_STATE" in
     installed | in-progress)
+      case "$(act_ssh_seen)" in
+        inactive:3:disabled:1 | inactive:3:masked:1) ;;
+        *)
+          act_judged unexpected "SSH could not be confirmed stopped and disabled."
+          return 0
+          ;;
+      esac
       act_judged completed "omarchy-mac-setup is $LX_OMARCHY_STATE."
       return 0
       ;;

@@ -364,6 +364,8 @@ linux() {
   put "$d/cmd/unit_active.rc" 3
   put "$d/cmd/sshd_active" inactive
   put "$d/cmd/sshd_active.rc" 3
+  put "$d/cmd/sshd_enabled" disabled
+  put "$d/cmd/sshd_enabled.rc" 1
   put "$d/cmd/pacman_dk" "No database errors have been found!"
   put "$d/cmd/df_root" "Filesystem     1024-blocks      Used Available Capacity Mounted on
 $rootsrc   240000000  12000000 228000000       5% /"

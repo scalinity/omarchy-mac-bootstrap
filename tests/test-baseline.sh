@@ -13,6 +13,7 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo "test-baseline"
+baseline_fixture_before=$(t_snapshot "$FIX")
 BASELINE=2edb76a7de3f78ec90927ac93d5eec3a84636253
 T=$(t_tmp)
 
@@ -115,6 +116,35 @@ agree() {
   [ "$tree" = "$T/pre" ] && what="$PRE_ROUTE, before frontend-check's route (frontend-check-default-unchanged)"
   normal "$tree" "$2" >"$2.norm"
   normal "$REPO" "$3" >"$3.norm"
+  case "${B_DELTA:-}" in
+    doctor-ssh-findings)
+      # Only the two fixed M15-C findings on these off-SSH fixtures, and
+      # their one extra pass in the existing summary, may differ.
+      ssh='   [PASS] SSH policy               off: sshd is not running'
+      alarm='   [INFO] Image alarm account      password state cannot be read here; the image sets alarm / alarm. As root, check passwd -S alarm; lock it with sudo passwd -l alarm'
+      assert_eq "$(grep -cxF "$ssh" "$3.norm")" 1 'doctor-ssh-findings: one fixed policy finding'
+      assert_eq "$(grep -cxF "$alarm" "$3.norm")" 1 'doctor-ssh-findings: one fixed image account finding'
+      bp=$(sed -n 's/^   \([0-9]*\) passed .*/\1/p' "$2.norm")
+      assert_eq "$(sed -n 's/^   \([0-9]*\) passed .*/\1/p' "$3.norm")" "$((bp + 1))" 'doctor-ssh-findings: exactly one added pass'
+      awk -v ssh="$ssh" -v alarm="$alarm" -v bp="$bp" '$0 == ssh || $0 == alarm { next }
+        /^   [0-9]+ passed / { sub(/^   [0-9]+ passed /, "   " bp " passed ") } { print }' "$3.norm" >"$3.delta"
+      mv "$3.delta" "$3.norm"
+      ;;
+    start-disable-ssh)
+      assert_eq "$(grep -cx 'systemctl disable --now sshd' "$3/record")" 1 'start-disable-ssh: exactly one recorded disable'
+      assert_eq "$(head -1 "$3/record")" 'systemctl disable --now sshd' 'start-disable-ssh: disable precedes setup'
+      assert_eq "$(grep -c '^systemctl ' "$2/record")" 0 'start-disable-ssh: BASE never disabled SSH'
+      # Drop these exact new records only; the setup command, every other
+      # transcript line and the remaining state still compare byte for byte.
+      awk '
+        $0 == "   ✓ SSH is stopped and disabled. Enable key-only access later through ./omarchy-bootstrap dev -> SSH." { next }
+        $0 == "systemctl disable --now sshd" { next }
+        $0 == "TIME [linux] exec   systemctl disable --now sshd" { skip=1; next }
+        skip && $0 == "TIME [linux] exit   0 (recorded by test harness, not executed)" { skip=0; next }
+        { skip=0; print }' "$3.norm" >"$3.delta"
+      mv "$3.delta" "$3.norm"
+      ;;
+  esac
   if cmp -s "$2.norm" "$3.norm"; then
     ok
   else
@@ -128,7 +158,8 @@ agree() {
 # folder (SAME_PRE=0: the baseline alone).
 N=0
 same() {
-  local name=$1 fixture=$2 input=$3
+  local name=$1 fixture=$2 input=$3 B_DELTA=${B_DELTA:-}
+  case "$name" in doctor\ on\ linux-*) B_DELTA=doctor-ssh-findings ;; esac
   shift 3
   N=$((N + 1))
   run_one "$T/base" "$T/runs/base-$N" "$fixture" "$input" "$@"
@@ -162,7 +193,11 @@ new_rows=$(printf '%s\n' \
   "     operation clear SCOPE move an operation record that cannot be read aside, after typed clear" \
   "     scan                 macOS: what this Mac holds that could come to Linux (read-only)" \
   "     profile [show]       macOS: choose what comes to Linux and save it; show prints it (read-only)" \
-  "     export [DIR]         macOS: write the chosen environment to Shared or DIR")
+  "     export [DIR]         macOS: write the chosen environment to Shared or DIR" \
+  "     restore [DIR]        Linux: restore the environment from Shared or DIR" \
+  "     restore status       Linux: restore progress (read-only)" \
+  "     restore undo         Linux: undo restored files that have not changed" \
+  "     debug                read-only debugging brief and machine facts")
 assert_eq "$(grep -cxF -- "$help_row" "$T/runs/cand-$N/out")" 1 "--help lists frontend-check with its one line"
 assert_eq "$(grep -cxF -- "$op_row" "$T/runs/cand-$N/out")" 1 "--help lists operation SCOPE with its one line"
 while IFS= read -r row; do
@@ -182,7 +217,7 @@ same "an unknown flag" "" "" --frobnicate
 same "an unknown command" linux-alarm-fresh "" frobnicate
 # The commands of SPEC.md → Commands not built yet stay unknown commands, as
 # before; none became reachable through frontend-check.
-for c in restore rescue debug qualify report; do
+for c in rescue qualify report; do
   same "$c (not built yet)" linux-alarm-fresh "" "$c"
 done
 # The migration's commands are macOS's: on Linux each refuses, changing
@@ -197,6 +232,88 @@ done
 same "sources" "" "" sources
 same "a malformed OMB_DRY_RUN" linux-alarm-fresh "" status --dry-run=2
 
+# debug-implemented and restore-implemented: each is a named command delta.
+# Unknown future commands still compare above; these new commands must be
+# read-only/refused on this root fixture, with no state or execution.
+for c in debug restore; do
+  N=$((N + 1))
+  run_one "$T/base" "$T/runs/base-$N" linux-alarm-fresh "" "$c"
+  run_one "$REPO" "$T/runs/cand-$N" linux-alarm-fresh "" "$c"
+  assert_eq "$(cat "$T/runs/base-$N/rc")" 2 "$c-implemented: BASE did not know the command"
+  if [ "$c" = debug ]; then
+    assert_eq "$(cat "$T/runs/cand-$N/rc")" 0 'debug-implemented: fixed brief succeeds'
+    assert_contains "$(cat "$T/runs/cand-$N/out")" '# Brief: omarchy-mac-bootstrap' 'debug-implemented: fixed instructions'
+    assert_contains "$(cat "$T/runs/cand-$N/out")" 'SSH policy: off' 'debug-implemented: closed SSH observation'
+  else
+    assert_eq "$(cat "$T/runs/cand-$N/rc")" 1 'restore-implemented: root is refused'
+    assert_contains "$(cat "$T/runs/cand-$N/out")" 'Restore never runs as root.' 'restore-implemented: explicit refusal'
+  fi
+  assert_empty_file "$T/runs/cand-$N/record" "$c-implemented: executes nothing"
+  assert_empty_file "$T/runs/cand-$N/shims.log" "$c-implemented: no forbidden command"
+  if [ "$c" = debug ]; then
+    assert_eq "$(t_snapshot "$T/runs/cand-$N/state")" '(absent)' 'debug-implemented: no persistent writes'
+  else
+    assert_eq "$(find "$T/runs/cand-$N/state" -type f | sed "s|$T/runs/cand-$N/state/||")" 'logs/omarchy-bootstrap-20260921.log' 'restore-implemented: only the normal act-intent log'
+    assert_eq "$(cat "$T/runs/cand-$N/state/logs/omarchy-bootstrap-20260921.log")" '2026-09-21T14:13:20Z [linux] start  omarchy-bootstrap 0.2.0 cmd=restore intent=act os=Linux uid=0 dry_run=0 fixture=linux-alarm-fresh' 'restore-implemented: fixed refusal log, no restore writes'
+  fi
+done
+
+# start-disable-ssh: pin both fresh reads at the actual disable boundary.
+(
+  t_load >/dev/null 2>&1
+  OMB_FIXTURE=$FIX/linux-alarm-fresh OMB_DRY_RUN=0
+  # shellcheck disable=SC2329 # callback invoked by lx_ssh_stop
+  run() { printf 'run %s\n' "$*" >>"$T/start.reads"; }
+  eval "$(declare -f sys_cmd | sed '1s/sys_cmd/b_original_sys_cmd/')"
+  # shellcheck disable=SC2329 # callback invoked by lx_ssh_stop
+  sys_cmd() { printf 'read %s\n' "$*" >>"$T/start.reads"; b_original_sys_cmd "$@"; }
+  lx_ssh_stop >/dev/null
+)
+assert_eq "$?" 0 'start-disable-ssh: inactive and disabled succeeds'
+assert_eq "$(cat "$T/start.reads")" 'run systemctl disable --now sshd
+read sshd_active systemctl is-active sshd
+read sshd_enabled systemctl is-enabled sshd' 'start-disable-ssh: command then exactly the two post-disable reads'
+
+# Named D30 deltas are constrained to the AI module selected here. Existing
+# non-AI dev equivalence below continues to compare its entire transcript.
+N=$((N + 1))
+B_ENV=HOME=/home/alex run_one "$T/base" "$T/runs/base-$N" agt-wrappers '8\n1 2\n' dev --dry-run
+B_ENV=HOME=/home/alex run_one "$REPO" "$T/runs/cand-$N" agt-wrappers '8\n1 2 3\n' dev --dry-run
+assert_contains "$(cat "$T/runs/base-$N/out")" 'Claude Code is already installed.' 'agents-lazy-wrapper: BASE accepts the lazy wrapper'
+assert_contains "$(cat "$T/runs/cand-$N/out")" 'AI coding CLIs none' 'agents-lazy-wrapper: wrapper-only is absent'
+for package in claude codex opencode; do
+  assert_contains "$(cat "$T/runs/cand-$N/out")" "would run  mise use -g --quiet $package" "agents-mise-install: $package preview"
+done
+assert_contains "$(cat "$T/runs/cand-$N/out")" '3  OpenCode' 'agents-opencode: third selectable provider'
+assert_not_contains "$(cat "$T/runs/base-$N/out")" '3  OpenCode' 'agents-opencode: absent from BASE'
+assert_empty_file "$T/runs/cand-$N/record" 'agents-mise-install: preview runs nothing'
+assert_eq "$(t_snapshot "$T/runs/cand-$N/state")" '(absent)' 'agents-mise-install: preview keeps no provenance'
+
+# Exercise the replacement of each legacy installer as an actual recorded
+# success, including the exact removed Claude download/provenance family.
+AIFX=$(t_variant agt-wrappers)
+awk '$0 != "claude" && $0 != "codex" && $0 != "opencode"' "$AIFX/commands" >"$AIFX/commands.new"
+printf 'npm\n' >>"$AIFX/commands.new"; mv "$AIFX/commands.new" "$AIFX/commands"
+for tool in claude codex; do
+  choice=1 input='8\n1\n\ny\n'
+  [ "$tool" != codex ] || { choice=2; input='8\n2\n'; }
+  N=$((N + 1))
+  B_ENV="HOME=/home/alex OMB_TEST_AFTER=$FIX/agt-installed" run_one "$T/base" "$T/runs/base-$N" "$AIFX" "$input" dev
+  B_ENV="HOME=/home/alex OMB_TEST_AFTER=$FIX/agt-installed" run_one "$REPO" "$T/runs/cand-$N" "$AIFX" "8\n$choice\n" dev
+  assert_eq "$(cat "$T/runs/base-$N/rc") $(cat "$T/runs/cand-$N/rc")" '0 0' "agents-mise-install: $tool both complete"
+  assert_eq "$(cat "$T/runs/cand-$N/record")" "mise use -g --quiet $tool
+timeout 30 mise x $tool -- $tool --version" "agents-mise-install: $tool exact replacement commands"
+  if [ "$tool" = claude ]; then
+    assert_contains "$(cat "$T/runs/base-$N/record")" 'bash ' 'agents-mise-install: BASE executes its Claude download'
+    assert_contains "$(cat "$T/runs/base-$N/state/state.env")" 'claude_install_sha256=' 'agents-mise-install: BASE keeps Claude provenance'
+    assert_not_contains "$(cat "$T/runs/cand-$N/state/state.env")" 'claude_install_sha256=' 'agents-mise-install: no downloaded-Claude provenance'
+    assert_eq "$(find "$T/runs/cand-$N/state" -name '*claude-code-install*')" '' 'agents-mise-install: no kept Claude download'
+  else
+    assert_eq "$(cat "$T/runs/base-$N/record")" 'npm install -g @openai/codex' 'agents-mise-install: BASE uses npm'
+  fi
+  assert_empty_file "$T/runs/cand-$N/shims.log" "agents-mise-install: $tool executes no real command"
+done
+
 # --- Linux: read commands, plan, the default run, resume, dev ---------------------------------
 for fx in linux-alarm-fresh linux-alarm-offline linux-setup-in-progress linux-omarchy-installed linux-shared-present linux-shared-ready; do
   for cmd in status doctor logs shared; do
@@ -207,7 +324,7 @@ for fx in linux-alarm-fresh linux-alarm-offline linux-setup-in-progress linux-om
   same "install on $fx" "$fx" '\n\nstart\nq\n' install
   same "a dry run on $fx" "$fx" '\n\nstart\nq\n' --dry-run
 done
-same "resume with a token" linux-alarm-fresh '\n\nstart\n' resume 'omb2:enc=1,user=alex,host=omarchy,kmap=us'
+B_DELTA=start-disable-ssh same "resume with a token" linux-alarm-fresh '\n\nstart\n' resume 'omb2:enc=1,user=alex,host=omarchy,kmap=us'
 same "resume refusing upstream drift" linux-upstream-drift '\n\nstart\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
 same "dev, previewed" linux-omarchy-installed '1 2 3\n1\n2\n\n' dev --dry-run
 same "shared activate refusing without a code" linux-shared-present '\n' shared activate
@@ -325,6 +442,6 @@ else
   fail "frontend-check-default-unchanged: no script(1) to give the default run a terminal"
 fi
 # No run of any tree wrote into the committed fixtures.
-assert_eq "$(git -C "$REPO" status --porcelain --untracked-files=all -- tests/fixtures)" "" "the committed fixtures are as they were"
+assert_eq "$(t_snapshot "$FIX")" "$baseline_fixture_before" "the committed fixtures are as they were"
 
 t_done test-baseline

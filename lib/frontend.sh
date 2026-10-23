@@ -95,18 +95,18 @@ fe_session_for() {
   # for it to the core.
   case "$1:$2" in
     : | install: | resume:) FE_SCOPES=$FE_ALL_SCOPES ;;
-    plan:) FE_SCOPES=journey,plan FE_INTENT=plan ;;
-    profile:) FE_SCOPES=journey,profile,resolve ;;
-    export:) FE_SCOPES=journey,export ;;
+    plan:) FE_SCOPES=journey,plan,debug FE_INTENT=plan ;;
+    profile:) FE_SCOPES=journey,profile,resolve,debug ;;
+    export:) FE_SCOPES=journey,export,debug ;;
     restore: | restore:/*)
       [ "$OMB_PLATFORM" = linux ] || return 1
       if [ -n "$2" ]; then
         [ -d "$2" ] || return 1
         OMB_RESTORE_DIR=$2
       fi
-      FE_SCOPES=journey,restore
+      FE_SCOPES=journey,restore,health,debug
       ;;
-    shared:create | shared:activate) FE_SCOPES=journey,shared ;;
+    shared:create | shared:activate) FE_SCOPES=journey,shared,debug ;;
     *) return 1 ;;
   esac
 }

@@ -16,6 +16,7 @@
 # shellcheck source=tests/core-harness.sh
 . "$TESTS_DIR/core-harness.sh"
 echo test-actions
+actions_fixture_before=$(t_snapshot "$FIX")
 # A core that sets no umask of its own would run under this one: any 0022
 # the sed shim notes was set by the core for the step.
 umask 077
@@ -748,6 +749,39 @@ assert_eq "$(a_ops)" "" "actions-network.connect-offline: and leaves no record"
 a_unavailable network.connect "" "$FIX/linux-alarm-fresh"
 a_unavailable network.connect "" "$FIX/linux-omarchy-installed"
 
+# start-disable-ssh: an SSH-only effect cannot be called no-effect, and a
+# completed setup requires freshly established off/disabled service states.
+a_ssh_judge() (
+  t_load >/dev/null 2>&1
+  OMB_HOME=$REPO
+  . "$REPO/lib/actions.sh"
+  OMB_FIXTURE=$1 OMB_STATE_DIR=$T/ssh-state OMB_INTENT=read OMB_PERSIST=0
+  platform_init; state_init; lx_detect
+  ACT_PRE=before ACT_SEEN=$(act_lx_seen)
+  case "$2" in
+    changed) OMB_FIXTURE=$FIX/linux-alarm-fresh; act_start_judge 0 ;;
+    completed) act_start_judge reconcile ;;
+    unreadable)
+      value=$(act_lx_seen); rc=$?
+      printf '%s|%s' "$rc" "$value"
+      exit
+      ;;
+  esac
+  printf '%s' "$CORE_FINDING"
+)
+A_SSH_FIX=$(t_variant linux-alarm-fresh)
+printf 'active\n' >"$A_SSH_FIX/cmd/sshd_active"; rm -f "$A_SSH_FIX/cmd/sshd_active.rc"
+printf 'enabled\n' >"$A_SSH_FIX/cmd/sshd_enabled"; rm -f "$A_SSH_FIX/cmd/sshd_enabled.rc"
+mkdir -p "$T/ssh-state"; chmod 700 "$T/ssh-state"
+printf 'omarchy_launched_at=after\n' >"$T/ssh-state/state.env"; chmod 600 "$T/ssh-state/state.env"
+assert_eq "$(a_ssh_judge "$A_SSH_FIX" changed)" unexpected 'start-disable-ssh: SSH-only change is an effect'
+assert_eq "$(a_ssh_judge "$FIX/linux-setup-in-progress" completed)" completed 'start-disable-ssh: completed setup with SSH stopped'
+A_SSH_SETUP_FIX=$(t_variant linux-setup-in-progress)
+printf 'active\n' >"$A_SSH_SETUP_FIX/cmd/sshd_active"; rm -f "$A_SSH_SETUP_FIX/cmd/sshd_active.rc"
+assert_eq "$(a_ssh_judge "$A_SSH_SETUP_FIX" completed)" unexpected 'start-disable-ssh: active SSH blocks completed judgment'
+printf 'unknown\n' >"$A_SSH_FIX/cmd/sshd_enabled"
+assert_eq "$(a_ssh_judge "$A_SSH_FIX" unreadable)" '1|' 'start-disable-ssh: unknown SSH yields no partial classifier'
+
 # --- omarchy.start -------------------------------------------------------------------
 a_use "$T/start" "$FIX/linux-alarm-fresh"
 a_run snapshot "scope	name=journey"
@@ -755,6 +789,7 @@ assert_contains "$C_OUT" "action	id=omarchy.start	scope=omarchy	label=Run%20omar
   "actions-omarchy.start: scope omarchy, a handoff, word start"
 assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.console	label=Console	value=$(a_enc "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})")	state=info" \
   "actions-omarchy-console: the console the setup will write to, before it starts"
+assert_contains "$C_OUT" 'key=gate.omarchy.start.ssh' 'start-disable-ssh: the gate explains the SSH step'
 a_common omarchy.start start
 a_barriers omarchy.start omarchy start
 A_ENV="OMB_TEST_AFTER=$FIX/linux-setup-in-progress" a_exec_tty '\nalex\n\n\n\n\004\004\004' omarchy.start start
@@ -1030,6 +1065,15 @@ e_norm() {
 e_agree() {
   e_norm "$T/base" "$EB" >"$EB.norm"
   e_norm "$REPO" "$EC" >"$EC.norm"
+  if [ "$1" = equiv-omarchy.start ]; then
+    # The only command delta: exactly one SSH disable before setup. The
+    # post-disable is-active/is-enabled reads are guarded in detection.
+    assert_eq "$(grep -c '^systemctl disable --now sshd$' "$EC/record")" 1 'start-disable-ssh: one exact command'
+    assert_eq "$(head -1 "$EC/record")" 'systemctl disable --now sshd' 'start-disable-ssh: before setup'
+    assert_eq "$(grep -c '^systemctl ' "$EB/record")" 0 'start-disable-ssh: absent from BASE'
+    sed '/^systemctl disable --now sshd$/d' "$EC.norm" >"$EC.less"
+    mv "$EC.less" "$EC.norm"
+  fi
   if cmp -s "$EB.norm" "$EC.norm"; then
     ok
   else
@@ -1163,6 +1207,6 @@ A_WAIT="Choose what to set up" A_ENV="OMB_TEST_AFTER=$FIX/linux-dev-complete" a_
 e_agree equiv-dev
 
 # No run wrote into the committed fixtures, and no request left its scratch.
-assert_eq "$(git -C "$REPO" status --porcelain --untracked-files=all -- tests/fixtures)" "" "the committed fixtures are as they were"
+assert_eq "$(t_snapshot "$FIX")" "$actions_fixture_before" "the committed fixtures are as they were"
 assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" "" "no core identity residue"
 t_done test-actions

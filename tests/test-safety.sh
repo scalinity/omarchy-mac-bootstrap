@@ -86,7 +86,7 @@ assert_eq "$(grep -c 'SHARED_PRED_ID=\$GP_ID' "$REPO/lib/shared.sh")" 1 "the dev
 
 # --- Static: every probe is read-only ----------------------------------------------
 probes=$(grep -h 'sys_cmd ' $CODE | grep -v '^[[:space:]]*#' | grep -o 'sys_cmd [^|)]*' | sed 's/^sys_cmd [^ ]* //' | sort -u)
-bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID,MAJ:MIN|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |ss -Htln|getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT|BNDL_DEST)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status|dscl \. -read "/Users/\$SCAN_USER" NFSHomeDirectory UserShell)')
+bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID,MAJ:MIN|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |ss -Htln|getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|pacman -Q "\$(RST_TARGET|p)" >/dev/null ;;$|pacman -Si "\$RST_TARGET" >/dev/null $|git config --file "\$f" --no-includes --get "\$name" >"\$RST_W/git.value"$|command -v "\$AG_BINARY"$|systemctl is-enabled sshd$|sshd -T$|passwd -S alarm$|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT|BNDL_DEST)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status|dscl \. -read "/Users/\$SCAN_USER" NFSHomeDirectory UserShell)')
 assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 
 # --- Static: every mutating command goes through run, and is expected -------------
@@ -96,6 +96,8 @@ runs=$(code_lines | grep -oE '(^|[[:space:];&|(])run [^;|&]*' | sed -E 's/^[[:sp
 for cmd in $runs; do
   case "$cmd" in
     sh | bash | nmtui | sudo | git | gh | ssh-keygen | npm | cp | sync | rm | \
+      chmod | claude | env | ln | mkdir | mv | rst_log_write | rst_stage_write | uv | \
+      mise | timeout | systemctl | \
       omarchy-pkg-add | omarchy-install-dev-env | omarchy-install-editor-vscode | \
       omarchy-setup-security-sshd | omarchy-setup-security-sudoless-docker) ok ;;
     '""') ;; # a quoted first argument: checked exactly below
@@ -103,7 +105,29 @@ for cmd in $runs; do
   esac
 done
 quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
-assert_eq "$quoted" 'run "$OMS_SELF" --resume' "the only indirect command through run is omarchy-mac-setup --resume"
+assert_eq "$quoted" 'run "$AG_PATH" "$@"
+run "$OMS_SELF" --resume' "indirect commands are the observed agent handoff and omarchy-mac-setup --resume"
+assert_eq "$(grep -hE 'run systemctl ' $CODE | sed 's/^[[:space:]]*//; s/[[:space:]]*>.*$//')" \
+  'run systemctl disable --now sshd' "the direct systemctl mutation only stops and disables image SSH"
+# Restore removes only its admitted staging names. The transfer helper has
+# three callers, each passing that stage; no original or backup is removed.
+restore=$REPO/lib/migrate_restore.sh
+assert_eq "$(grep -oE 'run rm [^;|&>]*' "$restore" | sed 's/[[:space:]]*$//' | LC_ALL=C sort)" \
+  'run rm -- "$src"
+run rm -- "$src"
+run rm -r -- "$stage"' 'restore removes only completed or read-back-matched stages'
+assert_eq "$(grep -E '^[[:space:]]*(path=.* stage=|stage=)' "$restore" | sed 's/^[[:space:]]*//')" \
+  'path=$RST_HOME/$dest stage=$RST_HOME/$dest.omb-new-$RST_RUN
+stage=$path.omb-undo-$RST_RUN
+stage=$path.omb-undo-$RST_RUN' 'restore stage names are the destination plus omb-new/omb-undo and the manifest SHA'
+assert_eq "$(grep -E '_rst_transfer ' "$restore" | sed 's/^[[:space:]]*//')" \
+  'if ! _rst_parents "$dest" 0 || ! _rst_checkpoint restore.place || ! _rst_transfer "$stage" "$path" "$new"; then
+_rst_transfer "$stage" "$path" "$old" || return 1
+if [ "$old" != absent ]; then _rst_transfer "$stage" "$path" "$old" || return 1; fi' 'restore transfer removes only those stages'
+assert_eq "$(grep -F '_rst_stage ' "$restore" | sed 's/^[[:space:]]*//')" \
+  '_rst_stage "$n" "$stage" || { _rst_mark "$n" failed '\''The private stage could not be written or read back.'\''; return; }' 'restore stage cleanup has only its placement caller'
+assert_eq "$(grep -E '^[[:space:]]*RST_RUN=\$' "$restore" | sed 's/^[[:space:]]*//')" \
+  'RST_RUN=$BNDL_SHA' 'the stage suffix comes from the checked manifest SHA'
 sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | LC_ALL=C sort -u | tr '\n' ';')
 assert_eq "$sudos" "run sudo cp -p;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, the Shared mount, and the one Shared creation"
 assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
@@ -143,8 +167,8 @@ assert_empty_file "$T_DIR/shims.log" "in-progress dry-run invoked a forbidden co
 
 # Answers, in prompt order: modules 1-9; languages 1-4; containers 2 (Podman);
 # VS Code y; git name and email; gh setup-git Enter; key generation Enter;
-# enable SSH y; AI CLIs 1 2; inspect Enter; run the Claude installer y.
-t_cli linux-omarchy-installed '1 2 3 4 5 6 7 8 9\n1 2 3 4\n2\ny\nAlex\nalex@example.com\n\n\ny\n1 2\n\ny\n' dev --dry-run
+# enable SSH y; AI CLIs 1 2 use the shared mise installer.
+T_ENV='HOME=/home/alex' t_cli agt-wrappers '1 2 3 4 5 6 7 8 9\n1 2 3 4\n2\ny\nAlex\nalex@example.com\n\n\ny\n1 2\n\ny\n' dev --dry-run
 for expected in \
   "omarchy-pkg-add github-cli wget tree rsync" \
   "omarchy-install-dev-env rust" "omarchy-install-dev-env python" \
@@ -155,14 +179,13 @@ for expected in \
   "gh auth login" "gh auth setup-git" \
   "ssh-keygen -t ed25519" \
   "omarchy-setup-security-sshd" \
-  "bash $T_DIR/tmp/omarchy-bootstrap."; do
+  "mise use -g --quiet claude" "mise use -g --quiet codex"; do
   assert_contains "$T_OUT" "would run  $expected" "dev module ran: $expected"
 done
 assert_eq "$(ls -A "$T_DIR/tmp")" "" "a dry-run download is removed when the run ends"
 assert_eq "$(ls "$T_DIR/state" 2>/dev/null)" "" "dev dry-run keeps no state, log or download"
-assert_contains "$T_OUT" "npm not found" "Codex explains that it needs node first"
-assert_contains "$T_OUT" "1 requested operation needs attention" "every module ran to the end, and Codex without npm is reported as failed, not finished"
-assert_rc "$T_RC" 1 "a preview with a module that cannot run exits non-zero"
+assert_contains "$T_OUT" "Developer setup finished" "every previewed module completes"
+assert_rc "$T_RC" 0 "the shared mise preview succeeds"
 assert_empty_file "$T_DIR/shims.log" "dev dry-run invoked a forbidden command"
 assert_empty_file "$T_DIR/record" "dev dry-run recorded an execution"
 
@@ -215,10 +238,14 @@ assert_contains "$T_OUT" "Stopped. Nothing changed." "q at 'Use these?' quits"
 assert_not_contains "$T_OUT" "Encrypt [Y/n]" "q at 'Use these?' does not re-ask every choice"
 assert_empty_file "$T_DIR/record" "q at 'Use these?' starts nothing"
 
-# Enter at "Run the Claude Code installer?" must not run downloaded code.
-t_cli linux-omarchy-installed '8\n1\n\n\n' dev --dry-run
-assert_contains "$T_OUT" "Run the Claude Code installer? [y/N]" "the installer prompt defaults to no"
-assert_not_contains "$T_OUT" "would run  bash" "Enter does not run the downloaded installer"
+# agents-mise-install: the selection itself authorizes the shared installer.
+T_ENV='HOME=/home/alex' t_cli agt-wrappers '8\n1 2 3\n' dev --dry-run
+for package in claude codex opencode; do
+  assert_contains "$T_OUT" "would run  mise use -g --quiet $package" "mise previews $package"
+done
+assert_not_contains "$T_OUT" 'Run the Claude Code installer?' 'no downloaded-installer prompt remains'
+assert_not_contains "$T_OUT" 'would run  npm' 'AI installs use mise'
+assert_empty_file "$T_DIR/record" 'the AI preview executes nothing'
 
 # --- A change the tool cannot record does not happen -------------------------------------
 # state.env replaced by something that is not a plain file: every record

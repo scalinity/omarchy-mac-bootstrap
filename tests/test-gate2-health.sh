@@ -27,7 +27,6 @@ cmd_doctor() {
 }
 eval "$(declare -f log_event | sed '1s/log_event/h_original_log_event/')"
 log_event() { printf '%s %s %s\n' "$OMB_INTENT" "$OMB_PERSIST" "$1" >>"$H_LOG"; h_original_log_event "$@"; }
-core_action_info() { printf 'action\n' >>"$H_EFFECTS"; return 99; }
 state_lock() { printf 'lock\n' >>"$H_EFFECTS"; return 99; }
 state_set() { printf 'state\n' >>"$H_EFFECTS"; return 99; }
 run() { printf 'run\n' >>"$H_EFFECTS"; return 99; }
@@ -104,12 +103,16 @@ for fx in $fixtures; do
   h_good "$fx snapshot" snapshot
   gen=$(h_gen) pass=$(h_fact pass) warn=$(h_fact warn) failed=$(h_fact fail)
   case "$pass:$warn:$failed" in *::* | :* | *: | *[!0-9:]*) fail "$fx counts are whole numbers: $pass:$warn:$failed" ;; *) ok ;; esac
-  assert_eq "$(h_types)" 'omb-res 1 hello generation fact fact fact result ' "$fx snapshot is generation, three facts, result"
+  assert_eq "$(grep -c '^fact\tscope=health\tkey=doctor\.' "$C_EV")" 3 "$fx snapshot retains all three count facts"
+  case "$fx" in
+    linux-*) assert_eq "$(h_types)" 'omb-res 1 hello generation fact fact fact result ' "$fx unavailable MCP action is not offered" ;;
+    *) assert_eq "$(h_types)" 'omb-res 1 hello generation fact fact fact result ' "$fx macOS snapshot has only counts" ;;
+  esac
   assert_eq "$(h_total)" 0 "$fx snapshot total is zero"
   assert_eq "$(sed -n '4,6p' "$C_EV")" "fact	scope=health	key=doctor.pass	label=Passed	value=$pass	state=info
 fact	scope=health	key=doctor.warn	label=Warnings	value=$warn	state=info
 fact	scope=health	key=doctor.fail	label=Failures	value=$failed	state=info" "$fx exact count facts"
-  assert_eq "$(sed -n 7p "$C_EV")" 'result	status=done	code=ok	text=	next=' "$fx exact done result"
+  assert_eq "$(tail -n 1 "$C_EV")" 'result	status=done	code=ok	text=	next=' "$fx exact done result"
   assert_eq "$(cat "$T/doctor")" 'read 0' "$fx snapshot: one Doctor capture, read intent, zero persistence"
   want=0
   [ "$failed" = 0 ] || want=1
@@ -131,6 +134,29 @@ fact	scope=health	key=doctor.fail	label=Failures	value=$failed	state=info" "$fx 
   assert_eq "$(sed -n '$p' "$C_EV")" 'result	status=done	code=ok	text=	next=' "$fx detail done result"
   assert_eq "$(cat "$T/doctor")" 'read 0' "$fx detail: one Doctor capture"
 done
+
+# The offered MCP handoff and its parameter belong to admission and the
+# generation, even when all observation rows remain byte-for-byte identical.
+M=$(t_variant agt-installed)
+C_FIX=$M H_EXTRA='HOME=/home/alex'
+h_snapshot
+h_good 'agents.mcp offered snapshot' snapshot
+mgen=$(h_gen)
+assert_contains "$C_OUT" 'action	id=agents.mcp	scope=health	' 'agents.mcp offered through Health'
+assert_contains "$C_OUT" 'param	action=agents.mcp	name=tool	type=choice' 'agents.mcp required selection admitted'
+assert_contains "$C_OUT" 'key=gate.agents.mcp.effect' 'agents.mcp effect admitted'
+h_page "$mgen"
+h_rows >"$T/mcp.rows"
+awk '$0 != "timeout"' "$M/commands" >"$M/commands.new"
+mv "$M/commands.new" "$M/commands"
+h_snapshot
+h_good 'agents.mcp unavailable snapshot' snapshot
+assert_not_contains "$C_OUT" 'action	id=agents.mcp	' 'agents.mcp withheld without timeout'
+assert_not_contains "$(h_gen)" "$mgen" 'the MCP offer changes the Health generation'
+h_page "$(h_gen)"
+h_rows >"$T/mcp.after"
+if cmp -s "$T/mcp.rows" "$T/mcp.after"; then ok; else fail 'the MCP offer alone changes no observed row'; fi
+H_EXTRA=''
 
 # Mandatory: a completed report with failed checks is `done ok`, not an error.
 C_FIX=$FIX/linux-alarm-offline
@@ -155,6 +181,13 @@ C_FIX=$V
 h_snapshot
 h_good 'generation control' snapshot
 g0=$(h_gen)
+p0=$(h_fact pass) w0=$(h_fact warn) f0=$(h_fact fail)
+h_page "$g0"
+total0=$(h_total)
+# The four extension rows do not call doc/log_event. Derive the owner row
+# count from the admitted dataset for the later per-capture log assertion.
+doctor_total0=$(h_rows | awk -F '\t' '$5 != "col=Claude%20Code" && $5 != "col=Codex" && $5 != "col=OpenCode" && $5 != "col=Restore" { n++ } END { print n+0 }')
+assert_eq "$total0" "$(h_rows | wc -l | tr -d ' ')" 'SSH, AI and restore observations belong to the complete dataset'
 h_snapshot
 assert_eq "$(h_gen)" "$g0" 'repeated identical capture: same generation'
 h_page "$g0" 0 1
@@ -163,12 +196,12 @@ assert_eq "$(h_gen)" "$g0" 'snapshot then detail: one generation'
 assert_eq "$(h_rows)" 'row	kind=doctor	key=1	col=pass	col=aarch64	col=6.16.8-asahi-1-1-ARCH' 'first owner finding'
 h_name "$V" 'Arch Linux ARM (renamed)'
 h_snapshot
-assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail)" '8 0 0' 'a changed detail leaves every counter'
+assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail)" "$p0 $w0 $f0" 'a changed detail leaves every counter'
 g1=$(h_gen)
 assert_not_contains "$g1" "$g0" 'a changed finding detail changes the generation'
 h_page "$g0" 0 1
 h_refused 'old generation after a detail change' changed
-assert_eq "$(h_gen) $(h_total)" "$g1 16" 'changed carries the fresh generation and total'
+assert_eq "$(h_gen) $(h_total)" "$g1 $total0" 'changed carries the fresh generation and total'
 cp "$FIX/linux-alarm-fresh/root/etc/os-release" "$V/root/etc/os-release"
 h_snapshot
 assert_eq "$(h_gen)" "$g0" 'the restored finding restores the generation'
@@ -178,25 +211,25 @@ h_refused 'off-page severity change (row 13)' changed
 g2=$(h_gen)
 assert_not_contains "$g2" "$g0" 'an off-page severity change changes the generation'
 h_snapshot
-assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail) $(h_gen)" "7 1 0 $g2" 'severity moves the counters'
+assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail) $(h_gen)" "$((p0 - 1)) $((w0 + 1)) $f0 $g2" 'severity moves the counters'
 h_page "$g2" 12 1
 assert_eq "$(h_rows)" 'row	kind=doctor	key=13	col=warn	col=Disk%20space	col=9%20GB%20free%20on%20/' 'the owner warning row'
 h_df "$V" 1000000
 h_reset
 h_snapshot
 h_good 'failed disk snapshot' snapshot
-assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail) $(cat "$T/status")" '7 0 1 1' 'failure counted, owner status 1, read done'
+assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail) $(cat "$T/status")" "$((p0 - 1)) $w0 $((f0 + 1)) 1" 'failure counted, owner status 1, read done'
 h_page "$(h_gen)" 12 1
 h_good 'failed disk detail' detail
 assert_eq "$(h_rows)" 'row	kind=doctor	key=13	col=fail	col=Disk%20space	col=1%20GB%20free%20on%20/' 'the owner failure row'
 cp "$FIX/linux-alarm-fresh/cmd/df_root" "$V/cmd/df_root"
 mv "$V/cmd/pagesize" "$T/pagesize"
 h_snapshot
-assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail)" '8 0 0' 'removing an info finding leaves every counter'
+assert_eq "$(h_fact pass) $(h_fact warn) $(h_fact fail)" "$p0 $w0 $f0" 'removing an info finding leaves every counter'
 g3=$(h_gen)
 assert_not_contains "$g3" "$g0" 'a removed finding changes the generation'
 h_page "$g3"
-assert_eq "$(h_total)" 15 'one finding fewer'
+assert_eq "$(h_total)" "$((total0 - 1))" 'one finding fewer'
 mv "$T/pagesize" "$V/cmd/pagesize"
 h_snapshot
 assert_eq "$(h_gen)" "$g0" 'the restored fixture restores the generation'
@@ -205,10 +238,10 @@ assert_eq "$(h_gen)" "$g0" 'the restored fixture restores the generation'
 for limit in 1 7 500; do
   : >"$T/traversal"
   offset=0
-  while [ "$offset" -lt 16 ]; do
+  while [ "$offset" -lt "$total0" ]; do
     h_page "$g0" "$offset" "$limit"
     h_good "page $offset/$limit" detail
-    assert_eq "$(h_gen) $(h_total)" "$g0 16" "page $offset/$limit generation and total"
+    assert_eq "$(h_gen) $(h_total)" "$g0 $total0" "page $offset/$limit generation and total"
     h_rows >>"$T/traversal"
     offset=$((offset + limit))
   done
@@ -216,12 +249,12 @@ for limit in 1 7 500; do
   h_rows >"$T/all"
   if cmp -s "$T/traversal" "$T/all"; then ok; else fail "limit $limit traversal returns each row once, in order"; fi
 done
-h_page "$g0" 16 1
+h_page "$g0" "$total0" 1
 h_good 'offset equal to total' detail
 assert_eq "$(h_rows)" '' 'offset equal to total: no rows'
-h_page "$g0" 17 1
+h_page "$g0" "$((total0 + 1))" 1
 h_refused 'offset beyond total' invalid
-assert_eq "$(h_gen) $(h_total)" "$g0 16" 'invalid offset: current generation and total'
+assert_eq "$(h_gen) $(h_total)" "$g0 $total0" 'invalid offset: current generation and total'
 C_ENV="OMB_SESSION_SCOPES=journey $H_TAPS" c_run snapshot "scope	name=journey"
 journey=$(h_gen)
 assert_not_contains "$journey" "$g0" 'scope-bound generations differ'
@@ -229,7 +262,7 @@ for other in "$zero" "$journey"; do
   h_reset
   h_page "$other" 999999999999999999 1
   h_refused 'stale or unknown generation precedes offset' changed
-  assert_eq "$(h_gen) $(h_total)" "$g0 16" 'changed supplies the current dataset'
+  assert_eq "$(h_gen) $(h_total)" "$g0 $total0" 'changed supplies the current dataset'
   assert_eq "$(cat "$T/doctor")" 'read 0' 'changed: one Doctor capture'
 done
 for fields in "generation=x	offset=0	limit=1" "generation=$g0	offset=0	limit=0" "generation=$g0	offset=0	limit=501" "offset=0	limit=1"; do
@@ -263,8 +296,8 @@ for bad in long control; do
       snapshot) h_snapshot; op=snapshot ;;
       early-page) h_page "$rg" 0 1; op=detail ;;
       stale) h_page "$zero" 0 1; op=detail ;;
-      offset-total) h_page "$rg" 16 1; op=detail ;;
-      beyond) h_page "$rg" 17 1; op=detail ;;
+      offset-total) h_page "$rg" "$total0" 1; op=detail ;;
+      beyond) h_page "$rg" "$((total0 + 1))" 1; op=detail ;;
     esac
     h_fail "$bad $request" representation "$op"
     assert_eq "$(sed -n '$p' "$C_EV")" 'result	status=error	code=representation	text=The%20required%20health%20response%20cannot%20be%20represented%20in%20Protocol%201.	next=' "$bad $request exact response"
@@ -306,13 +339,13 @@ h_good 'H01 control' snapshot
 hg=$(h_gen)
 for at in 1 2; do
   for request in snapshot stale early-page offset-total beyond; do
-    h_h01 "H01 read $at fails" "$at" "$request" 16 "$hg"
+    h_h01 "H01 read $at fails" "$at" "$request" "$total0" "$hg"
   done
 done
 C_FIX=$R
 h_name "$R" "$long"
 for request in snapshot stale early-page offset-total beyond; do
-  h_h01 'H01 before the invalid row 4' 4 "$request" 16 "$rg"
+  h_h01 'H01 before the invalid row 4' 4 "$request" "$total0" "$rg"
   assert_not_contains "$C_OUT" AAAAAAAA "H01 before the invalid row 4 $request echoes nothing"
 done
 h_reset
@@ -374,15 +407,13 @@ for state in absent present; do
     h_snapshot
     h_good "$state/$ceiling snapshot" snapshot
     gen=$(h_gen)
-    rows=0
     for offset in 0 1; do
       h_page "$gen" "$offset" 1
       h_good "$state/$ceiling page $offset" detail
-      rows=$(h_total)
     done
     assert_eq "$(sort -u "$T/doctor") $(h_lines "$T/doctor")" 'read 0 3' "$state/$ceiling one read-only capture per request"
     assert_eq "$(sort -u "$T/log")" 'read 0 doctor' "$state/$ceiling log_event reached only by doc, under read/0"
-    assert_eq "$(h_lines "$T/log")" "$((rows * 3))" "$state/$ceiling log_event once per finding per capture"
+    assert_eq "$(h_lines "$T/log")" "$((doctor_total0 * 3))" "$state/$ceiling log_event once per finding per capture"
     assert_empty_file "$T/effects" "$state/$ceiling no action, lock, state, run, download or operation record"
     assert_empty_file "$T/shims.log" "$state/$ceiling no sudo, installer, package, boot or network command"
     assert_eq "$(t_snapshot "$T/state")" "$before" "$state/$ceiling no state, log, plan, profile or lock written"
