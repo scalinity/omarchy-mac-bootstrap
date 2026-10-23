@@ -442,6 +442,17 @@ check "$I1" "$(lk .config/l ../.ssh/config)"
 assert_rc $? 0 "a link to elsewhere inside the home is kept"
 check "$I1" "$(rec_line file item i dest .config/big mode 0644 sha256 "$OBJ" size $((BNDL_MAX_OBJECT + 1)) whole 0)"
 assert_rc $? 1 "an object over 64 MiB is refused"
+# A chain of the bundle's own links: a -> . is the home, so b -> a/.. is
+# its parent, though each text alone stays inside the home.
+check "$I1" "$(lk a .)" "$(lk b a/..)"
+assert_rc $? 1 "bundle-corrupt-link-chain: a link whose target passes through another of the bundle's links is refused"
+assert_contains "$BNDL_WHY" "passes through another link of the bundle" "and named"
+check "$I1" "$(lk b a/..)" "$(lk a .)"
+assert_rc $? 1 "whatever order the links come in"
+check "$I1" "$(lk .config/one two)" "$(lk .config/two ../.ssh)"
+assert_rc $? 1 "a target naming another of the bundle's links is refused too"
+check "$I1" "$(lk a .)" "$(lk .config/c ../.ssh/config)"
+assert_rc $? 0 "links that pass through none of the bundle's links still pass"
 # Every file record's size is checked, a repeated digest's included.
 check "$I1" "$FILE1" "$(rec_line file item i dest .config/x/b mode 0644 sha256 "$OBJ" size 7 whole 0)"
 assert_rc $? 1 "bundle-corrupt-repeated-size: a second record of one object with another size is refused"
