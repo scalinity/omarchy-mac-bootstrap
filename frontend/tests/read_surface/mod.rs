@@ -1905,7 +1905,7 @@ fn read_screens_keep_meaning_in_every_profile() {
             }
             for c in render(m, &profile("color"), w, h).content() {
                 assert!(
-                    c.bg == Color::Indexed(18)
+                    c.bg == Color::Indexed(17)
                         || c.modifier.contains(ratatui::style::Modifier::REVERSED),
                     "the backdrop at 256 colours"
                 );

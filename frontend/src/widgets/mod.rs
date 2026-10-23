@@ -135,7 +135,7 @@ pub fn wrap(s: &str, width: usize) -> Vec<String> {
     out
 }
 
-/// Paint the page behind everything: sapphire at full colour depth, the
+/// Paint the page behind everything: midnight blue at full colour depth, the
 /// terminal's own background otherwise (the style is then empty).
 pub fn backdrop(f: &mut Frame, area: Rect, t: &Theme) {
     f.render_widget(Block::new().style(t.style(Token::Backdrop)), area);

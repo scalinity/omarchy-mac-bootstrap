@@ -15,7 +15,7 @@ Images/` at the repository root, not tracked by Git. They set the look every
 screen shares: the pixel OMARCHY wordmark with its MAC BOOTSTRAP tagline and
 the laptop-and-mountains art, the ten-station journey rail, the navigation
 on the left, the System Overview and a context panel on the right, steppers,
-check lists, the footer's key hints, and the sapphire backdrop.
+check lists, the footer's key hints, and the midnight backdrop.
 
 Their content is mock-up: every word, number and state in them is a
 placeholder, and so are the rail's station names, the navigation's entries
@@ -114,36 +114,36 @@ terminal theme), and a plain-attribute form.
 | Token | Means | 256 | 16 | No colour |
 | --- | --- | --- | --- | --- |
 | `text` | body text | 253 | default | default |
-| `muted` | labels, metadata | 249 | bright black | default |
-| `rule` | dividers inside a panel, the rail's line | 244 | bright black | default |
+| `muted` | labels, metadata | 245 | bright black | default |
+| `rule` | dividers inside a panel, the rail's line | 241 | bright black | default |
 | `accent` | the mark, the current station, the primary control | 78 | green | underline |
 | `focus` | the focused row, field or control | reverse + 78 | reverse | reverse |
 | `frame` | panel outlines and the title rule | 44 | cyan | the outline's own glyphs |
-| `heading` | panel titles and section headings | 75 | blue | underline |
-| `backdrop` | the page behind everything, a sapphire field | RGB 13,59,132 on truecolor terminals; index 18 (`#000087`) on 256-colour terminals | the terminal's own | the terminal's own |
+| `heading` | panel titles and section headings | 39 | blue | underline |
+| `backdrop` | the page behind everything, a midnight blue field | RGB 11,31,58 on truecolor terminals; index 17 (`#00005f`) on 256-colour terminals | the terminal's own | the terminal's own |
 | `selected` | an included item | 115 glyph | green glyph | the glyph alone (◉ / `[x]`) |
 | `ok` | verified, passed | 115 | green | the word and ✓ / `+` |
 | `info` | a note | 110 | cyan | the word |
 | `warn` | needs attention | 222 | yellow | the word and ! |
-| `danger` | failed, destructive | 210 | red | the word and ✗ / `x` |
-| `blocked` | cannot go on | 210 | red | the word, reversed |
-| `pending` | not yet | 249 | bright black | ○ / `.` |
+| `danger` | failed, destructive | 204 | red | the word and ✗ / `x` |
+| `blocked` | cannot go on | 204 | red | the word, reversed |
+| `pending` | not yet | 245 | bright black | ○ / `.` |
 | `gate` | a typed-word field | 253 underline | underline | underline |
-| `macos`, `linux`, `boot`, `shared`, `free` | disk regions and badges | 110, 209, 147, 114, 244 | blue, bright red, magenta, green, bright black | the strip's letters (`M`, `L`, `b`, `s`, `.`) |
+| `macos`, `linux`, `boot`, `shared`, `free` | disk regions and badges | 110, 209, 141, 114, 241 | blue, bright red, magenta, green, bright black | the strip's letters (`M`, `L`, `b`, `s`, `.`) |
 
 - **Emphasis is reverse or underline, never bold with a colour**: the Linux
   console cancels bold when a normal-intensity colour follows it. Hierarchy
   comes from the token, capitals and position, not from weight.
 - **Sixteen named colours only** on the Linux console and whenever the
   terminal reports fewer than 256; true colour is never assumed.
-- **The backdrop is sapphire.** Truecolor terminals (`COLORTERM=truecolor`
-  or `24bit`) use `#0D3B84` (RGB 13,59,132). A 256-colour terminal uses
-  index 18 (`#000087`). Sixteen-colour terminals, the Linux console and
+- **The backdrop is midnight blue.** Truecolor terminals (`COLORTERM=truecolor`
+  or `24bit`) use `#0B1F3A` (RGB 11,31,58). A 256-colour terminal uses
+  index 17 (`#00005f`), the nearest blue; the nearer greys would lose the hue. Sixteen-colour terminals, the Linux console and
   `NO_COLOR` use the terminal's own background. Panels and spans have no
   background of their own; the page supplies one continuous field.
 - **Contrast carries the palette.** Full-depth muted and pending text use
-  249, headings 75, danger and blocked 210, and boot regions 147. Rule and
-  free-space graphics use 244. Linux's 209 is a disk-graphic colour; text
+  245, headings 39, danger and blocked 204, and boot regions 141. Rule and
+  free-space graphics use 241. Linux's 209 is a disk-graphic colour; text
   legends use the Text token. Editing fields use neutral Text with an
   underline, and become a warning or error colour only after a core answer.
 
