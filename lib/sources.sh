@@ -62,6 +62,8 @@ OMARCHY_ROOT_MIN_BYTES=$((OMARCHY_LINUX_MIN_GB * 1000000000))
 OMS_CONF=/etc/omarchy-mac-setup.conf
 OMS_SELF=/usr/local/bin/omarchy-mac-setup
 OMS_UNIT=omarchy-mac-setup.service
+# The console that unit writes to (TTYPath); its output goes nowhere else.
+OMARCHY_SETUP_TTY=tty1
 OMS_MARKER=/var/lib/omarchy-mac-setup/installed
 # The in-place encryption (bin/omarchy-system-btrfs-migrate): staged config,
 # removed by its finish service, which then writes the done marker.

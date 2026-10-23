@@ -157,7 +157,7 @@ lx_setup_complete() {
     LX_INCOMPLETE_WHY="omarchy-mac-setup is finishing; one more boot removes its setup files"
   else
     case "$LX_UNIT_STATE" in
-      active | activating) LX_INCOMPLETE_WHY="omarchy-mac-setup is running now on tty1" ;;
+      active | activating) LX_INCOMPLETE_WHY="omarchy-mac-setup is running now on $OMARCHY_SETUP_TTY" ;;
     esac
   fi
   if [ -z "$LX_INCOMPLETE_WHY" ]; then
@@ -358,7 +358,7 @@ lx_handoff() {
   ui_card_row $((n += 1)) "Omarchy" "$version" "~15 minutes, then reboots into the desktop"
   ui_card_text "It asks 'Start? [Y/n]' first — answer y."
   ui_card_text "If a gum dialog offers to build packages with no aarch64 build, say no."
-  ui_card_text "It resumes itself on tty1 after each reboot; you only type the passphrase."
+  ui_card_text "It resumes itself on $OMARCHY_SETUP_TTY after each reboot; you only type the passphrase."
   ui_card_close
   ui_section "Command"
   ui_cmd "bash $(tildify "$FETCH_PATH") $(quote_argv "${LX_FLAGS[@]}")"
@@ -384,7 +384,7 @@ lx_handoff() {
   state_set omarchy_setup_exit "$rc"
   if [ "$rc" != 0 ]; then
     ui_warn "omarchy-mac-setup exited with status $rc."
-    ui_note "Its output is on tty1 (Ctrl+Alt+F1); upstream keeps no log file. './omarchy-bootstrap status' shows where the machine is; upstream resumes from the machine's state."
+    ui_note "Its output is on $OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty}); upstream keeps no log file. './omarchy-bootstrap status' shows where the machine is; upstream resumes from the machine's state."
   fi
   return "$rc"
 }
@@ -415,7 +415,7 @@ lx_in_progress() {
   lx_upstream_status
   case "$LX_UNIT_STATE" in
     active | activating)
-      ui_info "It is running right now on tty1 — press Ctrl+Alt+F1 to watch it. Nothing to do here."
+      ui_info "It is running right now on $OMARCHY_SETUP_TTY — press Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty} to watch it. Nothing to do here."
       return 0
       ;;
   esac
