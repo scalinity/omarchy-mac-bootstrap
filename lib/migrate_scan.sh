@@ -160,13 +160,27 @@ function urlok(u,   a, q, n, i, parts, name) {
     if (name ~ /(token|key|secret|sig|auth|pass|credential|session)/) return 0
   }
   return 1
+}
+# urlsok(S) is 1 when S as a whole, and every URL that starts anywhere inside
+# it (the VALUE of --url=VALUE, a URL after other text), pass urlok.
+function urlsok(s,   r, at, len) {
+  if (!urlok(s)) return 0
+  r = s
+  while (match(r, /[A-Za-z][A-Za-z0-9+.-]*:\/\//)) {
+    # urlok runs match and sub of its own: the place is kept first.
+    at = RSTART; len = RLENGTH
+    if (!urlok(substr(r, at))) return 0
+    r = substr(r, at + len)
+  }
+  return 1
 }'
 
-# _scan_url_ok URL — 0 when a URL carries no credential (urlok above).
+# _scan_url_ok TEXT — 0 when TEXT, and every URL inside it, carries no
+# credential (urlsok above).
 _scan_url_ok() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk "$_SCAN_URL_FUNCS"'
-    { if (!urlok($0)) bad = 1 }
+    { if (!urlsok($0)) bad = 1 }
     END { print (bad || NR == 0) ? "bad" : "ok" }')
   [ "$r" = ok ]
 }
@@ -1775,9 +1789,8 @@ _scan_arg_ok() {
   case "$2" in
     -*=*) if _scan_cred_flag "${2%%=*}"; then return 1; fi ;;
   esac
-  case "$2" in
-    *://*) if ! _scan_url_ok "$2"; then return 1; fi ;;
-  esac
+  # A URL wherever it starts in the argument, FLAG=VALUE's VALUE included.
+  if ! _scan_url_ok "$2"; then return 1; fi
   scan_value_ok "$2"
 }
 
@@ -2251,11 +2264,11 @@ function shaped(v) {
     if (f == "http_headers") { if (n == 4) skip("codex mcp " s ": http_headers " P[4] " dropped (set it again on Linux)"); next }
     if (f == "bearer_token") { skip("codex mcp " s ": bearer_token dropped"); next }
     if ((f == "command" || f == "cwd") && n == 3 && t == "s") { add(sec, f " = " q(homep(v))); next }
-    if (f == "url" && n == 3 && t == "s") { if (urlok(v)) add(sec, "url = " q(v)); else { skip("codex mcp " s ": its URL holds a credential, dropped"); NEEDS[s] = 1 }; next }
+    if (f == "url" && n == 3 && t == "s") { if (urlsok(v)) add(sec, "url = " q(v)); else { skip("codex mcp " s ": its URL holds a credential, dropped"); NEEDS[s] = 1 }; next }
     if (f == "args") {
       if (n == 3 && t == "a") { ARGS[s] = ARGS[s] ""; HASARGS[s] = 1; next }
       if (n == 4 && t == "s") {
-        if (credflag(PREV[s]) || credflag(v) || shaped(v) || (index(v, "=") && credflag(substr(v, 1, index(v, "=") - 1))) || (v ~ /:\/\// && !urlok(v))) { NEEDS[s] = 1; PREV[s] = v; next }
+        if (credflag(PREV[s]) || credflag(v) || shaped(v) || (index(v, "=") && credflag(substr(v, 1, index(v, "=") - 1))) || !urlsok(v)) { NEEDS[s] = 1; PREV[s] = v; next }
         PREV[s] = v
         ARGS[s] = ARGS[s] (ARGS[s] == "" ? "" : ", ") q(homep(v)); next
       }
@@ -2277,7 +2290,7 @@ function shaped(v) {
     if (n == 2) next
     f = P[3]
     if ((f == "name" || f == "env_key" || f == "wire_api") && n == 3 && t == "s") { add(sec, f " = " q(v)); next }
-    if (f == "base_url" && n == 3 && t == "s") { if (urlok(v)) add(sec, "base_url = " q(v)); else skip("codex provider " s ": its URL holds a credential, dropped"); next }
+    if (f == "base_url" && n == 3 && t == "s") { if (urlsok(v)) add(sec, "base_url = " q(v)); else skip("codex provider " s ": its URL holds a credential, dropped"); next }
     if (f == "query_params" && n == 4 && t == "s") { if (credname(P[4])) skip("codex provider " s ": query parameter " P[4] " dropped"); else add(sec, "query_params." k(P[4]) " = " q(v)); next }
     if (f == "http_headers" && n == 4) { skip("codex provider " s ": http_headers " P[4] " dropped"); next }
     if (f == "env_http_headers" && n == 4 && t == "s") { add(sec, "env_http_headers." k(P[4]) " = " q(v)); next }

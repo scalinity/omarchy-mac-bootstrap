@@ -93,12 +93,25 @@ for u in https://github.com/example/app.git 'https://example.test/search?q=docs&
   _scan_url_ok "$u"
   assert_rc $? 0 "secret-url: $u passes"
 done
+# secret-args-embedded-url: a URL is held to the rule wherever it starts in
+# an argument, the VALUE of FLAG=VALUE included.
+for a in --url=https://alice:harborpassEMB1@example.test/r 'mirror=https://bob:harborpassEMB2@example.test/x' \
+  'see:https://example.test/r?%74oken=harborpassEMB3' --endpoint=https://example.test/r#access_token=harborpassEMB4; do
+  _scan_arg_ok -y "$a"
+  assert_rc $? 1 "secret-args-embedded-url: $a never travels"
+done
+_scan_arg_ok -y --url=https://docs.example.test/mcp
+assert_rc $? 0 "secret-args-embedded-url: a URL without a credential in FLAG=VALUE travels"
 # Codex's conversion holds its arguments and URLs to the same rules.
 CX=$(t_variant mig-mac-home)
 cat >"$CX/root/Users/alex/.codex/config.toml" <<'EOF'
 [mcp_servers.svc]
 command = "svc"
 args = ["--key=harborpassKEY3", "--auth=harborpassAUTH3", "https://example.test/mcp?token=harborpassURL3", "--port", "8080"]
+
+[mcp_servers.embedded]
+command = "svc"
+args = ["--url=https://alice:harborpassEMB5@example.test/r", "--port", "9090"]
 
 [mcp_servers.remote]
 url = "https://example.test/mcp?%74oken=harborpassURL5"
@@ -116,6 +129,8 @@ assert_eq "$(grep -rl harborpass "$T/x-codex")" "" "secret-args: no credential a
 src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-codex/carry")
 assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "8080"]' "secret-args: Codex's other arguments stay"
 assert_contains "$(cat "$T/x-codex/carry")" "codex%20mcp%20svc:%20needs-secret" "secret-args: and the server needs its secrets set again"
+if grep -rq harborpassEMB "$T/x-codex"; then fail "secret-args-embedded-url: a URL inside FLAG=VALUE reached Codex's configuration"; else ok; fi
+assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "9090"]' "secret-args-embedded-url: Codex keeps the rest"
 # secret-starship-fields (S9): Starship's file is rebuilt by its documented
 # field names; a field no rule names, and a custom module, stay behind.
 cat >"$CX/root/Users/alex/.config/starship.toml" <<'EOF'
@@ -324,16 +339,20 @@ EOF
 
   # secret-args (S3), Claude's side, and secret-url (S4), a project's remote.
   V=$(t_variant mig-mac-home)
-  printf '%s\n' '{"mcpServers":{"svc":{"command":"svc","args":["--key=harborpassKEY4","--auth=harborpassAUTH4","https://example.test/mcp?%74oken=harborpassURL6","--port","8080"]}}}' >"$V/root/Users/alex/.claude.json"
+  printf '%s\n' '{"mcpServers":{"svc":{"command":"svc","args":["--key=harborpassKEY4","--auth=harborpassAUTH4","https://example.test/mcp?%74oken=harborpassURL6","--port","8080"]},
+    "emb":{"command":"svc","args":["--url=https://alice:harborpassEMB6@example.test/r","--port","7070"]}}}' >"$V/root/Users/alex/.claude.json"
   printf '[remote "origin"]\n\turl = https://example.test/app.git?%%74oken=harborpassREMOTE1\n' >"$V/root/Users/alex/code/app/.git/config"
   (
     OMB_FIXTURE=$V
     scan_extract claude:mcp:svc "$T/x-cmcp" >/dev/null 2>&1
+    scan_extract claude:mcp:emb "$T/x-cemb" >/dev/null 2>&1
     scan_run "$T/inv-url" >/dev/null 2>&1
     omb_cleanup
   )
   assert_eq "$(grep -rl harborpass "$T/x-cmcp")" "" "secret-args: no credential argument or URL in Claude's MCP server"
   assert_contains "$(cat "$T/x-cmcp/carry")" "%22args%22:%5B%22--port%22,%228080%22%5D" "secret-args: its other arguments stay"
+  assert_eq "$(grep -rl harborpass "$T/x-cemb")" "" "secret-args-embedded-url: a URL inside FLAG=VALUE never reaches Claude's MCP server"
+  assert_contains "$(cat "$T/x-cemb/carry")" "%22args%22:%5B%22--port%22,%227070%22%5D" "secret-args-embedded-url: Claude keeps the rest"
   if grep -q harborpass "$T/inv-url"; then fail "secret-url: a remote's encoded credential reached the inventory"; else ok; fi
   assert_contains "$(grep 'id=project:code/app' "$T/inv-url")" "its%20remote%20holds%20a%20credential" "secret-url: the remote is withheld, saying why"
 
@@ -344,7 +363,8 @@ EOF
   printf '%s\n' '{"theme":"system","plugin":["opencode-x"],"corp.extra":"harborpassTOP1",
     "mcp":{"corp.mcp":{"type":"remote","url":"https://mcp.example.test","headers":{"Authorization":"Bearer harborpassHDR1"}},
            "local":{"type":"local","command":["server","--token","harborpassCMD1","--api-key=harborpassCMD2","--port","8080"],
-                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOA"}}},
+                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOA"}},
+           "embedded":{"type":"local","command":["server","--url=https://alice:harborpassEMB7@example.test/r","--port","6060"]}},
     "provider":{"corp.ai":{"options":{"apiKey":"harborpassPROV1"}},
                 "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"}}}}' \
     >"$V/root/Users/alex/.config/opencode/opencode.json"
@@ -363,6 +383,8 @@ EOF
   assert_contains "$oc" '"environment":{"MODE":"{env:MODE}"}' "secret-opencode-command: environment values become references"
   assert_contains "$oc" '"baseURL":"https:\/\/api.example.test"' "secret-opencode-dotted: a provider keeps its base URL"
   assert_contains "$(cat "$T/x-oc/carry")" "opencode%20mcp%20local:%20needs-secret" "secret-opencode-command: and the server needs its secrets set again"
+  if grep -rq harborpassEMB "$T/x-oc"; then fail "secret-args-embedded-url: a URL inside FLAG=VALUE reached OpenCode's command"; else ok; fi
+  assert_contains "$oc" '"command":["server","--port","6060"]' "secret-args-embedded-url: OpenCode keeps the rest"
   rm -rf "$V"
 
   # --- secret-opaque and secret-carry, through the core ----------------------
