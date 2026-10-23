@@ -1189,6 +1189,7 @@ core_main() {
     return 2
   fi
   if ! rec_admit_copied req - "$copy"; then
+    # shellcheck disable=SC2031 # set by the admission just above, in this shell; a module's subshell admission never reaches here
     core_result error "$REC_REASON" "The request was refused at line $REC_AT ($REC_REASON)."
     return 2
   fi
@@ -1814,7 +1815,13 @@ core_execute_row() {
       ;;
     no-effect)
       core_op_remove "$scope"
-      core_result failed no-effect "$why"
+      # A cancellable row stopped at a unit's end, and the fresh read shows
+      # it changed nothing: the cancellation, not a failure.
+      if [ "$CORE_CANCEL" = 1 ]; then
+        core_result cancelled cancelled "$action was stopped before it saved anything; nothing changed."
+      else
+        core_result failed no-effect "$why"
+      fi
       ;;
     *)
       finding=unexpected

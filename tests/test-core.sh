@@ -993,7 +993,7 @@ assert_eq "$C_OUT" "omb-res 1" "and nothing is answered"
 # journey snapshot (Gate 3), never the startup check's four facts.
 C_PATH="$CK_SHIM:/usr/bin:/bin:/usr/sbin:/sbin" \
   C_ENV="OMB_FIXTURE= OMB_FRONTEND_DEV= OMB_SESSION_INTENT=read OMB_STATE_DIR=$CK_STATE" c_run snapshot "scope	name=journey"
-if [ "$(c_result)" != "refused unavailable" ]; then ok; else fail "frontend-check-purpose-env: with no purpose, the ordinary contract answers"; fi
+if w=$(c_answered snapshot 'done ok'); then ok; else fail "frontend-check-purpose-env: with no purpose, the ordinary contract answers: $w"; fi
 if grep -q 'key=check' "$C_EV"; then fail "frontend-check-purpose-env: and not with the startup check's facts"; else ok; fi
 # Controls: names the prefix rule does not match, and an empty OMB_TEST_ one.
 for e in "OMB_TEST_FUTURE=" "OMB_TESTING=x" "OMB_TEST=x" "SOME_OMB_TEST_X=x"; do
@@ -1080,6 +1080,27 @@ assert_eq "$(c_result) $(c_admits validate)" "refused unavailable ok" "frontend-
 rm -rf "$CK_STATE/ops"
 assert_eq "$(find "$CK_STATE" | wc -l | tr -d ' ')" 1 "frontend-check-no-state: the check's cores wrote nothing into the state folder"
 rm -rf "$CK_STATE"
+
+# core-cancel-row: a cancellable row stopped at a unit's end, which a fresh
+# read shows changed nothing, answers cancelled; uncancelled, the same
+# finding is a failure.
+xrow() { # CANCEL — the result record of a row that stops and changes nothing
+  local ev=$T/xrow-$1.events
+  : >"$ev"
+  OMB_STATE_DIR=$T/xrow-state OMB_FIXTURE=$FIX/mac-m1pro-1tb-roomy "$T_BASH" -c '
+    for n in common ui state sources records core; do . "$1/lib/$n.sh"; done
+    OMB_HOME=$1 OMB_COLOR=never; ui_init; platform_init; state_init; omb_tmp_init
+    CORE_EVENTS=$2 CORE_OP=execute CORE_CANCEL=$3 OMB_DRY_RUN=0 OMB_PERSIST=1 OMB_INTENT=act
+    CA_TERMINAL=managed CA_LIMIT=3 CA_PHASE=macos CA_FN=xstub CA_LABEL=x
+    xstub_run() { return 2; }
+    xstub_judge() { CORE_FINDING=no-effect CORE_JUDGE_TEXT=unchanged; }
+    core_execute_row x.scan "$(printf "%064d" 1)" profile "" >/dev/null 2>&1
+    omb_cleanup
+  ' bash "$REPO" "$ev" "$1"
+  grep '^result' "$ev" | cut -f2,3
+}
+assert_eq "$(xrow 1)" "status=cancelled	code=cancelled" "core-cancel-row: a cancelled row that changed nothing is cancelled"
+assert_eq "$(xrow 0)" "status=failed	code=no-effect" "core-cancel-row: uncancelled, nothing changed is a failure"
 
 t_decoys_survive test-core
 t_done test-core
