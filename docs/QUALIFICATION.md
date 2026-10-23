@@ -60,6 +60,41 @@ A stage known only from a code is drawn as `recorded`. A code feeds checks
 against a fresh read of the machine, and is never on its own the reason to
 allow anything.
 
+### Read implementation
+
+`lib/journey.sh` emits these ten stages on every ordinary journey snapshot.
+`status` retains the existing status details and prints the ten stage lines.
+A missing local profile means no migration, so profile, resolve and restore
+are skipped on macOS. An invalid profile blocks; a saved selection completes
+profile, and every included item must be resolved or unsupported to complete
+resolve. Export completes only after the recorded destination's bundle is
+read and verified again.
+
+Linux's loaded resume choices establish survey and plan as recorded by macOS
+only when the baseline recorded loading them and the token includes a plan id.
+The token contains no migration choice or profile/resolution progress; those
+two stages remain blocked with that reason. Linux restore is derived from the
+existing restore classifier and current destinations. A matching `ombdone`
+code completes only Omarchy on macOS, recorded by Linux. Shared on Linux
+requires the baseline's ready state and a verified mounted device identity;
+an `ombshare` code alone cannot complete it.
+
+The baseline has no saved exact pre-install layout without Shared. After
+Asahi changes that layout, the plan stage remains blocked unless the existing
+Shared classifier verifies the saved extents. These unavailable observations
+remain explicit; a code does not carry progress its schema cannot express.
+Consequently, Linux cannot establish the terminal done stage from the current
+codes, and a post-install macOS run without Shared cannot establish its plan.
+
+Verify reads qualification only through `qfy_status_read`, if defined. With
+Shared, passed qualification and zero Doctor failures complete verify. A
+missing interface, blocked/failed qualification, or Doctor failure blocks it;
+waiting qualification remains unfinished. Without Shared, Doctor alone gates
+verify. Done requires all nine preceding stages done or skipped.
+
+The startup check preserves its identity-only reads and zero actions. Its ten
+stages are blocked with `not checked: startup check reads identity only`.
+
 ### Across reboots
 
 - Every run re-derives every stage from the machine; the codes only fill in
@@ -286,4 +321,20 @@ cannot see is not checked, and says why.
 | doctor | doctor's warnings |
 | Recovery boot, a current backup | not checked: this tool cannot see them |
 
-It writes nothing.
+The eight row keys are `mac`, `disk`, `shared`, `linux`, `qualification`,
+`restore`, `doctor` and `recovery`, in that order. The same status, label and
+reason columns are Health's `detail kind=report`. The Health generation binds
+every report row as well as Doctor's rows; changing qualification or restore
+invalidates an older report page. Health invokes Doctor once and reuses its
+captured counts for the report.
+
+The verdict is fail if any row fails, otherwise warn if any row warns,
+otherwise pass. Not-checked rows do not affect the verdict. The printed
+counts include all four statuses and sum to eight. Unobservable macOS data
+on Linux, Linux data on macOS, and Recovery boot/backup are not checked with
+a reason. Without Shared, qualification is not checked. When the qualification
+interface is unavailable the reason is `not checked: qualification is not
+available`.
+
+It writes no persistent files, logs or state. A read completes successfully
+when the table is available, including when its verdict is fail.

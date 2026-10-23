@@ -775,6 +775,7 @@ which the core has already held to the lock and to itself:
 ```text
 hello	core=…	commit=…	source=…	proto=<proto>	platform=…	arch=…	user=…	ceiling=read	dry_run=0	fixture=0
 generation	id=<the SHA-256 of the records below, as for every snapshot>	total=0
+stage	name=<each of the ten stages, in rail order>	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
 fact	scope=journey	key=check	label=Check	value=frontend%20startup%20check%20%28frontend-check%29	state=info
 fact	scope=journey	key=interface	label=Interface	value=frontend%20<version>%20as%20the%20lock%20pins,%20protocol%20<proto>	state=ok
 fact	scope=journey	key=session	label=Session	value=read-only,%20journey%20scope%20only,%20not%20a%20dry%20run	state=info
@@ -788,9 +789,12 @@ result	status=done	code=ok	text=	next=
   both); that the session is read-only, `journey` only and not a dry run
   (the environment the core has just validated); that it offers no action
   (this table).
-- **What it never says.** No fixture and no fixture's text, no `stage`
-  record (no journey stage is claimed; the released frontend's rail says
-  the journey is not derived), no disk, storage, health, qualification,
+- **What its stages say.** Ten `stage` records, in rail order, are
+  `blocked`, basis `machine`, with empty `by` and `at`, and detail
+  `not checked: startup check reads identity only`. They claim no progress
+  and require no additional probe.
+- **What it never says.** No fixture and no fixture's text, no disk,
+  storage, health, qualification,
   migration or installation result, no operation state, and no `action` or
   `param` record: zero actions.
 - **What it reads.** Nothing beyond what every core reads to answer
@@ -858,7 +862,7 @@ frontend compares two ids for equality and nothing else.
 | Scope | Snapshot data set | `detail` kinds sharing its generation |
 | --- | --- | --- |
 | `journey` | the reads `status` makes | `machine`, `status` |
-| `health` | one authoritative `cmd_doctor` invocation | `doctor` |
+| `health` | one authoritative `cmd_doctor` invocation, plus the fresh report observations | `doctor`, `report` |
 | `logs` | baseline context, selected-file identity and exact last-40-line window | `log` |
 
 The frontend presents these reads: the journey with its machine and status
@@ -906,6 +910,7 @@ window has its own rule, `CP0-Q3b-overflow`.
 | `machine` | the fact's key | `label value` |
 | `status` | the row's position | `section label value note`: the lines `status` prints, in its order, grouped by the section it prints them under |
 | `doctor` | one-based position | `pass\|warn\|fail\|info`, baseline label, baseline detail |
+| `report` | `mac`, `disk`, `shared`, `linux`, `qualification`, `restore`, `doctor`, `recovery` | `pass\|warn\|fail\|not-checked`, label, reason; docs/QUALIFICATION.md → *The report* |
 | `log` | one-based position in the window | `time level source message`: the line's `now_utc`, its level, its `[PHASE]` and the rest; a line of another shape has an empty `time`, `level` and `source` and the whole line as `message` |
 
 The `log` window is what `cmd_logs` selects: the last 40 lines of the
@@ -914,7 +919,7 @@ mtime-newest. Its exact capture and `CP0-Q3b-overflow` precedence are defined
 under *Future health and logs producers*. The resume token `status` prints
 is a `code` of kind `token`, not a row.
 
-**The snapshot's content.** `hello`, `generation`, `fact`, `guide`, `code`,
+**The snapshot's content.** `hello`, `generation`, `stage`, `fact`, `guide`, `code`,
 `blocker` and `message` records, in the existing response-schema order, and
 no `action` or `param`: no execution authority is exposed. The ordinary
 `journey` snapshot must include `code kind=token` with the existing
@@ -929,7 +934,7 @@ rows are unchanged. When present, `code` follows `guide` and precedes the
 later response families. This is read data only: it makes no `resume`
 action available and changes no execute authority, session intent,
 persistence, scope or Protocol-1 schema. The separate `frontend-check`
-snapshot remains byte-frozen and token-free.
+snapshot remains stable and token-free.
 
 A blocker is one line of `mac_blockers`;
 the next step, `guide id=next step=1`, is the text the baseline prints under
@@ -937,10 +942,13 @@ the next step, `guide id=next step=1`, is the text the baseline prints under
 machine's identity); a fact read from a record has the prefix `recorded.`,
 and the frontend uses a prefix to place and style a fact and never to decide
 what it means. The exact keys are written with each producer's golden.
-The read surface emits no `stage` record: M16 derives the stages from the
-machine. The frontend draws each of the ten stations as *later*
-(docs/UX.md → *The rail*), and infers no stage completion, progress or
-provenance.
+The ordinary journey snapshot emits exactly ten `stage` records in rail
+order: `survey profile resolve plan asahi omarchy shared restore verify done`.
+Each uses the machine-derived state or a typed code, with `basis=recorded`
+and `by=macos|linux` only for code-derived progress. `detail` explains a
+`skipped` or `blocked` stage and is empty otherwise. At most one stage is
+`current`. The derivation is in docs/QUALIFICATION.md → *The journey*.
+The startup check emits the closed, blocked stage table defined above.
 
 **Plan validation** is *Future plan validation contract*. The frontend
 collects the plan's inputs, sends `validate select action=plan.save` and
