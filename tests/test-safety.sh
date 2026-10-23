@@ -34,7 +34,7 @@ code_lines() { _lines 1; }
 FORBIDDEN_RE='(dd|gpt|fdisk|sfdisk|gdisk|sgdisk|parted|bless|nvram|csrutil|shutdown|reboot|halt|poweroff|wipefs|blkdiscard|btrfs|hdiutil|asr|mkfs(\.[a-z0-9]+)?|cryptsetup|expect)'
 # Where a word is executed: line start, after ; & | ( { ! or $(, or after a
 # keyword or wrapper that runs its argument.
-CMDPOS='(^[[:space:]]*|[;&|({][[:space:]]*|![[:space:]]+|\$\([[:space:]]*|(then|do|else|if|while|until|run|sudo|exec|command|env|time|xargs|nohup)[[:space:]]+|ui_spin[[:space:]]+"[^"]*"[[:space:]]+)'
+CMDPOS='(^[[:space:]]*|[;&|({][[:space:]]*|![[:space:]]+|\$\([[:space:]]*|(then|do|else|if|while|until|run|sudo|exec|command|env|time|xargs|nohup)[[:space:]]+|run_withheld[[:space:]]+[0-9]+[[:space:]]+|ui_spin[[:space:]]+"[^"]*"[[:space:]]+)'
 
 # --- Static: forbidden commands -----------------------------------------------
 hits=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E "${CMDPOS}${FORBIDDEN_RE}([[:space:]]|\$)")
@@ -92,7 +92,10 @@ assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 # --- Static: every mutating command goes through run, and is expected -------------
 # Lists compared against a literal are sorted in byte order (LC_ALL=C), so the
 # comparison holds under any host locale.
-runs=$(code_lines | grep -oE '(^|[[:space:];&|(])run [^;|&]*' | sed -E 's/^[[:space:];&|(]*run //' | awk '{print $1}' | sort -u | tr '\n' ' ')
+run_commands() {
+  code_lines | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? [^;|&]*' | sed -E 's/^[[:space:];&|(]*run(_withheld [0-9]+)? //' | awk '{print $1}' | sort -u | tr '\n' ' '
+}
+runs=$(run_commands)
 for cmd in $runs; do
   case "$cmd" in
     sh | bash | nmtui | sudo | git | gh | ssh-keygen | npm | cp | sync | rm | \
@@ -104,7 +107,18 @@ for cmd in $runs; do
     *) fail "unexpected command through run: $cmd" ;;
   esac
 done
-quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/[[:space:]]+$//' | sort -u)
+# safety-withheld-command-scans: planted wrappers must be visible to the
+# same forbidden-command and run allowlist scans used above.
+scan_tmp=$(t_tmp)
+saved_code=$CODE
+printf '%s\n' 'run_withheld 2 dd if=input of=output' 'run_withheld 2 restore-unlisted-command value' >"$scan_tmp/planted.sh"
+CODE=$scan_tmp/planted.sh
+hits=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E "${CMDPOS}${FORBIDDEN_RE}([[:space:]]|\$)")
+assert_contains "$hits" 'run_withheld 2 dd' safety-withheld-forbidden-visible
+assert_contains "$(run_commands)" 'restore-unlisted-command' safety-withheld-unlisted-visible
+CODE=$saved_code
+rm -rf "$scan_tmp"
+quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/run_withheld [0-9]+ /run /; s/[[:space:]]+$//' | sort -u)
 assert_eq "$quoted" 'run "$@"
 run "$AG_PATH" "$@"
 run "$OMS_SELF" --resume' "indirect commands are the observed agent handoff and omarchy-mac-setup --resume"
@@ -114,30 +128,35 @@ assert_eq "$(grep -hE 'run systemctl ' $CODE | sed 's/^[[:space:]]*//; s/[[:spac
 # exact-destination semantics. Plain mv/ln must fail these restore pins.
 restore=$REPO/lib/migrate_restore.sh
 assert_eq "$(grep -oE 'run rm [^;|&>]*' "$restore" | sed 's/[[:space:]]*$//' | LC_ALL=C sort)" \
-  'run rm -- "$src"
+  'run rm -- "$check/linked" "$check/symlink"
 run rm -- "$src"
-run rm -r -- "$stage"
+run rm -- "$src"
+run rm -r -- "$check"
 run rm -r -- "$stage"' 'restore removes only completed or read-back-matched stages'
 assert_eq "$(grep -E '^[[:space:]]*(path=.* stage=|stage=)' "$restore" | sed 's/^[[:space:]]*//')" \
   'path=$RST_HOME/$dest stage=$RST_HOME/$dest.omb-new-$RST_RUN
 stage=$RST_HOME/${RST_DEST[n]}.omb-new-$RST_RUN
-stage=$path.omb-undo-$RST_RUN' 'restore stage names are the destination plus omb-new/omb-undo and the manifest SHA'
+stage=$path.omb-undo-$RST_RUN
+stage=$path.omb-undo-$RST_RUN
+stage=$path.omb-new-$RST_RUN' 'restore stage names are the destination plus omb-new/omb-undo and the manifest SHA'
 assert_eq "$(grep -E '_rst_transfer ' "$restore" | sed 's/^[[:space:]]*//')" \
   'if ! _rst_parents "$dest" 0 || ! _rst_checkpoint restore.place || ! _rst_transfer "$stage" "$path" "$new"; then
 _rst_transfer "$stage" "$path" "$old" || return 1
 if [ "$old" != absent ]; then _rst_transfer "$stage" "$path" "$old" || return 1; fi' 'restore transfer removes only those stages'
 restore_no_clobber() {
-  local moves links
+  local moves links copies
   moves=$(grep -v '^[[:space:]]*#' "$1" | grep -oE '(^|[[:space:]])mv [^;|&>]*' | sed 's/^[[:space:]]*//')
   links=$(grep -v '^[[:space:]]*#' "$1" | grep -oE '(^|[[:space:]])ln [^;|&>]*' | sed 's/^[[:space:]]*//')
-  [ -n "$moves" ] && [ -n "$links" ] || return 1
+  copies=$(grep -v '^[[:space:]]*#' "$1" | grep -oE 'run cp [^;|&>]*' | sed 's/^run //')
+  [ -n "$moves" ] && [ -n "$links" ] && [ -n "$copies" ] || return 1
   ! printf '%s\n' "$moves" | grep -qv '^mv -T --update=none-fail -- ' &&
-    ! printf '%s\n' "$links" | grep -qvE '^ln (-s )?-T -- '
+    ! printf '%s\n' "$links" | grep -qvE '^ln (-s )?-T -- ' &&
+    ! printf '%s\n' "$copies" | grep -qv '^cp -a -T -- '
 }
 restore_no_clobber "$restore"
 assert_eq "$?" 0 restore-all-moves-and-links-no-clobber
 pin_tmp=$(t_tmp)
-for primitive in mv ln; do
+for primitive in mv ln cp; do
   cp "$restore" "$pin_tmp/restore.sh"
   printf 'run %s "$source" "$destination"\n' "$primitive" >>"$pin_tmp/restore.sh"
   restore_no_clobber "$pin_tmp/restore.sh"
