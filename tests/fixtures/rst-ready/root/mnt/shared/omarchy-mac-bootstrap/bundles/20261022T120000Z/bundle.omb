@@ -1,0 +1,5 @@
+omb-bundle 1
+bundle	at=2026-10-22T12:00:00Z	host=0123456789abcdef	model=MacBook%20Pro%20M1%20Pro	user=alex	home=/Users/alex	items=1	files=1	bytes=18
+item	id=config:test	class=config	whole=1
+file	item=config:test	dest=.config/test.conf	mode=0644	sha256=929dfa501c48ccf04266856347c60080e01b653931d522a55b54b451f407f926	size=18	whole=1
+seal	sha256=9b1c24fabf7aad903560c4883281fa1bc3dd494a55521086c81008060f453e49
