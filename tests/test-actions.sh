@@ -817,6 +817,21 @@ a_use "$T/dev-none" "$FIX/linux-omarchy-installed"
 A_WAIT="Choose what to set up" a_exec_tty ' \n\004\004\004' dev ""
 assert_eq "$(c_result)" "failed no-effect" "actions-dev-noeffect: nothing chosen, nothing changed"
 assert_empty_file "$A_DIR/record" "actions-dev-noeffect: nothing ran"
+# actions-dev-reconcile-older: after a new boot, an older run's success never
+# completes an operation that began after it; one recorded after it does.
+for case in "older|2026-01-01T00:00:00Z" "later|2026-12-01T00:00:00Z"; do
+  a_use "$T/dev-boot-${case%%|*}" "$FIX/linux-omarchy-installed"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
+  printf 'dev_last_run_at=%s\ndev_modules=core\n' "${case#*|}" >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
+  a_plant omarchy dev running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000BB"
+  a_run execute "exec	action=dev	basis=$ZERO	confirm="
+  if [ "${case%%|*}" = older ]; then
+    assert_eq "$(c_result)" "refused unsupervised" "actions-dev-reconcile-older: a success older than the operation does not complete it"
+    [ -e "$A_DIR/state/ops/omarchy.omb" ] && ok || fail "actions-dev-reconcile-older: the record stays"
+  else
+    assert_contains "$C_OUT" "reconciled:%20completed" "actions-dev-reconcile-older: a success recorded after the operation began completes it"
+  fi
+done
 a_unavailable dev "" "$FIX/linux-alarm-fresh"
 a_unavailable dev "" "$FIX/linux-setup-in-progress"
 
