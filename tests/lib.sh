@@ -28,6 +28,8 @@ t_variant() {
   local d
   d=$(t_tmp)
   cp -R "$FIX/$1/." "$d/"
+  # A fixture's .git is kept as dot-git: git holds nothing under a .git.
+  find "$d" -depth -type d -name dot-git | while IFS= read -r g; do mv "$g" "${g%/*}/.git"; done
   printf '%s' "$d"
 }
 

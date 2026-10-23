@@ -10,6 +10,9 @@
 #                    encrypted key), the AI tools, chosen folders and projects
 #   mig-mac-secrets  the same home with credentials planted where people
 #                    leave them
+#
+# git holds nothing under a folder named .git, so a repository's .git is
+# written as dot-git; t_variant (tests/lib.sh) names it .git in its copy.
 
 # _mig_u32 N — four bytes, big-endian.
 _mig_u32() {
@@ -80,10 +83,14 @@ _mig_home() {
     ln -sfn "../Cellar/$f" "$b/opt/${f%/*}"
   done
   put "$h/Library/LaunchAgents/homebrew.mxcl.postgresql@16.plist" '<?xml version="1.0"?><plist version="1.0"><dict><key>Label</key><string>homebrew.mxcl.postgresql@16</string></dict></plist>'
-  mkdir -p "$b/Caskroom/ghostty/1.1.3" "$b/Caskroom/gone-app/2.0"
+  # A cask whose app moved to /Applications leaves its version folder empty;
+  # git keeps no empty folder, so each holds a placeholder the adapter never
+  # lists (it lists folders only).
+  put "$b/Caskroom/ghostty/1.1.3/.keep" ""
+  put "$b/Caskroom/gone-app/2.0/.keep" ""
   put "$b/Caskroom/ghostty/.metadata/INSTALL_RECEIPT.json" '{"installed_on_request":true,"uninstall_artifacts":[{"app":["Ghostty.app"]},{"zap":[]}]}'
   put "$b/Caskroom/gone-app/.metadata/INSTALL_RECEIPT.json" '{"installed_on_request":true,"uninstall_artifacts":[{"app":["Gone.app"]}]}'
-  put "$b/Library/Taps/someone/homebrew-tools/.git/config" '[remote "origin"]
+  put "$b/Library/Taps/someone/homebrew-tools/dot-git/config" '[remote "origin"]
 	url = https://github.com/someone/homebrew-tools
 	fetch = +refs/heads/*:refs/remotes/origin/*'
   # Applications: a cask's, a plain one, Apple's, the App Store's, unreadable.
@@ -92,7 +99,7 @@ _mig_home() {
   _mig_app "$r/Applications" Safari.app com.apple.Safari 18.0
   _mig_app "$r/Applications" Xcode.app com.apple.dt.Xcode 16.0
   put "$r/Applications/Xcode.app/Contents/_MASReceipt/receipt" 'fixture receipt'
-  mkdir -p "$r/Applications/Broken.app/Contents"
+  put "$r/Applications/Broken.app/Contents/PkgInfo" "APPL????"
   # Language tools and runtimes.
   put "$h/.nvm/versions/node/v20.11.0/lib/node_modules/typescript/package.json" '{"name":"typescript","version":"5.6.3"}'
   put "$h/.nvm/versions/node/v20.11.0/lib/node_modules/@scope/tool/package.json" '{"name":"@scope/tool","version":"1.0.0"}'
@@ -267,9 +274,9 @@ Keep notes.'
   ln -sfn conf.ini "$h/dotfiles/stowed/rel-link"
   ln -sfn ../../.zshrc "$h/dotfiles/stowed/out-link"
   ln -sfn ../dotfiles/stowed "$h/.config/stowed"
-  put "$h/code/app/.git/config" '[remote "origin"]
+  put "$h/code/app/dot-git/config" '[remote "origin"]
 	url = https://github.com/example/app.git'
-  put "$h/code/app/.git/HEAD" 'ref: refs/heads/main'
+  put "$h/code/app/dot-git/HEAD" 'ref: refs/heads/main'
   put "$h/code/app/README.md" 'an app (fixture)'
   put "$h/Documents/notes.txt" 'a protected note (fixture)'
   put "$h/.Trash/old.txt" 'trash (fixture)'

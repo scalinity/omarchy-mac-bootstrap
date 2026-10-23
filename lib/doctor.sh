@@ -265,7 +265,7 @@ lx_doctor() {
       ;;
     in-progress)
       case "$LX_UNIT_STATE" in
-        active | activating) doc info "Omarchy $OMARCHY_EXPECTED_MAJOR" "guided setup running now on tty1" ;;
+        active | activating) doc info "Omarchy $OMARCHY_EXPECTED_MAJOR" "guided setup running now on $OMARCHY_SETUP_TTY" ;;
         *) doc warn "Omarchy $OMARCHY_EXPECTED_MAJOR" "guided setup paused — ./omarchy-bootstrap resume" ;;
       esac
       ;;
@@ -347,7 +347,7 @@ lx_next_action() {
       ;;
     in-progress)
       case "$LX_UNIT_STATE" in
-        active | activating) echo "omarchy-mac-setup is running on tty1 (Ctrl+Alt+F1). Let it finish." ;;
+        active | activating) echo "omarchy-mac-setup is running on $OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty}). Let it finish." ;;
         *) echo "omarchy-mac-setup is paused; it resumes at the next boot, or run ./omarchy-bootstrap resume as root." ;;
       esac
       ;;
