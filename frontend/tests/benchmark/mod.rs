@@ -478,7 +478,8 @@ fn phase_sources() -> Fallible<Vec<(String, String)>> {
                 (
                     ". \"$OMB_HOME/lib/read.sh\"",
                     ". \"$OMB_BENCH_COPY/read.sh\"",
-                    9,
+                    // Restore and debug add two scope-owned read routes.
+                    11,
                 ),
                 (
                     ". \"$OMB_HOME/lib/health.sh\"",
