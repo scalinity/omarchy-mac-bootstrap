@@ -1058,7 +1058,9 @@ _scan_ad_terminal() {
   f=$(_scan_h .config/starship.toml)
   if [ -f "$f" ]; then
     if toml_read "$f" "$SCAN_TMP/starship"; then
-      _scan_whole .config/starship.toml starship:config parsed terminal "Starship settings"
+      _scan_size "$f"
+      _scan_item starship:config parsed terminal "Starship settings" "" "" yes observed config .config/starship.toml "$SCAN_SIZE" \
+        "the settings Starship documents carried by name; custom modules run commands: not carried"
     else
       _scan_item starship:config refused terminal "Starship settings" "" "" yes unknown config .config/starship.toml "" \
         "refused by the TOML reader at line $TOML_AT: $TOML_WHY; carries nothing"
@@ -2132,13 +2134,13 @@ _scan_x_opencode() {
   _scan_x_gen .config/opencode/opencode.json
 }
 
-# _SCAN_CODEX_AWK — Codex's configuration, carried as a new config.toml in
-# Codex's own shape from the reader's records (docs/AI-TOOLS.md → *Codex's
-# configuration*): allowlisted keys only; env values become env_vars names;
-# header values, bearer tokens and credential-shaped arguments dropped; the
-# rest listed. Writes the file to stdout and one reason per line to `skips`.
+# _SCAN_TOMLW_FUNCS — what a conversion from the reader's records to a new
+# TOML file shares: dec (a record value or path component), q (a basic
+# string), k (a key, bare or quoted), lit (a value as written), skip (a
+# reason, to the file in -v skips), add (a line into a section, sections
+# kept in the order first seen).
 # shellcheck disable=SC2016 # awk source
-_SCAN_CODEX_AWK='
+_SCAN_TOMLW_FUNCS='
 function dec(s,   o, i) {
   o = ""
   while ((i = index(s, "%")) > 0) { o = o substr(s, 1, i - 1) sprintf("%c", HV[substr(s, i + 1, 2)]); s = substr(s, i + 3) }
@@ -2161,6 +2163,23 @@ function q(s,   o, i, c, n, a) {
 function k(s) { return s ~ /^[A-Za-z0-9_-]+$/ ? s : q(s) }
 function skip(r) { print r > skips }
 function lit(t, v) { return t == "s" ? q(v) : v }
+function add(sec, line) {
+  if (!(sec in SEEN)) { SEEN[sec] = 1; ORDER[++NS] = sec }
+  if (line != "") BODY[sec] = BODY[sec] line "\n"
+}
+BEGIN {
+  for (i = 1; i < 256; i++) { ORD[sprintf("%c", i)] = i; HV[sprintf("%02X", i)] = i }
+  FS = "\t"
+}'
+
+# _SCAN_CODEX_AWK — Codex's configuration, carried as a new config.toml in
+# Codex's own shape from the reader's records (docs/AI-TOOLS.md → *Codex's
+# configuration*): allowlisted keys only; env values become env_vars names;
+# header values, bearer tokens and credential-shaped arguments dropped; the
+# rest listed. Writes the file to stdout and one reason per line to `skips`.
+# Runs after _SCAN_URL_FUNCS and _SCAN_TOMLW_FUNCS.
+# shellcheck disable=SC2016 # awk source
+_SCAN_CODEX_AWK='
 function homep(v) {
   if (index(v, home "/") == 1) return target "/" substr(v, length(home) + 2)
   if (v == home) return target
@@ -2171,14 +2190,6 @@ function credname(n,   l) { l = tolower(n); return l ~ /(token|key|secret|sig|au
 function credflag(a) { return tolower(a) ~ /^--(token|api-key|apikey|password|secret|key|auth|access-token)$/ }
 function shaped(v) {
   return v ~ /(^|[^A-Za-z0-9])(sk-[A-Za-z0-9_-]|gh[pousr]_[A-Za-z0-9]|github_pat_|xox[abposr]-|AKIA[0-9A-Z]|AIza[0-9A-Za-z_-]|eyJ[A-Za-z0-9_-]+[.]eyJ)/
-}
-function add(sec, line) {
-  if (!(sec in SEEN)) { SEEN[sec] = 1; ORDER[++NS] = sec }
-  if (line != "") BODY[sec] = BODY[sec] line "\n"
-}
-BEGIN {
-  for (i = 1; i < 256; i++) { ORD[sprintf("%c", i)] = i; HV[sprintf("%02X", i)] = i }
-  FS = "\t"
 }
 {
   t = $1; n = split($2, P, "."); for (i = 1; i <= n; i++) P[i] = dec(P[i]); v = dec($3)
@@ -2282,7 +2293,7 @@ _scan_x_codex() {
     return 0
   fi
   : >"$SCAN_XO/skips"
-  LC_ALL=C awk -v home="$SCAN_HOME" -v target="$SCAN_TARGET_HOME" -v skips="$SCAN_XO/skips" "$_SCAN_URL_FUNCS$_SCAN_CODEX_AWK" "$SCAN_XO/codex.rec" >"$SCAN_XO/gen"
+  LC_ALL=C awk -v home="$SCAN_HOME" -v target="$SCAN_TARGET_HOME" -v skips="$SCAN_XO/skips" "$_SCAN_URL_FUNCS$_SCAN_TOMLW_FUNCS$_SCAN_CODEX_AWK" "$SCAN_XO/codex.rec" >"$SCAN_XO/gen"
   while IFS= read -r f; do
     _scan_text "$f"
     _scan_x skip reason "$SCAN_TX"
@@ -2296,6 +2307,79 @@ _scan_x_codex() {
   fi
   rm -f "$SCAN_XO/check"
   _scan_x_gen .codex/config.toml
+}
+
+# _SCAN_STARSHIP_AWK — Starship's configuration, carried as a new
+# starship.toml from the reader's records with a field allowlist: the
+# prompt's top-level settings, each module's display fields, palettes and
+# directory substitutions. A custom module (it runs a command) and every
+# field no rule names, an api_key among them, are left behind and listed.
+# Runs after _SCAN_TOMLW_FUNCS.
+# shellcheck disable=SC2016 # awk source
+_SCAN_STARSHIP_AWK='
+BEGIN {
+  n = split("format right_format continuation_prompt scan_timeout command_timeout add_newline palette follow_symlinks", a, " ")
+  for (i = 1; i <= n; i++) TOP[a[i]] = 1
+  n = split("format style symbol disabled truncation_length truncation_symbol truncate_to_repo success_symbol error_symbol " \
+    "vimcmd_symbol vimcmd_visual_symbol vimcmd_replace_symbol vimcmd_replace_one_symbol home_symbol read_only read_only_style " \
+    "fish_style_pwd_dir_length use_logical_path use_os_path_sep repo_root_style before_repo_root_style repo_root_format " \
+    "show_always min_time show_milliseconds show_notifications min_time_to_notify threshold ignore_branches only_attached " \
+    "always_show_remote heuristic version_format conflicted ahead behind diverged up_to_date untracked stashed modified staged " \
+    "renamed deleted typechanged ignore_submodules commit_hash_length tag_symbol only_detached tag_disabled time_format " \
+    "utc_time_offset time_range use_12hr ssh_only ssh_symbol trim_at style_user style_root", a, " ")
+  for (i = 1; i <= n; i++) FIELD[a[i]] = 1
+}
+{
+  t = $1; n = split($2, P, "."); for (i = 1; i <= n; i++) P[i] = dec(P[i]); v = dec($3)
+  if (t == "t") next
+  if (n == 1) {
+    if ((P[1] in TOP) && t != "a") add("", k(P[1]) " = " lit(t, v))
+    else if (t != "a") skip("starship " P[1] ": left behind")
+    next
+  }
+  if (P[1] == "custom") { if (!CUSTOM++) skip("starship custom modules run commands: not carried"); next }
+  if (P[1] == "palettes" && n == 3 && t == "s") { add("[palettes." k(P[2]) "]", k(P[3]) " = " q(v)); next }
+  if (P[1] == "directory" && P[2] == "substitutions" && n == 3 && t == "s") { add("[directory.substitutions]", q(P[3]) " = " q(v)); next }
+  if (n == 2 && (P[2] in FIELD) && t != "a") { add("[" k(P[1]) "]", k(P[2]) " = " lit(t, v)); next }
+  if (n == 3 && P[2] ~ /^detect_(extensions|files|folders)$/ && P[3] ~ /^[0-9]+$/ && t == "s") {
+    key = P[1] SUBSEP P[2]
+    AR[key] = (AR[key] == "" ? "" : AR[key] ", ") q(v)
+    next
+  }
+  if (n == 2 && t == "a" && P[2] ~ /^detect_(extensions|files|folders)$/) { add("[" k(P[1]) "]", P[2] " = [" AR[P[1] SUBSEP P[2]] "]"); next }
+  if (t != "a") skip("starship " P[1] "." P[2] ": left behind")
+}
+END {
+  printf "# Carried from macOS by omarchy-mac-bootstrap: the settings Starship documents, by name.\n"
+  printf "%s", BODY[""]
+  for (i = 1; i <= NS; i++) if (ORDER[i] != "") printf "\n%s\n%s", ORDER[i], BODY[ORDER[i]]
+}'
+
+# _scan_x_starship — Starship's configuration through the strict reader and
+# the field allowlist; refused whole, it carries nothing.
+_scan_x_starship() {
+  local f r
+  f=$(_scan_h .config/starship.toml)
+  [ -f "$f" ] || return 1
+  if ! toml_read "$f" "$SCAN_XO/starship.rec"; then
+    _scan_x skip reason ".config/starship.toml: refused by the TOML reader at line $TOML_AT ($TOML_WHY)"
+    rm -f "$SCAN_XO/starship.rec"
+    return 0
+  fi
+  : >"$SCAN_XO/skips"
+  LC_ALL=C awk -v skips="$SCAN_XO/skips" "$_SCAN_TOMLW_FUNCS$_SCAN_STARSHIP_AWK" "$SCAN_XO/starship.rec" >"$SCAN_XO/gen"
+  while IFS= read -r r; do
+    _scan_text "$r"
+    _scan_x skip reason "$SCAN_TX"
+  done <"$SCAN_XO/skips"
+  rm -f "$SCAN_XO/skips" "$SCAN_XO/starship.rec"
+  if ! toml_read "$SCAN_XO/gen" "$SCAN_XO/check"; then
+    rm -f "$SCAN_XO/gen" "$SCAN_XO/check"
+    _scan_x skip reason ".config/starship.toml: the rebuilt file did not read back; carries nothing"
+    return 0
+  fi
+  rm -f "$SCAN_XO/check"
+  _scan_x_gen .config/starship.toml
 }
 
 # scan_extract ITEM_ID OUTDIR — what the item carries, in its Linux form:
@@ -2318,16 +2402,7 @@ scan_extract() {
   case "$id" in
     shell:bash) _scan_x_shellbash || rc=1 ;;
     ghostty:config) _scan_x_ghostty || rc=1 ;;
-    starship:config)
-      if [ ! -f "$(_scan_h .config/starship.toml)" ]; then
-        rc=1
-      elif toml_read "$(_scan_h .config/starship.toml)" "$SCAN_XO/check"; then
-        _scan_x_file "$(_scan_h .config/starship.toml)" .config/starship.toml config
-      else
-        _scan_x skip reason ".config/starship.toml: refused by the TOML reader at line $TOML_AT ($TOML_WHY)"
-      fi
-      rm -f "$SCAN_XO/check"
-      ;;
+    starship:config) _scan_x_starship || rc=1 ;;
     ssh:config) _scan_x_ssh || rc=1 ;;
     git:config) _scan_x_git "$(_scan_h .gitconfig)" || rc=1 ;;
     git:config-xdg) _scan_x_git "$(_scan_h .config/git/config)" || rc=1 ;;

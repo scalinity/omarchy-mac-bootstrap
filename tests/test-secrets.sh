@@ -116,6 +116,42 @@ assert_eq "$(grep -rl harborpass "$T/x-codex")" "" "secret-args: no credential a
 src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-codex/carry")
 assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "8080"]' "secret-args: Codex's other arguments stay"
 assert_contains "$(cat "$T/x-codex/carry")" "codex%20mcp%20svc:%20needs-secret" "secret-args: and the server needs its secrets set again"
+# secret-starship-fields (S9): Starship's file is rebuilt by its documented
+# field names; a field no rule names, and a custom module, stay behind.
+cat >"$CX/root/Users/alex/.config/starship.toml" <<'EOF'
+add_newline = false
+api_key = "harborpassSTAR1"
+
+[character]
+success_symbol = "[>](bold green)"
+api_key = "harborpassSTAR2"
+
+[nodejs]
+detect_extensions = ["js", "mjs"]
+
+[custom.vpn]
+command = "echo harborpassSTAR3"
+when = "true"
+
+[palettes.mine]
+blue = "#1e66f5"
+EOF
+(
+  OMB_FIXTURE=$CX
+  scan_extract starship:config "$T/x-star" >/dev/null 2>&1
+  omb_cleanup
+)
+assert_eq "$(grep -rl harborpass "$T/x-star")" "" "secret-starship-fields: no unknown field or custom module travels"
+src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-star/carry")
+star=$(cat "$T/x-star/$src")
+for want in 'add_newline = false' '[character]
+success_symbol = "[>](bold green)"' '[nodejs]
+detect_extensions = ["js", "mjs"]' '[palettes.mine]
+blue = "#1e66f5"'; do
+  assert_contains "$star" "$want" "secret-starship-fields: a documented setting stays ($(printf '%s' "$want" | head -n 1))"
+done
+assert_contains "$(cat "$T/x-star/carry")" "starship%20character.api_key:%20left%20behind" "secret-starship-fields: what is left behind is listed"
+assert_contains "$(cat "$T/x-star/carry")" "whole=0" "secret-starship-fields: as a rebuilt file, not one carried whole"
 rm -rf "$CX"
 
 # --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
