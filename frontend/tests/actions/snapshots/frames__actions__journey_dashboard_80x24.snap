@@ -5,22 +5,22 @@ expression: "frame(m, w, h)"
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
-│  Welcome     ││                                                             ↑│
-│▍ Journey     ││ ▍Where it stands                                             │
-│  Machine     ││   After the shutdown, hold the power button and choose       │
-│  Status      ││   Linux.                                                     │
-│  Health      ││                                                              │
-│  Logs        ││ ▍Facts                                                       │
-│  Plan        ││   Asahi install  none                                        │
-│  Op          ││                                                              │
-│  Scan        ││ ▍Codes                                                       │
-│  Select      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
-│  Items       ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Review      ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
-│  Install     ││                  d                                           │
-│  Progress    ││                                                              │
-│  Restore     ││ ▍What you can do now                                         │
-│  Qualify     ││ ❯ Save the plan                plan                         ↓│
+│  Welcome     ││ ▍Where it stands                                            ↑│
+│▍ Journey     ││   After the shutdown, hold the power button and choose       │
+│  Machine     ││   Linux.                                                     │
+│  Status      ││                                                              │
+│  Health      ││ ▍Facts                                                       │
+│  Logs        ││   Asahi install  none                                        │
+│  Plan        ││                                                              │
+│  Op          ││ ▍Codes                                                       │
+│  Scan        ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
+│  Select      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
+│  Items       ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
+│  Review      ││                  d                                           │
+│  Install     ││                                                              │
+│  Progress    ││ ▍What you can do now                                         │
+│  Restore     ││ ❯ Save the plan                                              │
+│  Qualify     ││   The text flow's own plan.save.                            ↓│
 │  Completion  │└──────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────┐
 │              ││ Model  MacBookPro18,2                                        │

@@ -409,6 +409,10 @@ pub struct Field {
 /// last answer to them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Form {
+    pub storage: bool,
+    pub custom: [bool; 2],
+    pub units: [usize; 2],
+    pub unit_focus: bool,
     pub action: String,
     pub fields: Vec<Field>,
     pub field: usize,
@@ -422,6 +426,10 @@ pub struct Form {
 impl Default for Form {
     fn default() -> Form {
         Form {
+            storage: false,
+            custom: [false; 2],
+            units: [0; 2],
+            unit_focus: false,
             action: String::new(),
             fields: Vec::new(),
             field: 0,
@@ -533,6 +541,7 @@ pub struct Pending {
 
 #[derive(Debug)]
 pub struct Model {
+    pub viewport: std::cell::RefCell<crate::viewport::Viewport>,
     pub screen: Screen,
     /// Where help or the gate returns to.
     pub back: Screen,
@@ -665,6 +674,7 @@ impl Default for Model {
             back: Screen::Dashboard,
             hello: None,
             snap: None,
+            viewport: Default::default(),
             focus: 0,
             gate_input: String::new(),
             gate_note: None,
@@ -740,6 +750,11 @@ impl Model {
     /// The start: the handshake.
     pub fn start(&mut self) -> Vec<Cmd> {
         self.send(Req::Hello, false, "connecting")
+    }
+
+    pub fn focus_visible(&self) -> bool {
+        let v = self.viewport.borrow();
+        v.screen != Some(self.screen) || v.focus.is_some() || v.rows.is_empty()
     }
 
     pub fn focused(&self) -> Option<&Action> {
@@ -1653,7 +1668,7 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
 
 /// The core's answer to a validation: the planner's, another form's, or the
 /// check of the migration choices — which, reviewed, is asked to be saved.
-fn validated(m: &mut Model, c: Checked) -> Vec<Cmd> {
+fn validated(m: &mut Model, mut c: Checked) -> Vec<Cmd> {
     if c.action == "restore.apply" {
         if c.status == "refused" && c.code == "changed" {
             return restore_changed(m);
@@ -1705,6 +1720,19 @@ fn validated(m: &mut Model, c: Checked) -> Vec<Cmd> {
     } else {
         &mut m.form
     };
+    // Adopt only the defaults of the inputs this response actually checked.
+    // A response arriving while a field changes cannot overwrite the typing.
+    if f.storage && c.args == f.args() {
+        for field in &mut f.fields {
+            if field.value.is_empty()
+                && !PLAN_SIZES.contains(&field.name.as_str())
+                && let Some((_, value)) = c.normals.iter().find(|(n, _)| *n == field.name)
+            {
+                field.value = value.clone();
+            }
+        }
+        c.args = f.args();
+    }
     f.checked = Some(c);
     f.fault = None;
     settle(m, Vec::new())
@@ -2491,6 +2519,7 @@ fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
     if m.screen != s {
         m.page_scroll = 0;
     }
+    m.status = None;
     m.screen = s;
     m.region = Region::Work;
     m.side = false;
@@ -2499,6 +2528,17 @@ fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
     }
     if s == Screen::Plan {
         plan_fields(m);
+        if !m.check
+            && m.offered(Scope::Journey, "plan.save").is_some()
+            && !m.plan.storage
+            && PLAN_SIZES
+                .iter()
+                .all(|n| m.plan.fields.iter().any(|f| f.name == *n))
+        {
+            crate::screens::plan::defaults(m);
+            let args = m.plan.args();
+            return validate(m, "plan.save".into(), args);
+        }
     }
     let mut cmds = Vec::new();
     if s == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
@@ -2525,10 +2565,57 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
         }
         return Vec::new();
     }
-    if typing(m) {
-        if let Some(c) = field_key(m, &k) {
-            return c;
+    let paged = m
+        .screen
+        .kind()
+        .and_then(|k| m.detail(k))
+        .is_some_and(|d| d.total > d.rows.len() as u64);
+    let moving = m.region == Region::Work
+        && editing(m).is_none()
+        && !value_open(m, m.screen)
+        && !(typing(m) && matches!(k.code, KeyCode::Char(_)))
+        && !paged
+        && m.screen != Screen::Conflicts
+        && m.viewport.borrow().screen == Some(m.screen);
+    let moved = if moving {
+        m.viewport.borrow_mut().key(k.code)
+    } else {
+        None
+    };
+    if let Some(row) = moved {
+        let top = m.viewport.borrow().top;
+        match m.screen {
+            Screen::Dashboard => m.dash_scroll = top,
+            Screen::Plan | Screen::Form => m.plan_scroll = top,
+            Screen::Welcome => m.welcome_scroll = top,
+            _ => m.page_scroll = top,
         }
+        if let Some(row) = row {
+            match m.screen {
+                Screen::Dashboard => {
+                    m.focus = row;
+                    m.station = None;
+                }
+                Screen::Plan => m.plan.field = row,
+                Screen::Form => m.form.field = row,
+                Screen::Selection => m.sel = row,
+                Screen::Review => m.rev = row,
+                Screen::Inventory if m.inv.open => m.inv.choice = row,
+                s => {
+                    if let Some(kind) = s.kind()
+                        && let Some(d) = m.details[kind.index()].as_mut()
+                    {
+                        d.cursor = row;
+                    }
+                }
+            }
+        }
+        return Vec::new();
+    }
+    if typing(m)
+        && let Some(c) = field_key(m, &k)
+    {
+        return c;
     }
     match k.code {
         KeyCode::Char('D') => open_brief(m),
@@ -2588,6 +2675,7 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         KeyCode::Esc => {
+            m.status = None;
             if m.side {
                 m.side = false;
             } else if m.region == Region::Nav {
@@ -2773,6 +2861,7 @@ fn validate(m: &mut Model, action: String, args: Args) -> Vec<Cmd> {
 /// a form, Tab between its fields and Space through a choice. None: not a
 /// field key (the frame's arrows and Tab keep their meaning).
 fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
+    m.viewport.borrow_mut().reveal();
     if let Some(kind) = editing(m) {
         let d = m.detail_mut(kind).expect("editing");
         match k.code {
@@ -2806,15 +2895,32 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
         scroll_key(&mut m.plan_scroll, n, k);
         return Some(Vec::new());
     }
-    m.plan_scroll = 0;
     let p = if plan { &mut m.plan } else { &mut m.form };
     let last = p.fields.len().saturating_sub(1);
     let at = p.field.min(last);
+    if plan
+        && p.storage
+        && let Some(cmds) = storage_key(m, k)
+    {
+        return Some(cmds);
+    }
+    let p = if plan { &mut m.plan } else { &mut m.form };
     match k.code {
-        KeyCode::Tab | KeyCode::Down => p.field = (at + 1).min(last),
-        KeyCode::BackTab | KeyCode::Up => p.field = at.saturating_sub(1),
+        KeyCode::Tab | KeyCode::Down => {
+            let order = crate::screens::plan::field_order(p);
+            let pos = order.iter().position(|i| *i == at).unwrap_or(0);
+            p.field = order.get(pos + 1).copied().unwrap_or(at);
+            p.unit_focus = false;
+        }
+        KeyCode::BackTab | KeyCode::Up => {
+            let order = crate::screens::plan::field_order(p);
+            let pos = order.iter().position(|i| *i == at).unwrap_or(0);
+            p.field = order.get(pos.saturating_sub(1)).copied().unwrap_or(at);
+            p.unit_focus = false;
+        }
         // Back, as everywhere; the fields stay as typed.
         KeyCode::Esc => {
+            m.status = None;
             if plan {
                 m.screen = Screen::Dashboard;
                 m.nav = 1;
@@ -2828,6 +2934,12 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
             let mut full = false;
             match k.code {
                 // A choice: Space steps through the core's choices.
+                KeyCode::Char(' ')
+                    if f.ty == "bool"
+                        || (p.storage && matches!(f.name.as_str(), "enc" | "ssh" | "dev")) =>
+                {
+                    f.value = if f.value == "1" { "0" } else { "1" }.into();
+                }
                 KeyCode::Char(' ') if !f.choices.is_empty() => {
                     let i = f.choices.iter().position(|c| *c == f.value);
                     f.value = match i {
@@ -2836,7 +2948,12 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
                         None => f.choices[0].clone(),
                     };
                 }
-                _ if !f.choices.is_empty() => return Some(Vec::new()),
+                _ if !f.choices.is_empty()
+                    || f.ty == "bool"
+                    || (p.storage && matches!(f.name.as_str(), "enc" | "ssh" | "dev")) =>
+                {
+                    return Some(Vec::new());
+                }
                 KeyCode::Char('u') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     f.value.clear()
                 }
@@ -2863,6 +2980,105 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
                 ));
             }
         }
+    }
+    Some(Vec::new())
+}
+
+/// Radio selection sends one check. Number typing stays neutral until Enter.
+fn storage_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
+    let at = m.plan.field;
+    let name = m.plan.fields.get(at)?.name.clone();
+    let si = PLAN_SIZES.iter().position(|n| *n == name)?;
+    let unit = crate::screens::plan::UNITS[m.plan.units[si]];
+    let value = m.plan.fields[at].value.clone();
+    let number = value.strip_suffix(unit).unwrap_or(&value).to_string();
+    let custom = m.plan.custom[si];
+    match k.code {
+        KeyCode::Tab if custom && !m.plan.unit_focus => m.plan.unit_focus = true,
+        KeyCode::BackTab if custom && m.plan.unit_focus => m.plan.unit_focus = false,
+        KeyCode::Tab | KeyCode::BackTab | KeyCode::Down | KeyCode::Up => {
+            m.plan.unit_focus = false;
+            return None;
+        }
+        KeyCode::Left | KeyCode::Right => {
+            if m.pending.is_some() {
+                return Some(m.busy());
+            }
+            let right = k.code == KeyCode::Right;
+            if custom && m.plan.unit_focus {
+                m.plan.units[si] = if right {
+                    (m.plan.units[si] + 1) % 3
+                } else {
+                    (m.plan.units[si] + 2) % 3
+                };
+                let unit = crate::screens::plan::UNITS[m.plan.units[si]];
+                m.plan.fields[at].value = if number.is_empty() {
+                    String::new()
+                } else {
+                    format!("{number}{unit}")
+                };
+            } else {
+                let presets = crate::screens::plan::presets(si);
+                let current = if custom {
+                    presets.len() - 1
+                } else {
+                    presets
+                        .iter()
+                        .position(|(_, v)| *v == value)
+                        .unwrap_or(presets.len() - 1)
+                };
+                let mut next = if right {
+                    (current + 1).min(presets.len() - 1)
+                } else {
+                    current.saturating_sub(1)
+                };
+                if current == next {
+                    return Some(Vec::new());
+                }
+                while crate::screens::plan::unavailable(m, si, next).is_some() {
+                    let after = if right {
+                        (next + 1).min(presets.len() - 1)
+                    } else {
+                        next.saturating_sub(1)
+                    };
+                    if after == next {
+                        return Some(Vec::new());
+                    }
+                    next = after;
+                }
+                m.plan.custom[si] = next == presets.len() - 1;
+                m.plan.unit_focus = false;
+                m.plan.fields[at].value = if m.plan.custom[si] {
+                    String::new()
+                } else {
+                    presets[next].1.into()
+                };
+            }
+            let args = m.plan.args();
+            return Some(validate(m, "plan.save".into(), args));
+        }
+        KeyCode::Char('u') if custom && k.modifiers.contains(KeyModifiers::CONTROL) => {
+            m.plan.fields[at].value.clear()
+        }
+        KeyCode::Backspace if custom && !m.plan.unit_focus => {
+            let mut number = number;
+            number.pop();
+            m.plan.fields[at].value = if number.is_empty() {
+                String::new()
+            } else {
+                format!("{number}{unit}")
+            };
+        }
+        KeyCode::Char(c)
+            if custom && !m.plan.unit_focus && !k.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            let value = format!("{number}{c}{unit}");
+            if crate::record::encode(value.as_bytes()).len() <= VALUE_MAX {
+                m.plan.fields[at].value = value;
+            }
+        }
+        KeyCode::Char(_) | KeyCode::Backspace => {}
+        _ => return None,
     }
     Some(Vec::new())
 }
@@ -2917,6 +3133,11 @@ fn form_enter(m: &mut Model, plan: bool) -> Vec<Cmd> {
 /// either end of the loaded one, a filter, and the levels of the log.
 fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
     let limit = detail_limit(kind, m.limit);
+    let page_step = if m.viewport.borrow().screen == Some(m.screen) {
+        m.viewport.borrow().height.saturating_sub(1).max(1)
+    } else {
+        PAGE_STEP
+    };
     let Some(d) = m.detail_mut(kind) else {
         return Vec::new();
     };
@@ -2962,14 +3183,14 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
         }
         KeyCode::PageDown => {
             if d.cursor < last {
-                d.cursor = (d.cursor + PAGE_STEP).min(last);
+                d.cursor = (d.cursor + page_step).min(last);
             } else {
                 want = fetch(d, d.next(limit)).map(|p| (p, Land::First));
             }
         }
         KeyCode::PageUp => {
             if d.cursor > 0 {
-                d.cursor = d.cursor.saturating_sub(PAGE_STEP);
+                d.cursor = d.cursor.saturating_sub(page_step);
             } else {
                 want = fetch(d, d.prev(limit)).map(|p| (p, Land::Last));
             }

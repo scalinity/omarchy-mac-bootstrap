@@ -9,8 +9,8 @@ expression: "frame(m, w, h)"
 │  Journey     ││   Apps          0       0 B  nothing comes                   │
 │  Machine     ││                                                              │
 │  Status      ││ ▍What you can do now                                         │
-│  Health      ││ ❯ Save these choices                     act                 │
-│  Logs        ││   Carry the chosen folders               act · type opaque   │
+│  Health      ││ ❯ Save these choices                                         │
+│  Logs        ││   Carry the chosen folders                                   │
 │  Plan        ││                                                              │
 │  Op          ││                                                              │
 │  Scan        ││                                                              │

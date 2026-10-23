@@ -9,7 +9,7 @@ expression: "frame(m, w, h)"
 │  Journey     ││ 1 Token        2 Network      3 Omarchy Mac  4 Start         │
 │  Machine     ││                                                              │
 │  Status      ││ ▍The plan this system was given                              │
-│  Health      ││   Username     alex · recorded                               │
+│  Health      ││   Username     alex (saved record)                           │
 │  Logs        ││                                                              │
 │  Plan        ││ ▍Network                                                     │
 │  Op          ││   The text flow's own network.connect.                       │

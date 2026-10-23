@@ -224,6 +224,28 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             }
         }
     }
+    if !d.is_some_and(|d| d.open) {
+        if let Some(d) = d.filter(|d| d.loaded) {
+            let tail_h = u16::from(d.total > 0) + u16::from(d.editing);
+            let [body, tail] =
+                Layout::vertical([Constraint::Min(0), Constraint::Length(tail_h)]).areas(inner);
+            rows(f, body, d, newest.is_some(), m, t, tier, head);
+            let mut lines = Vec::new();
+            if d.total > 0 {
+                lines.push(foot(d, None, t));
+            }
+            if d.editing {
+                lines.push(Line::styled(
+                    format!(" / {}_", d.filter),
+                    t.style(Token::Gate),
+                ));
+            }
+            f.render_widget(Paragraph::new(lines), tail);
+        } else {
+            super::draw_lines(f, inner, head, Vec::new(), None, 0, m, t);
+        }
+        return;
+    }
     let footed = d.filter(|d| d.loaded && d.total > 0);
     let edit = d.filter(|d| d.editing).map(|d| {
         Line::from(vec![
@@ -251,7 +273,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     let held = newest.is_some();
     let seen = d
         .filter(|d| d.loaded)
-        .and_then(|d| rows(f, body, d, held, m, t, tier));
+        .and_then(|d| rows(f, body, d, held, m, t, tier, Vec::new()));
     let mut tl = Vec::new();
     tl.extend(footed.map(|d| foot(d, seen, t)));
     tl.extend(edit);
@@ -481,7 +503,10 @@ fn cells_of(
         | Kind::Brief
         | Kind::Step
         | Kind::Report => {
-            vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)]
+            vec![
+                (r.col(0).into(), muted, lw),
+                (widgets::fact_value(&r.key, r.col(0), r.col(1)), text, 0),
+            ]
         }
         Kind::Operation => vec![
             (r.col(0).into(), muted, lw),
@@ -526,6 +551,7 @@ fn cells_of(
 /// The rows shown, the focused one's values under it when open; HELD when
 /// they are an earlier read's. Returns, for an open value, the lines of it
 /// drawn (first, last) and how many it has.
+#[allow(clippy::too_many_arguments)]
 fn rows(
     f: &mut Frame,
     area: Rect,
@@ -534,20 +560,19 @@ fn rows(
     m: &Model,
     t: &Theme,
     _tier: Tier,
+    mut prefix: Vec<Line<'_>>,
 ) -> Option<(usize, usize, usize)> {
     let width = area.width as usize;
     let height = area.height as usize;
     let shown = d.shown();
     if shown.is_empty() || height == 0 {
         if !d.rows.is_empty() {
-            f.render_widget(
-                Paragraph::new(Line::styled(
-                    "   No row on this page matches.",
-                    t.style(Token::Muted),
-                )),
-                area,
-            );
+            prefix.push(Line::styled(
+                "   No row on this page matches.",
+                t.style(Token::Muted),
+            ));
         }
+        super::draw_lines(f, area, prefix, Vec::new(), None, 0, m, t);
         return None;
     }
     let c = cols(d.kind, width);
@@ -590,11 +615,22 @@ fn rows(
     d.value_top.set(top);
     let open = &open[top..total.min(top + window)];
     let room = height.saturating_sub(open.len()).max(1);
-    let start = (cursor + 1).saturating_sub(room);
-    let mut lines: Vec<Line> = Vec::new();
+    let start = if d.open {
+        (cursor + 1).saturating_sub(room)
+    } else {
+        0
+    };
+    let mut lines: Vec<Line> = prefix;
+    let mut anchors = Vec::new();
     let mut last_section = String::new();
-    for (i, r) in shown.iter().enumerate().skip(start).take(room) {
-        let here = i == cursor && focused;
+    for (i, r) in shown
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(if d.open { room } else { shown.len() })
+    {
+        anchors.push((i, lines.len(), lines.len() + 1));
+        let here = i == cursor && focused && m.focus_visible();
         let dim = d.changed || held;
         let pointer = if here { t.g.pointer } else { " " };
         let mut spans = vec![Span::styled(format!(" {pointer} "), t.style(Token::Accent))];
@@ -652,7 +688,11 @@ fn rows(
             }
         }
     }
-    f.render_widget(Paragraph::new(lines), area);
+    if d.open {
+        f.render_widget(Paragraph::new(lines), area);
+    } else {
+        super::draw_lines(f, area, lines, anchors, Some(cursor), 0, m, t);
+    }
     (d.open && !open.is_empty()).then(|| (top + 1, top + open.len(), total))
 }
 
@@ -666,8 +706,7 @@ fn diagnostics(f: &mut Frame, area: Rect, mut lines: Vec<Line>, m: &Model, t: &T
             t.style(Token::Muted),
         ));
     }
-    let room = (area.height as usize).saturating_sub(lines.len());
-    for l in m.logs.iter().skip(m.scroll).take(room) {
+    for l in &m.logs {
         lines.push(Line::styled(
             format!(
                 "   {}",
@@ -676,5 +715,5 @@ fn diagnostics(f: &mut Frame, area: Rect, mut lines: Vec<Line>, m: &Model, t: &T
             t.style(Token::Text),
         ));
     }
-    f.render_widget(Paragraph::new(lines), area);
+    super::draw_lines(f, area, lines, Vec::new(), None, m.scroll, m, t);
 }

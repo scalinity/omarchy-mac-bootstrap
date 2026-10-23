@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Install ───────────────────────────────────────── v0.2.0
+‹ Logs  Plan  Op  Scan  Select  Items  Review ▍Install ›
+┌ Asahi handoff ───────────────────────────────────────────┐
+│ ○──────────○──────────○──────────◆                       │
+│ 1 Check    2 Answers  3 Boot     4 Token                 │
+│                                                          │
+│   After the shutdown, hold the power button and choose  ↑│
+│   Linux.                                                 │
+│                                                          │
+│ ▍Resume token                                            │
+│   Resume token        omb2:enc=1,user=alex,host=m1pro,kma│
+│                       p=us,tz=America/New_York,loc=en_US.│
+│                       UTF-8,ssh=0,gh=octocat,linux=250,sh│
+│                       ared=150,dev=1,plan=1a2b3c4d       │
+│                                                          │
+│   ⏎ opens the gate: type yes to run Launch the Asahi     │
+│   installer; this terminal is the program's until it     │
+│   exits.                                                 │
+└──────────────────────────────────────────────────────────┘
+ ⏎ continue  ? help                       may act · fixture

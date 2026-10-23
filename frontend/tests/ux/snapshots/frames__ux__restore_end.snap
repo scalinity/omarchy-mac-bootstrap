@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Restore ───────────────────────────────────────── v0.2.0
+‹ Scan  Select  Items  Review  Install  Progress ▍Restore ›
+┌ Restore progress ────────────────────────────────────────┐
+│ ▍Review by layer                                        ↑│
+│   packages                                               │
+│   ripgrep [pacman] - install - pending                   │
+│   files                                                  │
+│   starship.toml [file] - conflict - pending              │
+│   Destination: .config/starship.toml                     │
+│   Codex config [file] - conflict - pending               │
+│   Destination: .codex/config.toml                        │
+│   AI tools                                               │
+│   Claude Code [agent] - needs-sign-in - needs-sign-in    │
+│ ▍Restore status                                          │
+│   pkg:ripgrep: pending - not started                     │
+│ ▍Bundles found                                           │
+│   20261022T120000Z - M1 Pro - 2026-10-22                 │
+│   4 items; 320 B; ok                                     │
+└──────────────────────────────────────────────────────────┘
+ enter review action  ? help              may act · fixture

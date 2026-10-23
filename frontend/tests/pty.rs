@@ -1792,3 +1792,5 @@ fn pty_phase_c_journey_qualification_and_completion() {
         assert!(!trace.contains("send Execute"));
     }
 }
+
+mod pty_ux;

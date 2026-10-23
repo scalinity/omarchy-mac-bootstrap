@@ -20,7 +20,7 @@ expression: f
 │  Logs                ││   Architecture  arm64                                                                        │
 │  Plan                ││   Model         MacBookPro18,1                                                               │
 │  Operation           ││   Chip          Apple M1 Pro                                                                 │
-│  Scan                ││   Memory        17179869184                                                                  │
+│  Scan                ││   Memory        16 GB                                                                        │
 │  Selection           ││   macOS         14.6                                                                         │
 │  Inventory           ││                                                                                              │
 │  Review              ││ ▍The tool and the core                                                                       │
@@ -37,8 +37,8 @@ expression: f
 │                      ││   Next          Run ./omarchy-bootstrap to survey this Mac and plan storage.                 │
 │                      ││                                                                                              │
 │                      ││ ▍Recorded                                                                                    │
-│                      ││   Surveyed      not yet · recorded                                                           │
-│                      ││   Plan          not yet · recorded                                                           │
+│                      ││   Surveyed      not yet (saved record)                                                       │
+│                      ││   Plan          not yet (saved record)                                                       │
 │                      ││                                                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────┘
  ⏎ the journey  ↑↓ scroll  r refresh  L logs  ? help  q quit                    read-only · no system changes · fixture

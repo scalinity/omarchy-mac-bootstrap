@@ -1,0 +1,40 @@
+---
+source: tests/ux/mod.rs
+expression: "frame(&m, 100, 36)"
+---
+ ◒ Plan ──────────────────────────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Storage planner ─────────────────────────────────────────────────────────────────┐
+│  Welcome     ││   The text flow's own plan.save.                                                 │
+│  Journey     ││                                                                                  │
+│  Machine     ││ ▕M█████████████████████████████████████████████████████████L███████████████████▏ │
+│  Status      ││  0                                   500 GB                             1000 GB  │
+│  Health      ││ b Apple 6.0 GB · M macOS 741 GB · b boot 3.0 GB · L Linux 250 GB                 │
+│  Logs        ││                                                                                  │
+│▍ Plan        ││   Linux size  ○ Minimal 100  ◉ Balanced 250  ○ Linux-heavy 500  ○ Custom         │
+│  Op          ││     250 GB                                                                       │
+│  Scan        ││ ❯ Shared size  ◉ none  ○ 50  ○ 100  ○ 150  ○ 250  ○ Custom                       │
+│  Select      ││     0 B                                                                          │
+│  Items       ││ ▍The installer asks                 you type                                     │
+│  Review      ││   New size for macOS  706672MiB                                                  │
+│  Install     ││   New OS size         238418MiB                                                  │
+│  Progress    ││   Encrypt Linux   ○ off  ◉ on                                                    │
+│  Restore     ││   User name       alex                                                           │
+│  Qualify     ││   Host name       omarchy                                                        │
+│  Completion  ││   Keyboard layout us                                                             │
+│              ││   Time zone       America/New_York                                               │
+│              ││   Locale          en_US.UTF-8                                                    │
+│              ││   SSH server      ◉ off  ○ on                                                    │
+│              ││   GitHub user     octocat                                                        │
+│              ││   Developer tools ○ off  ◉ on                                                    │
+│              ││   a field left empty is not sent: the core answers its default                   │
+│              ││                                                                                  │
+│              ││   Sent: Shared size 0 · Linux size 250GB · Encrypt Linux 1 · User name alex ·    │
+│              ││   Host name omarchy · Keyboard layout us · Time zone America/New_York · Locale   │
+│              ││   en_US.UTF-8 · SSH server 0 · GitHub user octocat · Developer tools 1           │
+│              ││ ✓ checked                                                                        │
+│              ││                                                                                  │
+│              ││ ▍Review basis                                                                    │
+│              ││   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb              ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+ ⏎ review  Tab next field  esc back                                   may act · 3 actions · fixture

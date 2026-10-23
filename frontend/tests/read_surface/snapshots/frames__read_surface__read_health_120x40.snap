@@ -16,7 +16,7 @@ expression: f
 │  Journey             ││ ❯ ✓ pass   Apple Silicon     arm64                           ││ Architecture  arm64          │
 │  Machine             ││   ✓ pass   Supported model   MacBook Pro (16-inch, M1 Pro,…  ││ Model         MacBookPro18,1 │
 │  Status              ││   · info   FileVault         on — the installer asks for y…  ││ Chip          Apple M1 Pro   │
-│▍ Health              ││   ! warn   Backup confirmed  not yet; asked before the ins…  ││ Memory        17179869184    │
+│▍ Health              ││   ! warn   Backup confirmed  not yet; asked before the ins…  ││ Memory        16 GB          │
 │  Logs                ││                                                              ││ macOS         14.6           │
 │  Plan                ││                                                              │└──────────────────────────────┘
 │  Operation           ││                                                              │┌ Next steps ──────────────────┐

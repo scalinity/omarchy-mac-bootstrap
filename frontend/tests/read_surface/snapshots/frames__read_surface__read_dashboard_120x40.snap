@@ -16,7 +16,7 @@ expression: f
 │▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ Architecture  arm64          │
 │  Machine             ││       profile     plan        omarchy     restore     done   ││ Model         MacBookPro18,1 │
 │  Status              ││ No stage is derived yet: every station is later.             ││ Chip          Apple M1 Pro   │
-│  Health              ││                                                              ││ Memory        17179869184    │
+│  Health              ││                                                              ││ Memory        16 GB          │
 │  Logs                ││ ▍Where it stands                                             ││ macOS         14.6           │
 │  Plan                ││   Run ./omarchy-bootstrap to survey this Mac and plan        │└──────────────────────────────┘
 │  Operation           ││   storage.                                                   │
@@ -25,8 +25,8 @@ expression: f
 │  Inventory           ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
 │  Review              ││   Asahi install   none                                       │
 │  Install             ││   Safe Linux max  654 GB                                     │
-│  Progress            ││   Surveyed        not yet · recorded                         │
-│  Restore             ││   Plan            not yet · recorded                         │
+│  Progress            ││   Surveyed        not yet (saved record)                     │
+│  Restore             ││   Plan            not yet (saved record)                     │
 │  Qualification       ││                                                              │
 │  Completion          ││ ▍What you can do now                                         │
 │                      ││   Nothing is available now.                                  │

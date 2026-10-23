@@ -258,6 +258,14 @@ copied.
 | conflicts | `k` keep (the default) · `R` replace (capital, deliberately) · `K` keep the rest · `n`/`p` next and previous · `v` side by side or unified |
 | codes and tokens | `y` copies the focused one (OSC 52 where the terminal allows it; on macOS through the core's clipboard action) |
 
+Every overflowing workspace scrolls by its rendered lines, including wrapped
+text. Up/down select the next focusable row in that direction; past the
+first or last row they scroll the content. Page Up/Down move a visible page,
+Home/End reach the top/bottom, and the focused row stays visible. When a
+page contains only prose, the panel has the keys. An edge arrow appears
+only while more lines can be reached in that direction. Text fields keep
+the letter keys for typing; the vim aliases apply outside fields.
+
 The vim letters are aliases, never the only way. Help (`?`) lists every
 binding of the current screen, generated from the same keymap as the hints.
 
@@ -363,6 +371,35 @@ narrower the detail opens on Enter):
  ──────────────────────────────────────────────────────────────────────────
  ⏎ review   tab next   ? help
 ```
+
+The planner opens with one validation of its displayed sizes and the
+choices already entered. The core returns the defaults of omitted choices
+as `normal` records; these fill the fields. Without saved sizes in the
+snapshot, Balanced 250 GB and Shared 150 GB start selected when the
+snapshot's safe maximum allows them. A preset above that maximum is muted
+and says why it is unavailable. Every accepted preset change sends exactly
+one validation; its response never triggers another request.
+
+Left/right select a preset in the focused Linux or Shared row. Custom
+opens a number field, followed by GB, TB and %; GB starts selected. Tab
+moves from the number to its unit selector, left/right change the unit,
+and Tab moves on to the next field. `200` with GB selected is sent as
+`200GB`. Typing stays neutral. Once the core answers, its invalid text
+appears directly under that field, or its normalized size is shown there.
+The scale bar and installer answers come from the current core response.
+
+The remaining fields are Encrypt Linux, User name, Host name, Keyboard
+layout, Time zone, Locale, SSH server, GitHub user and Developer tools.
+Booleans are on/off toggles operated with Space; the other choices are
+text fields. Enter reviews the inputs; Enter on a current valid review
+asks whether to save. A changed input needs a new core check.
+
+Action rows show their label and the core's explanation in muted text.
+Intent and scope identifiers are not appended to the label. Moving to
+another screen clears the previous page's transient status. Journey facts
+from saved state show `(saved record)` after the value; machine facts and
+byte-valued sizes are shown in readable units, with exact source values
+retained in the model and open details.
 
 **A gate:**
 

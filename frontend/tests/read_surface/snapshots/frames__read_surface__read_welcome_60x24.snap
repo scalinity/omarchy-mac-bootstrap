@@ -15,7 +15,7 @@ expression: f
 │   Architecture  arm64                                    │
 │   Model         MacBookPro18,1                           │
 │   Chip          Apple M1 Pro                             │
-│   Memory        17179869184                              │
+│   Memory        16 GB                                    │
 │   macOS         14.6                                     │
 │                                                          │
 │ ▍The tool and the core                                   │

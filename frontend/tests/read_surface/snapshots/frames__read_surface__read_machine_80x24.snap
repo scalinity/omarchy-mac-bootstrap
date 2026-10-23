@@ -9,7 +9,7 @@ expression: f
 │  Journey     ││   Architecture  arm64                                        │
 │▍ Machine     ││   Model         MacBookPro18,1                               │
 │  Status      ││   Chip          Apple M1 Pro                                 │
-│  Health      ││   Memory        17179869184                                  │
+│  Health      ││   Memory        16 GB                                        │
 │  Logs        ││   macOS         14.6                                         │
 │  Plan        ││                                                              │
 │  Op          ││                                                              │

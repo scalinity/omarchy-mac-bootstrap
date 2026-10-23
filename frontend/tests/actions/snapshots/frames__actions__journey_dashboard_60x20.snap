@@ -5,8 +5,7 @@ expression: "frame(m, w, h)"
  ◒ Journey ───────────────────────────────────────── v0.2.0
   Welcome ▍Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Journey ─────────────────────────────────────────────────┐
-│ ▍Where it stands                                        ↑│
-│   After the shutdown, hold the power button and choose   │
+│   After the shutdown, hold the power button and choose  ↑│
 │   Linux.                                                 │
 │                                                          │
 │ ▍Facts                                                   │
@@ -19,6 +18,7 @@ expression: "frame(m, w, h)"
 │                  plan=1a2b3c4d                           │
 │                                                          │
 │ ▍What you can do now                                     │
-│ ❯ Save the plan                plan                     ↓│
+│ ❯ Save the plan                                          │
+│   The text flow's own plan.save.                        ↓│
 └──────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture

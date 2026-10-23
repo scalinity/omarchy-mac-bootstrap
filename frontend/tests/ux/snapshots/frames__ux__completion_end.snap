@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Completion ────────────────────────────────────── v0.2.0
+‹ Review  Install  Progress  Restore  Qualify ▍Completion
+┌ Completion ──────────────────────────────────────────────┐
+│   restore: skipped - No bundle selected                 ↑│
+│   verify: done                                           │
+│   done: done                                             │
+│                                                          │
+│ ▍Report                                                  │
+│ ✓ Report: pass                                           │
+│   8 pass - 0 warn - 0 fail - 0 not-checked               │
+│   mac - pass: Observed by the core                       │
+│   disk - pass: Observed by the core                      │
+│   shared - pass: Observed by the core                    │
+│   linux - pass: Observed by the core                     │
+│   qualification - pass: Observed by the core             │
+│   restore - pass: Observed by the core                   │
+│   doctor - pass: Observed by the core                    │
+│   recovery - pass: Observed by the core                  │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ scroll  r refresh  L logs  ? help     may act · fixture

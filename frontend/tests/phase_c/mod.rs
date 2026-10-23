@@ -135,7 +135,7 @@ fn steps(state: &str) -> String {
         )
     )
 }
-fn on_qualify(state: &str) -> Model {
+pub(super) fn on_qualify(state: &str) -> Model {
     let mut m = journey();
     let c = go(&mut m, Screen::Qualification);
     assert_eq!(sent(&c), Req::Snapshot(Scope::Qualify));
@@ -168,7 +168,7 @@ fn report(statuses: &[&str]) -> String {
         statuses.len()
     )
 }
-fn on_completion(statuses: &[&str]) -> Model {
+pub(super) fn on_completion(statuses: &[&str]) -> Model {
     let mut m = ready_on(
         "macos",
         &stages("done").replace("name=done\tstate=current", "name=done\tstate=done"),

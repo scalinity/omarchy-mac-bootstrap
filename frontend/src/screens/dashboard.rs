@@ -75,7 +75,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         for f in facts {
             v.push(Item::Pair {
                 label: f.label.clone(),
-                value: f.value.clone(),
+                value: widgets::fact_value(&f.key, &f.label, &f.value),
                 token: Token::Text,
                 state: &f.state,
                 recorded: f.key.starts_with("recorded."),
@@ -101,11 +101,6 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         v.push(Item::Text("Nothing is available now.".into(), Token::Muted));
     }
     v.extend((0..s.actions.len()).map(Item::Action));
-    if let Some(a) = m.focused()
-        && !a.explain.is_empty()
-    {
-        v.push(Item::Explain(&a.explain));
-    }
     v
 }
 

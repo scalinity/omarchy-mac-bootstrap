@@ -18,13 +18,13 @@ expression: text(&b)
 │  Items       ││   Operation  ✓ none                                                              │
 │  Review      ││                                                                                  │
 │  Install     ││ ▍What you can do now                                                             │
-│  Progress    ││ ❯ Read the fixture (test)         read                                           │
-│  Restore     ││   Change the fixture (test)       act · type test                                │
-│  Qualify     ││   Hand over the terminal (test)   act · handoff · type test                      │
-│  Completion  ││   Runs the fake read child: its output is shown, its diagnostics kept within     │
-│              ││   their limits.                                                                  │
-│              ││                                                                                  │
-│              ││                                                                                  │
+│  Progress    ││ ❯ Read the fixture (test)                                                        │
+│  Restore     ││   Runs the fake read child: its output is shown, its diagnostics kept within     │
+│  Qualify     ││   their limits.                                                                  │
+│  Completion  ││   Change the fixture (test)                                                      │
+│              ││   Runs the fake mutating child under supervision.                                │
+│              ││   Hand over the terminal (test)                                                  │
+│              ││   Runs the fake handoff child on the real terminal.                              │
 │              ││                                                                                  │
 │              ││                                                                                  │
 │              ││                                                                                  │

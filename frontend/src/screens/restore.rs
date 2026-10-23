@@ -154,7 +154,12 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
                 Token::Text,
             ));
             v.push(text(
-                format!("{} items; {} bytes; {}", r.col(2), r.col(3), r.col(4)),
+                format!(
+                    "{} items; {}; {}",
+                    r.col(2),
+                    crate::widgets::byte_text(r.col(3)),
+                    r.col(4)
+                ),
                 Token::Muted,
             ));
         }
@@ -225,7 +230,11 @@ pub fn conflict_items(m: &Model) -> Vec<Item<'_>> {
     ));
     v.push(text(format!("{} - {}", r.key, r.col(2)), Token::Text));
     v.push(text(
-        format!("Now: {} bytes; bundle: {} bytes", r.col(3), r.col(4)),
+        format!(
+            "Now: {}; bundle: {}",
+            crate::widgets::byte_text(r.col(3)),
+            crate::widgets::byte_text(r.col(4))
+        ),
         Token::Muted,
     ));
     v.push(text(
@@ -293,10 +302,7 @@ pub fn conflicts(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     if !side {
         // Scroll wrapped lines, so even one row taller than the body can
         // be read through to its last character at the supported floor.
-        let widths = super::Widths {
-            label: 0,
-            action: 0,
-        };
+        let widths = super::Widths { label: 0 };
         let lines: Vec<Line> = all
             .iter()
             .flat_map(|i| super::item_lines(i, m, t, inner.width as usize, &widths))

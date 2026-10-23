@@ -1,0 +1,40 @@
+---
+source: tests/ux/mod.rs
+expression: f
+---
+ ◒ Plan ──────────────────────────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Storage planner ─────────────────────────────────────────────────────────────────┐
+│  Welcome     ││   The text flow's own plan.save.                                                 │
+│  Journey     ││                                                                                  │
+│  Machine     ││ ▕M███████████████████████████████████████████L████████████████████.            ▏ │
+│  Status      ││  0                                   465 GB                              929 GB  │
+│  Health      ││ b Apple 6.0 GB · M macOS 520 GB · b boot 3.0 GB · L Linux 250 GB · . free 150 GB │
+│  Logs        ││                                                                                  │
+│▍ Plan        ││ ❯ Linux size  ○ Minimal 100  ○ Balanced 250  ○ Linux-heavy 500  ◉ Custom         │
+│  Op          ││     200▏ GB  TB  %                                                               │
+│  Scan        ││   Shared size  ○ none  ○ 50  ○ 100  ◉ 150  ○ 250  ○ Custom                       │
+│  Select      ││   Encrypt Linux   ○ off  ◉ on                                                    │
+│  Items       ││   User name       alex                                                           │
+│  Review      ││   Host name       omarchy                                                        │
+│  Install     ││   Keyboard layout us                                                             │
+│  Progress    ││   Time zone       America/New_York                                               │
+│  Restore     ││   Locale          en_US.UTF-8                                                    │
+│  Qualify     ││   SSH server      ◉ off  ○ on                                                    │
+│  Completion  ││   GitHub user     octocat                                                        │
+│              ││   Developer tools ○ off  ◉ on                                                    │
+│              ││   a field left empty is not sent: the core answers its default                   │
+│              ││                                                                                  │
+│              ││ ! the fields above changed since this answer; ⏎ checks them                      │
+│              ││   Sent: Shared size 150GB · Encrypt Linux 1 · User name alex · Host name         │
+│              ││   omarchy · Keyboard layout us · Time zone America/New_York · Locale             │
+│              ││   en_US.UTF-8 · SSH server 0 · GitHub user octocat · Developer tools 1           │
+│              ││ ! refused · invalid                                                              │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+│              ││                                                                                  │
+└──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+ ⏎ review  Tab next field  esc back                                   may act · 3 actions · fixture

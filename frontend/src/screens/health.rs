@@ -64,11 +64,12 @@ pub fn items(m: &Model) -> (Vec<Item<'_>>, Option<usize>) {
         }
         v.push(Item::Heading(heading));
         for r in shown.iter().filter(|r| crate::read::health_group(r) == i) {
-            let here = focused.is_some_and(|f| f.id == r.id);
-            if here {
+            let here = focused.is_some_and(|f| f.id == r.id) && m.focus_visible();
+            if focused.is_some_and(|f| f.id == r.id) {
                 focus = Some(v.len());
             }
-            v.push(Item::Text(
+            v.push(Item::Row(
+                shown.iter().position(|row| row.id == r.id).unwrap_or(0),
                 format!(
                     "{} {} - {}: {}",
                     if here { ">" } else { " " },

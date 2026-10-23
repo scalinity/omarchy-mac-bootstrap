@@ -419,7 +419,7 @@ fn the_review_saves_the_choices_as_one_document() {
         "6.3 MB",
         "installed with pacman",
         "Save these choices",
-        "type opaque",
+        "Carry the chosen folders",
     ] {
         assert!(f.contains(want), "{want:?}:\n{f}");
     }

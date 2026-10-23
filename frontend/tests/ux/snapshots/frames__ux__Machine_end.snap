@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Machine ───────────────────────────────────────── v0.2.0
+  Welcome  Journey ▍Machine  Status  Health  Logs  Plan ›
+┌ Machine ─────────────────────────────────────────────────┐
+│   Line 26  Value 26                                     ↑│
+│   Line 27  Value 27                                      │
+│   Line 28  Value 28                                      │
+│   Line 29  Value 29                                      │
+│   Line 30  Value 30                                      │
+│   Line 31  Value 31                                      │
+│   Line 32  Value 32                                      │
+│   Line 33  Value 33                                      │
+│   Line 34  Value 34                                      │
+│   Line 35  Value 35                                      │
+│   Line 36  Value 36                                      │
+│   Line 37  Value 37                                      │
+│   Line 38  Value 38                                      │
+│ ❯ Line 39  Value 39                                      │
+│ rows 1–40 of 40 · generation c0dec0dec0de                │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ move  / filter  r refresh  ? help     may act · fixture

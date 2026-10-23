@@ -358,6 +358,30 @@ pub fn gb(bytes: u64) -> String {
     format!("{bytes} B")
 }
 
+/// Byte-valued records keep their exact strings in the model and details.
+pub fn byte_text(value: &str) -> String {
+    value
+        .parse::<u64>()
+        .ok()
+        .map(gb)
+        .unwrap_or_else(|| value.into())
+}
+
+pub fn fact_value(key: &str, label: &str, value: &str) -> String {
+    if key == "machine.memory" {
+        return value
+            .parse::<u64>()
+            .ok()
+            .map(|v| format!("{} GB", v / 1_073_741_824))
+            .unwrap_or_else(|| value.into());
+    }
+    if key.ends_with(".bytes") || label.ends_with(" bytes") {
+        byte_text(value)
+    } else {
+        value.into()
+    }
+}
+
 /// A region's glyph, token and name (docs/UX.md → *Glyphs*, *Tokens*):
 /// without colour the strip's letters, since macOS and Linux share a glyph.
 fn region_look<'a>(role: &str, t: &Theme) -> (&'a str, &'a str, Token, &'a str) {

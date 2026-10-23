@@ -66,7 +66,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     for f in machine {
         v.push(Item::Pair {
             label: f.label.clone(),
-            value: f.value.clone(),
+            value: widgets::fact_value(&f.key, &f.label, &f.value),
             token: Token::Text,
             state: &f.state,
             recorded: false,
@@ -112,7 +112,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     for f in facts.iter().filter(|f| f.key.starts_with("frontend.")) {
         v.push(Item::Pair {
             label: f.label.clone(),
-            value: f.value.clone(),
+            value: widgets::fact_value(&f.key, &f.label, &f.value),
             token: Token::Text,
             state: &f.state,
             recorded: false,
@@ -144,7 +144,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         for f in recorded {
             v.push(Item::Pair {
                 label: f.label.clone(),
-                value: f.value.clone(),
+                value: widgets::fact_value(&f.key, &f.label, &f.value),
                 token: Token::Text,
                 state: &f.state,
                 recorded: true,

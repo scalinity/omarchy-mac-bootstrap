@@ -15,6 +15,7 @@ pub mod screens;
 pub mod select;
 pub mod terminal;
 pub mod theme;
+pub mod viewport;
 pub mod widgets;
 
 use app::{Cmd, Model, Msg, Outcome, Req, update};

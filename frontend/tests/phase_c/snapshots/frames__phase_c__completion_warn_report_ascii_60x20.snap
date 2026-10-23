@@ -5,7 +5,12 @@ expression: text_of(&b)
  (o) Completion ------------------------------------ v0.2.0
 < Review  Install  Progress  Restore  Qualify *Completion
 + Completion ----------------------------------------------+
-| ! Report: warn                                          ^|
+|   restore: skipped - No bundle selected                 ^|
+|   verify: done                                           |
+|   done: done                                             |
+|                                                          |
+| |Report                                                  |
+| ! Report: warn                                           |
 |   6 pass - 1 warn - 0 fail - 1 not-checked               |
 |   mac - pass: Observed by the core                       |
 |   disk - warn: Observed by the core                      |
@@ -15,10 +20,5 @@ expression: text_of(&b)
 |   restore - pass: Observed by the core                   |
 |   doctor - pass: Observed by the core                    |
 |   recovery - not-checked: Observed by the core           |
-|                                                          |
-|                                                          |
-|                                                          |
-|                                                          |
-|                                                          |
 +----------------------------------------------------------+
  up/down scroll  r refresh  ? help        may act - fixture

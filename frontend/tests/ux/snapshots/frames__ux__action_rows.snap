@@ -1,0 +1,74 @@
+---
+source: tests/ux/mod.rs
+expression: f
+---
+ ◒ Journey ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ Model  MacBookPro18,2        │
+│▍ Journey             ││ survey      resolve     asahi       shared      verify       │└──────────────────────────────┘
+│  Machine             ││       profile     plan        omarchy     restore     done   │
+│  Status              ││ No stage is derived yet: every station is later.             │
+│  Health              ││                                                              │
+│  Logs                ││ ▍Where it stands                                             │
+│  Plan                ││   After the shutdown, hold the power button and choose       │
+│  Operation           ││   Linux.                                                     │
+│  Scan                ││                                                              │
+│  Selection           ││ ▍Facts                                                       │
+│  Inventory           ││   Asahi install  none                                        │
+│  Review              ││                                                              │
+│  Install             ││ ▍Codes                                                       │
+│  Progress            ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
+│  Restore             ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
+│  Qualification       ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
+│  Completion          ││                  d                                           │
+│                      ││                                                              │
+│                      ││ ▍What you can do now                                         │
+│                      ││ ❯ Save the plan                                              │
+│                      ││   The text flow's own plan.save.                             │
+│                      ││   Launch the Asahi installer                                 │
+│                      ││   The text flow's own asahi.launch.                          │
+│                      ││   Create Shared                                              │
+│                      ││   The text flow's own shared.create.                         │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                                     may act · 3 actions · fixture

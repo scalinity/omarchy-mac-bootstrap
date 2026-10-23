@@ -22,7 +22,7 @@ expression: f
 │  Restore     ││ Architecture  arm64                                          │
 │  Qualify     ││ Model         MacBookPro18,1                                 │
 │  Completion  ││ Chip          Apple M1 Pro                                   │
-│              ││ Memory        17179869184                                    │
+│              ││ Memory        16 GB                                          │
 │              ││ macOS         14.6                                           │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  r refresh  ? help   read-only · no system changes · fixture

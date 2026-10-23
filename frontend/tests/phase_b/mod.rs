@@ -204,7 +204,7 @@ fn finish(m: &mut Model, mut cmds: Vec<Cmd>) {
     }
     panic!("a read did not settle: {cmds:?}");
 }
-fn on() -> Model {
+pub(super) fn on() -> Model {
     let mut m = ready_on("linux", &format!("generation\tid={GEN}\ttotal=0\n{DONE}"));
     let cmds = go(&mut m, Screen::Restore);
     finish(&mut m, cmds);

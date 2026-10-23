@@ -22,7 +22,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │   Operation  ✗ test.mutate unsupervised                  │
 │                                                          │
 │ ▍What you can do now                                     │
-│ ❯ Read the fixture (test)   read                         │
+│ ❯ Read the fixture (test)                                │
 │   Runs the fake read child.                              │
 └──────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture

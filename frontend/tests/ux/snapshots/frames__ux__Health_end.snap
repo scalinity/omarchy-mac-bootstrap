@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Health ────────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status ▍Health  Logs  Plan ›
+┌ Health ──────────────────────────────────────────────────┐
+│   ✓ pass   Check 26  observed                           ↑│
+│   ✓ pass   Check 27  observed                            │
+│   ✓ pass   Check 28  observed                            │
+│   ✓ pass   Check 29  observed                            │
+│   ✓ pass   Check 30  observed                            │
+│   ✓ pass   Check 31  observed                            │
+│   ✓ pass   Check 32  observed                            │
+│   ✓ pass   Check 33  observed                            │
+│   ✓ pass   Check 34  observed                            │
+│   ✓ pass   Check 35  observed                            │
+│   ✓ pass   Check 36  observed                            │
+│   ✓ pass   Check 37  observed                            │
+│   ✓ pass   Check 38  observed                            │
+│ ❯ ✓ pass   Check 39  observed                            │
+│ rows 1–40 of 40 · generation c0dec0dec0de                │
+└──────────────────────────────────────────────────────────┘
+ c MCP list (asks first)  ? help          may act · fixture

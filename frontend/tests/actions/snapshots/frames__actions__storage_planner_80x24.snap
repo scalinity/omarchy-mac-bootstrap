@@ -12,17 +12,17 @@ expression: "frame(m, w, h)"
 │  Health      ││ b Apple 6.0 GB · M macOS 400 GB · b boot 3.0 GB              │
 │  Logs        ││ L Linux 250 GB · s Shared 100 GB · . free 241 GB             │
 │▍ Plan        ││                                                              │
-│  Op          ││ ❯ Shared size  100GB▏                                        │
-│  Scan        ││   Linux size   not given                                     │
-│  Select      ││   enc          not given                                     │
-│  Items       ││   user         not given                                     │
-│  Review      ││   host         not given                                     │
-│  Install     ││   kmap         not given                                     │
-│  Progress    ││   tz           not given                                     │
-│  Restore     ││   loc          not given                                     │
-│  Qualify     ││   ssh          not given                                     │
-│  Completion  ││   gh           not given                                     │
-│              ││   dev          not given                                     │
-│              ││   a field left empty is not sent: the core answers its      ↓│
+│  Op          ││ ❯ Linux size  ○ Minimal 100  ◉ Balanced 250                  │
+│  Scan        ││   ○ Linux-heavy 500  ○ Custom                                │
+│  Select      ││     250 GB                                                   │
+│  Items       ││   Shared size  ○ none  ○ 50  ○ 100  ◉ 150  ○ 250  ○ Custom   │
+│  Review      ││     100 GB                                                   │
+│  Install     ││ ▍The installer asks                 you type                 │
+│  Progress    ││   New size for macOS  381469MiB                              │
+│  Restore     ││   New OS size         238418MiB                              │
+│  Qualify     ││   Encrypt Linux   ○ off  ◉ on                                │
+│  Completion  ││   User name       alex                                       │
+│              ││   Host name       omarchy                                    │
+│              ││   Keyboard layout us                                        ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ check  Tab next field  esc back                may act · 3 actions · fixture
+ ⏎ review  Tab next field  esc back               may act · 3 actions · fixture

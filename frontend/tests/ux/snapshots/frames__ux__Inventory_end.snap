@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Inventory ─────────────────────────────────────── v0.2.0
+‹ Status  Health  Logs  Plan  Op  Scan  Select ▍Items ›
+┌ Inventory ───────────────────────────────────────────────┐
+│   ◌ tailscale       choose                        decide↑│
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│   ◌ tailscale       choose                        decide │
+│ ❯ ◌ tailscale       choose                        decide │
+│ rows 1–35 of 35 · 33 in this category                    │
+└──────────────────────────────────────────────────────────┘
+ space include  ⏎ details  ? help         may act · fixture

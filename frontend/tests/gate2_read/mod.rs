@@ -902,3 +902,73 @@ fn every_fixture_reaches_the_screen() {
         );
     }
 }
+
+#[test]
+fn ux_planner_defaults_presets_and_custom_reach_the_real_core() {
+    if !own_process("ux_planner_defaults_presets_and_custom_reach_the_real_core") {
+        return;
+    }
+    let w = world();
+    let mut s = w.session(primary(), ALL);
+    // SAFETY: own_process runs this test alone. It sends validations only.
+    unsafe {
+        std::env::set_var("OMB_SESSION_INTENT", "act");
+    }
+    let mut m = started(&mut s);
+    let cmds = go(&mut m, 6);
+    if mac() {
+        let sent = drive(&mut m, &mut s, cmds);
+        assert_eq!(
+            sent.iter()
+                .filter(|r| matches!(r, Req::Validate { .. }))
+                .count(),
+            1
+        );
+        let c = m.plan.checked.as_ref().unwrap();
+        assert_eq!((c.status.as_str(), c.code.as_str()), ("done", "ok"));
+        assert_eq!(
+            c.normals.len(),
+            11,
+            "the core supplies every choice's default"
+        );
+        for code in [KeyCode::Right, KeyCode::Right] {
+            let cmds = key(&mut m, code);
+            let sent = drive(&mut m, &mut s, cmds);
+            assert_eq!(sent.len(), 1, "one check for a preset change");
+        }
+        typed(&mut m, "200");
+        let cmds = key(&mut m, KeyCode::Enter);
+        let sent = drive(&mut m, &mut s, cmds);
+        assert_eq!(sent.len(), 1);
+        let Req::Validate { args, .. } = &sent[0] else {
+            panic!("{:?}", sent[0]);
+        };
+        assert!(args.iter().any(|(n, v)| n == "linux_size" && v == b"200GB"));
+        let c = m.plan.checked.as_ref().unwrap();
+        assert_eq!(c.status, "done");
+        assert!(
+            c.normals
+                .iter()
+                .any(|(n, v)| n == "linux_size" && v == "200000000000")
+        );
+        assert_eq!(c.answers.len(), 2);
+        let f = frame(&m, 120, 70);
+        assert!(
+            f.contains("The installer asks") && f.contains("New OS size") && f.contains("MiB"),
+            "{f}"
+        );
+    } else {
+        drive(&mut m, &mut s, cmds);
+        typed(&mut m, "200GB");
+        key(&mut m, KeyCode::Tab);
+        typed(&mut m, "0");
+        let cmds = key(&mut m, KeyCode::Enter);
+        drive(&mut m, &mut s, cmds);
+        let c = m.plan.checked.as_ref().unwrap();
+        assert_eq!(
+            (c.status.as_str(), c.code.as_str()),
+            ("refused", "unavailable")
+        );
+    }
+    std::fs::remove_dir_all(w.t).unwrap();
+}

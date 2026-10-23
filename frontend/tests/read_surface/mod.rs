@@ -1004,7 +1004,7 @@ fn welcome_presents_the_machine_the_tool_and_the_session() {
         "core 0.2.0",
         "78b203ec6845",
         "later",
-        "recorded",
+        "saved record",
     ] {
         assert!(f.contains(want), "{want:?} on the Welcome screen:\n{f}");
     }
@@ -1043,10 +1043,7 @@ fn machine_detail_opens_from_the_snapshot_generation() {
     );
     assert_eq!(requests(&c), 0);
     let f = frame(&m, 120, 40);
-    assert!(
-        f.contains("Architecture") && f.contains("17179869184"),
-        "{f}"
-    );
+    assert!(f.contains("Architecture") && f.contains("16 GB"), "{f}");
     assert!(f.contains("1–6 of 6"), "{f}");
 }
 
@@ -1250,7 +1247,7 @@ review\taction=plan.save\tbasis={}
         "New size for macOS",
         "614730MiB",
         "238419MiB",
-        "250000000000",
+        "250 GB",
         "8acb8acb",
     ] {
         assert!(f.contains(want), "{want:?}:\n{f}");
@@ -1736,6 +1733,7 @@ fn paging_lands_the_cursor_and_never_crosses_a_generation() {
         next,
         &format!("generation\tid={GEN2}\ttotal=812\n{}{DONE}", rows(501, 312)),
     );
+    press(&mut m, KeyCode::Home);
     let f = frame(&m, 120, 40);
     assert!(
         f.contains("changed since you looked") && f.contains("1–500 of 812"),
@@ -1811,7 +1809,7 @@ fn help_lists_the_keys_of_the_screen_it_was_opened_from() {
     press(&mut p, KeyCode::Char('?'));
     let f = frame(&p, 100, 30);
     assert!(
-        f.contains("type it, as 250GB, 1.5TB or 30%") && f.contains("next field"),
+        f.contains("Custom: type a number") && f.contains("next field"),
         "{f}"
     );
 }

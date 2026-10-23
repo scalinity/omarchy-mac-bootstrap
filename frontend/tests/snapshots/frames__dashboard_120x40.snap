@@ -26,13 +26,13 @@ expression: text(&b)
 │  Review              ││   Operation  ✓ none                                          │
 │  Install             ││                                                              │
 │  Progress            ││ ▍What you can do now                                         │
-│  Restore             ││ ❯ Read the fixture (test)         read                       │
-│  Qualification       ││   Change the fixture (test)       act · type test            │
-│  Completion          ││   Hand over the terminal (test)   act · handoff · type test  │
-│                      ││   Runs the fake read child: its output is shown, its         │
-│                      ││   diagnostics kept within their limits.                      │
-│                      ││                                                              │
-│                      ││                                                              │
+│  Restore             ││ ❯ Read the fixture (test)                                    │
+│  Qualification       ││   Runs the fake read child: its output is shown, its         │
+│  Completion          ││   diagnostics kept within their limits.                      │
+│                      ││   Change the fixture (test)                                  │
+│                      ││   Runs the fake mutating child under supervision.            │
+│                      ││   Hand over the terminal (test)                              │
+│                      ││   Runs the fake handoff child on the real terminal.          │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │

@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Scan ──────────────────────────────────────────── v0.2.0
+‹ Journey  Machine  Status  Health  Logs  Plan  Op ▍Scan ›
+┌ Environment scan ────────────────────────────────────────┐
+│   ✓ Source 27  observed                                 ↑│
+│   ✓ Source 28  observed                                  │
+│   ✓ Source 29  observed                                  │
+│   ✓ Source 30  observed                                  │
+│   ✓ Source 31  observed                                  │
+│   ✓ Source 32  observed                                  │
+│   ✓ Source 33  observed                                  │
+│   ✓ Source 34  observed                                  │
+│   ✓ Source 35  observed                                  │
+│   ✓ Source 36  observed                                  │
+│   ✓ Source 37  observed                                  │
+│   ✓ Source 38  observed                                  │
+│   ✓ Source 39  observed                                  │
+│                                                          │
+│   The core does not offer a scan now.                    │
+└──────────────────────────────────────────────────────────┘
+ ⏎ scan  ↑↓ scroll  r refresh  ? help     may act · fixture

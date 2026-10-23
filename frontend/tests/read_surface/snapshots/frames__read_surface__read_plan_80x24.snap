@@ -21,8 +21,8 @@ expression: f
 │  Progress    ││   New OS size         you type 238419MiB                     │
 │  Restore     ││                                                              │
 │  Qualify     ││ ▍As the core reads them                                      │
-│  Completion  ││   Linux size          250000000000 bytes                     │
-│              ││   Shared size         100000000000 bytes                     │
+│  Completion  ││   Linux size          250 GB                                 │
+│              ││   Shared size         100 GB                                 │
 │              ││                                                             ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ check  Tab next field  esc back      read-only · no system changes · fixture
+ ⏎ review  Tab next field  esc back     read-only · no system changes · fixture

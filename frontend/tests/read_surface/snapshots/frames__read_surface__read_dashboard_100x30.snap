@@ -16,8 +16,8 @@ expression: f
 │  Scan        ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
 │  Select      ││   Asahi install   none                                                           │
 │  Items       ││   Safe Linux max  654 GB                                                         │
-│  Review      ││   Surveyed        not yet · recorded                                             │
-│  Install     ││   Plan            not yet · recorded                                             │
+│  Review      ││   Surveyed        not yet (saved record)                                         │
+│  Install     ││   Plan            not yet (saved record)                                         │
 │  Progress    ││                                                                                  │
 │  Restore     ││ ▍What you can do now                                                             │
 │  Qualify     ││   Nothing is available now.                                                      │
@@ -28,7 +28,7 @@ expression: f
 │              ││ Architecture  arm64                                                              │
 │              ││ Model         MacBookPro18,1                                                     │
 │              ││ Chip          Apple M1 Pro                                                       │
-│              ││ Memory        17179869184                                                        │
+│              ││ Memory        16 GB                                                              │
 │              ││ macOS         14.6                                                               │
 └──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit       read-only · no system changes · fixture

@@ -30,9 +30,9 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Qualification  │                                                                                  │
 │  Completion     │   Type test to continue    tes▏                                                  │
 │                 └──────────────────────────────────────────────────────────────────────────────────┘
-│                      ││                                                              │
-│                      ││                                                              │
-│                      ││                                                              │
+│                      ││   Runs the fake mutating child under supervision.            │
+│                      ││   Hand over the terminal (test)                              │
+│                      ││   Runs the fake handoff child on the real terminal.          │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │
