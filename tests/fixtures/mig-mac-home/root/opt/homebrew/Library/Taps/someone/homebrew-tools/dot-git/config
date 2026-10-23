@@ -1,0 +1,3 @@
+[remote "origin"]
+	url = https://github.com/someone/homebrew-tools
+	fetch = +refs/heads/*:refs/remotes/origin/*

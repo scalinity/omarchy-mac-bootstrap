@@ -252,7 +252,10 @@ ci_capture() {
 ci_fixtures() {
   tests/fixtures/generate.sh || return 1
   git diff --exit-code -- tests/fixtures || return 1
-  test -z "$(git status --porcelain -- tests/fixtures)"
+  test -z "$(git status --porcelain -- tests/fixtures)" || return 1
+  # git holds neither an empty folder nor anything under a .git, so a fixture
+  # with either differs on a fresh checkout from what was generated.
+  test -z "$(find tests/fixtures \( -name .git -o -type d -empty \) -print)"
 }
 
 # macOS's sh is bash 3.2 in POSIX mode. A green exit status is not enough:
