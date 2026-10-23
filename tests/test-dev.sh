@@ -8,6 +8,7 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo "test-dev"
+agents_fixture_before=$(t_snapshot "$FIX")
 
 # Menu: 1 core, 2 languages, 3 containers, 4 editor, 5 git, 6 github, 7 ssh, 8 ai, 9 time.
 row() { printf '%s\n' "$T_OUT" | grep -E "^ +$1 " | tail -1; }
@@ -39,15 +40,16 @@ T_ENV="OMB_TEST_RC=1" t_cli linux-omarchy-installed '7\n\ny\n' dev
 expect_failed "SSH helper" "SSH" "the SSH helper failed"
 assert_contains "$(row SSH)" "ssh-keygen failed" "the key generation failure is kept too"
 
-T_ENV="OMB_TEST_RC=1" t_cli linux-omarchy-installed '8\n1\n\ny\n' dev
+# agents-mise-install: both baseline installers now use the shared Omarchy table.
+T_ENV="HOME=/home/alex OMB_TEST_RC=1" t_cli agt-wrappers '8\n1\n' dev
 expect_failed "Claude Code install" "AI coding CLIs" "Claude Code install failed"
-
-fx=$(t_variant linux-omarchy-installed)
-printf 'npm\n' >>"$fx/commands"
-T_ENV="OMB_TEST_RC=1" t_cli "$fx" '8\n2\n' dev
+T_ENV="HOME=/home/alex OMB_TEST_RC=1" t_cli agt-wrappers '8\n2\n' dev
 expect_failed "Codex install" "AI coding CLIs" "Codex install failed"
-t_cli linux-omarchy-installed '8\n2\n' dev
-expect_failed "Codex without npm" "AI coding CLIs" "npm not found"
+fx=$(t_variant agt-wrappers)
+awk '$0 != "mise"' "$fx/commands" >"$fx/commands.new"
+mv "$fx/commands.new" "$fx/commands"
+T_ENV="HOME=/home/alex" t_cli "$fx" '8\n2\n' dev
+expect_failed "Codex without mise" "AI coding CLIs" "mise not found"
 
 pre=$(t_tmp)
 printf 'cfg_tz=Europe/Berlin\ncfg_loc=en_US.UTF-8\n' >"$pre/state.env"
@@ -153,5 +155,28 @@ t_cli linux-omarchy-installed '1 2\n1\n' dev --dry-run
 assert_contains "$(row "Core tools")" "previewed" "dry run: previewed, not complete"
 assert_not_contains "$T_OUT" " complete " "dry run: nothing reported complete"
 assert_eq "$(ls -A "$T_DIR/state" 2>/dev/null)" "" "dry run: nothing recorded"
+
+# agents-lazy-wrapper: the baseline called a lazy wrapper installed. Its
+# existence now offers the same single mise installation as restore.
+for tool in '1 claude' '2 codex' '3 opencode'; do
+  T_ENV="HOME=/home/alex OMB_TEST_AFTER=$FIX/agt-installed" t_cli agt-wrappers "8\n${tool%% *}\n" dev
+  assert_rc "$T_RC" 0 "agents-dev-install-${tool#* }"
+  assert_contains "$(cat "$T_DIR/record")" "mise use -g --quiet ${tool#* }" "agents-dev-single-copy-${tool#* }"
+  assert_not_contains "$(cat "$T_DIR/record")" 'npm install' agents-dev-no-second-copy
+  assert_not_contains "$(cat "$T_DIR/record")" 'claude-code-install.sh' agents-dev-no-native-overwrite
+  assert_contains "$(cat "$T_DIR/state/state.env")" 'dev_ai_at=' agents-dev-verified-success-stamped
+done
+T_ENV="HOME=/home/alex" t_cli agt-installed '8\n1 2 3\n' dev
+assert_rc "$T_RC" 0 agents-dev-rerun
+assert_empty_file "$T_DIR/record" agents-dev-rerun-no-commands
+T_ENV="HOME=/home/alex OMB_TEST_AFTER=$FIX/agt-wrappers" t_cli agt-wrappers '8\n1\n' dev
+expect_failed agents-dev-no-artifact "AI coding CLIs" 'no installed executable'
+T_ENV="HOME=/home/alex" t_cli agt-wrappers '8\n1 2 3\n' dev --dry-run
+assert_rc "$T_RC" 0 agents-dev-dry-run
+assert_contains "$(row "AI coding CLIs")" previewed agents-dev-preview
+assert_empty_file "$T_DIR/record" agents-dev-dry-run-no-commands
+assert_eq "$(ls -A "$T_DIR/state" 2>/dev/null)" '' agents-dev-dry-run-no-state
+
+assert_eq "$(t_snapshot "$FIX")" "$agents_fixture_before" agents-fixtures-read-only
 
 t_done test-dev
