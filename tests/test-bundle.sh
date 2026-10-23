@@ -442,6 +442,14 @@ check "$I1" "$(lk .config/l ../.ssh/config)"
 assert_rc $? 0 "a link to elsewhere inside the home is kept"
 check "$I1" "$(rec_line file item i dest .config/big mode 0644 sha256 "$OBJ" size $((BNDL_MAX_OBJECT + 1)) whole 0)"
 assert_rc $? 1 "an object over 64 MiB is refused"
+# Every file record's size is checked, a repeated digest's included.
+check "$I1" "$FILE1" "$(rec_line file item i dest .config/x/b mode 0644 sha256 "$OBJ" size 7 whole 0)"
+assert_rc $? 1 "bundle-corrupt-repeated-size: a second record of one object with another size is refused"
+assert_contains "$BNDL_WHY" "not the size bundle.omb records" "and named"
+check "$I1" "$FILE1" "$(rec_line file item i dest .config/x/b mode 0644 sha256 "$OBJ" size $((BNDL_MAX_OBJECT + 1)) whole 0)"
+assert_rc $? 1 "a second record of one object over 64 MiB is refused"
+check "$I1" "$FILE1" "$(rec_line file item i dest .config/x/b mode 0644 sha256 "$OBJ" size 6 whole 0)"
+assert_rc $? 0 "two records of one object, both its size, still pass"
 
 # --- The row export.write through the core ---------------------------------------------------------------
 # shellcheck source=tests/core-harness.sh

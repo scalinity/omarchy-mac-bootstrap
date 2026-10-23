@@ -211,9 +211,9 @@ bndl_check() {
       sha=$REC_RAW
       _rec_field_raw "${REC_L[i]}" size
       size=$REC_RAW
-      case "$seen" in *" $sha "*) i=$((i + 1)) && continue ;; esac
-      seen="$seen$sha "
       f=$dir/objects/$sha
+      # Every file record's size and limit, a repeated object's included;
+      # only the hashing is done once per object.
       if [ -L "$dir/objects" ] || [ ! -f "$f" ] || [ -L "$f" ]; then
         BNDL_WHY="object $sha is missing or not a plain file"
         return 1
@@ -222,10 +222,16 @@ bndl_check() {
         BNDL_WHY="object $sha is not the size bundle.omb records"
         return 1
       fi
-      if ! _bndl_sha "$f" || [ "$BNDL_SHA" != "$sha" ]; then
-        BNDL_WHY="object $sha does not match its digest"
-        return 1
-      fi
+      case "$seen" in
+        *" $sha "*) ;;
+        *)
+          seen="$seen$sha "
+          if ! _bndl_sha "$f" || [ "$BNDL_SHA" != "$sha" ]; then
+            BNDL_WHY="object $sha does not match its digest"
+            return 1
+          fi
+          ;;
+      esac
     fi
     i=$((i + 1))
   done
