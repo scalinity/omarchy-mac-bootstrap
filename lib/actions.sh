@@ -1042,127 +1042,45 @@ act_resume_params() { :; }
 act_resume_basis() { return 1; }
 
 act_resume_run() {
-  local seen
-  ACT_PRE=$(state_get omarchy_resumed_at)
   lx_begin "" || return 1
   if [ "$LX_OMARCHY_STATE" != in-progress ]; then
     ui_fail "omarchy-mac-setup is not part-way through ($LX_OMARCHY_STATE); there is nothing to resume."
     return 1
   fi
-  # Where the setup stands before it is resumed, recorded first, so the
-  # judgement (also after a new boot) can tell whether it advanced.
-  seen=$(act_resume_seen)
-  state_must_set omarchy_resume_seen "$seen" || return 1
   lx_in_progress
 }
 
-# act_resume_seen — where the setup stands (act_resume_stage), then the
-# SHA-256 of all the classifier reads (act_lx_seen). The service's state
-# and upstream's status text are in neither: a service that failed, or a
-# status that could not be read, is no step of the setup.
-act_resume_seen() {
-  local stage seen
-  stage=$(act_resume_stage)
-  seen=$(act_lx_seen)
-  seen=$(sha256_str "$seen")
-  printf '%s %s' "$stage" "$seen"
-}
-
-# act_resume_stage — the classifier's stage of the setup, one rank per step
-# in the order it takes them (docs/UPSTREAM.md → What the setup does):
-# /boot on its own partition (0, 1); the root's encryption (0 none, 1
-# staged, 2 re-encrypting, 3 complete); Omarchy's runtime (0, 1). Any step
-# whose signal cannot be read is ?; empty output alone is not known absence.
-act_resume_stage() {
-  local boot='?' enc='?' omarchy=0 src f version
-  if src=$(sys_cmd findmnt_boot findmnt -no SOURCE /boot); then
-    boot=0
-    [ -n "$src" ] && boot=1
-  fi
-  case "$LX_ENC_STATE" in
-    none) enc=0 ;;
-    migrating) if [ "$LX_ROOT_CRYPT" = 1 ]; then enc=2; else enc=1; fi ;;
-    complete) enc=3 ;;
-  esac
-  f=$(sys_path "$OMARCHY_RUNTIME_VERSION")
-  if [ -f "$f" ]; then
-    omarchy='?'
-    if version=$(head -1 "$f" 2>/dev/null); then
-      omarchy=0
-      [ -n "$version" ] && omarchy=1
-    fi
-  fi
-  printf '%s%s%s' "$boot" "$enc" "$omarchy"
-}
-
-# act_stage_move BEFORE NOW — ACT_MOVE: forward (a step further and none
-# back), same, or other (a step back, or a stage that could not be read).
-act_stage_move() {
-  local i
-  ACT_MOVE=other
-  case "$1" in [01][0-3][01]) ;; *) return 0 ;; esac
-  case "$2" in [01][0-3][01]) ;; *) return 0 ;; esac
-  if [ "$1" = "$2" ]; then
-    ACT_MOVE=same
-    return 0
-  fi
-  for i in 0 1 2; do
-    if [ "${2:i:1}" -lt "${1:i:1}" ]; then return 0; fi
-  done
-  ACT_MOVE=forward
-}
-
-# Omarchy's classification on a fresh read. Completed requires a fully read
-# stage that moved forward from a fully read stage before the resume; a
-# service that failed or a signal that could not be read never is progress.
-# A setup that could not be run (exit 126 or 127, or its
-# executable gone) is never completed: no effect when nothing reads
-# otherwise than before, else unexpected; so is a resume never run.
+# Only installed proves completion. Only this run's own failure to execute
+# (status 126 or 127), with the executable cleanly absent or not an
+# executable file on a fresh read, proves no effect. A reconcile after a new
+# boot has no status of the run it can trust: there only installed settles.
 act_resume_judge() {
-  local before seen
+  local rc=$1 f st
   ACT_READ=""
   lx_detect
-  before=$(state_get omarchy_resume_seen)
-  seen=$(act_resume_seen)
-  act_stage_move "${before%% *}" "${seen%% *}"
-  case "$1" in
-    126 | 127)
-      if [ -n "$before" ] && [ "$seen" = "$before" ]; then
-        act_judged no-effect "omarchy-mac-setup could not be run (exit $1); nothing changed."
-      else
-        act_judged unexpected "omarchy-mac-setup could not be run (exit $1), and the machine does not read as it did before."
-      fi
-      return 0
-      ;;
-  esac
-  case "$LX_OMARCHY_STATE" in
-    installed | in-progress) ;;
-    *)
-      act_judged unexpected "Omarchy is $LX_OMARCHY_STATE after the resume."
-      return 0
-      ;;
-  esac
-  if [ "$1" != reconcile ] && [ "$(state_get omarchy_resumed_at)" = "${ACT_PRE:-}" ]; then
-    act_judged no-effect "omarchy-mac-setup was not resumed; nothing changed."
-  elif [ -z "$before" ]; then
-    act_judged unexpected "Where the setup stood before the resume is not recorded, so whether it advanced cannot be told."
-  elif [ "$LX_SETUP_BIN" != 1 ]; then
-    if [ "$seen" = "$before" ]; then
-      act_judged no-effect "$OMS_SELF is not there, so the setup could not resume; nothing changed."
-    else
-      act_judged unexpected "$OMS_SELF is not there, and the machine does not read as it did before."
-    fi
-  elif [ "$ACT_MOVE" = forward ]; then
-    if [ "$LX_OMARCHY_STATE" = installed ]; then
-      act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
-    else
-      act_judged completed "omarchy-mac-setup advanced: it is still part-way through, a step further than before."
-    fi
-  elif [ "$seen" = "$before" ]; then
-    act_judged no-effect "omarchy-mac-setup ran, and nothing it changes reads otherwise than before."
-  else
-    act_judged unexpected "omarchy-mac-setup ran and got no step further, and the machine does not read as it did before."
+  if [ "$LX_OMARCHY_STATE" = installed ]; then
+    act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
+    return 0
   fi
+  case "$rc" in
+    126 | 127)
+      f=$(sys_path "$OMS_SELF")
+      # One stat, following a link as exec does, reported as a word on a
+      # successful exit: absent (ENOENT), other (there, but not an
+      # executable regular file), executable, or failed. Perl failing to
+      # start, or anything else printed, is no observation at all. Only
+      # absent and other show the command could not have run.
+      # shellcheck disable=SC2016 # Perl source: perl expands its own variables
+      st=$(LC_ALL=C perl -e 'my @s = stat($ARGV[0]); if (!@s) { print $!{ENOENT} ? "absent" : "failed"; exit 0 } print((-f _ && ($s[2] & 0111)) ? "executable" : "other"); exit 0' -- "$f" 2>/dev/null) || st=""
+      case "$st" in
+        absent | other)
+          act_judged no-effect "omarchy-mac-setup could not be executed; $OMS_SELF is missing or not executable."
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+  act_judged unexpected "The resume ended and Omarchy Mac setup is not yet installed. Setup resumes by itself on the console after a restart; this tool's resume is held until then. Upstream's own command is: sudo $OMS_SELF --resume"
 }
 
 # ---------------------------------------------------------------------------

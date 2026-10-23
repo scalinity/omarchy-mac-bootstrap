@@ -170,7 +170,10 @@ install on the M1.
   lifecycle fixtures, equivalent to the accepted baseline; the text
   interface still runs every flow; nothing enters the Shared critical
   interval; an unreadable record has its way out.
-- **Status:** in progress.
+- **Status:** done in phase A, merged to `main` at `d436bd0` (FULL
+  39941231757). The installer's rows run from the frontend through the
+  action table with their text flows unchanged; both interfaces honour the
+  operation records, and `operation clear` is the way out of an unreadable one.
 
 ### Gate 4 — Scanner and profile
 
@@ -201,7 +204,10 @@ install on the M1.
   frames for the four screens.
 - **Exit:** nothing inventoried runs and no configuration executes;
   uncertainty is shown, never hidden; no planted secret reaches the profile.
-- **Status:** not started.
+- **Status:** done in phase A, merged at `d436bd0` (FULL 39941231757). The
+  scanner carries only printable-ASCII, single-name files and canonical
+  encrypted Ed25519 or RSA keys, and rebuilds OpenCode and Starship from
+  allowlisted fields.
 
 ### Gate 5 — Resolver and bundle
 
@@ -218,7 +224,7 @@ install on the M1.
   `tests/test-secrets.sh`.
 - **Exit:** no planted secret in any byte written; a corrupt bundle is
   refused; a failure leaves only `.partial-*`.
-- **Status:** not started.
+- **Status:** done in phase A, merged at `d436bd0` (FULL 39941231757).
 
 ## M15 — Linux restore, AI environment, SSH safety and debugging
 
