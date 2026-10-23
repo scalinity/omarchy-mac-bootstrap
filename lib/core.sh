@@ -33,6 +33,8 @@ CORE_KNOWN_DETACHING="setsid nohup daemon systemd-run start-stop-daemon sshd doc
 
 CORE_BYTES=0 CORE_RECS=0 CORE_SUPPRESSED=0 CORE_RESULT=0
 CORE_CANCEL=0 CORE_INTERRUPTED=0 CORE_WORKERS=0
+# No request yet: what a judge reads when the text interface reconciles.
+CORE_REQ_ARGS=0 CORE_REQ_ARG_NAME=() CORE_REQ_ARG_VALUE=()
 CORE_N="" CORE_SESSION="" CORE_EVENTS="" CORE_BOOT="" CORE_ENV_WHY="" CORE_PURPOSE=""
 
 # ---------------------------------------------------------------------------
@@ -714,7 +716,7 @@ core_op_path() { printf '%s/ops/%s.omb' "$OMB_STATE_DIR" "$1"; }
 # (a record that cannot be written leaves the old one in place); 1 when it
 # cannot be written (the action then stops, as state_must_set does).
 core_op_write() {
-  local f tmp start at
+  local f tmp start at __s __a __b
   state_dir_ready || return 1
   [ -L "$OMB_STATE_DIR/ops" ] && return 1
   (umask 077 && mkdir -p "$OMB_STATE_DIR/ops") || return 1
@@ -725,6 +727,16 @@ core_op_write() {
   # sup-eintr).
   start=$(LC_ALL=C _proc_started "$$")
   at=$(now_utc)
+  # `at` is when the operation began: a rewrite of the same operation (this
+  # session's action and basis, now unsupervised or failed) keeps it.
+  if [ -f "$f" ] && [ ! -L "$f" ] && rec_admit_file op - "$f"; then
+    rec_get_into __s 0 session
+    rec_get_into __a 0 action
+    rec_get_into __b 0 basis
+    if [ "$__s" = "$CORE_SESSION" ] && [ "$__a" = "$2" ] && [ "$__b" = "$3" ]; then
+      rec_get_into at 0 at
+    fi
+  fi
   if {
     printf 'omb-op 1\n' &&
       rec_line op action "$2" scope "$1" basis "$3" session "$CORE_SESSION" state "$4" \
@@ -742,11 +754,13 @@ core_op_write() {
 core_op_read() {
   local f
   f=$(core_op_path "$1")
-  CO_ACTION="" CO_BASIS="" CO_SESSION="" CO_STATE="" CO_FINDING="" CO_PID="" CO_START="" CO_BOOT=""
+  CO_ACTION="" CO_SCOPE="" CO_BASIS="" CO_SESSION="" CO_STATE="" CO_FINDING="" CO_PID="" CO_START="" CO_BOOT="" CO_AT=""
   [ -e "$f" ] || [ -L "$f" ] || return 0
   _state_file_ok "$f" || return 2
   rec_admit_file op - "$f" || return 2
   rec_get_into CO_ACTION 0 action
+  rec_get_into CO_SCOPE 0 scope
+  rec_get_into CO_AT 0 at
   rec_get_into CO_BASIS 0 basis
   rec_get_into CO_SESSION 0 session
   rec_get_into CO_STATE 0 state
@@ -754,6 +768,32 @@ core_op_read() {
   rec_get_into CO_PID 0 pid
   rec_get_into CO_START 0 start
   rec_get_into CO_BOOT 0 boot
+  # Only this scope's own record speaks for it: one naming another scope, or
+  # an action that is not this scope's, cannot be read as this scope's
+  # (docs/PROTOCOL.md → *An operation record that cannot be read*). The
+  # ownership check runs in a subshell: it sets the CA_* of the row it asks.
+  [ "$CO_SCOPE" = "$1" ] || return 2
+  (core_op_owns "$1" "$CO_ACTION") || return 2
+  return 1
+}
+
+# core_op_owns SCOPE ACTION — ACTION is one of SCOPE's own actions in this
+# core: a foundation test action, or a row of the action table whose module
+# names that scope, on any system and whether or not a fresh read offers it
+# now. Sets CA_* as the row does.
+core_op_owns() {
+  local a
+  for a in $CORE_TEST_ACTIONS; do
+    [ "$a" = "$2" ] || continue
+    # Its status says whether the foundation exposes it now; its scope is
+    # set either way.
+    core_action_info "$a" || :
+    [ "$CA_SCOPE" = "$1" ] && return 0
+  done
+  if core_mod_for "$2" && core_mod_load "$CORE_MOD"; then
+    CA_SCOPE=""
+    if "$CORE_MOD_ROW" "$2" && [ "$CA_SCOPE" = "$1" ]; then return 0; fi
+  fi
   return 1
 }
 
@@ -1817,9 +1857,11 @@ core_execute_row() {
       ;;
     no-effect)
       core_op_remove "$scope"
-      # A cancellable row stopped at a unit's end, and the fresh read shows
-      # it changed nothing: the cancellation, not a failure.
-      if [ "$CORE_CANCEL" = 1 ]; then
+      # A cancellable row (CA_CANCEL) stopped at a unit's end, and the fresh
+      # read shows it changed nothing: the cancellation, not a failure. A
+      # row that is not cancellable may have changed what its judge does
+      # not read, so a stop there stays a failure.
+      if [ "$CORE_CANCEL" = 1 ] && [ "$CA_CANCEL" = 1 ]; then
         core_result cancelled cancelled "$action was stopped before it saved anything; nothing changed."
       else
         core_result failed no-effect "$why"

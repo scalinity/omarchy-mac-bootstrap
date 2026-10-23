@@ -212,23 +212,7 @@ _op_seal() {
 # _op_owns SCOPE ACTION — ACTION is one of SCOPE's own actions in this core,
 # whether or not it is available now: a scope's own action that is merely
 # unavailable is no corruption (UR-Q9).
-_op_owns() {
-  local a
-  for a in $CORE_TEST_ACTIONS; do
-    [ "$a" = "$2" ] || continue
-    # Its status says whether the foundation exposes it now; its scope is
-    # set either way.
-    core_action_info "$a" || :
-    [ "$CA_SCOPE" = "$1" ] && return 0
-  done
-  # A row of the action table: its module's row names its scope, on any
-  # system and whether or not the fresh read offers it now.
-  if core_mod_for "$2" && core_mod_load "$CORE_MOD"; then
-    CA_SCOPE=""
-    if "$CORE_MOD_ROW" "$2" && [ "$CA_SCOPE" = "$1" ]; then return 0; fi
-  fi
-  return 1
-}
+_op_owns() { core_op_owns "$@"; }
 
 # _op_same — the copy is still the size read: a check that read it to its
 # end read all of it.
@@ -803,7 +787,14 @@ _op_times() {
 # or deleted. 0 moved, or no record; 1 every refusal (nothing moved), or a
 # kept entry that is not the one checked.
 op_clear() {
-  local scope=$1 kind id size fp times kept dest
+  local scope=$1 kind id size fp times="" kept dest
+  # The entry's modification and change times, from its own status, taken
+  # before the inspection is read or shown: an edit in place from then on
+  # shows there, even where no fingerprint can be taken (a file over the
+  # read's bound). No entry yet: an empty sample, which any later entry
+  # differs from.
+  OP_PATH=$(core_op_path "$scope")
+  if _op_times; then times=$OP_TIMES; fi
   # 2. The inspection, shown exactly as operation SCOPE shows it.
   cmd_operation "$scope" || return 1
   printf '\n'
@@ -825,14 +816,10 @@ op_clear() {
     *) return 1 ;;
   esac
   kind=$OP_KIND id=$OP_ID size=$OP_SIZE fp=$OP_FP
-  # The entry's modification and change times, from its own status: an edit
-  # in place shows there even where no fingerprint could be taken (a file
-  # over the read's bound).
-  _op_times || {
+  if [ -z "$times" ]; then
     ui_fail "$OP_IO_TEXT Nothing was moved."
     return 1
-  }
-  times=$OP_TIMES
+  fi
   kept="$scope.omb.unreadable-$(now_stamp)"
   dest=$OMB_STATE_DIR/ops/$kept
   if [ "$OMB_DRY_RUN" = 1 ]; then
@@ -908,6 +895,12 @@ op_text_barrier() {
     case "$CORE_BAR" in
       none) ;;
       stale)
+        # A judgement may rebuild its row's basis, which binds the executed
+        # source: computed here as the core computes it for a request.
+        if [ -z "${CORE_SOURCE:-}" ] && ! { omb_tmp_init && core_source; }; then
+          ui_fail "This tool's own source could not be read, so ${CORE_BAR_ACTION:-the operation} cannot be reconciled; nothing ran."
+          return 1
+        fi
         if ! core_reconcile "$scope"; then
           ui_fail "After the restart, ${CORE_BAR_ACTION:-the operation} left something unexpected: the machine shows neither its old state nor its expected effect. It needs you."
           ui_note "./omarchy-bootstrap operation $scope shows what is recorded."

@@ -479,8 +479,12 @@ action that changes the machine also keeps an **operation record**,
 
 - **Written before the effect**, with the baseline's checked writer (a
   record that cannot be written stops the action, as `state_must_set`
-  does): the action, its full basis digest, the session, C's identity (with
-  the boot session), the start time.
+  does): the action, its scope, its full basis digest, the session, C's
+  identity (with the boot session), and `at`, when the operation began: a
+  rewrite of the same operation (unsupervised, failed) keeps it. Only a
+  scope's own record speaks for it: one whose scope field names another
+  scope, or whose action is not one of the scope's, is read as a record
+  that cannot be read, never reconciled by that other action's judgement.
 - **Normal supervised completion.** Only the core that wrote it removes it,
   and only when all of these hold, in this order:
   1. C started the child the registry names for the action, and has been
@@ -706,7 +710,9 @@ refusal; no `result` means unknown.
 
 Cancellation is not an operation: for a request declared cancellable, F
 sends SIGTERM to C, which finishes the unit in hand and reports
-`status=cancelled` with what completed. A read request may be cancelled at
+`status=cancelled` with what completed. An act row answers `cancelled` only
+when it is cancellable and its fresh judgement shows it changed nothing; a
+stop of any other row stays a failure. A read request may be cancelled at
 any time; nothing that changes the machine is cancellable, and a handoff
 child is never signalled by F: Ctrl-C there belongs to the program.
 

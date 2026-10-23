@@ -1084,23 +1084,44 @@ rm -rf "$CK_STATE"
 # core-cancel-row: a cancellable row stopped at a unit's end, which a fresh
 # read shows changed nothing, answers cancelled; uncancelled, the same
 # finding is a failure.
-xrow() { # CANCEL — the result record of a row that stops and changes nothing
-  local ev=$T/xrow-$1.events
+xrow() { # CANCEL CANCELLABLE — the result record of a row that stops and changes nothing
+  local ev=$T/xrow-$1$2.events
   : >"$ev"
   OMB_STATE_DIR=$T/xrow-state OMB_FIXTURE=$FIX/mac-m1pro-1tb-roomy "$T_BASH" -c '
     for n in common ui state sources records core; do . "$1/lib/$n.sh"; done
     OMB_HOME=$1 OMB_COLOR=never; ui_init; platform_init; state_init; omb_tmp_init
     CORE_EVENTS=$2 CORE_OP=execute CORE_CANCEL=$3 OMB_DRY_RUN=0 OMB_PERSIST=1 OMB_INTENT=act
-    CA_TERMINAL=managed CA_LIMIT=3 CA_PHASE=macos CA_FN=xstub CA_LABEL=x
+    CA_TERMINAL=managed CA_LIMIT=3 CA_PHASE=macos CA_FN=xstub CA_LABEL=x CA_CANCEL=$4
     xstub_run() { return 2; }
     xstub_judge() { CORE_FINDING=no-effect CORE_JUDGE_TEXT=unchanged; }
     core_execute_row x.scan "$(printf "%064d" 1)" profile "" >/dev/null 2>&1
     omb_cleanup
-  ' bash "$REPO" "$ev" "$1"
+  ' bash "$REPO" "$ev" "$1" "$2"
   grep '^result' "$ev" | cut -f2,3
 }
-assert_eq "$(xrow 1)" "status=cancelled	code=cancelled" "core-cancel-row: a cancelled row that changed nothing is cancelled"
-assert_eq "$(xrow 0)" "status=failed	code=no-effect" "core-cancel-row: uncancelled, nothing changed is a failure"
+assert_eq "$(xrow 1 1)" "status=cancelled	code=cancelled" "core-cancel-row: a cancelled row that changed nothing is cancelled"
+assert_eq "$(xrow 0 1)" "status=failed	code=no-effect" "core-cancel-row: uncancelled, nothing changed is a failure"
+assert_eq "$(xrow 1 0)" "status=failed	code=no-effect" "core-cancel-row: a stop of a row that is not cancellable stays a failure"
+
+# core-op-at: an operation record's `at` is when the operation began; a
+# rewrite of the same operation keeps it, another operation has its own.
+xat() { # ACTION BASIS STATE — the scope journey record's at after one write
+  OMB_STATE_DIR=$T/xat-state OMB_FIXTURE=$FIX/mac-m1pro-1tb-roomy "$T_BASH" -c '
+    for n in common ui state sources records core; do . "$1/lib/$n.sh"; done
+    OMB_HOME=$1 OMB_COLOR=never; ui_init; platform_init; state_init; omb_tmp_init
+    OMB_PERSIST=1 OMB_INTENT=act CORE_SESSION=xat CORE_BOOT=b
+    core_op_write journey "$2" "$3" "$4" >/dev/null 2>&1
+    rec_admit_file op - "$(core_op_path journey)" && rec_get_into at 0 at && printf "%s" "$at"
+    omb_cleanup
+  ' bash "$REPO" "$1" "$2" "$3"
+}
+b1=$(printf '%064d' 1) b2=$(printf '%064d' 2)
+first=$(xat test.mutate "$b1" running)
+sleep 1
+assert_eq "$(xat test.mutate "$b1" unsupervised)" "$first" "core-op-at: the same operation rewritten keeps when it began"
+sleep 1
+next=$(xat test.mutate "$b2" running)
+[ -n "$first" ] && [ "$next" != "$first" ] && ok || fail "core-op-at: another operation has its own start ($first, $next)"
 
 t_decoys_survive test-core
 t_done test-core

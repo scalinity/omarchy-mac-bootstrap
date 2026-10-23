@@ -1617,6 +1617,28 @@ assert_eq "$O_RC" 1 'actions-text-barrier: an unreadable asahi record stops inst
 assert_contains "$O_OUT" 'operation clear asahi' 'actions-text-barrier: and names the way out'
 oc '' --dry-run install
 assert_not_contains "$O_OUT" 'cannot be read, so what it recorded' 'actions-text-barrier: a dry run changes nothing and is not held'
+# Only a scope's own record speaks for it: an earlier boot's record naming
+# another scope, or an action not this scope's, is unreadable here, never
+# reconciled by that other action's judgement.
+for rec in "profile.scan profile" "profile.scan shared"; do
+  rm -rf "$T/state/ops"
+  # shellcheck disable=SC2086 # action and scope, one word each
+  OPS=$T/state/ops/shared.omb o_rec running 1 x stale-boot $rec
+  oc '' shared create
+  assert_eq "$O_RC" 1 "actions-text-barrier-owner: a record of [$rec] stops shared create"
+  assert_contains "$O_OUT" 'cannot be read, so what it recorded is unknown' "actions-text-barrier-owner: [$rec] is unreadable in shared"
+  assert_eq "$(oc_kept)" 'shared.omb ' "actions-text-barrier-owner: [$rec] stays"
+done
+# An earlier boot's plan.save is judged in text as in the core: its judgement
+# reads back the saved plan, which must bind the record's basis; this one's
+# does not, so the record stays and the person is told.
+rm -rf "$T/state/ops"
+printf '%s\n' cfg_enc=1 cfg_user=alex cfg_host=omarchy cfg_kmap=us cfg_tz=America/New_York cfg_loc=en_US.UTF-8 cfg_ssh=0 cfg_gh= cfg_linux=250 cfg_shared=0 cfg_dev=1 planned_at=2026-10-01T00:00:00Z >>"$T/state/state.env"
+OPS=$T/state/ops/plan.omb o_rec running 1 x stale-boot plan.save plan
+oc '' plan
+assert_eq "$(cat "$T/text.err")" '' 'actions-text-barrier-reconcile: a stale plan.save is judged in text, with nothing on stderr'
+assert_contains "$O_OUT" 'left something unexpected' 'actions-text-barrier-reconcile: a save its plan does not bind stays a barrier'
+assert_eq "$(oc_kept)" 'plan.omb ' 'actions-text-barrier-reconcile: and its record stays'
 rm -rf "$T/state/ops"
 
 t_done operation
