@@ -687,6 +687,8 @@ a_use "$T/start" "$FIX/linux-alarm-fresh"
 a_run snapshot "scope	name=journey"
 assert_contains "$C_OUT" "action	id=omarchy.start	scope=omarchy	label=Run%20omarchy-mac-setup	intent=act	gate=start	terminal=handoff	" \
   "actions-omarchy.start: scope omarchy, a handoff, word start"
+assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.console	label=Console	value=$(a_enc "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})")	state=info" \
+  "actions-omarchy-console: the console the setup will write to, before it starts"
 a_common omarchy.start start
 a_barriers omarchy.start omarchy start
 A_ENV="OMB_TEST_AFTER=$FIX/linux-setup-in-progress" a_exec_tty '\nalex\n\n\n\n\004\004\004' omarchy.start start

@@ -869,6 +869,12 @@ act_start_facts() {
   fi
   act_fact omarchy.start does "Does" "sets the keymap, hostname and user, then (with encryption) moves /boot to EFI and encrypts the Linux root in place, then installs Omarchy, rebooting between steps" || return 1
   act_fact omarchy.start leaves "Leaves" "macOS, untouched" || return 1
+  act_console_fact
+}
+
+# act_console_fact — the console Omarchy Mac's setup writes to, as a fact.
+act_console_fact() {
+  rec_line fact scope omarchy key omarchy.console label "Console" value "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})" state info
 }
 
 act_start_params() { :; }
@@ -931,7 +937,7 @@ act_resume_offer() {
   fi
   case "$LX_UNIT_STATE" in
     active | activating)
-      CA_WHY="omarchy-mac-setup is running now on tty1."
+      CA_WHY="omarchy-mac-setup is running now on $OMARCHY_SETUP_TTY."
       return 1
       ;;
   esac
@@ -955,6 +961,7 @@ act_resume_facts() {
   rec_line fact scope omarchy key omarchy.encryption label "Encryption" value "$LX_ENC_STATE" state info || return 1
   rec_line fact scope omarchy key omarchy.boot label "/boot" value "${LX_BOOT_SRC:-on the root filesystem}${LX_BOOT_FS:+ ($LX_BOOT_FS)}" state info || return 1
   rec_line fact scope omarchy key omarchy.version label "Omarchy version" value "${LX_OMARCHY_VERSION:-not installed yet}" state info || return 1
+  act_console_fact || return 1
   # Upstream's own status, which only root can read (lx_upstream_status).
   if [ "$LX_SETUP_BIN" = 1 ] && [ "$OMB_UID" = 0 ]; then
     while IFS= read -r line; do
