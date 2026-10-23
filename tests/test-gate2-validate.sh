@@ -239,7 +239,9 @@ C_PATH="$T/darwin:/usr/bin:/bin:/usr/sbin:/sbin" V_EXTRA='OMB_FIXTURE= OMB_FRONT
 # Gate 3: the core answers plan validation on a real Mac too, through the
 # same planner; whatever this machine's disk shows, it is a read.
 v_run "$(v_l 250GB)" "$(v_s 0)"
-if w=$(c_answered validate 'done ok'); then ok; else fail "non-fixture macOS validate is answered: $w"; fi
+# A disk that plans answers done; one that cannot host the plan (this
+# machine's, a CI runner's) refuses it as unplannable. Either is an answer.
+if w=$(c_answered validate 'done ok' 'refused unplannable'); then ok; else fail "non-fixture macOS validate is answered: $w"; fi
 assert_empty_file "$T/effects" 'non-fixture macOS validate: no effect reached'
 V_SCOPES=journey v_run "$(v_l 250GB)" "$(v_s 0)"
 v_route 'non-fixture macOS validate without the plan scope' refused scope
