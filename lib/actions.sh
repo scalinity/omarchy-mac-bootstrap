@@ -185,6 +185,15 @@ act_layout_digest() {
   sha256_str "$l"
 }
 
+# act_resized_digest — the same digest with the macOS container's size left
+# out: what a resize, and only a resize, leaves as it was (every other
+# partition, and so the free space after the container).
+act_resized_digest() {
+  local l
+  l=$(geo_canon | awk -F'|' -v u="$MAC_STORE_UUID" 'BEGIN { OFS = "|" } $3 == u { $2 = "" } { print }')
+  sha256_str "$l"
+}
+
 # act_lx_seen — what the Omarchy classifier sees, on one line.
 act_lx_seen() {
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$LX_OMARCHY_STATE" "$LX_ENC_STATE" "$LX_SETUP_CONF" "$LX_SETUP_BIN" \
@@ -458,16 +467,20 @@ act_asahi_run() {
   [ "$rc" = 0 ] || return 1
   # The whole layout the launch begins from (mac_handoff holds the disk to
   # it before running the installer), recorded before anything changes, so
-  # a reconciliation after a new boot can prove the disk is as it was.
+  # a reconciliation after a new boot can prove the disk is as it was, or
+  # changed only by a resize.
   layout=$(act_layout_digest)
   state_must_set asahi_prelaunch_layout "$layout" || return 1
+  layout=$(act_resized_digest)
+  state_must_set asahi_prelaunch_resized "$layout" || return 1
   mac_save_plan || return 1
   mac_backup_gate || return 1
   mac_handoff
 }
 
 # Asahi's install classification on a fresh read: its partitions in place,
-# or macOS resized and nothing installed yet (a state the next launch
+# or macOS resized with every other partition as the layout recorded before
+# the launch had it and nothing installed yet (a state the next launch
 # continues from), are completed; a disk proven untouched (the installer
 # quit at its first question, or never ran) is no effect; anything else
 # needs the person.
@@ -483,7 +496,16 @@ act_asahi_judge() {
     resized-only)
       # A state the text flow continues from (asahi_guidance, then planning):
       # the freed space stays free, and the next launch installs into it.
-      act_judged completed "The installer resized macOS and stopped before installing ($ASAHI_WHY). The next launch continues from there: it installs into the freed space, with no second resize."
+      # Only a resize: every other partition is as the layout recorded
+      # before the launch had it.
+      before=$(state_get asahi_prelaunch_resized)
+      if [ -z "$before" ]; then
+        act_judged unexpected "macOS is smaller than before the launch ($ASAHI_WHY), but the layout before the launch is not recorded, so a resize alone cannot be told."
+      elif [ "$(act_resized_digest)" != "$before" ]; then
+        act_judged unexpected "macOS is smaller than before the launch ($ASAHI_WHY), and another partition changed too: not what the Asahi installer leaves."
+      else
+        act_judged completed "The installer resized macOS and stopped before installing ($ASAHI_WHY). The next launch continues from there: it installs into the freed space, with no second resize."
+      fi
       return 0
       ;;
     none)

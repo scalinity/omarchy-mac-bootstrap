@@ -548,13 +548,35 @@ if t_plutil "the macOS rows"; then
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
   assert_eq "$(c_result)" "refused unsupervised" "actions-asahi.launch-reconcile-type: a partition whose type changed is unexpected"
   [ -e "$A_DIR/state/ops/asahi.omb" ] && ok || fail "actions-asahi.launch-reconcile-type: its record stays"
+  # Resized after a new boot: completed only with the layout recorded before
+  # the launch (the resized launch's own state, above) showing every other
+  # partition as it was.
   a_use "$T/asahi-boot-resized" "$FIX/mac-asahi-resized-only"
-  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
-  printf 'asahi_prelaunch_macos_size=994610155520\n' >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state" && cp -p "$T/asahi-resized/state/state.env" "$A_DIR/state/state.env"
+  assert_contains "$(a_state)" "asahi_prelaunch_resized=" "actions-asahi.launch-reconcile: the resized launch recorded the layout a resize keeps"
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
   assert_contains "$C_OUT" "reconciled:%20completed" "actions-asahi.launch-reconcile: resized and nothing installed is completed after a new boot"
   assert_eq "$(a_ops)" "" "actions-asahi.launch-reconcile: and the record goes"
+  # actions-asahi.launch-reconcile-resized: macOS resized and Recovery gone
+  # is not a resize; and without a recorded layout a resize cannot be told.
+  VG=$(t_variant mac-asahi-resized-only)
+  sed -i.bak 's#<dict><key>Content</key><string>Apple_APFS_Recovery</string><key>DeviceIdentifier</key><string>disk0s3</string><key>DiskUUID</key><string>4A7B1C2D-0003-4E5F-8A9B-000000000003</string><key>Size</key><integer>5368664064</integer></dict>##' "$VG/cmd/diskutil_list_disk0" &&
+    rm -f "$VG/cmd/diskutil_list_disk0.bak" "$VG/cmd/diskutil_info_disk0s3"
+  assert_eq "$(grep -c 'disk0s3' "$VG/cmd/diskutil_list_disk0")" 0 "actions-asahi.launch-reconcile-resized: the variant removes Recovery"
+  for case in "gone|$VG|$T/asahi-resized/state/state.env" "unrecorded|$FIX/mac-asahi-resized-only|"; do
+    a_use "$T/asahi-boot-resized-${case%%|*}" "$(printf '%s' "$case" | cut -d'|' -f2)"
+    mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
+    if [ "${case%%|*}" = gone ]; then
+      cp -p "${case##*|}" "$A_DIR/state/state.env"
+    else
+      printf 'asahi_prelaunch_macos_size=994610155520\n' >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
+    fi
+    a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
+    a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
+    assert_eq "$(c_result)" "refused unsupervised" "actions-asahi.launch-reconcile-resized: ${case%%|*} is not completed"
+    [ -e "$A_DIR/state/ops/asahi.omb" ] && ok || fail "actions-asahi.launch-reconcile-resized: ${case%%|*}: its record stays"
+  done
   a_use "$T/asahi-boot3" "$FIX/mac-asahi-stub-only"
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
@@ -858,9 +880,10 @@ a_unavailable dev "" "$FIX/linux-setup-in-progress"
 #     is the run's narration, never state a decision reads.
 #   - ops/: the core's operation records live there and each is removed when
 #     its action ends; the folder stays, empty.
-#   - asahi_prelaunch_layout and omarchy_resume_seen in state.env: what the
-#     launch and the resume began from, recorded before either runs, so a
-#     reconciliation after a new boot can prove what changed.
+#   - asahi_prelaunch_layout, asahi_prelaunch_resized and omarchy_resume_seen
+#     in state.env: what the launch and the resume began from, recorded
+#     before either runs, so a reconciliation after a new boot can prove what
+#     changed.
 # ---------------------------------------------------------------------------
 mkdir -p "$T/base"
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
@@ -920,7 +943,7 @@ e_norm() {
     -e 's/(omarchy-bootstrap|\.state\.env|downloads\/[a-z-]+\.sh-STAMP|shared-[a-z-]+\.env)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(-STAMP)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g' \
-    -e '/^asahi_prelaunch_layout=/d' -e '/^omarchy_resume_seen=/d'
+    -e '/^asahi_prelaunch_layout=/d' -e '/^asahi_prelaunch_resized=/d' -e '/^omarchy_resume_seen=/d'
 }
 
 # e_agree ID — the baseline's side and the core's side left the same.
