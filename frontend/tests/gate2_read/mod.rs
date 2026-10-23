@@ -313,7 +313,9 @@ fn the_read_surface_against_the_real_core() {
     let g = m.snap.as_ref().unwrap().generation.clone();
     assert_eq!(g.len(), 64, "the snapshot's generation");
     let before = listing(&w.state(name));
-    let f = frame(&m, 120, 40);
+    // M16-stage-records adds ten stage descriptions above the facts and
+    // actions. Inspect the full dashboard; keep every existing text assertion.
+    let f = frame(&m, 120, 80);
     let snap = m.snap.clone().unwrap();
     let next: String = snap.guides[0].chars().take(40).collect();
     for want in [
@@ -851,10 +853,16 @@ fn every_fixture(part: usize) {
             }
         }
     }
-    // An Intel Mac the core cannot describe, and the download fixtures,
-    // which are not machines.
+    // An Intel Mac the core cannot describe, the download fixtures and the
+    // qualification record corpus, which supply no machine probes.
     let none: &[&str] = if mac {
-        &["mac-intel", "net-current", "net-drifted", "net-efi-drift"]
+        &[
+            "mac-intel",
+            "net-current",
+            "net-drifted",
+            "net-efi-drift",
+            "qualify-records",
+        ]
     } else {
         &[]
     };

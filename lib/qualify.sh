@@ -90,7 +90,7 @@ _qfy_identity() {
       lx_detect
       shared_lx_state
       [ "$SHARED_STATE" = ready ] || { _qfy_block "Shared is not ready: ${SHARED_WHY:-$SHARED_STATE}"; return 1; }
-      shared_lx_mount
+      shared_lx_access
       [ "$SH_MOUNT" = verified ] || { _qfy_block "Shared mount is not verified: ${SH_MOUNT_WHY:-$SH_MOUNT}"; return 1; }
       mp=$SHARED_MNT QFY_GUID=$SH_PARTUUID QFY_PLAN=${CFG_plan:-} QFY_SIZE=$SH_SIZE ;;
     *) _qfy_block 'Qualification needs macOS or Linux.'; return 1 ;;

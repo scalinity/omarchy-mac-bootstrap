@@ -1,0 +1,10 @@
+stage	name=survey	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20no%20resume%20token%20with%20a%20plan%20id
+stage	name=profile	state=todo	basis=machine	by=	at=	detail=chosen%20on%20macOS
+stage	name=resolve	state=todo	basis=machine	by=	at=	detail=chosen%20on%20macOS
+stage	name=plan	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20macOS%20plan%20is%20unavailable
+stage	name=asahi	state=done	basis=machine	by=	at=	detail=
+stage	name=omarchy	state=done	basis=machine	by=	at=	detail=
+stage	name=shared	state=skipped	basis=machine	by=	at=	detail=Shared%20is%20not%20planned
+stage	name=restore	state=current	basis=machine	by=	at=	detail=
+stage	name=verify	state=done	basis=machine	by=	at=	detail=
+stage	name=done	state=todo	basis=machine	by=	at=	detail=

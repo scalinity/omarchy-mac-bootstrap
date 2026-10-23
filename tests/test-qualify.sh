@@ -124,6 +124,39 @@ env -i PATH="$root_shim:/usr/bin:/bin" OMB_FIXTURE="$FIX/qualify-linux" OMB_TEST
   "$T_BASH" "$REPO/omarchy-bootstrap" qualify status >"$root_shim/out" 2>&1
 assert_rc $? 2 qualify-seam-cli-root
 
+# linux-shared-ready is armed after boot. Access the configured automount,
+# then require a fresh kernel identity before any qualification record opens.
+q_setup linux; q_import
+cp "$FIX/linux-shared-ready/root/proc/self/mountinfo" "$F/root/proc/self/mountinfo"
+(
+  ls() {
+    if [ "$*" = "-A $F/root/mnt/shared" ]; then
+      printf 'access\n' >>"$F/accesses"
+      cp "$FIX/qualify-linux/root/proc/self/mountinfo" "$F/root/proc/self/mountinfo"
+    fi
+    command ls "$@"
+  }
+  qfy_status_read
+  printf '%s %s\n' "$QFY_STATE" "$SH_MOUNT" >"$F/armed.status"
+)
+assert_eq "$(cat "$F/armed.status")" 'waiting-for-linux verified' qualify-armed-ready-rechecks-identity
+assert_eq "$(cat "$F/accesses")" access qualify-armed-ready-directory-access
+assert_empty_file "$F/writes" qualify-armed-ready-no-qualification-write
+q_setup linux; q_import
+cp "$FIX/linux-shared-ready/root/proc/self/mountinfo" "$F/root/proc/self/mountinfo"
+(
+  ls() {
+    if [ "$*" = "-A $F/root/mnt/shared" ]; then
+      sed 's/259:7 /259:6 /' "$FIX/qualify-linux/root/proc/self/mountinfo" >"$F/root/proc/self/mountinfo"
+    fi
+    command ls "$@"
+  }
+  qfy_status_read
+  printf '%s %s\n' "$QFY_STATE" "$SH_MOUNT" >"$F/armed.status"
+)
+assert_eq "$(cat "$F/armed.status")" 'blocked wrong' qualify-armed-wrong-after-access-refused
+assert_empty_file "$F/writes" qualify-armed-wrong-no-write
+
 # Identity first: an unreadable document on a wrong/unresolved mount cannot
 # supply even a refusal reason. In particular, source text cannot prove GUID.
 for mount in wrong missing duplicate unresolved filesystem; do

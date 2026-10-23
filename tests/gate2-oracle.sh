@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test-only semantic taps on the independently extracted baseline's text sinks.
 # Production never uses this adapter or parses a rendered resume command.
-# shellcheck disable=SC1090,SC2034,SC2329
+# shellcheck disable=SC1090,SC2034,SC2317,SC2329
 set -u
 TREE=$1 MODE=$2
 for module in common ui state sources storage macos asahi linux shared doctor dev; do
@@ -18,6 +18,13 @@ ui_init
 trap omb_cleanup EXIT
 if [ "$MODE" = dataset ]; then
   . "$G2_CANDIDATE/lib/read.sh"
+  eval "$(declare -f journey_read | sed '1s/journey_read/g2_journey_read/')"
+  journey_read() {
+    # M16-stage-records: the status prefix must retain BASE's exact probes;
+    # the added stage observations have their own named boundary.
+    cp "$G2_PROBES" "$G2_PROBES.status"
+    g2_journey_read
+  }
   core_journey_dataset
 else
   section='' rows='' guide='' token='' n=0

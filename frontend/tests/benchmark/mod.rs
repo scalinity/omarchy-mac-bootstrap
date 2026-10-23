@@ -1368,18 +1368,27 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
             return bad("native snapshot identity");
         }
         let types = d.records.iter().map(|r| r.ty.as_str()).collect::<Vec<_>>();
-        if types
-            != [
-                "hello",
-                "generation",
-                "fact",
-                "fact",
-                "fact",
-                "fact",
-                "result",
-            ]
-        {
+        // M16-stage-records: the startup check's ten fixed blocked stages sit
+        // between the generation and its four facts.
+        let mut shape = vec!["hello", "generation"];
+        shape.extend(["stage"; 10]);
+        shape.extend(["fact", "fact", "fact", "fact", "result"]);
+        if types != shape {
             return bad("snapshot shape");
+        }
+        let stages = records(d, "stage");
+        let names = [
+            "survey", "profile", "resolve", "plan", "asahi", "omarchy", "shared", "restore",
+            "verify", "done",
+        ];
+        if stages.iter().zip(names).any(|(r, n)| {
+            txt(r, "name") != n
+                || txt(r, "state") != "blocked"
+                || txt(r, "basis") != "machine"
+                || !txt(r, "by").is_empty()
+                || txt(r, "detail") != "not checked: startup check reads identity only"
+        }) {
+            return bad("startup stages");
         }
         let expected = [
             (
@@ -1413,14 +1422,15 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
             }
         }
         let generation = records(d, "generation")[0];
-        let fact_lines = String::from_utf8_lossy(bytes)
+        // The generation is the body's digest: its stage lines, then its facts.
+        let body_lines = String::from_utf8_lossy(bytes)
             .lines()
-            .filter(|l| l.starts_with("fact\t"))
+            .filter(|l| l.starts_with("stage\t") || l.starts_with("fact\t"))
             .map(str::to_owned)
             .collect::<Vec<_>>()
             .join("\n");
         if txt(generation, "total") != "0"
-            || txt(generation, "id") != record::sha256_hex(fact_lines.as_bytes())
+            || txt(generation, "id") != record::sha256_hex(body_lines.as_bytes())
             || !txt(results[0], "text").is_empty()
             || !txt(results[0], "next").is_empty()
         {

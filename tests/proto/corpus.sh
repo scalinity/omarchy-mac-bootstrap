@@ -69,14 +69,19 @@ done
 
 # --- frontend-check-snapshot (docs/PROTOCOL.md → The startup-check session) --------
 # The check's snapshot for frontend 0.1.0 and protocol 1, as the core writes
-# it: a read, journey-only hello, then the generation of the four facts (the
-# SHA-256 of their lines, LF between them), the facts, the result.
+# it: a read, journey-only hello, then the generation of the ten stages and
+# four facts (SHA-256, LF between their lines), those records, the result.
 CHECK_FACTS=$(lines "fact	scope=journey	key=check	label=Check	value=frontend%20startup%20check%20%28frontend-check%29	state=info" \
   "fact	scope=journey	key=interface	label=Interface	value=frontend%200.1.0%20as%20the%20lock%20pins,%20protocol%201	state=ok" \
   "fact	scope=journey	key=session	label=Session	value=read-only,%20journey%20scope%20only,%20not%20a%20dry%20run	state=info" \
   "fact	scope=journey	key=actions	label=Actions	value=none%20in%20this%20session	state=info")
-CHECK_GEN=$(printf '%s' "$CHECK_FACTS" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)
-res "${HELLO/ceiling=act/ceiling=read}" "generation	id=$CHECK_GEN	total=0" "$CHECK_FACTS" "$RESULT" | case_ frontend-check-snapshot res snapshot ok
+# M16-stage-records: identity-only startup stages join the four facts; the
+# generation includes the stages. All ten are unavailable, without action authority.
+CHECK_STAGES=$(for stage in survey profile resolve plan asahi omarchy shared restore verify 'done'; do
+  lines "stage	name=$stage	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only"
+done)
+CHECK_GEN=$(printf '%s\n%s' "$CHECK_STAGES" "$CHECK_FACTS" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)
+res "${HELLO/ceiling=act/ceiling=read}" "generation	id=$CHECK_GEN	total=0" "$CHECK_STAGES" "$CHECK_FACTS" "$RESULT" | case_ frontend-check-snapshot res snapshot ok
 
 # --- proto-diff-*: Bash and Rust agree ----------------------------------------------
 req "$REQ_HELLO" | case_ proto-diff-canonical.hello req - ok

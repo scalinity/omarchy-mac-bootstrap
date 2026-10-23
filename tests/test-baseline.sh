@@ -117,6 +117,21 @@ agree() {
   normal "$tree" "$2" >"$2.norm"
   normal "$REPO" "$3" >"$3.norm"
   case "${B_DELTA:-}" in
+    M16-status-report)
+      assert_eq "$(grep -cx ' ▍Journey' "$3.norm")" 1 'M16-status-report: one appended Journey section'
+      awk '/^ ▍Journey$/ {journey=1; next} /^== record$/ {journey=0} journey {print}' "$3.norm" >"$3.stages"
+      assert_eq "$(awk '{sub(/:$/,"",$1); printf "%s%s",sep,$1; sep=" "}' "$3.stages")" \
+        'survey profile resolve plan asahi omarchy shared restore verify done' 'M16-status-report: exactly ten ordered stage lines'
+      assert_eq "$(awk '$2 !~ /^(done|current|todo|skipped|blocked)(:|$)/ {bad++} END {print bad+0}' "$3.stages")" 0 'M16-status-report: closed stage states'
+      # Drop only the appended blank, heading and ten checked lines. Every
+      # earlier byte, exit status, recorded command and state file still agrees.
+      awk '
+        /^ ▍Journey$/ {held=""; have=0; skip=10; next}
+        skip {skip--; next}
+        {if (have) print held; held=$0; have=1}
+        END {if (have) print held}' "$3.norm" >"$3.delta"
+      mv "$3.delta" "$3.norm"
+      ;;
     doctor-ssh-findings)
       # Only the two fixed M15-C findings on these off-SSH fixtures, and
       # their one extra pass in the existing summary, may differ.
@@ -159,7 +174,7 @@ agree() {
 N=0
 same() {
   local name=$1 fixture=$2 input=$3 B_DELTA=${B_DELTA:-}
-  case "$name" in doctor\ on\ linux-*) B_DELTA=doctor-ssh-findings ;; esac
+  case "$name" in doctor\ on\ linux-*) B_DELTA=doctor-ssh-findings ;; status\ on\ *) B_DELTA=M16-status-report ;; esac
   shift 3
   N=$((N + 1))
   run_one "$T/base" "$T/runs/base-$N" "$fixture" "$input" "$@"
@@ -197,7 +212,9 @@ new_rows=$(printf '%s\n' \
   "     restore [DIR]        Linux: restore the environment from Shared or DIR" \
   "     restore status       Linux: restore progress (read-only)" \
   "     restore undo         Linux: undo restored files that have not changed" \
-  "     debug                read-only debugging brief and machine facts")
+  "     debug                read-only debugging brief and machine facts" \
+  "     report               fresh final check table and verdict (read-only)" \
+  "     qualify [status]     Shared cross-OS round trip; status is read-only")
 assert_eq "$(grep -cxF -- "$help_row" "$T/runs/cand-$N/out")" 1 "--help lists frontend-check with its one line"
 assert_eq "$(grep -cxF -- "$op_row" "$T/runs/cand-$N/out")" 1 "--help lists operation SCOPE with its one line"
 while IFS= read -r row; do
@@ -217,9 +234,35 @@ same "an unknown flag" "" "" --frobnicate
 same "an unknown command" linux-alarm-fresh "" frobnicate
 # The commands of SPEC.md → Commands not built yet stay unknown commands, as
 # before; none became reachable through frontend-check.
-for c in rescue qualify report; do
-  same "$c (not built yet)" linux-alarm-fresh "" "$c"
+same "rescue (not built yet)" linux-alarm-fresh "" rescue
+# M16-status-report: report and qualify are now implemented. Their fixed
+# fixture behavior is checked separately; all preexisting commands keep the
+# accepted baseline's byte comparison, apart from the appended status section.
+for c in report qualify; do
+  N=$((N + 1))
+  run_one "$T/base" "$T/runs/base-$N" linux-alarm-fresh "" "$c"
+  run_one "$REPO" "$T/runs/cand-$N" linux-alarm-fresh "" "$c"
+  assert_eq "$(cat "$T/runs/base-$N/rc")" 2 "M16-status-report: BASE did not know $c"
+  assert_empty_file "$T/runs/cand-$N/record" "M16-status-report: $c executes nothing on this fixture"
+  assert_empty_file "$T/runs/cand-$N/shims.log" "M16-status-report: $c no forbidden command"
+  if [ "$c" = report ]; then
+    assert_eq "$(cat "$T/runs/cand-$N/rc")" 0 'M16-status-report: report is a completed read'
+    assert_eq "$(grep -Ec '^   (pass|warn|fail|not-checked) ' "$T/runs/cand-$N/out")" 8 'M16-status-report: eight report rows'
+    assert_contains "$(cat "$T/runs/cand-$N/out")" 'pass=1 warn=1 fail=0 not-checked=6' 'M16-status-report: exact report counts'
+    assert_contains "$(cat "$T/runs/cand-$N/out")" 'Verdict             warn' 'M16-status-report: warn verdict'
+    assert_eq "$(t_snapshot "$T/runs/cand-$N/state")" '(absent)' 'M16-status-report: report writes no persistent files'
+  else
+    assert_eq "$(cat "$T/runs/cand-$N/rc")" 1 'M16-status-report: qualify refuses without Shared'
+    assert_eq "$(cat "$T/runs/cand-$N/out")" '   ✗ Shared is not ready: off' 'M16-status-report: exact qualify refusal'
+    assert_eq "$(find "$T/runs/cand-$N/state" -type f | sed "s|$T/runs/cand-$N/state/||")" 'logs/omarchy-bootstrap-20260921.log' 'M16-status-report: only the normal act-intent log'
+    assert_eq "$(cat "$T/runs/cand-$N/state/logs/omarchy-bootstrap-20260921.log")" '2026-09-21T14:13:20Z [linux] start  omarchy-bootstrap 0.2.0 cmd=qualify intent=act os=Linux uid=0 dry_run=0 fixture=linux-alarm-fresh' 'M16-status-report: fixed refusal log'
+  fi
 done
+N=$((N + 1))
+run_one "$REPO" "$T/runs/cand-$N" linux-alarm-fresh "" qualify status
+assert_eq "$(cat "$T/runs/cand-$N/rc")" 1 'M16-status-report: qualify status reports the blocked read'
+assert_contains "$(cat "$T/runs/cand-$N/out")" blocked 'M16-status-report: qualify status reports its state'
+assert_eq "$(t_snapshot "$T/runs/cand-$N/state")" '(absent)' 'M16-status-report: qualify status writes nothing'
 # The migration's commands are macOS's: on Linux each refuses, changing
 # nothing (a named delta: the baseline knew none of them).
 for c in scan profile export; do

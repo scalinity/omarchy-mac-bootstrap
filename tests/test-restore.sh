@@ -1246,12 +1246,14 @@ assert_file "$RST_HOME/.config/test.conf" 'new configuration' restore-backend-un
 assert_eq "$(rst_status_counts)" '1 0 0 1' restore-backend-unverified-count
 load; : >"$T/record"; apply
 assert_empty_file "$T/record" restore-backend-unverified-no-reinstall
+assert_contains "$(tail -n 1 "$T/out")" '1 unverified; nothing showed these items installed' restore-backend-unverified-rerun-summary
 
 # restore-second-replace-hint: follow the advice both during review (the last
 # placement is still complete) and after a second Replace was refused.
 for hint_stage in review placement; do
   setup
   printf original >"$F/root/home/alex/.config/test.conf"
+  chmod 0664 "$F/root/home/alex/.config/test.conf"
   load; replace_all; apply
   printf edited >"$RST_HOME/.config/test.conf"
   load
@@ -1262,8 +1264,11 @@ for hint_stage in review placement; do
   assert_contains "$hint" 'Move the current destination' "restore-second-replace-actionable-hint-$hint_stage"
   assert_file "$RST_HOME/.config/test.conf" edited "restore-second-replace-preserves-current-$hint_stage"
   mv "$RST_HOME/.config/test.conf" "$RST_HOME/.config/test.saved"
-  # Perform the extra copy only when the printed instructions include it.
-  case "$hint" in *'copy the original from'*) cp -p "$RST_BACKUP" "$RST_HOME/.config/test.conf" ;; esac
+  assert_contains "$hint" 'cp -a -T' "restore-second-replace-copy-command-$hint_stage"
+  # Execute exactly the printed command through the fixture's command seam.
+  case "$hint" in *'cp -a -T'*) run cp -a -T -- "$RST_BACKUP" "$RST_HOME/.config/test.conf" ;; esac
+  _rst_node "$RST_HOME/.config/test.conf"
+  assert_contains "$RST_NODE" file:0664: "restore-second-replace-copy-mode-$hint_stage"
   load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
   assert_eq "$?" 0 "restore-second-replace-follow-hint-undo-$hint_stage"
   assert_file "$RST_HOME/.config/test.conf" original "restore-second-replace-follow-hint-original-$hint_stage"
@@ -1287,22 +1292,18 @@ for failure in checkpoint edit; do
   _rst_backup_name .config/test.conf
   assert_file "$RST_BACKUP" original "restore-undo-stage-cleanup-backup-$failure"
 done
-for boundary in restore.stage restore.backup; do
-  setup
-  printf original >"$F/root/home/alex/.config/test.conf"
-  (child "$boundary") 2>/dev/null
-  if [ "$boundary" = restore.backup ]; then
-    (child restore.log 1) 2>/dev/null
-    assert_eq "$?" 137 restore-undo-new-stage-stop-after-undone
-  fi
-  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
-  assert_eq "$?" 0 "restore-undo-new-stage-run-$boundary"
-  [ ! -e "$RST_HOME/.config/test.conf.omb-new-$RST_RUN" ] && ok || fail "restore-undo-new-stage-cleanup-$boundary"
-  assert_file "$RST_HOME/.config/test.conf" original "restore-undo-new-stage-original-$boundary"
-done
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+(child restore.backup) 2>/dev/null
+(child restore.log 1) 2>/dev/null
+assert_eq "$?" 137 restore-undo-new-stage-stop-after-undone
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-new-stage-run
+[ ! -e "$RST_HOME/.config/test.conf.omb-new-$RST_RUN" ] && ok || fail restore-undo-new-stage-cleanup
+assert_file "$RST_HOME/.config/test.conf" original restore-undo-new-stage-original
 
-# restore-undo-never-placed: a failed stage gives undo no placement to reverse,
-# even if an editor changes the original afterwards.
+# restore-undo-never-placed: a third state without a pending original is
+# skipped silently, regardless of whether a stage was ever created.
 setup
 printf original >"$F/root/home/alex/.config/test.conf"
 load; replace_all; OMB_TEST_FAIL_AT=restore.stage; apply
@@ -1313,6 +1314,7 @@ assert_eq "$?" 0 restore-undo-never-placed-skipped
 rst_undo_judge 0
 assert_eq "$CORE_FINDING" completed restore-undo-never-placed-judge
 assert_file "$RST_HOME/.config/test.conf" edited restore-undo-never-placed-current
+assert_not_contains "$(cat "$T/undo")" '.config/test.conf' restore-undo-never-placed-silent
 RST_CORE=0
 for recovery in changed missing; do
   setup
@@ -1337,10 +1339,17 @@ rst_undo_judge 0
 assert_eq "$CORE_FINDING" unexpected restore-undo-unlogged-file-judge-before
 RST_CORE=0 OMB_IFACE_WORD=undo
 _rst_undo >"$T/undo" 2>&1
-assert_eq "$?" 0 restore-undo-unlogged-file-run
-[ ! -e "$RST_HOME/.config/test.conf" ] && ok || fail restore-undo-unlogged-file-removed
-rst_undo_judge 0
-assert_eq "$CORE_FINDING" completed restore-undo-unlogged-file-judge-after
+assert_eq "$?" 1 restore-undo-unlogged-file-refused
+_rst_backup_name .config/test.conf
+assert_file "$RST_HOME/.config/test.conf" 'new configuration' restore-undo-unlogged-file-retained
+assert_contains "$(cat "$T/undo")" '.config/test.conf' restore-undo-unlogged-file-named
+assert_contains "$(cat "$T/undo")" 'matches what the restore places' restore-undo-unlogged-file-matches
+assert_contains "$(cat "$T/undo")" 'no placement was recorded' restore-undo-unlogged-file-no-record-explained
+assert_contains "$(cat "$T/undo")" 'left as is' restore-undo-unlogged-file-left-explained
+assert_contains "$(cat "$T/undo")" 'There was no original' restore-undo-unlogged-file-no-original
+rst_undo_judge 1
+assert_eq "$CORE_FINDING" unexpected restore-undo-unlogged-file-judge-after
+assert_contains "$CORE_JUDGE_TEXT" '.config/test.conf' restore-undo-unlogged-file-judge-named
 RST_CORE=0
 setup
 {
@@ -1360,10 +1369,15 @@ rst_undo_judge 0
 assert_eq "$CORE_FINDING" unexpected restore-undo-unlogged-setting-judge-before
 RST_CORE=0 OMB_IFACE_WORD=undo
 _rst_undo >"$T/undo" 2>&1
-assert_eq "$?" 0 restore-undo-unlogged-setting-run
-assert_file "$F/cmd/rst_git_user.name" Original restore-undo-unlogged-setting-restored
+assert_eq "$?" 1 restore-undo-unlogged-setting-refused
+assert_file "$F/cmd/rst_git_user.name" Restored restore-undo-unlogged-setting-retained
+assert_contains "$(cat "$T/undo")" 'cannot tell whether it set' restore-undo-unlogged-setting-explained
+assert_contains "$(cat "$T/undo")" 'git:user.name' restore-undo-unlogged-setting-named
+_rst_backup_name git:user.name
+assert_contains "$(cat "$T/undo")" "$RST_BACKUP.setting" restore-undo-unlogged-setting-backup
 rst_undo_judge 0
-assert_eq "$CORE_FINDING" completed restore-undo-unlogged-setting-judge-after
+assert_eq "$CORE_FINDING" unexpected restore-undo-unlogged-setting-judge-after
+assert_contains "$CORE_JUDGE_TEXT" 'git:user.name' restore-undo-unlogged-setting-judge-named
 RST_CORE=0
 # A failed later Replace has no placement; an older placed event is not proof.
 setup
@@ -1385,6 +1399,302 @@ rst_undo_judge 0
 assert_eq "$CORE_FINDING" completed restore-undo-later-replace-judge
 assert_file "$RST_HOME/.config/test.conf" edited restore-undo-later-replace-edit-retained
 RST_CORE=0
+
+# restore-recorded-only: identical owner-made nodes are left as is without
+# a current-cycle placement record, for every filesystem kind.
+undo_kind_fixture() {
+  setup
+  case "$1" in
+    file) n=0 ;;
+    dir)
+      {
+        rec_line item id config:tree class config whole 1
+        rec_line dir item config:tree dest .config/tree mode 0755
+        rec_line file item config:tree dest .config/tree/entry mode 0644 sha256 "$SHA" size 18 whole 1
+      } >"$T/body"
+      rebuild; n=0 ;;
+    link)
+      basebody
+      rec_line link item config:test dest .config/link target test.conf >>"$T/body"
+      rebuild; n=1 ;;
+    bashrc)
+      {
+        rec_line item id shell:bash class config whole 1
+        rec_line file item shell:bash dest .config/omarchy-mac-bootstrap/shell.bash mode 0644 sha256 "$SHA" size 18 whole 1
+      } >"$T/body"
+      rebuild; n=1 ;;
+  esac
+  load
+  path=$RST_HOME/${RST_DEST[n]} stage=$RST_HOME/${RST_DEST[n]}.omb-new-$RST_RUN
+  _rst_ready
+  _rst_parents "${RST_DEST[n]}" 1
+  _rst_log prepare "${RST_ITEM[n]}" "${RST_DEST[n]}" "${RST_OLD[n]}" "${RST_NEW[n]}" ready
+  _rst_stage "$n" "$stage"
+}
+for kind in file dir link bashrc; do
+  undo_kind_fixture "$kind"
+  # The owner's copy is separate from the retained stage, even when identical.
+  run cp -a -T -- "$stage" "$path"
+  _rst_node "$path"; handmade=$RST_NODE
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 1 "restore-cycle-handmade-refused-$kind"
+  _rst_node "$path"
+  assert_eq "$RST_NODE" "$handmade" "restore-cycle-handmade-retained-$kind"
+  # Repeated undo must keep the same destination untouched.
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 1 "restore-cycle-handmade-rerun-$kind"
+  _rst_node "$path"
+  assert_eq "$RST_NODE" "$handmade" "restore-cycle-handmade-rerun-retained-$kind"
+  rst_undo_judge 0
+  assert_eq "$CORE_FINDING" unexpected "restore-cycle-handmade-judge-$kind"
+  assert_contains "$CORE_JUDGE_TEXT" "${path#"$RST_HOME"/}" "restore-cycle-handmade-judge-named-$kind"
+  RST_CORE=0
+
+  undo_kind_fixture "$kind"
+  : >"$T/record"
+  _rst_transfer "$stage" "$path" "${RST_NEW[n]}"
+  assert_eq "$?" 0 "restore-transfer-$kind"
+  case "$kind" in
+    file | bashrc) primitive='ln -T --' ;;
+    link) primitive='ln -s -T --' ;;
+    dir) primitive='mv -T --update=none-fail --' ;;
+  esac
+  assert_contains "$(head -n 1 "$T/record")" "$primitive" "restore-transfer-primitive-$kind"
+  _rst_log placed "${RST_ITEM[n]}" "${RST_DEST[n]}" "${RST_OLD[n]}" "${RST_NEW[n]}" placed
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 0 "restore-recorded-undo-$kind"
+  [ ! -e "$path" ] && [ ! -L "$path" ] && ok || fail "restore-recorded-removed-$kind"
+done
+
+# A real stop after staging, including a pending original, never authorizes
+# moving an identical destination made by hand. Repeat the undo to check both.
+for original in absent present; do
+  setup
+  if [ "$original" = present ]; then printf original >"$F/root/home/alex/.config/test.conf"; boundary=restore.backup
+  else boundary=restore.stage; fi
+  (child "$boundary") 2>/dev/null
+  assert_eq "$?" 137 "restore-cycle-stop-$original"
+  load; stage=$RST_HOME/.config/test.conf.omb-new-$RST_RUN
+  run cp -a -T -- "$stage" "$RST_HOME/.config/test.conf"
+  for attempt in 1 2; do
+    load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1; rc=$?
+    if [ "$original" = present ]; then
+      assert_eq "$rc" 1 "restore-cycle-pending-refused-$attempt"
+      _rst_backup_name .config/test.conf
+      assert_file "$RST_BACKUP" original "restore-cycle-pending-original-$attempt"
+      assert_contains "$(cat "$T/undo")" "$RST_BACKUP" "restore-cycle-pending-backup-named-$attempt"
+    else assert_eq "$rc" 1 "restore-cycle-absent-refused-$attempt"; fi
+    assert_file "$RST_HOME/.config/test.conf" 'new configuration' "restore-cycle-stop-handmade-retained-$original-$attempt"
+  done
+done
+
+# Neither a crash before stage creation nor apply's stage cleanup records
+# a placement. Both used to let undo move an identical owner-made file.
+for boundary in before-stage apply-cleanup; do
+  setup
+  if [ "$boundary" = before-stage ]; then
+    load; _rst_ready
+    _rst_log prepare "${RST_ITEM[0]}" "${RST_DEST[0]}" "${RST_OLD[0]}" "${RST_NEW[0]}" ready
+    run cp -a -T -- "$B/objects/$SHA" "$RST_HOME/.config/test.conf"
+  else
+    (child restore.stage) 2>/dev/null
+    load; stage=$RST_HOME/.config/test.conf.omb-new-$RST_RUN
+    run cp -a -T -- "$stage" "$RST_HOME/.config/test.conf"
+    load; apply
+    assert_eq "$RC" 0 restore-unrecorded-apply-cleanup-rerun
+    [ ! -e "$stage" ] && ok || fail restore-unrecorded-apply-cleanup-stage-gone
+  fi
+  load; : >"$T/record"; OMB_IFACE_WORD=undo
+  _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 1 "restore-unrecorded-$boundary-refused"
+  assert_file "$RST_HOME/.config/test.conf" 'new configuration' "restore-unrecorded-$boundary-owner-retained"
+  assert_empty_file "$T/record" "restore-unrecorded-$boundary-no-mutation"
+  assert_contains "$(cat "$T/undo")" '.config/test.conf' "restore-unrecorded-$boundary-named"
+  rst_undo_judge 1
+  assert_eq "$CORE_FINDING" unexpected "restore-unrecorded-$boundary-judge"
+  assert_contains "$CORE_JUDGE_TEXT" '.config/test.conf' "restore-unrecorded-$boundary-judge-named"
+  RST_CORE=0
+done
+
+# A pending original returns only to a free destination. Even a copy of the
+# before at the destination remains untouched while the backup is pending.
+for occupant in absent before after third; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  (child restore.backup) 2>/dev/null
+  load; _rst_backup_name .config/test.conf
+  backup=$RST_BACKUP
+  case "$occupant" in
+    before) cp -p "$backup" "$RST_HOME/.config/test.conf" ;;
+    after) cp -p "$B/objects/$SHA" "$RST_HOME/.config/test.conf" ;;
+    third) printf owner-edit >"$RST_HOME/.config/test.conf" ;;
+  esac
+  _rst_node "$RST_HOME/.config/test.conf"; occupant_fp=$RST_NODE
+  : >"$T/record"; OMB_IFACE_WORD=undo
+  _rst_undo >"$T/undo" 2>&1; rc=$?
+  if [ "$occupant" = absent ]; then
+    assert_eq "$rc" 0 restore-pending-free-recovered
+    assert_file "$RST_HOME/.config/test.conf" original restore-pending-free-original
+    assert_contains "$(cat "$T/record")" 'mv -T --update=none-fail' restore-pending-free-no-clobber
+    rst_undo_judge 0
+    assert_eq "$CORE_FINDING" completed restore-pending-free-judge
+  else
+    assert_eq "$rc" 1 "restore-pending-$occupant-refused"
+    _rst_node "$RST_HOME/.config/test.conf"
+    assert_eq "$RST_NODE" "$occupant_fp" "restore-pending-$occupant-owner-retained"
+    assert_file "$backup" original "restore-pending-$occupant-backup-retained"
+    assert_empty_file "$T/record" "restore-pending-$occupant-no-mutation"
+    assert_contains "$(cat "$T/undo")" "$backup" "restore-pending-$occupant-backup-named"
+    rst_undo_judge 1
+    assert_eq "$CORE_FINDING" unexpected "restore-pending-$occupant-judge"
+  fi
+  RST_CORE=0
+done
+
+# An occupant appearing after the undo decision must still never be moved.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+(child restore.backup) 2>/dev/null
+load; _rst_history .config/test.conf
+_rst_undo_needed 0
+assert_eq "$?" 0 restore-pending-free-decision
+backup=$RST_BACKUP
+cp -p "$B/objects/$SHA" "$RST_HOME/.config/test.conf"
+: >"$T/record"
+_rst_undo_file 0 >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-pending-late-occupant-refused
+assert_file "$RST_HOME/.config/test.conf" 'new configuration' restore-pending-late-occupant-retained
+assert_file "$backup" original restore-pending-late-occupant-backup
+assert_empty_file "$T/record" restore-pending-late-occupant-no-mutation
+
+# The unrecorded pending-original hint is followed with the destination free.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+(child restore.backup) 2>/dev/null
+load
+printf owner-edit >"$RST_HOME/.config/test.conf"
+load
+assert_contains "${RST_REASON[0]}" 'while the destination is free' restore-pending-hint-free
+mv "$RST_HOME/.config/test.conf" "$RST_HOME/.config/test.saved"
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-pending-hint-undo
+assert_file "$RST_HOME/.config/test.conf" original restore-pending-hint-original
+assert_file "$RST_HOME/.config/test.saved" owner-edit restore-pending-hint-owner-retained
+
+# Without a pending backup, absent, before and third states are skipped.
+for current in absent before third; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  load; _rst_ready
+  _rst_log prepare "${RST_ITEM[0]}" "${RST_DEST[0]}" "${RST_OLD[0]}" "${RST_NEW[0]}" ready
+  case "$current" in
+    absent) rm "$RST_HOME/.config/test.conf" ;;
+    third) printf owner-edit >"$RST_HOME/.config/test.conf" ;;
+  esac
+  # No backup means the absent original is not available for recovery.
+  if [ "$current" = absent ]; then
+    # Model a new item, whose before was absent rather than a lost original.
+    _rst_log prepare "${RST_ITEM[0]}" "${RST_DEST[0]}" absent "${RST_NEW[0]}" ready
+  fi
+  : >"$T/record"; OMB_IFACE_WORD=undo
+  _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 0 "restore-unrecorded-skip-$current"
+  assert_not_contains "$(cat "$T/undo")" '.config/test.conf' "restore-unrecorded-silent-$current"
+  assert_empty_file "$T/record" "restore-unrecorded-no-mutation-$current"
+  rst_undo_judge 0
+  assert_eq "$CORE_FINDING" completed "restore-unrecorded-skip-judge-$current"
+  RST_CORE=0
+done
+
+# An undone cycle's after cannot authorize a new undo after a status-only event.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+load; replace_all; apply
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+load; _rst_mark 0 blocked 'An earlier install did not complete.'
+run cp -a -T -- "$B/objects/$SHA" "$RST_HOME/.config/test.conf.owner-copy"
+mv "$RST_HOME/.config/test.conf.owner-copy" "$RST_HOME/.config/test.conf"
+load; : >"$T/record"
+OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-cycle-stale-after-skipped
+assert_file "$RST_HOME/.config/test.conf" 'new configuration' restore-cycle-stale-after-retained
+assert_empty_file "$T/record" restore-cycle-stale-after-no-mutation
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" completed restore-cycle-stale-after-judge
+RST_CORE=0
+
+# A prepare alone cannot identify who set a value; preserve both private values.
+setup
+{
+  rec_line item id settings:test class config whole 1
+  rec_line setting item settings:test kind git tool git name user.name value PRIVATE_NEW_VALUE
+} >"$T/body"
+rebuild
+printf 'PRIVATE_OLD_VALUE\n' >"$F/cmd/rst_git_user.name"
+load; _rst_ready
+_rst_backup_name git:user.name
+setting_backup=$RST_BACKUP.setting
+printf '%s' "$RST_VALUE" >"$T/saved-setting"
+run rst_stage_write "$T/saved-setting" "$setting_backup" 0600
+_rst_log prepare "${RST_ITEM[0]}" "${RST_DEST[0]}" "${RST_OLD[0]}" "${RST_NEW[0]}" ready
+printf 'PRIVATE_NEW_VALUE\n' >"$F/cmd/rst_git_user.name"
+load; : >"$T/record"; OMB_IFACE_WORD=undo
+_rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-cycle-handset-refused
+assert_file "$F/cmd/rst_git_user.name" PRIVATE_NEW_VALUE restore-cycle-handset-retained
+assert_file "$setting_backup" PRIVATE_OLD_VALUE restore-cycle-handset-backup
+assert_contains "$(cat "$T/undo")" 'cannot tell whether it set' restore-cycle-handset-explained
+assert_contains "$(cat "$T/undo")" "$setting_backup" restore-cycle-handset-backup-named
+assert_not_contains "$(cat "$T/undo")" PRIVATE_OLD_VALUE restore-cycle-handset-old-withheld
+assert_not_contains "$(cat "$T/undo")" PRIVATE_NEW_VALUE restore-cycle-handset-new-withheld
+assert_empty_file "$T/record" restore-cycle-handset-no-mutation
+rst_undo_judge 1
+assert_eq "$CORE_FINDING" unexpected restore-cycle-handset-judge
+assert_contains "$CORE_JUDGE_TEXT" 'git:user.name' restore-cycle-handset-judge-named
+RST_CORE=0
+
+# A final bundle recheck failure never publishes a checked bundle.
+eval "$(declare -f bndl_check | sed '1s/bndl_check/_restore_recheck_bundle/')"
+bndl_check() {
+  _restore_recheck_bundle "$@" || return 1
+  if [ "${RESTORE_TEST_CHANGE_BUNDLE:-0}" = 1 ]; then
+    RESTORE_TEST_CHANGE_BUNDLE=0
+    printf changed >>"$1/objects/$SHA"
+  fi
+}
+setup; RESTORE_TEST_CHANGE_BUNDLE=1
+load
+assert_eq "$RST_BUNDLE" '' restore-bundle-final-check-unpublished
+assert_eq "$RST_STATE" blocked restore-bundle-final-check-blocked
+setup; RESTORE_TEST_CHANGE_BUNDLE=1
+CORE_REQ_ARGS=2 CORE_REQ_ARG_NAME=(bundle review)
+CORE_REQ_ARG_VALUE=(20261022T120000Z malformed)
+rst_apply_basis
+assert_eq "$?" 1 restore-bundle-final-check-basis-refused
+assert_eq "$RST_INVALID_NAME" bundle restore-bundle-final-check-field
+bndl_check() { _restore_recheck_bundle "$@"; }
+CORE_REQ_ARGS=0 CORE_REQ_ARG_NAME=() CORE_REQ_ARG_VALUE=()
+
+# Refusals name the destination/backup, including an owner-deleted destination.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+load; replace_all; apply
+printf edited >"$RST_HOME/.config/test.conf"
+load; replace_all; apply
+rm "$RST_HOME/.config/test.conf"
+_rst_backup_name .config/test.conf
+printf changed >"$RST_BACKUP"
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-undo-deleted-destination-refused
+assert_contains "$(cat "$T/undo")" '.config/test.conf' restore-undo-deleted-destination-named
+assert_contains "$(cat "$T/undo")" "$RST_BACKUP" restore-undo-deleted-destination-backup
+
+setup; load; apply
+mv "$OMB_STATE_DIR/restore/runs" "$OMB_STATE_DIR/restore/saved-runs"
+ln -s saved-runs "$OMB_STATE_DIR/restore/runs"
+OMB_IFACE_WORD=undo; rst_cmd undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-undo-unsafe-runs-refused
+assert_contains "$(cat "$T/undo")" 'run path is not safe' restore-undo-unsafe-runs-reason
 
 # restore-self-check-directory: a plain rename replaces an empty directory.
 setup; load; _rst_ready
