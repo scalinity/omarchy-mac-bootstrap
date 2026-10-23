@@ -1,0 +1,2 @@
+Filesystem 1024-blocks Used Available Capacity Mounted on
+/dev/nvme0n1p7 146484375 1000 140000000 1% /mnt/shared

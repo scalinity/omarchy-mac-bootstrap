@@ -132,6 +132,9 @@ on doctor; see *Without Shared*).
 
 ## Qualification
 
+The three steps, text commands and `qualify` core scope are built. Generated
+fixtures exercise the round trip; M17 runs it on the target Mac.
+
 ### What it proves
 
 That the two systems agree about the one partition they share, on this
@@ -156,9 +159,11 @@ on Shared:  omarchy-mac-bootstrap/qualify/
 Nothing about qualification is kept anywhere else: each run reads its state
 from this folder (*States*).
 
-Every record is written to a temporary name with exclusive creation,
-flushed and renamed into place; exFAT has no journal, and the seal catches a
-record torn by a crash. The flush is `sync FILE` on Linux; macOS's `sync`
+Each record file uses the sealed `omb-qualify 1` family, with exactly one record
+of the type below. Every record is written to its fixed temporary name
+(`macos.omb.tmp`, `linux.omb.tmp` or `result.omb.tmp`) with exclusive creation,
+flushed and renamed into place, then flushed again. exFAT has no journal;
+the seal catches a record torn by a crash. The flush is `sync FILE` on Linux; macOS's `sync`
 takes no file argument, so there it is a whole-system `sync`.
 
 | Record | Written by | Schema |
@@ -167,9 +172,17 @@ takes no file argument, so there it is a whole-system `sync`.
 | `linux` (`linux.omb`) | Linux, step 2 | `schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:bool` |
 | `result` (`result.omb`) | macOS, step 3 | `schema:uint previous:hex64 os:enum(macos) commit:hex40? at:utc data_ok:bool return_ok:bool names_ok:bool verdict:enum(passed\|failed) reason:id?` |
 
+`plan` retains the full SHA-256 of the baseline Shared intent body,
+without its final LF or `digest=` line. Its first 16 digits equal the
+baseline's saved digest and its first eight equal the token's plan id.
+
 `previous` is the SHA-256 of the step record before it, so each step names
 the exact file it continued from. `commit` is this tool's commit when it
-can be read, and `at` the time of writing; both are shown, never compared.
+can be read, and `at` the time of writing; both are shown in step detail,
+never compared. Times are displayed in US Eastern. Linux's `majmin` is
+the device number observed at step 2; every later run verifies the mount
+from the current kernel table, rather than trusting or requiring that
+historical number.
 
 ### Binding and freshness
 
@@ -217,12 +230,16 @@ has cleared the folder. Too little space is `blocked`, with the numbers.
 
 ### Names
 
-Fixed names (ASCII; a precomposed and a decomposed `é`; two names differing
-only in case; a 255-byte name; a name with a space) are written into that
+The fixed names (`ascii.txt`; precomposed `é` and decomposed `e` + U+0301;
+`Case` and `case`; 255 ASCII `n` bytes; `with space`) are written into that
 side's names folder, **each with exclusive creation**: a name that already
 exists (on case-insensitive exFAT, the second of the case pair) is recorded
-as a collision and never overwritten. Each side records what it wrote, what
-it sees, and each collision, byte for byte.
+as a collision and never overwritten. The macOS `name` list holds successful
+creations; a collision is shown and
+that spelling is absent from the list. Linux records its successful
+creations, what it sees from macOS and its collisions, byte for byte. A
+collision does not itself fail the round trip: the successful spellings
+must survive on the other system.
 
 ### The round trip
 
@@ -253,8 +270,8 @@ sequenceDiagram
   otherwise; on Linux it runs step 2 when a `macos.omb` waits without a
   `linux.omb`, and otherwise refuses and names the step that is due.
 - **Rerunning step 1 starts over.** It first removes from the folder only
-  the names this design fixes (the three step records, the two data files,
-  the two names folders and the fixed test names in them), after showing
+  the names this design fixes (the three step records and their fixed
+  `.tmp` names, the two data files, the two names folders and the fixed test names in them), after showing
   them; anything else found there is reported and left.
 - **Nothing is written before the checks.** A side that cannot verify the
   identity or the binding writes nothing on Shared, not even a failure
@@ -270,7 +287,12 @@ sequenceDiagram
   starts over.
 - **Clean shutdowns**: each step ends by saying to shut down fully, not to
   sleep (docs/SHARED.md); an exFAT dirty flag seen by Linux is recorded
-  (`dirty`) and shown in the verdict.
+  (`dirty`) and shown in the verdict. Linux reads its kernel log with
+  `dmesg` for the verified partition's exFAT dirty warning; an unreadable
+  log stops step 2 before it writes anything. It never asks for root.
+- Before a run, a read-only space preview credits the allocation in that
+  side's fixed data files which cleanup will remove. The writer measures
+  free space again after cleanup; only that final read permits the stream.
 
 ### States
 
