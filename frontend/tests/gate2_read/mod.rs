@@ -1073,7 +1073,8 @@ fn ux2_sweep_every_screen_on_the_requested_fixtures() {
             "journey-linux-restored",
         ]
     };
-    let capture = repo().join("frontend/.artifacts/ux2-sweep");
+    // Outside the checkout: the build must start from the commit alone.
+    let capture = std::env::temp_dir().join(format!("omb-ux2-sweep-{}", std::process::id()));
     std::fs::create_dir_all(&capture).unwrap();
     for fixture in fixtures {
         let mut session = w.session(fixture, all);

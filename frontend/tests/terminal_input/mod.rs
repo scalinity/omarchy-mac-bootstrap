@@ -2,7 +2,6 @@
 //! table. The launcher/fixture regressions are separately in pty_hangup.
 use super::*;
 use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
-use std::path::Path;
 
 struct OwnedChild {
     child: Box<dyn Child + Send + Sync>,
@@ -60,10 +59,9 @@ fn native_poll_handles_partial_input_and_hangup() {
         std::process::exit(0);
     }
     for mode in ["hangup", "terminate"] {
-        let trace = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-            ".artifacts/hangup/native-{}-{mode}.trace",
-            std::process::id()
-        ));
+        // Outside the checkout: the build must start from the commit alone.
+        let trace =
+            std::env::temp_dir().join(format!("omb-native-{}-{mode}.trace", std::process::id()));
         std::fs::create_dir_all(trace.parent().unwrap()).unwrap();
         let _ = std::fs::remove_file(&trace);
         let pair = native_pty_system()
