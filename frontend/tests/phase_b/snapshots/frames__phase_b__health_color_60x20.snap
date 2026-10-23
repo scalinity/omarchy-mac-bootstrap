@@ -1,0 +1,24 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Health ────────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status ▍Health  Logs  Plan ›
+┌ Health ──────────────────────────────────────────────────┐
+│   Observed facts; c asks for the selected tool's MCP     │
+│   list (it may start servers).                           │
+│   Passed 2; Warnings 3; Failures 0                       │
+│ ▍AI tools                                                │
+│   > Claude Code - pass: installed (mise); wrapper        │
+│   present; ran at restore; configured; sign-in file      │
+│   present                                                │
+│   Codex - warn: installed (mise); configured; needs      │
+│   GITHUB_TOKEN                                           │
+│   OpenCode - info: not installed                         │
+│ ▍Restore                                                 │
+│   Restore - warn: partial; 1 placed; 2 kept; 1 needs     │
+│   sign-in                                                │
+│ ▍SSH                                                     │
+│   SSH policy - warn: cannot-tell: run doctor as root    ↓│
+└──────────────────────────────────────────────────────────┘
+ c MCP list (asks first)  ? help          may act · fixture

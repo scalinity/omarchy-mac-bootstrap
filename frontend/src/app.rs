@@ -205,6 +205,12 @@ pub enum Screen {
     Shared,
     /// The parameters of an action other than `plan.save`.
     Form,
+    /// Screen 20: layered restore review and the core's item progress.
+    Restore,
+    /// Screen 21: Keep/Replace choices over the core's conflicts and diffs.
+    Conflicts,
+    /// The read-only agent brief opened from an error.
+    Brief,
     Gate,
     Help,
     /// The core could not be reached or answered with an error.
@@ -212,7 +218,7 @@ pub enum Screen {
 }
 
 /// The navigation rail's screens, in order.
-pub const NAV: [Screen; 14] = [
+pub const NAV: [Screen; 15] = [
     Screen::Welcome,
     Screen::Dashboard,
     Screen::Machine,
@@ -227,6 +233,7 @@ pub const NAV: [Screen; 14] = [
     Screen::Review,
     Screen::Install,
     Screen::Progress,
+    Screen::Restore,
 ];
 
 impl Screen {
@@ -250,6 +257,9 @@ impl Screen {
             Screen::Progress => "Progress",
             Screen::Shared => "Shared",
             Screen::Form => "Parameters",
+            Screen::Restore => "Restore",
+            Screen::Conflicts => "Conflict and diff",
+            Screen::Brief => "Debugging brief",
             Screen::Gate => "Gate",
             Screen::Help => "Keys",
             Screen::Fatal => "No answer",
@@ -266,6 +276,9 @@ impl Screen {
             Screen::Operation => Some(Kind::Operation),
             Screen::Inventory => Some(Kind::Items),
             Screen::Review => Some(Kind::Review),
+            Screen::Restore => Some(Kind::RestoreReview),
+            Screen::Conflicts => Some(Kind::Conflicts),
+            Screen::Brief => Some(Kind::Brief),
             _ => None,
         }
     }
@@ -489,12 +502,16 @@ pub struct Model {
     /// The sidebar's panels shown in place of the workspace (narrow widths).
     pub side: bool,
     /// The details opened, by kind.
-    pub details: [Option<Detail>; 9],
+    pub details: [Option<Detail>; 15],
     /// An action invalidated Operation; only an admitted Journey read clears it.
     pub operation_stale: bool,
     pub health: ScopeRead,
     pub logread: ScopeRead,
     pub profile: ScopeRead,
+    pub restore: ScopeRead,
+    pub debug: ScopeRead,
+    pub rest: crate::restore::Restore,
+    pub brief_back: Screen,
     pub logs_tab: LogsTab,
     /// The storage planner: `plan.save`'s parameters.
     pub plan: Form,
@@ -601,6 +618,10 @@ impl Default for Model {
             health: ScopeRead::default(),
             logread: ScopeRead::default(),
             profile: ScopeRead::default(),
+            restore: ScopeRead::default(),
+            debug: ScopeRead::default(),
+            rest: crate::restore::Restore::default(),
+            brief_back: Screen::Dashboard,
             logs_tab: LogsTab::Tool,
             plan: Form::sizes(),
             form: Form::default(),
@@ -651,6 +672,8 @@ impl Model {
         match s {
             Scope::Logs => &self.logread,
             Scope::Profile => &self.profile,
+            Scope::Restore => &self.restore,
+            Scope::Debug => &self.debug,
             _ => &self.health,
         }
     }
@@ -659,6 +682,8 @@ impl Model {
         match s {
             Scope::Logs => &mut self.logread,
             Scope::Profile => &mut self.profile,
+            Scope::Restore => &mut self.restore,
+            Scope::Debug => &mut self.debug,
             _ => &mut self.health,
         }
     }
@@ -711,7 +736,12 @@ impl Model {
     /// may a screen speak of all of them, or of none.
     pub fn whole(&self, k: Kind) -> bool {
         self.detail(k).is_some_and(|d| {
-            d.loaded && !d.changed && d.offset == 0 && d.rows.len() as u64 >= d.total
+            d.loaded
+                && !d.changed
+                && d.fault.is_none()
+                && d.offset == 0
+                && d.rows.len() as u64 == d.total
+                && self.generation(k.scope()) == Some(d.generation.as_str())
         })
     }
 
@@ -768,6 +798,8 @@ impl Model {
         let label = match s {
             Scope::Logs => "reading the log",
             Scope::Profile => "reading the profile",
+            Scope::Restore => "reading restore",
+            Scope::Debug => "reading debugging facts",
             _ => "reading health",
         };
         self.send(Req::Snapshot(s), true, label)
@@ -969,6 +1001,13 @@ fn step(m: &mut Model, msg: Msg) -> Vec<Cmd> {
 fn wants(m: &Model) -> Vec<Kind> {
     match m.screen {
         Screen::Logs if m.logs_tab == LogsTab::Diagnostics => Vec::new(),
+        Screen::Restore => vec![
+            Kind::RestoreReview,
+            Kind::Conflicts,
+            Kind::Bundles,
+            Kind::RestoreStatus,
+        ],
+        Screen::Conflicts => vec![Kind::Conflicts, Kind::Diff],
         Screen::Selection => vec![Kind::Items],
         Screen::Inventory if m.inv.open => vec![Kind::Items, Kind::Choices],
         // The review's rows, and the inventory a save's document is made of.
@@ -1036,7 +1075,18 @@ fn demand(m: &mut Model) -> Vec<Cmd> {
 
 /// The kinds held whole: their pages are joined, never shown one at a time.
 fn read_whole(kind: Kind) -> bool {
-    matches!(kind, Kind::Items | Kind::Choices | Kind::Opaque)
+    matches!(
+        kind,
+        Kind::Items
+            | Kind::Choices
+            | Kind::Opaque
+            | Kind::Bundles
+            | Kind::RestoreReview
+            | Kind::Conflicts
+            | Kind::Diff
+            | Kind::RestoreStatus
+            | Kind::Brief
+    )
 }
 
 /// Quit if asked to; otherwise the journey after another scope's action,
@@ -1097,7 +1147,7 @@ fn regenerated(m: &mut Model, scope: Scope, id: &str) -> Vec<Cmd> {
                 offset: 0,
                 limit: detail_limit(k, limit),
             });
-        } else if moved && scope == Scope::Profile {
+        } else if moved && matches!(scope, Scope::Profile | Scope::Restore | Scope::Debug) {
             // The person's choices are made over these rows: they are read
             // again from the new generation, never shown under it.
             m.details[k.index()] = None;
@@ -1123,6 +1173,20 @@ fn moved_on(m: &mut Model, scope: Scope, old: Option<String>) {
     }
     if scope == Scope::Profile {
         m.save_check = None;
+    }
+    if scope == Scope::Restore {
+        m.rest.checked = None;
+        m.rest.bundle.clear();
+        m.rest.replacements.clear();
+        m.rest.conflict = 0;
+        if m.gate.as_ref().is_some_and(|g| g.scope == scope) {
+            m.gate = None;
+            m.screen = Screen::Restore;
+            m.status = Some((
+                Level::Warn,
+                "Restore changed since you looked; review it again.".into(),
+            ));
+        }
     }
     if m.ask.as_ref().is_some_and(|t| t.scope == scope) {
         m.ask = None;
@@ -1378,6 +1442,27 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                     d.fault = Some(Fault::Said { status, code, text });
                 }
             }
+            if read_whole(kind) {
+                let d = m.detail_mut(kind).expect("made above");
+                if d.loaded
+                    && (d.rows.len() as u64 > d.total
+                        || ((d.rows.len() as u64) < d.total && p.offset == d.rows.len() as u64))
+                {
+                    d.fault = Some(Fault::NoAnswer(
+                        "The detail page did not advance within its total.".into(),
+                    ));
+                }
+            }
+            if kind == Kind::Bundles && m.whole(Kind::Bundles) {
+                m.rest.bundle = m
+                    .detail(kind)
+                    .expect("whole")
+                    .rows
+                    .iter()
+                    .find(|r| r.col(4) == "ok")
+                    .map(|r| r.id.clone())
+                    .unwrap_or_default();
+            }
             if kind == Kind::Items && m.whole(Kind::Items) {
                 recheck_picks(m);
             }
@@ -1453,6 +1538,39 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
 /// The core's answer to a validation: the planner's, another form's, or the
 /// check of the migration choices — which, reviewed, is asked to be saved.
 fn validated(m: &mut Model, c: Checked) -> Vec<Cmd> {
+    if c.action == "restore.apply" {
+        let ready = c.status == "done" && c.code == "ok";
+        m.rest.checked = Some(c);
+        if ready && m.screen == Screen::Restore {
+            return restore_go_on(m);
+        }
+        return settle(m, Vec::new());
+    }
+    if c.action == "agents.mcp" {
+        if c.status == "done"
+            && c.code == "ok"
+            && m.screen == Screen::Health
+            && let Some(basis) = c.basis.clone()
+            && let Some(action) = m.offered(Scope::Health, "agents.mcp")
+        {
+            ask(
+                m,
+                Target {
+                    action,
+                    args: c.args,
+                    basis,
+                    scope: Scope::Health,
+                    back: Screen::Health,
+                },
+            );
+        } else {
+            m.status = Some((
+                Level::Warn,
+                format!("MCP check: {} {} {}", c.status, c.code, c.text),
+            ));
+        }
+        return settle(m, Vec::new());
+    }
     if c.action == "profile.save" {
         m.save_check = Some(c);
         // Asked only where it was asked for, on the Review with no field
@@ -1522,7 +1640,11 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             settle(m, Vec::new())
         }
         Req::Validate { action, .. } => {
-            if action == "profile.save" {
+            if matches!(
+                action.as_str(),
+                "profile.save" | "restore.apply" | "agents.mcp"
+            ) {
+                m.rest.checked = None;
                 m.status = Some((
                     Level::Warn,
                     format!(
@@ -1579,7 +1701,11 @@ fn not_sent(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             }
         }
         Req::Validate { action, .. } => {
-            if action == "profile.save" {
+            if matches!(
+                action.as_str(),
+                "profile.save" | "restore.apply" | "agents.mcp"
+            ) {
+                m.rest.checked = None;
                 m.status = Some((
                     Level::Fail,
                     format!("The request was not delivered ({why}); nothing ran."),
@@ -1637,6 +1763,7 @@ fn ask(m: &mut Model, t: Target) {
     let q = match t.action.id.as_str() {
         "plan.save" => "Save this plan?".to_string(),
         "profile.save" => "Save these choices?".to_string(),
+        "agents.mcp" => "Run this tool's MCP list (may start servers)?".to_string(),
         _ => format!("{}?", t.action.label),
     };
     m.status = Some((
@@ -1661,6 +1788,13 @@ fn execute(m: &mut Model, t: Target, word: String) -> Vec<Cmd> {
             return Vec::new();
         }
         m.sent_picks = m.picks.clone();
+    }
+    if t.action.id == "restore.apply" && restore_reviewed_args(m).as_ref() != Some(&t.args) {
+        m.status = Some((
+            Level::Warn,
+            "Not sent: the restore choices changed; review them again.".into(),
+        ));
+        return Vec::new();
     }
     m.exec_scope = t.scope;
     let label = t.action.label.clone();
@@ -1708,6 +1842,12 @@ fn choose(m: &mut Model, a: Action, scope: Scope) -> Vec<Cmd> {
         return m.busy();
     }
     let back = m.screen;
+    if a.id == "restore.apply" {
+        if back != Screen::Restore {
+            return open(m, Screen::Restore);
+        }
+        return restore_check(m);
+    }
     if a.id == "profile.save" {
         return save_choices(m);
     }
@@ -1853,6 +1993,225 @@ fn save_go_on(m: &mut Model) -> Vec<Cmd> {
     }
 }
 
+/// The whole current review and conflicts form one replacement document.
+fn restore_args(m: &Model) -> Option<Args> {
+    if !m.whole(Kind::RestoreReview)
+        || !m.whole(Kind::Conflicts)
+        || !m.whole(Kind::Bundles)
+        || m.rest.bundle.is_empty()
+    {
+        return None;
+    }
+    let rows = &m.detail(Kind::Conflicts)?.rows;
+    let doc = crate::restore::document(rows, &m.rest.replacements);
+    let mut args = crate::restore::split(&doc)?;
+    args.insert(0, ("bundle".into(), m.rest.bundle.clone()));
+    let snap = m.snap_of(Scope::Restore)?;
+    let params = snap.params_of("restore.apply");
+    args.iter()
+        .all(|(n, _)| params.iter().any(|p| p.name == *n))
+        .then_some(args)
+}
+
+fn restore_check(m: &mut Model) -> Vec<Cmd> {
+    let Some(args) = restore_args(m) else {
+        m.status = Some((Level::Warn,
+            "Restore waits for the complete current review and conflicts, and choices that fit the declared parameters; r reads again.".into()));
+        return Vec::new();
+    };
+    m.rest.checked = None;
+    m.send(
+        Req::Validate {
+            action: "restore.apply".into(),
+            args,
+        },
+        true,
+        "checking restore choices",
+    )
+}
+
+/// The exact reviewed choices, with the core's declared normal values.
+fn restore_reviewed_args(m: &Model) -> Option<Args> {
+    let c = m.rest.checked.as_ref()?;
+    if c.status != "done" || c.code != "ok" || restore_args(m).as_ref() != Some(&c.args) {
+        return None;
+    }
+    Some(
+        c.args
+            .iter()
+            .map(|(name, value)| {
+                c.normal_args
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .cloned()
+                    .unwrap_or_else(|| (name.clone(), value.clone()))
+            })
+            .collect(),
+    )
+}
+
+fn restore_go_on(m: &mut Model) -> Vec<Cmd> {
+    let Some(c) = &m.rest.checked else {
+        return Vec::new();
+    };
+    let Some(basis) = c
+        .basis
+        .clone()
+        .filter(|_| c.status == "done" && c.code == "ok")
+    else {
+        return Vec::new();
+    };
+    let Some(args) = restore_reviewed_args(m) else {
+        return Vec::new();
+    };
+    let Some(action) = m.offered(Scope::Restore, "restore.apply") else {
+        return Vec::new();
+    };
+    let t = Target {
+        action,
+        args,
+        basis,
+        scope: Scope::Restore,
+        back: Screen::Restore,
+    };
+    if t.action.gate.is_empty() {
+        // The core's declared confirmation always wins.
+        ask(m, t);
+        Vec::new()
+    } else {
+        open_gate(m, t)
+    }
+}
+
+fn restore_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
+    if k.code == KeyCode::Char('d') {
+        return open(m, Screen::Conflicts);
+    }
+    let actions: Vec<_> = m
+        .snap_of(Scope::Restore)
+        .map(|s| {
+            s.actions
+                .iter()
+                .filter(|a| matches!(a.id.as_str(), "restore.apply" | "restore.undo"))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    match k.code {
+        KeyCode::Char('n') => {
+            m.rest.action = (m.rest.action + 1).min(actions.len().saturating_sub(1))
+        }
+        KeyCode::Char('p') => m.rest.action = m.rest.action.saturating_sub(1),
+        KeyCode::Enter => {
+            if let Some(a) = actions.get(m.rest.action).cloned() {
+                return choose(m, a, Scope::Restore);
+            }
+            m.status = Some((Level::Info, "The core offers no restore action now.".into()));
+        }
+        _ => {
+            let n = crate::screens::blocks(m, Screen::Restore);
+            scroll_key(&mut m.page_scroll, n, &k);
+        }
+    }
+    Vec::new()
+}
+
+fn conflict_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
+    match k.code {
+        KeyCode::Char('v') => m.rest.side_by_side = !m.rest.side_by_side,
+        KeyCode::Char('n') => {
+            let n = m.detail(Kind::Conflicts).map_or(0, |d| d.rows.len());
+            m.rest.conflict = (m.rest.conflict + 1).min(n.saturating_sub(1));
+            m.page_scroll = 0;
+        }
+        KeyCode::Char('p') => {
+            m.rest.conflict = m.rest.conflict.saturating_sub(1);
+            m.page_scroll = 0;
+        }
+        KeyCode::Char('k' | 'R' | 'K') => {
+            if !m.whole(Kind::Conflicts) {
+                m.status = Some((
+                    Level::Warn,
+                    "Choices wait for all conflicts of the current review; r reads again.".into(),
+                ));
+                return Vec::new();
+            }
+            let rows = &m.details[Kind::Conflicts.index()]
+                .as_ref()
+                .expect("whole")
+                .rows;
+            if let Some(row) = rows.get(m.rest.conflict) {
+                if k.code == KeyCode::Char('K') {
+                    for r in rows.iter().skip(m.rest.conflict + 1) {
+                        crate::restore::choose(&mut m.rest.replacements, &r.id, false);
+                    }
+                } else {
+                    crate::restore::choose(
+                        &mut m.rest.replacements,
+                        &row.id,
+                        k.code == KeyCode::Char('R'),
+                    );
+                }
+                m.rest.checked = None;
+            }
+        }
+        _ => {
+            let n = crate::screens::blocks(m, Screen::Conflicts);
+            scroll_key(&mut m.page_scroll, n, &k);
+        }
+    }
+    Vec::new()
+}
+
+fn mcp_check(m: &mut Model) -> Vec<Cmd> {
+    if m.pending.is_some() {
+        return m.busy();
+    }
+    let Some(a) = m.offered(Scope::Health, "agents.mcp") else {
+        m.status = Some((
+            Level::Info,
+            "The core does not offer an MCP check now.".into(),
+        ));
+        return Vec::new();
+    };
+    let tool = m
+        .detail(Kind::Doctor)
+        .filter(|d| {
+            !d.changed
+                && d.fault.is_none()
+                && m.generation(Scope::Health) == Some(d.generation.as_str())
+        })
+        .and_then(|d| d.shown().get(d.cursor).and_then(|r| crate::read::tool(r)));
+    let Some(tool) = tool else {
+        m.status = Some((Level::Info, "Select an AI tool row first.".into()));
+        return Vec::new();
+    };
+    let declared = m.snap_of(Scope::Health).is_some_and(|s| {
+        s.params_of(&a.id).iter().any(|p| {
+            p.name == "tool" && (p.choices.is_empty() || p.choices.iter().any(|c| c == tool))
+        })
+    });
+    if !declared {
+        return Vec::new();
+    }
+    validate(m, a.id, vec![("tool".into(), tool.as_bytes().to_vec())])
+}
+
+fn open_brief(m: &mut Model) -> Vec<Cmd> {
+    if m.lost {
+        m.status = Some((Level::Warn, "The core is no longer supervised. Run ./omarchy-bootstrap debug > file from the text interface.".into()));
+        return Vec::new();
+    }
+    if m.check {
+        m.status = Some((Level::Info, "The startup check serves the journey only. ./omarchy-bootstrap debug > file keeps a copy.".into()));
+        return Vec::new();
+    }
+    if m.screen != Screen::Brief {
+        m.brief_back = m.screen;
+    }
+    open(m, Screen::Brief)
+}
+
 /// The planner's fields: `plan.save`'s parameters where the core lists it,
 /// the two sizes of the plan check where it does not.
 fn plan_fields(m: &mut Model) {
@@ -1939,6 +2298,7 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             Vec::new()
         }
         Screen::Fatal => match k.code {
+            KeyCode::Char('D') => open_brief(m),
             KeyCode::Char('q') | KeyCode::Esc if m.lost => vec![Cmd::Quit(1, m.fatal.clone())],
             KeyCode::Char('q') | KeyCode::Esc => vec![Cmd::Quit(10, m.fatal.clone())],
             KeyCode::Char('r') if m.pending.is_none() && !m.lost => m.start(),
@@ -1997,6 +2357,7 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
         }
     }
     match k.code {
+        KeyCode::Char('D') => open_brief(m),
         KeyCode::Char('?') => {
             m.back = m.screen;
             m.help_scroll = 0;
@@ -2061,6 +2422,10 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             } else if value_open(m, m.screen) {
                 let k = m.screen.kind().expect("a detail is shown");
                 close_value(m.detail_mut(k).expect("a detail is shown"));
+            } else if m.screen == Screen::Conflicts {
+                return open(m, Screen::Restore);
+            } else if m.screen == Screen::Brief {
+                m.screen = m.brief_back;
             } else if m.screen != Screen::Dashboard {
                 m.screen = Screen::Dashboard;
                 m.nav = 1;
@@ -2091,6 +2456,14 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                 Screen::Shared => page_key(m, k, Scope::Journey, &["shared.create"]),
                 Screen::Scan => page_key(m, k, Scope::Profile, &["profile.scan"]),
                 Screen::Progress => page_key(m, k, Scope::Journey, &[]),
+                Screen::Restore => restore_key(m, k),
+                Screen::Conflicts => conflict_key(m, k),
+                Screen::Brief => {
+                    let n = crate::screens::blocks(m, Screen::Brief);
+                    scroll_key(&mut m.page_scroll, n, &k);
+                    Vec::new()
+                }
+                Screen::Health if k.code == KeyCode::Char('c') => mcp_check(m),
                 Screen::Selection => selection_key(m, k),
                 Screen::Inventory => inventory_key(m, k),
                 Screen::Review => review_key(m, k),

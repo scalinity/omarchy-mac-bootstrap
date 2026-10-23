@@ -19,7 +19,7 @@ expression: "frame(m, w, h)"
 │  Review      ││                                                              │
 │  Install     ││ ▍Review basis                                                │
 │  Progress    ││   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb   │
-│              ││   8acb8acb                                                   │
+│  Restore     ││   8acb8acb                                                   │
 │              ││   a check only: nothing was saved                            │
 │              ││   ⏎ Take the Linux code: asked first, then the core checks   │
 │              ││   this basis again.                                          │

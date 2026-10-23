@@ -19,7 +19,7 @@ expression: f
 │  Review      │└──────────────────────────────────────────────────────────────┘
 │  Install     │┌ System Overview ─────────────────────────────────────────────┐
 │  Progress    ││ Platform      macos                                          │
-│              ││ Architecture  arm64                                          │
+│  Restore     ││ Architecture  arm64                                          │
 │              ││ Model         MacBookPro18,1                                 │
 │              ││ Chip          Apple M1 Pro                                   │
 │              ││ Memory        17179869184                                    │

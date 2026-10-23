@@ -19,7 +19,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Review      ││                                                              │
 │  Install     ││ ▍Facts                                                       │
 │  Progress    ││   Interface  the foundation: test actions over fixtures      │
-│              ││   Fixture    mac-m1pro-1tb-roomy                             │
+│  Restore     ││   Fixture    mac-m1pro-1tb-roomy                             │
 │              ││   Operation  ✗ test.mutate unsupervised                      │
 │              ││                                                              │
 │              ││ ▍What you can do now                                         │

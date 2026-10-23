@@ -1,0 +1,28 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Conflict and diff ─────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Conflict and diff ───────────────────────────────────────────┐
+│  Welcome     ││   starship.toml - conflict 1 of 2                            │
+│  Journey     ││   .config/starship.toml - Omarchy's default                  │
+│  Machine     ││   Now: 120 bytes; bundle: 140 bytes                          │
+│  Status      ││   Keep (default); this destination stays as it is.           │
+│  Health      ││   k keep; R replace; K keep the rest; n/p conflict; v        │
+│  Logs        ││   layout; Esc back                                           │
+│  Plan        ││                                                              │
+│  Op          ││   - format = "$directory"                                    │
+│  Scan        ││   + format = "$all"                                          │
+│  Select      ││   [directory]                                                │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│  Restore     ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ k R K keep, replace, keep rest  n p next, previous  ? help   may act · fixture

@@ -26,7 +26,7 @@ expression: f
 │  Review              ││ ▍The tool and the core                                                                       │
 │  Install             ││   Interface     frontend 0.2.0, protocol 1                                                   │
 │  Progress            ││   Core          core 0.2.0, commit 0123456789ab                                              │
-│                      ││   System        macos, arm64, user                                                           │
+│  Restore             ││   System        macos, arm64, user                                                           │
 │                      ││   Session       read ceiling, fixture                                                        │
 │                      ││   Read          journey generation 78b203ec6845                                              │
 │                      ││                                                                                              │

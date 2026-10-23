@@ -19,7 +19,7 @@ expression: f
 │  Review      ││ ▍The installer asks                                          │
 │  Install     ││   New size for macOS  you type 614730MiB                     │
 │  Progress    ││   New OS size         you type 238419MiB                     │
-│              ││                                                              │
+│  Restore     ││                                                              │
 │              ││ ▍As the core reads them                                      │
 │              ││   Linux size          250000000000 bytes                     │
 │              ││   Shared size         100000000000 bytes                     │

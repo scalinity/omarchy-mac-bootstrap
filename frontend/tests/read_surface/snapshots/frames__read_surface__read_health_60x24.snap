@@ -25,4 +25,4 @@ expression: f
 │                                                          │
 │ rows 1–4 of 4 · generation 2620e0230283                  │
 └──────────────────────────────────────────────────────────┘
- ↑↓ move  / filter  r refresh  ? help   read-only · fixture
+ c MCP list (asks first)  ? help        read-only · fixture

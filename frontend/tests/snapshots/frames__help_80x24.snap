@@ -9,19 +9,19 @@ expression: "text(&render(&m, &t, 80, 24))"
 │▍ Journey     ││   ↑↓          move                                           │
 │  Machine     ││   k j         move (vim)                                     │
 │  Status      ││   PgUp PgDn   scroll                                         │
-│  Health      ││   r           refresh                                        │
-│  Logs        ││   L           logs                                           │
-│  Plan        ││   ?           help                                           │
-│  Op          ││   q           quit                                           │
-│  Scan        ││   ← →         the rail or the workspace                      │
-│  Select      ││   Tab         move focus                                     │
-│  Items       ││   esc         back                                           │
-│  Review      ││   s           the sidebar, at narrow widths                  │
-│  Install     ││   Ctrl-C      quit when idle, cancel a request that can be   │
-│  Progress    ││   Ctrl-Z      suspend (not while a request runs)             │
+│  Health      ││   D           debugging brief                                │
+│  Logs        ││   r           refresh                                        │
+│  Plan        ││   L           logs                                           │
+│  Op          ││   ?           help                                           │
+│  Scan        ││   q           quit                                           │
+│  Select      ││   ← →         the rail or the workspace                      │
+│  Items       ││   Tab         move focus                                     │
+│  Review      ││   esc         back                                           │
+│  Install     ││   s           the sidebar, at narrow widths                  │
+│  Progress    ││   Ctrl-C      quit when idle, cancel a request that can be   │
+│  Restore     ││   Ctrl-Z      suspend (not while a request runs)             │
 │              ││                                                              │
 │              ││   The mouse is not captured: select text as usual.           │
-│              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘

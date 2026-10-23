@@ -1,0 +1,24 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ (o) Conflict and diff ----------------------------- v0.2.0
+  Welcome  Journey  Machine  Status  Health  Logs  Plan >
++ Conflict and diff ---------------------------------------+
+|   starship.toml - conflict 1 of 2                        |
+|   .config/starship.toml - Omarchy's default              |
+|   Now: 120 bytes; bundle: 140 bytes                      |
+|   Keep (default); this destination stays as it is.       |
+|   k keep; R replace; K keep the rest; n/p conflict; v    |
+|   layout; Esc back                                       |
+|                                                          |
+|   - format = "$directory"                                |
+|   + format = "$all"                                      |
+|   [directory]                                            |
+|                                                          |
+|                                                          |
+|                                                          |
+|                                                          |
+|                                                          |
++----------------------------------------------------------+
+ k R K keep, replace, keep rest  ? help   may act - fixture

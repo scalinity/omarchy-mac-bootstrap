@@ -19,7 +19,7 @@ expression: "frame(m, w, h)"
 │  Review      ││   Size       52 MB                                           │
 │  Install     ││   Evidence   observed                                        │
 │  Progress    ││   Requested  unknown                                         │
-│              ││                                                              │
+│  Restore     ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

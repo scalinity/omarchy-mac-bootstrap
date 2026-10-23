@@ -1,0 +1,24 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Restore ───────────────────────────────────────── v0.2.0
+‹ Scan  Select  Items  Review  Install  Progress ▍Restore
+┌ Restore progress ────────────────────────────────────────┐
+│   · State     not-started                                │
+│   · Bundle    20261022T120000Z from M1 Pro               │
+│   · Items     4 reviewed; 2 conflicts                    │
+│   · Backups   0 bytes                                    │
+│   > Restore the bundle - type restore; terminal          │
+│   handoff                                                │
+│   Undo restored files - type undo                        │
+│   n/p choose an action; Enter reviews it. d opens        │
+│   conflicts (Keep by default).                           │
+│                                                          │
+│ ▍Review by layer                                         │
+│   packages                                               │
+│   ripgrep [pacman] - install - pending                   │
+│   files                                                  │
+│   starship.toml [file] - conflict - pending             ↓│
+└──────────────────────────────────────────────────────────┘
+ enter review action  ? help              may act · fixture

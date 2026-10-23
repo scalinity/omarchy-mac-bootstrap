@@ -8,7 +8,7 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Welcome     ││                                                              │
 │  Journey     ││   ✗ The core could not be started (no such file).            │
 │  Machine     ││                                                              │
-│  Status      ││   r try again   q continue in the text interface             │
+│  Status      ││   r try again   D debugging brief   q text interface         │
 │  Health      ││   ./omarchy-bootstrap status shows where the machine is.     │
 │  Logs        ││                                                              │
 │  Plan        ││                                                              │
@@ -19,10 +19,10 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Review      ││                                                              │
 │  Install     ││                                                              │
 │  Progress    ││                                                              │
-│              ││                                                              │
+│  Restore     ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- r try again  q leave
+ r try again  q leave  D debugging brief
