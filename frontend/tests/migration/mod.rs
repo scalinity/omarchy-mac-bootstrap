@@ -15,9 +15,9 @@ use omb_tui::read::{Kind, Page, Scope};
 use omb_tui::record::Record;
 use ratatui::crossterm::event::KeyCode;
 
-const PGEN: &str = "9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15";
+pub const PGEN: &str = "9e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c159e3779b97f4a7c15";
 
-fn pfact(key: &str, label: &str, value: &str, state: &str) -> String {
+pub fn pfact(key: &str, label: &str, value: &str, state: &str) -> String {
     format!(
         "fact\tscope=profile\tkey={key}\tlabel={}\tvalue={}\tstate={state}\n",
         enc(label),
@@ -25,7 +25,7 @@ fn pfact(key: &str, label: &str, value: &str, state: &str) -> String {
     )
 }
 
-fn paction(id: &str, label: &str, gate: &str, cancel: bool, basis: &str) -> String {
+pub fn paction(id: &str, label: &str, gate: &str, cancel: bool, basis: &str) -> String {
     format!(
         "action\tid={id}\tscope=profile\tlabel={}\tintent=act\tgate={gate}\tterminal=managed\tcancel={}\tbasis={basis}\texplain=\n",
         enc(label),
@@ -35,7 +35,7 @@ fn paction(id: &str, label: &str, gate: &str, cancel: bool, basis: &str) -> Stri
 
 /// The profile after a scan: its state, each source's, each category's
 /// count and size, and its actions.
-fn profile() -> String {
+pub fn profile() -> String {
     let mut s = format!("generation\tid={PGEN}\ttotal=0\n");
     s.push_str(&pfact("profile.state", "State", "scanned", "info"));
     s.push_str(&pfact(
@@ -99,7 +99,7 @@ fn profile() -> String {
     s
 }
 
-fn item(id: &str, cols: [&str; 12]) -> String {
+pub fn item(id: &str, cols: [&str; 12]) -> String {
     let mut s = format!("row\tkind=item\tkey={}", enc(id));
     for c in cols {
         s.push_str(&format!("\tcol={}", enc(c)));
@@ -109,7 +109,7 @@ fn item(id: &str, cols: [&str; 12]) -> String {
 }
 
 /// The inventory, decisions first.
-fn items() -> String {
+pub fn items() -> String {
     let mut s = format!("generation\tid={PGEN}\ttotal=5\n");
     s.push_str(&item(
         "cask:tailscale",
@@ -200,19 +200,19 @@ fn items() -> String {
     s
 }
 
-fn choices() -> String {
+pub fn choices() -> String {
     format!(
         "generation\tid={PGEN}\ttotal=2\nrow\tkind=choice\tkey=cask:tailscale\tcol=flatpak\tcol=Flatpak%20com.tailscale\tcol=1\nrow\tkind=choice\tkey=cask:tailscale\tcol=skip\tcol=Leave%20it%20on%20macOS\tcol=0\n{DONE}"
     )
 }
 
-fn review_rows() -> String {
+pub fn review_rows() -> String {
     format!(
         "generation\tid={PGEN}\ttotal=2\nrow\tkind=review\tkey=software\tcol=Software\tcol=1\tcol=6291456\tcol=installed%20with%20pacman\nrow\tkind=review\tkey=apps\tcol=Apps\tcol=0\tcol=0\tcol=nothing%20comes\n{DONE}"
     )
 }
 
-fn page(kind: Kind) -> Req {
+pub fn page(kind: Kind) -> Req {
     Req::Detail(Page {
         kind,
         generation: PGEN.into(),
@@ -223,7 +223,7 @@ fn page(kind: Kind) -> Req {
 
 /// A macOS session whose journey lists nothing, on screen S of the profile,
 /// its snapshot and the details it opens answered.
-fn on(s: Screen) -> Model {
+pub fn on(s: Screen) -> Model {
     let mut m = ready_on("macos", &format!("generation\tid={GEN}\ttotal=0\n{DONE}"));
     let req = sent(&go(&mut m, s));
     assert_eq!(
@@ -248,7 +248,7 @@ fn on(s: Screen) -> Model {
     m
 }
 
-fn progress(label: &str, done: u64) -> Msg {
+pub fn progress(label: &str, done: u64) -> Msg {
     Msg::Live(Record {
         ty: "progress".into(),
         fields: [
@@ -283,7 +283,8 @@ fn the_scan_shows_each_source_and_follows_the_scan() {
         assert!(f.contains(want), "{want:?}:\n{f}");
     }
     sizes(&m, "scan");
-    let req = sent(&press(&mut m, KeyCode::Enter));
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0, "asked first");
+    let req = sent(&press(&mut m, KeyCode::Char('y')));
     assert_eq!(
         req,
         Req::Execute {

@@ -7,22 +7,22 @@ expression: "frame(m, w, h)"
 ┌ Screens ─────┐┌ Storage planner ─────────────────────────────────────────────┐
 │  Welcome     ││   The text flow's own plan.save.                             │
 │  Journey     ││                                                              │
-│  Machine     ││ ▕██████████████████████████████████████▚▚▚▚▚▚              ▏ │
+│  Machine     ││ ▕M██████████████████████L██████████████s▚▚▚▚▚.             ▏ │
 │  Status      ││  0                         500 GB                   1000 GB  │
-│  Health      ││ ▒ Apple 6.0 GB · █ macOS 400 GB · ▒ boot 3.0 GB · █ Linux    │
-│  Logs        ││ 250 GB · ▚ Shared 100 GB · free 241 GB                       │
+│  Health      ││ b Apple 6.0 GB · M macOS 400 GB · b boot 3.0 GB              │
+│  Logs        ││ L Linux 250 GB · s Shared 100 GB · . free 241 GB             │
 │▍ Plan        ││                                                              │
-│  Op          ││ ❯ Shared size     100GB▏                                     │
-│  Scan        ││   Linux size      not given                                  │
-│  Select      ││   Encryption      not given                                  │
-│  Items       ││   Username        not given                                  │
-│  Review      ││   Hostname        not given                                  │
-│  Install     ││   Keymap          not given                                  │
-│  Progress    ││   Timezone        not given                                  │
-│              ││   Locale          not given                                  │
-│              ││   SSH keys        not given                                  │
-│              ││   GitHub user     not given                                  │
-│              ││   Developer setup not given                                  │
+│  Op          ││ ❯ Shared size  100GB▏                                        │
+│  Scan        ││   Linux size   not given                                     │
+│  Select      ││   enc          not given                                     │
+│  Items       ││   user         not given                                     │
+│  Review      ││   host         not given                                     │
+│  Install     ││   kmap         not given                                     │
+│  Progress    ││   tz           not given                                     │
+│              ││   loc          not given                                     │
+│              ││   ssh          not given                                     │
+│              ││   gh           not given                                     │
+│              ││   dev          not given                                     │
 │              ││   a field left empty is not sent: the core answers its      ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  ⏎ check  Tab next field  esc back                may act · 3 actions · fixture

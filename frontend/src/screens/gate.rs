@@ -62,7 +62,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         }
         out
     };
-    let mut lines = vec![
+    // What stays: the action's label and what it does, the field and its
+    // note. Between them, what the gate says scrolls (↑↓ PgUp PgDn).
+    let mut head = vec![
         Line::from(vec![
             Span::styled(format!(" {}", t.g.bar), t.style(Token::Accent)),
             Span::styled(t.say(&a.label), t.style(Token::Text)),
@@ -70,8 +72,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         Line::raw(""),
     ];
     if !a.explain.is_empty() {
-        lines.extend(row("Does", &a.explain, t.style(Token::Info), " "));
+        head.extend(row("Does", &a.explain, t.style(Token::Info), " "));
     }
+    let mut body = Vec::new();
     for fact in &facts {
         let (style, glyph) = widgets::style_of(t, &fact.state);
         let glyph = if matches!(fact.state.as_str(), "info" | "") {
@@ -79,9 +82,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         } else {
             glyph
         };
-        lines.extend(row(&fact.label, &fact.value, style, glyph));
+        body.extend(row(&fact.label, &fact.value, style, glyph));
     }
-    lines.extend(row(
+    body.extend(row(
         "Terminal",
         if a.handoff {
             "the program owns it until it exits; this interface steps aside"
@@ -91,18 +94,30 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         t.style(Token::Info),
         " ",
     ));
-    // What a typed opaque covers, as the core listed it.
+    // What a typed opaque covers, as the core listed it, read whole.
     if let Some(d) = m.detail(Kind::Opaque).filter(|_| a.id == "profile.opaque") {
-        lines.push(Line::raw(""));
-        if !d.loaded {
-            lines.push(Line::styled(
-                "   Reading what this covers.",
-                t.style(Token::Muted),
-            ));
-        }
+        body.push(Line::raw(""));
+        body.push(Line::styled(
+            if m.whole(Kind::Opaque) {
+                format!(
+                    "   It covers {} path{}:",
+                    d.total,
+                    if d.total == 1 { "" } else { "s" }
+                )
+            } else if d.loaded {
+                format!(
+                    "   Reading what this covers: {} of {} paths.",
+                    d.rows.len(),
+                    d.total
+                )
+            } else {
+                "   Reading what this covers.".to_string()
+            },
+            t.style(Token::Muted),
+        ));
         for r in &d.rows {
             let size = r.col(1).parse::<u64>().ok().map(widgets::gb);
-            lines.push(Line::styled(
+            body.push(Line::styled(
                 format!(
                     "   {}  {}",
                     fit(&t.say(r.col(0)), width.saturating_sub(16), t.caps.unicode),
@@ -112,15 +127,50 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
             ));
         }
         if let Some(fault) = &d.fault {
-            lines.extend(super::table::fault_lines(fault, t, width));
+            body.extend(super::table::fault_lines(fault, t, width));
         }
     }
-    lines.push(Line::raw(""));
-    lines.push(widgets::gate_field(t, &a.gate, &m.gate_input));
+    let mut tail = vec![
+        Line::raw(""),
+        widgets::gate_field(t, &a.gate, &m.gate_input),
+    ];
     if let Some(n) = &m.gate_note {
-        lines.push(Line::raw(""));
-        lines.push(Line::styled(format!("   {n}"), t.style(Token::Warn)));
+        tail.push(Line::raw(""));
+        tail.push(Line::styled(format!("   {n}"), t.style(Token::Warn)));
     }
+    let room = if wide {
+        (area.height as usize).saturating_sub(2)
+    } else {
+        area.height as usize
+    };
+    let mid = room.saturating_sub(head.len() + tail.len());
+    let said = body.len();
+    if said > mid {
+        // A window of what it says, kept within it, with a mark where more is.
+        let top = m.gate_scroll.get().min(said - mid);
+        m.gate_scroll.set(top);
+        let mut shown: Vec<Line> = body.into_iter().skip(top).take(mid).collect();
+        let more = |s: &str| Line::styled(format!("   {s}"), t.style(Token::Muted));
+        if top > 0 && !shown.is_empty() {
+            shown[0] = more(if t.caps.unicode {
+                "↑ more above"
+            } else {
+                "^ more above"
+            });
+        }
+        if top + mid < said && shown.len() > 1 {
+            let last = shown.len() - 1;
+            shown[last] = more(if t.caps.unicode {
+                "↓ more below: ↑↓ PgUp PgDn"
+            } else {
+                "v more below: up/down PgUp PgDn"
+            });
+        }
+        body = shown;
+    }
+    let mut lines = head;
+    lines.extend(body);
+    lines.extend(tail);
     if wide {
         let w = 84u16.min(area.width.saturating_sub(4));
         let h = (lines.len() as u16 + 2).min(area.height);
@@ -146,20 +196,6 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
             r,
         );
     } else {
-        // The field stays on the screen however much the gate says.
-        let room = area.height as usize;
-        if lines.len() > room {
-            let at = lines
-                .iter()
-                .position(|l| {
-                    l.spans
-                        .first()
-                        .is_some_and(|s| s.content.contains(" to continue"))
-                })
-                .unwrap_or(0);
-            let skip = (at + 3).saturating_sub(room).min(at);
-            lines.drain(..skip);
-        }
         f.render_widget(Clear, area);
         widgets::backdrop(f, area, t);
         f.render_widget(Paragraph::new(lines), area);

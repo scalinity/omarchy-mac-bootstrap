@@ -18,21 +18,13 @@ use crate::widgets;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
-/// What a parameter is called on the screen: the eleven inputs of
-/// `plan.save` by their meaning, any other by its name.
+/// What a parameter is called on the screen: the two sizes by the meaning
+/// the plan's validation contract gives them, any other by the name the core
+/// declared (it sends no label).
 pub fn field_label(p: &str) -> String {
     match p {
         "linux_size" => "Linux size",
         "shared_size" => "Shared size",
-        "enc" => "Encryption",
-        "user" => "Username",
-        "host" => "Hostname",
-        "kmap" => "Keymap",
-        "tz" => "Timezone",
-        "loc" => "Locale",
-        "ssh" => "SSH keys",
-        "gh" => "GitHub user",
-        "dev" => "Developer setup",
         p => p,
     }
     .to_string()
@@ -223,18 +215,22 @@ pub fn items(m: &Model, s: Screen) -> Vec<Item<'_>> {
         v.push(Item::Heading("Review basis"));
         v.push(text(basis.clone(), Token::Text));
         match &offered {
-            Some(a) if f.current() && c.status == "done" => v.push(text(
-                if a.gate.is_empty() {
-                    format!(
-                        "⏎ {}: the core asks this basis again, then runs it.",
-                        a.label
-                    )
-                } else {
-                    format!("⏎ opens the gate: type {} to run {}.", a.gate, a.label)
-                },
-                Token::Accent,
-            )),
-            Some(_) => {}
+            Some(a) => {
+                v.push(text("a check only: nothing was saved", Token::Muted));
+                if f.current() && c.status == "done" {
+                    v.push(text(
+                        if a.gate.is_empty() {
+                            format!(
+                                "⏎ {}: asked first, then the core checks this basis again.",
+                                a.label
+                            )
+                        } else {
+                            format!("⏎ opens the gate: type {} to run {}.", a.gate, a.label)
+                        },
+                        Token::Accent,
+                    ));
+                }
+            }
             None => v.push(text(
                 "a basis for review only: nothing was saved, and no action is offered",
                 Token::Muted,

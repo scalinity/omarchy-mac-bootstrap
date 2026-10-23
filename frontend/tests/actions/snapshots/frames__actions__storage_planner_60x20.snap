@@ -7,18 +7,18 @@ expression: "frame(m, w, h)"
 ┌ Storage planner ─────────────────────────────────────────┐
 │   The text flow's own plan.save.                         │
 │                                                          │
-│ ▕████████████████████████████████████▚▚▚▚▚             ▏ │
+│ ▕M█████████████████████L█████████████s▚▚▚▚.            ▏ │
 │  0                       500 GB                 1000 GB  │
-│ ▒ Apple 6.0 GB · █ macOS 400 GB · ▒ boot 3.0 GB · █      │
-│ Linux 250 GB · ▚ Shared 100 GB · free 241 GB             │
+│ b Apple 6.0 GB · M macOS 400 GB · b boot 3.0 GB          │
+│ L Linux 250 GB · s Shared 100 GB · . free 241 GB         │
 │                                                          │
-│ ❯ Shared size     100GB▏                                 │
-│   Linux size      not given                              │
-│   Encryption      not given                              │
-│   Username        not given                              │
-│   Hostname        not given                              │
-│   Keymap          not given                              │
-│   Timezone        not given                              │
-│   Locale          not given                             ↓│
+│ ❯ Shared size  100GB▏                                    │
+│   Linux size   not given                                 │
+│   enc          not given                                 │
+│   user         not given                                 │
+│   host         not given                                 │
+│   kmap         not given                                 │
+│   tz           not given                                 │
+│   loc          not given                                ↓│
 └──────────────────────────────────────────────────────────┘
  ⏎ check  Tab next field  esc back        may act · fixture

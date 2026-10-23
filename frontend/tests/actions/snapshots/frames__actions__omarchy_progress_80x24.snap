@@ -9,11 +9,11 @@ expression: "frame(m, w, h)"
 │  Journey     ││ 1 Token        2 Network      3 Omarchy Mac  4 Start         │
 │  Machine     ││                                                              │
 │  Status      ││ ▍Omarchy Mac's setup                                         │
-│  Health      ││   Omarchy Mac's setup runs on tty1 (Ctrl+Alt+F1) and keeps   │
-│  Logs        ││   no log of its own; this page shows what the machine        │
-│  Plan        ││   shows. r reads it again.                                   │
-│  Op          ││   · Setup marker  absent                                     │
-│  Scan        ││   ! Setup unit    activating                                 │
+│  Health      ││   Omarchy Mac's setup writes to tty1 (Ctrl+Alt+F1).          │
+│  Logs        ││   This page shows what the core read; r reads it again.      │
+│  Plan        ││   · Setup marker  absent                                     │
+│  Op          ││   ! Setup unit    activating                                 │
+│  Scan        ││                                                              │
 │  Select      ││                                                              │
 │  Items       ││                                                              │
 │  Review      ││                                                              │

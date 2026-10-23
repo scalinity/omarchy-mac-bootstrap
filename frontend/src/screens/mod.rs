@@ -460,7 +460,10 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             .collect(),
         Item::Fault(f) => table::fault_lines(f, t, width),
         Item::Field(i) => {
-            let p = if m.screen == Screen::Form || m.back == Screen::Form {
+            // The form shown: Form's, or under a gate or help the one they
+            // were opened over; m.back means nothing anywhere else.
+            let over = matches!(m.screen, Screen::Gate | Screen::Help) && m.back == Screen::Form;
+            let p = if m.screen == Screen::Form || over {
                 &m.form
             } else {
                 &m.plan
@@ -497,7 +500,7 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
                         "( )"
                     };
                     spans.push(Span::styled(
-                        format!("{mark} {c}  "),
+                        format!("{mark} {}  ", t.say(c)),
                         if *c == *value {
                             t.style(Token::Selected)
                         } else {
