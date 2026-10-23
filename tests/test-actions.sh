@@ -827,6 +827,30 @@ for case in "forward|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-reencrypting|0
     assert_eq "$(a_ops)" "" "actions-omarchy.resume-stage: ${case%%|*}: no record bars the scope"
   fi
 done
+# actions-omarchy.resume-unread-boot: a failed /boot read is unknown, even
+# with output; recovering the same mount is no setup progress. Successful
+# reads can establish the real move from /boot on root to its own partition.
+VB=$(t_variant linux-setup-in-progress)
+: >"$VB/cmd/findmnt_boot"
+printf '1\n' >"$VB/cmd/findmnt_boot.rc"
+VA=$(t_variant linux-setup-in-progress)
+: >"$VA/cmd/findmnt_boot"
+VO=$(t_variant linux-setup-in-progress)
+printf '1\n' >"$VO/cmd/findmnt_boot.rc"
+for case in "before|$VB|$FIX/linux-setup-in-progress|failed postcondition" \
+  "after|$FIX/linux-setup-in-progress|$VB|failed postcondition" \
+  "same|$VB|$VB|failed no-effect" "output|$VO|$FIX/linux-setup-in-progress|failed postcondition" \
+  "installed|$VB|$FIX/linux-omarchy-finishing|failed postcondition" \
+  "forward|$VA|$FIX/linux-setup-in-progress|done ok"; do
+  a_use "$T/resume-boot-${case%%|*}" "$(printf '%s' "$case" | cut -d'|' -f2)"
+  A_ENV="OMB_TEST_AFTER=$(printf '%s' "$case" | cut -d'|' -f3) OMB_TEST_RC=1" a_exec_tty '\004\004\004' omarchy.resume resume
+  assert_eq "$(c_result)" "${case##*|}" "actions-omarchy.resume-unread-boot: ${case%%|*} ($(a_text))"
+  if [ "${case##*|}" = "failed postcondition" ]; then
+    assert_contains "$(a_ops)" "omarchy.omb" "actions-omarchy.resume-unread-boot: ${case%%|*} keeps the operation barrier"
+  else
+    assert_eq "$(a_ops)" "" "actions-omarchy.resume-unread-boot: ${case%%|*} leaves no operation barrier"
+  fi
+done
 a_unavailable omarchy.resume resume "$FIX/linux-setup-active"
 a_unavailable omarchy.resume resume "$FIX/linux-alarm-fresh"
 
