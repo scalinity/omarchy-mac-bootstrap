@@ -406,7 +406,7 @@ allowed, with a warning.
 | regular file | an object and its `dest`; mode 0644, or 0755 if any execute bit was set; 0600 or 0700 for what is not `config` | ownership, timestamps, flags, ACLs |
 | directory | a `dir` entry (0755, or 0700 for what is not `config`); empty directories kept | ownership, timestamps |
 | symbolic link | a `link` entry only if its target, resolved lexically from the link's directory, stays inside the item's own root and passes through no other link; stored as relative text | absolute targets, targets outside the item, chains: `skipped` with the reason |
-| hard link | each name as an independent file (the object is stored once) | the link relationship |
+| hard link (a regular file with more than one name) | — | `skipped` with the reason: another name could hide a refused one |
 | extended attributes, resource forks, quarantine flags | — | never read, never carried |
 | socket, FIFO, device | — | `skipped` with the reason |
 
