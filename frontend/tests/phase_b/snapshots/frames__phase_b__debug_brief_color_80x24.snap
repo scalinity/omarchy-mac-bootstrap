@@ -1,0 +1,28 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Debugging brief ───────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Debugging brief ─────────────────────────────────────────────┐
+│  Welcome     ││   ./omarchy-bootstrap debug > file keeps a copy. Esc         │
+│  Journey     ││   returns to the error.                                      │
+│  Machine     ││   Brief                                                      │
+│  Status      ││   Core brief line 0                                          │
+│  Health      ││   Core brief line 1                                          │
+│  Logs        ││   Machine facts                                              │
+│  Plan        ││   Core brief line 2                                          │
+│  Op          ││   Core brief line 3                                          │
+│  Scan        ││   Core brief line 4                                          │
+│  Select      ││   Core brief line 5                                          │
+│  Items       ││   Core brief line 6                                          │
+│  Review      ││   Core brief line 7                                          │
+│  Install     ││   Core brief line 8                                          │
+│  Progress    ││   Core brief line 9                                          │
+│  Restore     ││   Core brief line 10                                         │
+│              ││   Core brief line 11                                         │
+│              ││   Core brief line 12                                         │
+│              ││   Core brief line 13                                         │
+│              ││   Core brief line 14                                        ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ up/down scroll (and j k)  esc back  r refresh  L logs  ? help  q quit

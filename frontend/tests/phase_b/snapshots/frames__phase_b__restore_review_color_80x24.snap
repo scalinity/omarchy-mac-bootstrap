@@ -1,0 +1,28 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Restore ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Restore progress ────────────────────────────────────────────┐
+│  Welcome     ││   · State     not-started                                    │
+│  Journey     ││   · Bundle    20261022T120000Z from M1 Pro                   │
+│  Machine     ││   · Items     4 reviewed; 2 conflicts                        │
+│  Status      ││   · Backups   0 bytes                                        │
+│  Health      ││   > Restore the bundle - type restore; terminal handoff      │
+│  Logs        ││   Undo restored files - type undo                            │
+│  Plan        ││   n/p choose an action; Enter reviews it. d opens            │
+│  Op          ││   conflicts (Keep by default).                               │
+│  Scan        ││                                                              │
+│  Select      ││ ▍Review by layer                                             │
+│  Items       ││   packages                                                   │
+│  Review      ││   ripgrep [pacman] - install - pending                       │
+│  Install     ││   files                                                      │
+│  Progress    ││   starship.toml [file] - conflict - pending                  │
+│▍ Restore     ││   Destination: .config/starship.toml                         │
+│              ││   Codex config [file] - conflict - pending                   │
+│              ││   Destination: .codex/config.toml                            │
+│              ││   AI tools                                                   │
+│              ││   Claude Code [agent] - needs-sign-in - needs-sign-in       ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ enter review action  d conflicts  r refresh  L logs  ? help  may act · fixture

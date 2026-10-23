@@ -1,0 +1,44 @@
+---
+source: tests/phase_b/mod.rs
+expression: f
+---
+ ◒ Conflict and diff ─────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Conflict and diff ───────────────────────────────────────────────────────────────────────────┐
+│  Welcome             ││   starship.toml - conflict 1 of 2                                                            │
+│  Journey             ││   .config/starship.toml - Omarchy's default                                                  │
+│  Machine             ││   Now: 120 bytes; bundle: 140 bytes                                                          │
+│  Status              ││   Replace chosen; the core will check and back up the original.                              │
+│  Health              ││   k keep; R replace; K keep the rest; n/p conflict; v layout; Esc back                       │
+│  Logs                ││                                                                                              │
+│  Plan                ││                                                                                              │
+│  Operation           ││┌ Current ────────────────────────────────────┐┌ From the bundle ────────────────────────────┐│
+│  Scan                │││- format = "$directory"                      ││                                             ││
+│  Selection           │││                                             ││+ format = "$all"                            ││
+│  Inventory           │││[directory]                                  ││[directory]                                  ││
+│  Review              │││                                             ││                                             ││
+│  Install             │││                                             ││                                             ││
+│  Progress            │││                                             ││                                             ││
+│  Restore             │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      │││                                             ││                                             ││
+│                      ││└─────────────────────────────────────────────┘└─────────────────────────────────────────────┘│
+└──────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────┘
+ k R K keep, replace, keep rest  n p next, previous  r refresh  L logs  ? help  q quit                may act · fixture

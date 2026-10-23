@@ -26,7 +26,7 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Review         │ ▍Change the fixture (test)                                                       │
 │  Install        │                                                                                  │
 │  Progress       │   Does        Runs the fake mutating child under supervision.                    │
-│                 │   Terminal    not needed: it runs with no terminal                               │
+│  Restore        │   Terminal    not needed: it runs with no terminal                               │
 │                 │                                                                                  │
 │                 │   Type test to continue    tes▏                                                  │
 │                 └──────────────────────────────────────────────────────────────────────────────────┘

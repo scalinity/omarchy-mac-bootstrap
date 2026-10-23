@@ -16,6 +16,8 @@ pub enum Scope {
     Logs,
     /// The migration profile (docs/MIGRATION.md → *On the wire*).
     Profile,
+    Restore,
+    Debug,
 }
 
 impl Scope {
@@ -25,6 +27,8 @@ impl Scope {
             Scope::Health => "health",
             Scope::Logs => "logs",
             Scope::Profile => "profile",
+            Scope::Restore => "restore",
+            Scope::Debug => "debug",
         }
     }
 }
@@ -46,10 +50,16 @@ pub enum Kind {
     Review,
     /// What a typed `opaque` would cover.
     Opaque,
+    Bundles,
+    RestoreReview,
+    Conflicts,
+    Diff,
+    RestoreStatus,
+    Brief,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 9] = [
+    pub const ALL: [Kind; 15] = [
         Kind::Machine,
         Kind::Status,
         Kind::Doctor,
@@ -59,12 +69,24 @@ impl Kind {
         Kind::Choices,
         Kind::Review,
         Kind::Opaque,
+        Kind::Bundles,
+        Kind::RestoreReview,
+        Kind::Conflicts,
+        Kind::Diff,
+        Kind::RestoreStatus,
+        Kind::Brief,
     ];
 
     pub fn scope(self) -> Scope {
         match self {
             Kind::Machine | Kind::Status | Kind::Operation => Scope::Journey,
             Kind::Doctor => Scope::Health,
+            Kind::Bundles
+            | Kind::RestoreReview
+            | Kind::Conflicts
+            | Kind::Diff
+            | Kind::RestoreStatus => Scope::Restore,
+            Kind::Brief => Scope::Debug,
             Kind::Log => Scope::Logs,
             Kind::Items | Kind::Choices | Kind::Review | Kind::Opaque => Scope::Profile,
         }
@@ -81,6 +103,12 @@ impl Kind {
             Kind::Choices => "choices",
             Kind::Review => "review",
             Kind::Opaque => "opaque",
+            Kind::Bundles => "bundles",
+            Kind::RestoreReview => "review",
+            Kind::Conflicts => "conflicts",
+            Kind::Diff => "diff",
+            Kind::RestoreStatus => "status",
+            Kind::Brief => "brief",
         }
     }
 
@@ -110,6 +138,12 @@ impl Kind {
             Kind::Choices => "reading the choices",
             Kind::Review => "reading the review",
             Kind::Opaque => "reading what opaque covers",
+            Kind::Bundles => "reading restore bundles",
+            Kind::RestoreReview => "reading the restore review",
+            Kind::Conflicts => "reading restore conflicts",
+            Kind::Diff => "reading the conflict diffs",
+            Kind::RestoreStatus => "reading restore status",
+            Kind::Brief => "reading the debugging brief",
         }
     }
 }
@@ -141,6 +175,36 @@ pub struct Row {
 impl Row {
     pub fn col(&self, i: usize) -> &str {
         self.cols.get(i).map_or("", String::as_str)
+    }
+}
+
+/// A doctor's row names an AI tool; the value is never used as an id.
+pub fn tool(row: &Row) -> Option<&'static str> {
+    [
+        ("claude-code", "Claude Code"),
+        ("codex", "Codex"),
+        ("opencode", "OpenCode"),
+    ]
+    .into_iter()
+    .find(|(id, label)| {
+        row.key == *id
+            || row.key == format!("agents.{id}")
+            || row.key == format!("agent.{id}")
+            || row.col(1) == *label
+    })
+    .map(|(id, _)| id)
+}
+
+/// Added Health groups, in the order the screen shows them.
+pub fn health_group(row: &Row) -> usize {
+    if tool(row).is_some() {
+        0
+    } else if row.key.starts_with("restore") || row.col(1) == "Restore" {
+        1
+    } else if row.key.starts_with("ssh") || matches!(row.col(1), "SSH" | "SSH policy") {
+        2
+    } else {
+        3
     }
 }
 
@@ -232,7 +296,8 @@ impl Detail {
     /// Local only: no row is ever fetched for a filter.
     pub fn shown(&self) -> Vec<&Row> {
         let needle = self.filter.to_lowercase();
-        self.rows
+        let rows: Vec<_> = self
+            .rows
             .iter()
             .filter(|r| {
                 self.level
@@ -247,7 +312,14 @@ impl Detail {
             .filter(|r| {
                 needle.is_empty() || r.cols.iter().any(|c| c.to_lowercase().contains(&needle))
             })
-            .collect()
+            .collect();
+        if self.kind == Kind::Doctor && rows.iter().any(|r| health_group(r) < 3) {
+            (0..4)
+                .flat_map(|g| rows.iter().copied().filter(move |r| health_group(r) == g))
+                .collect()
+        } else {
+            rows
+        }
     }
 
     /// The levels in the loaded page, in the order they first appear.

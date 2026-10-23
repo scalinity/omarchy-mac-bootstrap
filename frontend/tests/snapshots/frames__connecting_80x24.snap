@@ -19,7 +19,7 @@ expression: "text(&render(&m, &t, 80, 24))"
 │  Review      ││                                                              │
 │  Install     ││                                                              │
 │  Progress    ││                                                              │
-│              ││                                                              │
+│  Restore     ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

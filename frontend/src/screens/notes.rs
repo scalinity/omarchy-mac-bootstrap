@@ -38,7 +38,7 @@ pub fn fatal(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::styled(
-        "   r try again   q continue in the text interface",
+        "   r try again   D debugging brief   q text interface",
         t.style(Token::Muted),
     ));
     lines.push(Line::styled(

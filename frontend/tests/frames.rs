@@ -436,7 +436,11 @@ fn emphasis_by_token() {
                     .contains("❯")
             })
             .unwrap();
-        let x = (0..80).find(|&x| b[(x, y)].symbol() == "R").unwrap();
+        // The rail's Restore label can share this row; inspect the action.
+        let pointer = (0..80).find(|&x| b[(x, y)].symbol() == "❯").unwrap();
+        let x = (pointer + 1..80)
+            .find(|&x| b[(x, y)].symbol() == "R")
+            .unwrap();
         // Each property the focus token sets, compared on its own: the
         // reverse, the accent colour where there is colour, no background of
         // its own, never bold, and one focus marker on the screen.
@@ -562,3 +566,5 @@ mod migration;
 
 /// The phase A review's findings, one test each.
 mod review;
+
+mod phase_b;

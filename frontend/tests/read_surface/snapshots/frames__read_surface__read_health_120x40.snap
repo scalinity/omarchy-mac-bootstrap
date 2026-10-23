@@ -26,7 +26,7 @@ expression: f
 │  Review              ││                                                              ││                              │
 │  Install             ││                                                              ││                              │
 │  Progress            ││                                                              ││                              │
-│                      ││                                                              ││                              │
+│  Restore             ││                                                              ││                              │
 │                      ││                                                              ││                              │
 │                      ││                                                              ││                              │
 │                      ││                                                              ││                              │
@@ -41,4 +41,4 @@ expression: f
 │                      ││                                                              ││                              │
 │                      ││ rows 1–4 of 4 · generation 2620e0230283                      ││                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
- ↑↓ move  / filter  r refresh  L logs  ? help  q quit                           read-only · no system changes · fixture
+ c MCP list (asks first)  up/down choose row (and j k)  r refresh  ? help       read-only · no system changes · fixture

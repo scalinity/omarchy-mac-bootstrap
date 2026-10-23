@@ -19,7 +19,7 @@ expression: a
 |  Review      ||   Operation  + none                                          |
 |  Install     ||                                                              |
 |  Progress    || |What you can do now                                         |
-|              || > Read the fixture (test)         read                       |
+|  Restore     || > Read the fixture (test)         read                       |
 |              ||   Change the fixture (test)       act - type test            |
 |              ||   Hand over the terminal (test)   act - handoff - type test  |
 |              ||   Runs the fake read child: its output is shown, its         |

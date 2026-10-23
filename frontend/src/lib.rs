@@ -10,6 +10,7 @@ pub mod core;
 pub mod keys;
 pub mod read;
 pub mod record;
+pub mod restore;
 pub mod screens;
 pub mod select;
 pub mod terminal;
@@ -113,8 +114,7 @@ pub fn run(args: &[String]) -> i32 {
     terminal::watch_reads();
     let mut trace = Trace::open();
     let mut model = Model {
-        // Read, never set: the launcher's purpose selects the startup check's
-        // closed contract, which answers hello and the journey snapshot only.
+        // Read, never set: the launcher's startup check serves hello and journey only.
         check: std::env::var("OMB_SESSION_PURPOSE").as_deref() == Ok("frontend-check"),
         ..Model::default()
     };

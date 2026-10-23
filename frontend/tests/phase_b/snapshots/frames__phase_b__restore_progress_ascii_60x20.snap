@@ -1,0 +1,24 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ (o) Restore --------------------------------------- v0.2.0
+< Scan  Select  Items  Review  Install  Progress *Restore
++ Restore progress ----------------------------------------+
+| [=========                             ] 1 of 4          |
+|pkg:ripgrep                                               |
+|   - State     not-started                                |
+|   - Bundle    20261022T120000Z from M1 Pro               |
+|   - Items     4 reviewed; 2 conflicts                    |
+|   - Backups   0 bytes                                    |
+|   > Restore the bundle - type restore; terminal          |
+|   handoff                                                |
+|   Undo restored files - type undo                        |
+|   n/p choose an action; Enter reviews it. d opens        |
+|   conflicts (Keep by default).                           |
+| |Item progress                                           |
+|   pkg:ripgrep - 1 of 4                                   |
+|                                                         v|
++----------------------------------------------------------+
+                                 Restore the bundle  1 of 4
+ enter review action  ? help              may act - fixture

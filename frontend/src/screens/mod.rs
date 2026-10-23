@@ -1,12 +1,15 @@
 //! The screens (docs/UX.md → *Screens*): one module per family, inside one
 //! frame (docs/UX.md → *Layout*). Rendering reads the model and nothing else.
 
+mod brief;
 mod dashboard;
 mod gate;
+mod health;
 mod install;
 mod migrate;
 mod notes;
 mod plan;
+mod restore;
 mod table;
 mod welcome;
 
@@ -54,7 +57,12 @@ pub fn draw(f: &mut Frame, m: &Model, t: &Theme, tick_ms: u32) {
     let (work, side) = match tier {
         // Welcome is the one page that already holds everything the sidebar
         // would: it takes the sidebar's columns too.
-        Tier::Wide if matches!(m.screen, Screen::Welcome) => {
+        Tier::Wide
+            if matches!(
+                m.screen,
+                Screen::Welcome | Screen::Conflicts | Screen::Brief
+            ) =>
+        {
             let [nav, work] =
                 Layout::horizontal([Constraint::Length(24), Constraint::Min(1)]).areas(body);
             widgets::nav_rail(f, nav, m, t, false);
@@ -119,6 +127,17 @@ fn workspace(
         Screen::Review => migrate::review(f, work, m, t),
         Screen::Scan => migrate::scan(f, work, m, t),
         Screen::Selection => migrate::selection(f, work, m, t),
+        Screen::Restore => restore::draw(f, work, m, t),
+        Screen::Conflicts => restore::conflicts(f, work, m, t),
+        Screen::Brief => brief::draw(f, work, m, t),
+        Screen::Health
+            if health::enriched(m)
+                && !m
+                    .detail(crate::read::Kind::Doctor)
+                    .is_some_and(|d| d.open || d.editing) =>
+        {
+            health::draw(f, work, m, t)
+        }
         Screen::Machine | Screen::Status | Screen::Health | Screen::Logs | Screen::Operation => {
             table::draw(f, work, m, t, tier)
         }
@@ -285,6 +304,9 @@ pub fn blocks(m: &Model, s: Screen) -> usize {
         Screen::Plan | Screen::Form => plan::items(m, s).len(),
         Screen::Install | Screen::Progress | Screen::Shared => install::items(m, s).len(),
         Screen::Scan => migrate::scan_items(m).len(),
+        Screen::Restore => restore::items(m).len(),
+        Screen::Conflicts => restore::conflict_items(m).len(),
+        Screen::Brief => brief::items(m).len(),
         _ => 0,
     }
 }

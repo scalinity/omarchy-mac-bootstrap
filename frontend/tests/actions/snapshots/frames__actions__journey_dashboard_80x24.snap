@@ -19,7 +19,7 @@ expression: "frame(m, w, h)"
 │  Review      ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
 │  Install     ││                  d                                           │
 │  Progress    ││                                                              │
-│              ││ ▍What you can do now                                         │
+│  Restore     ││ ▍What you can do now                                         │
 │              ││ ❯ Save the plan                plan                         ↓│
 │              │└──────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────┐

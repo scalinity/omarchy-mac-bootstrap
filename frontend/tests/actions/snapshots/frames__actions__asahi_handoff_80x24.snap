@@ -19,7 +19,7 @@ expression: "frame(m, w, h)"
 │  Review      ││   New size for macOS  you type 532543MiB                     │
 │▍ Install     ││   New OS size         you type 244140MiB                     │
 │  Progress    ││                                                              │
-│              ││ ▍After the installer                                         │
+│  Restore     ││ ▍After the installer                                         │
 │              ││   After the shutdown, hold the power button and choose       │
 │              ││   Linux.                                                     │
 │              ││                                                              │

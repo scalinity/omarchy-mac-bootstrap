@@ -19,7 +19,7 @@ expression: "frame(m, w, h)"
 │  Review      ││   host         not given                                     │
 │  Install     ││   kmap         not given                                     │
 │  Progress    ││   tz           not given                                     │
-│              ││   loc          not given                                     │
+│  Restore     ││   loc          not given                                     │
 │              ││   ssh          not given                                     │
 │              ││   gh           not given                                     │
 │              ││   dev          not given                                     │

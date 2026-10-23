@@ -30,25 +30,25 @@ pub fn fault_lines<'a>(f: &Fault, t: &Theme, width: usize) -> Vec<Line<'a>> {
             format!("{} refused {} {code}", t.g.warn, t.g.dot),
             Token::Warn,
             text.clone(),
-            "r asks again".to_string(),
+            "r asks again; D debugging brief".to_string(),
         ),
         Fault::Said { status, code, text } => (
             format!("{} {status} {} {code}", t.g.fail, t.g.dot),
             Token::Danger,
             text.clone(),
-            format!("r tries again {dot} L shows the log"),
+            format!("r tries again {dot} L shows the log {dot} D brief"),
         ),
         Fault::NoAnswer(why) => (
             format!("{} no answer", t.g.fail),
             Token::Danger,
             format!("The core stopped without answering ({why})."),
-            format!("L, then Tab, shows its diagnostics {dot} r asks again"),
+            "L then Tab diagnostics; r retry; D debug brief".to_string(),
         ),
         Fault::NotSent(why) => (
             format!("{} not sent", t.g.fail),
             Token::Danger,
             format!("The request was not delivered ({why}); nothing ran."),
-            "r tries again".to_string(),
+            "r tries again; D debugging brief".to_string(),
         ),
     };
     out.push(Line::styled(format!(" {head}"), t.style(tok)));
@@ -197,9 +197,16 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                     Kind::Status => "The journey's read holds no status lines.",
                     Kind::Doctor => "The doctor reported no findings.",
                     Kind::Operation => "No operation finding was supplied.",
-                    Kind::Items | Kind::Choices | Kind::Review | Kind::Opaque => {
-                        "The core sent no rows."
-                    }
+                    Kind::Items
+                    | Kind::Choices
+                    | Kind::Review
+                    | Kind::Opaque
+                    | Kind::Bundles
+                    | Kind::RestoreReview
+                    | Kind::Conflicts
+                    | Kind::Diff
+                    | Kind::RestoreStatus
+                    | Kind::Brief => "The core sent no rows.",
                     Kind::Log => {
                         let said = facts.is_some_and(|s| !s.messages.is_empty());
                         if said {
@@ -459,7 +466,17 @@ fn cells_of(
     let text = t.style(Token::Text);
     let muted = t.style(Token::Muted);
     match kind {
-        Kind::Machine | Kind::Items | Kind::Choices | Kind::Review | Kind::Opaque => {
+        Kind::Machine
+        | Kind::Items
+        | Kind::Choices
+        | Kind::Review
+        | Kind::Opaque
+        | Kind::Bundles
+        | Kind::RestoreReview
+        | Kind::Conflicts
+        | Kind::Diff
+        | Kind::RestoreStatus
+        | Kind::Brief => {
             vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)]
         }
         Kind::Operation => vec![

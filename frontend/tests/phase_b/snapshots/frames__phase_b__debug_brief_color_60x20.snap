@@ -1,0 +1,24 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Debugging brief ───────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status  Health  Logs  Plan ›
+┌ Debugging brief ─────────────────────────────────────────┐
+│   ./omarchy-bootstrap debug > file keeps a copy. Esc     │
+│   returns to the error.                                  │
+│   Brief                                                  │
+│   Core brief line 0                                      │
+│   Core brief line 1                                      │
+│   Machine facts                                          │
+│   Core brief line 2                                      │
+│   Core brief line 3                                      │
+│   Core brief line 4                                      │
+│   Core brief line 5                                      │
+│   Core brief line 6                                      │
+│   Core brief line 7                                      │
+│   Core brief line 8                                      │
+│   Core brief line 9                                      │
+│   Core brief line 10                                    ↓│
+└──────────────────────────────────────────────────────────┘
+ up/down scroll (and j k)  esc back  r refresh  ? help

@@ -19,7 +19,7 @@ expression: "frame(m, w, h)"
 │  Review      ││   ⏎ opens the gate: type yes to run Create Shared; this      │
 │  Install     ││   terminal is the program's until it exits.                  │
 │  Progress    ││                                                              │
-│              ││                                                              │
+│  Restore     ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

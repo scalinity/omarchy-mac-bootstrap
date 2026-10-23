@@ -1,0 +1,28 @@
+---
+source: tests/phase_b/mod.rs
+expression: text
+---
+ ◒ Health ────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Health ──────────────────────────────────────────────────────┐
+│  Welcome     ││   Observed facts; c asks for the selected tool's MCP list    │
+│  Journey     ││   (it may start servers).                                    │
+│  Machine     ││   Passed 2; Warnings 3; Failures 0                           │
+│  Status      ││ ▍AI tools                                                    │
+│▍ Health      ││   > Claude Code - pass: installed (mise); wrapper present;   │
+│  Logs        ││   ran at restore; configured; sign-in file present           │
+│  Plan        ││   Codex - warn: installed (mise); configured; needs          │
+│  Op          ││   GITHUB_TOKEN                                               │
+│  Scan        ││   OpenCode - info: not installed                             │
+│  Select      ││ ▍Restore                                                     │
+│  Items       ││   Restore - warn: partial; 1 placed; 2 kept; 1 needs         │
+│  Review      ││   sign-in                                                    │
+│  Install     ││ ▍SSH                                                         │
+│  Progress    ││   SSH policy - warn: cannot-tell: run doctor as root         │
+│  Restore     ││ ▍System checks                                               │
+│              ││   Disk space - pass: Enough space                            │
+│              ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ c MCP list (asks first)  ? help                              may act · fixture
