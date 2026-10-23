@@ -50,6 +50,16 @@ writer; a failed flush stops the run. A torn receipt supplies no observation.
 
 For a destination `D` under the home:
 
+Before installing packages or placing items, apply checks the placement
+commands in a fresh private folder inside the restore state folder, on the
+home's filesystem. Both file and directory destinations must make
+`mv -T --update=none-fail` and `ln -T` refuse, with both sides unchanged;
+symbolic links are checked too. Transfers to free names must also succeed,
+so an unknown option cannot pass as a safe refusal. A failed check stops
+apply with a plain explanation. GNU coreutils 9.5 or later is required.
+The check folder is removed afterwards; a completed rerun with nothing to
+place performs no check or mutation.
+
 1. **Re-check**, before each item, not only before the run: every folder
    from the home down to `D`'s parent is a real directory owned by the user
    (a link on the path stops the item), and `D` is still what the review
@@ -90,6 +100,8 @@ the same way. Codex's `config.toml` is kept or replaced whole: this tool
 reads no TOML on Linux. Modes are a ceiling (no setuid, setgid or sticky
 bit, nothing group- or world-writable); a replacement also takes the
 original's more private mode, including generated Bash and OpenCode files.
+For folders, the more private root mode is applied only to the stage;
+the reusable scratch source retains its writable bundle mode.
 New parents under `~/.local` and `~/.config` use 0755; other new parents use
 0700. State and backup folders remain private. `chown` is never used. One race
 remains: a program that keeps the old file open and writes to it after it
@@ -118,12 +130,20 @@ power cut, a full disk — the next `restore` judges each item from the
 filesystem: a destination already holding the bundle's version is
 `in-place`; where the destination is gone and its original sits in the
 named backup, the original returns with a no-clobber move before placement
-is retried. Undo can return that original too. An occupied destination is
+is retried. Generated Bash and OpenCode files are reviewed against the exact
+recorded original in that backup, preserving custom lines and entries.
+After returning it, apply reviews the item again and refuses a changed
+result. Undo can return that original too. An occupied destination is
 left alone; a refused placement is `blocked`, with the backup location
 shown in the next review. An intervening destination blocks that unfinished
 placement, so a later default Keep cannot erase its recovery record. A
-completed stage name left behind is removed
-only when its journal, bytes and placed destination agree. A partial or
+completed stage name left behind is removed by apply
+only when its journal, bytes and placed destination agree. Undo compares
+finished stages with the retained backup or the freshly reviewed desired
+bytes before removing them. A matched redundant folder stage is made
+writable for removal; its source and retained backup keep their modes.
+Undo retries this cleanup even when its completion was already recorded.
+A partial or
 unexpected recorded stage, including an undo stage, is moved whole into the
 backup folder with a fresh suffix before rebuilding it. Existing preserved
 stages and earlier restore/undo cycles never collide or overwrite bytes.
@@ -144,6 +164,11 @@ generation of the restore snapshot whose conflicts and diffs were shown.
 Validation and execution's fresh basis check refuse with `refused changed`
 if it differs from the current restore dataset. The text interface binds
 the generation of the review it printed too.
+
+If a second Replace finds the original's backup name occupied, it keeps
+both copies and names that backup. When the current destination has been
+edited, the hint says to move it to a safe name before running
+`restore undo`, then review another Replace.
 
 Omarchy's seeded files in `~/.config` are the person's after the install: a
 conflict with one is labelled "Omarchy's default", and OpenCode's file is
@@ -166,6 +191,14 @@ only when it holds its runtime's executable with execute permission; an
 empty or incomplete folder does not count. cargo-binstall, go and
 Flathub installs are printed as commands to run by hand.
 
+For a mise backend target (`aqua:`, `github:` or `ubi:`), observation looks
+only for a version folder under `installs/<name as typed>/`; no executable
+name is inferred from the target. A successful `mise use -g` with no such
+folder is `unverified`: installed according to the command, with a warning
+that the installation was not verified. It never blocks later layers and
+is not installed again on a rerun of that bundle. Status counts it as
+pending, rather than verified; a matching version folder clears that state.
+
 ## Undo
 
 `restore undo` (typed `undo`) finds the most recently written restore run
@@ -179,8 +212,13 @@ placement, it puts them back with a no-clobber move and refuses that item.
 An unchanged placement returns its original from the backup, or leaves the
 destination absent if it was new. The displaced restored bytes remain at
 `<backup>.placed`; earlier copies are preserved with fresh suffixes. A
-refused item does not stop independent items, and kept conflicts are
-skipped. Partial undo stages are preserved before retrying. An original
+refused item does not stop independent items, and kept conflicts and items
+with no completed placement are skipped. A recorded interrupted backup
+move still needs recovery. A refused or failed undo removes its finished
+`.omb-undo-` copy only when its bytes match the retained original backup.
+Undo of a stopped restore also removes a finished `.omb-new-` stage when
+it matches the recorded and freshly reviewed desired bytes. Partial undo
+stages are preserved before retrying. An original
 moved aside by an interrupted placement can return once its destination is
 free.
 
@@ -197,7 +235,7 @@ them; `restore status` shows their size.
 | `not-started` | no run for the bundle in use |
 | `partial` | some items done; others failed, blocked or not reached |
 | `blocked` | nothing more can go on: no bundle passes the check, running as root, Omarchy not finished, or the package step failed for everything after it |
-| `complete` | every item is `placed`, `in-place` or `kept`, or waits only on the person (`needs-sign-in`, `needs-secret`) |
+| `complete` | every item is `placed`, `in-place`, `kept` or `unverified`, or waits only on the person (`needs-sign-in`, `needs-secret`) |
 
 | Item state | Means |
 | --- | --- |
@@ -205,6 +243,7 @@ them; `restore status` shows their size.
 | `in-place` | already there, exactly as the bundle has it |
 | `kept` | a conflict kept as it is |
 | `failed` | tried and did not take, with the reason |
+| `unverified` | a mise backend install succeeded, but its version folder was not found under the name as typed; later layers continue |
 | `blocked` | not tried, with the reason: something it needs failed, a link on its path, another device, or a change since the review |
 | `needs-sign-in` | restored, waiting for the tool's sign-in; clears by itself when the sign-in file appears (presence only, never read; docs/AI-TOOLS.md → *What is observed*) |
 | `needs-secret` | restored without its secret values; names the variables to set |

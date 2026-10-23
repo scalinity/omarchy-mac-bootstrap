@@ -2,7 +2,7 @@
 # Restore placements and recovery over synthetic Omarchy homes. The local run
 # stand-in executes only filesystem commands confined to this test's fixture;
 # package/owner commands are simulated and never run on the development Mac.
-# shellcheck disable=SC2015,SC2016,SC2031,SC2034,SC2329
+# shellcheck disable=SC2015,SC2016,SC2031,SC2034,SC2317,SC2329
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 t_load
@@ -80,7 +80,7 @@ run() {
   if [ -d "$OMB_STATE_DIR" ]; then log_event exec "$argv"; fi
   case "$cmd" in
     rst_log_write | rst_stage_write)
-      if [ "$cmd" = rst_stage_write ] && [ "${RESTORE_TEST_SHORT_SETTING:-0}" = 1 ]; then
+      if [ "$cmd" = rst_stage_write ] && [ "${2##*.}" = setting ] && [ "${RESTORE_TEST_SHORT_SETTING:-0}" = 1 ]; then
         RESTORE_TEST_SHORT_SETTING=0
         printf partial >"$2"; chmod 0600 "$2"; return 1
       fi
@@ -107,11 +107,17 @@ run() {
           return 1
         fi
         cp -pR "$@"
-      elif [ "$cmd" = chmod ]; then key=$1; shift; [ "$1" != -- ] || shift; chmod "$key" "$@"
+      elif [ "$cmd" = chmod ]; then
+        if [ "$1" = -R ]; then
+          shift; key=$1; shift; [ "$1" != -- ] || shift; chmod -R "$key" "$@"
+        else key=$1; shift; [ "$1" != -- ] || shift; chmod "$key" "$@"; fi
       else "$cmd" "$@"; fi ;;
     mv)
       shift 3
       src=$1 dst=$2
+      # Model an mv that accepts but ignores the no-clobber option.
+      if [ "${RESTORE_TEST_CLOBBER:-0}" = 1 ]; then mv -- "$src" "$dst"; return; fi
+      if [ "${RESTORE_TEST_CLOBBER:-0}" = unknown ]; then return 1; fi
       if [ "${RESTORE_TEST_EDIT_ON_MOVE:-0}" = 1 ]; then
         case "$dst" in *.placed) printf edited >"$src"; RESTORE_TEST_EDIT_ON_MOVE=0 ;; esac
       fi
@@ -153,6 +159,7 @@ run() {
       if [ "${INSTALL_TAKES:-0}" = 1 ]; then
         case "$cmd" in
           env)
+            [ "${RESTORE_TEST_BACKEND_NO_FOLDER:-0}" != 1 ] || return 0
             key=$RST_HOME/.local/share/mise/installs/$RST_TARGET/${RST_VERSION:-1}/bin
             mkdir -p "$key"
             printf '#!/bin/sh\n' >"$key/$RST_TARGET"
@@ -186,6 +193,7 @@ setup() {
   OMB_TEST_STOP_AT='' OMB_TEST_FAIL_AT='' OMB_TEST_PAUSE_AT=''
   RST_CORE=0 RST_REPLACE=() CORE_REQ_ARGS=0 INSTALL_TAKES=0 AG_TEST_FAIL=0
   RESTORE_TEST_EDIT_ON_MOVE=0 RESTORE_TEST_PARTIAL_COPY=0 RESTORE_TEST_STAGE_LINK=0 RESTORE_TEST_SHORT_SETTING=0
+  RESTORE_TEST_CLOBBER=0 RESTORE_TEST_BACKEND_NO_FOLDER=0
   STATE_DIR_OK=''
   state_init
   : >"$T/record"
@@ -1083,6 +1091,180 @@ _rst_load
 assert_eq "$?" 1 restore-scratch-guard
 assert_file "$OMB_TMP/restore/want/entry" preserve restore-scratch-guard-preserves-bytes
 OMB_TMP=$saved_scratch
+
+# restore-generated-backup-resume: regenerate from the recorded original,
+# including entries that exist only in that original, after its backup moved.
+for generated in bashrc opencode; do
+  setup
+  if [ "$generated" = bashrc ]; then
+    {
+      rec_line item id shell:bash class config whole 1
+      rec_line file item shell:bash dest .config/omarchy-mac-bootstrap/shell.bash mode 0644 sha256 "$SHA" size 18 whole 1
+    } >"$T/body"
+    dest=.bashrc
+    printf '# custom Bash lines\nalias mine=true\n' >"$F/root/home/alex/$dest"
+  else
+    printf '{"bundle":true}\n' >"$T/json"
+    _bndl_sha "$T/json"; json_sha=$BNDL_SHA
+    _bndl_size "$T/json"; json_size=$BNDL_SIZE
+    cp "$T/json" "$B/objects/$json_sha"
+    {
+      rec_line item id config:opencode class config whole 1
+      rec_line file item config:opencode dest .config/opencode/opencode.json mode 0644 sha256 "$json_sha" size "$json_size" whole 1
+    } >"$T/body"
+    dest=.config/opencode/opencode.json
+    mkdir -p "$F/root/home/alex/${dest%/*}"
+    printf '{"custom":{"mine":true}}\n' >"$F/root/home/alex/$dest"
+  fi
+  rebuild
+  (child restore.backup) 2>/dev/null
+  assert_eq "$?" 137 "restore-generated-backup-stop-$generated"
+  load; _rst_history "$dest"
+  recorded_after=$RST_H_AFTER
+  if [ "$generated" = bashrc ]; then n=1; else n=0; fi
+  assert_eq "${RST_NEW[n]}" "$recorded_after" "restore-generated-backup-review-$generated"
+  apply
+  assert_eq "$RC" 0 "restore-generated-backup-resume-$generated"
+  if [ "$generated" = bashrc ]; then
+    assert_contains "$(cat "$RST_HOME/$dest")" 'alias mine=true' restore-generated-backup-bashrc-custom
+  else
+    assert_eq "$(jq -r '.custom.mine and .bundle' "$RST_HOME/$dest")" true restore-generated-backup-opencode-custom
+  fi
+done
+
+# restore-readonly-directory: review and reload keep reusable scratch writable;
+# only the placed tree takes the original's more private root mode.
+setup
+{
+  rec_line item id config:tree class config whole 1
+  rec_line dir item config:tree dest .config/tree mode 0755
+  rec_line file item config:tree dest .config/tree/entry mode 0644 sha256 "$SHA" size 18 whole 1
+} >"$T/body"
+rebuild
+mkdir "$F/root/home/alex/.config/tree"
+printf original >"$F/root/home/alex/.config/tree/entry"
+chmod 0555 "$F/root/home/alex/.config/tree"
+load
+readonly_src=${RST_SRC[0]}
+[ -w "$readonly_src" ] && ok || fail restore-readonly-directory-scratch-writable
+replace_all; apply
+readonly_tree=$F/root/home/alex/.config/tree
+if [ "$RC" != 0 ]; then
+  # macOS refuses a cross-parent rename of a 0555 directory. The Linux
+  # placement stand-in must still reach that move, after rebuilding scratch
+  # and producing the correctly restricted stage, and keep the original.
+  assert_contains "${RST_REASON[0]}" 'The original could not be moved whole' restore-readonly-directory-backup-refusal
+  assert_file "$readonly_tree/entry" original restore-readonly-directory-original
+  readonly_tree=$readonly_tree.omb-new-$RST_RUN
+fi
+_rst_node "$readonly_tree"
+assert_contains "$RST_NODE" dir:0555: restore-readonly-directory-mode
+assert_file "$readonly_tree/entry" 'new configuration' restore-readonly-directory-bytes
+if [ "$RC" != 0 ]; then
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 0 restore-readonly-directory-stage-undo
+  [ ! -e "$readonly_tree" ] && ok || fail restore-readonly-directory-stage-cleaned
+fi
+# Allow cleanup on the deliberately broken implementation too.
+chmod u+w "$readonly_src" "$F/root/home/alex/.config/tree"
+if [ -d "$readonly_tree" ]; then chmod u+w "$readonly_tree"; fi
+_rst_backup_name .config/tree
+if [ -d "$RST_BACKUP" ]; then chmod u+w "$RST_BACKUP"; fi
+
+# restore-self-check-refuses-clobber: an option-ignoring mv is caught on the
+# home's filesystem before an original, a package or a destination changes.
+for behavior in 1 unknown; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  load; replace_all
+  RESTORE_TEST_CLOBBER=$behavior
+  apply
+  assert_eq "$RC" 1 "restore-self-check-refuses-clobber-$behavior"
+  assert_contains "$(cat "$T/out")" 'no-clobber' "restore-self-check-plain-reason-$behavior"
+  assert_file "$F/root/home/alex/.config/test.conf" original "restore-self-check-before-placement-$behavior"
+  assert_not_contains "$(cat "$T/record")" 'omarchy-pkg-add' "restore-self-check-before-install-$behavior"
+done
+
+# restore-backend-unverified: a successful backend may use an unknown install
+# name; it warns, never blocks later files, and is not counted as verified.
+setup
+basebody
+rec_line package item config:test layer tools method mise-backend target github:owner/tool version 1 guess 0 >>"$T/body"
+rebuild; load
+INSTALL_TAKES=1 RESTORE_TEST_BACKEND_NO_FOLDER=1
+apply
+assert_eq "$RC" 0 restore-backend-unverified-continues
+assert_eq "${RST_STATUS[1]}" unverified restore-backend-unverified-state
+assert_contains "$(cat "$T/out")" 'not verified' restore-backend-unverified-warning
+assert_file "$RST_HOME/.config/test.conf" 'new configuration' restore-backend-unverified-later-file
+assert_eq "$(rst_status_counts)" '1 0 0 1' restore-backend-unverified-count
+load; : >"$T/record"; apply
+assert_empty_file "$T/record" restore-backend-unverified-no-reinstall
+
+# restore-second-replace-hint: an edited placement cannot be undone in place.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+load; replace_all; apply
+printf edited >"$RST_HOME/.config/test.conf"
+load; replace_all; apply
+_rst_backup_name .config/test.conf
+assert_contains "${RST_REASON[0]}" "$RST_BACKUP" restore-second-replace-original-location
+assert_contains "${RST_REASON[0]}" 'Move the current destination' restore-second-replace-actionable-hint
+assert_file "$RST_HOME/.config/test.conf" edited restore-second-replace-preserves-current
+
+# restore-undo-stage-cleanup: a refused or failed undo removes only its
+# completed copy, once the retained backup proves those bytes redundant.
+for failure in checkpoint edit; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  load; replace_all; apply; load
+  if [ "$failure" = checkpoint ]; then OMB_TEST_FAIL_AT=restore.undo
+  else RESTORE_TEST_EDIT_ON_MOVE=1; fi
+  OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 1 "restore-undo-stage-cleanup-refuses-$failure"
+  [ ! -e "$RST_HOME/.config/test.conf.omb-undo-$RST_RUN" ] && ok || fail "restore-undo-stage-cleanup-$failure"
+  _rst_backup_name .config/test.conf
+  assert_file "$RST_BACKUP" original "restore-undo-stage-cleanup-backup-$failure"
+done
+for boundary in restore.stage restore.backup; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  (child "$boundary") 2>/dev/null
+  if [ "$boundary" = restore.backup ]; then
+    (child restore.log 1) 2>/dev/null
+    assert_eq "$?" 137 restore-undo-new-stage-stop-after-undone
+  fi
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 0 "restore-undo-new-stage-run-$boundary"
+  [ ! -e "$RST_HOME/.config/test.conf.omb-new-$RST_RUN" ] && ok || fail "restore-undo-new-stage-cleanup-$boundary"
+  assert_file "$RST_HOME/.config/test.conf" original "restore-undo-new-stage-original-$boundary"
+done
+
+# restore-undo-never-placed: a failed stage gives undo no placement to reverse,
+# even if an editor changes the original afterwards.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+load; replace_all; OMB_TEST_FAIL_AT=restore.stage; apply
+printf edited >"$RST_HOME/.config/test.conf"
+OMB_TEST_FAIL_AT=''
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-never-placed-skipped
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" completed restore-undo-never-placed-judge
+assert_file "$RST_HOME/.config/test.conf" edited restore-undo-never-placed-current
+RST_CORE=0
+for recovery in changed missing; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  (child restore.backup) 2>/dev/null
+  load; _rst_backup_name .config/test.conf
+  if [ "$recovery" = changed ]; then printf edited >"$RST_BACKUP"; else rm "$RST_BACKUP"; fi
+  OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 1 "restore-undo-pending-original-$recovery-refuses"
+  rst_undo_judge 1
+  assert_eq "$CORE_FINDING" unexpected "restore-undo-pending-original-$recovery-judge"
+  RST_CORE=0
+done
 
 # restore-real-gnu-no-clobber: run the actual Linux placement primitives. This
 # explicit skip is also visible to Linux CI's strict-skip policy.
