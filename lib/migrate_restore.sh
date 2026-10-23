@@ -209,7 +209,7 @@ _rst_candidates() {
   done
 }
 _rst_bundle() {
-  local wanted=${1:-} p check origin at items size
+  local wanted=${1:-} p check origin at items size selected='' selected_origin='' selected_at=''
   RST_BUNDLE='' RST_RUN='' RST_ORIGIN='' RST_AT=''
   : >"$RST_W/bundles"
   _rst_candidates "${OMB_RESTORE_DIR:-}"
@@ -222,17 +222,18 @@ _rst_bundle() {
       rec_get_into items "$REC_AT_I" items
       rec_get_into size "$REC_AT_I" bytes
       _bndl_sha "$p/bundle.omb" || return 1
-      if [ -z "$RST_BUNDLE" ] && { [ -z "$wanted" ] || [ "$wanted" = "${p##*/}" ] || [ "$wanted" = "$BNDL_SHA" ]; }; then
-        RST_BUNDLE=$p RST_ORIGIN=$origin RST_AT=$at
+      if [ -z "$selected" ] && { [ -z "$wanted" ] || [ "$wanted" = "${p##*/}" ] || [ "$wanted" = "$BNDL_SHA" ]; }; then
+        selected=$p selected_origin=$origin selected_at=$at
       fi
     else check=$BNDL_WHY; fi
     _rst_wire_row bundles "${p##*/}" "$origin" "$at" "$items" "$size" "$check" >>"$RST_W/bundles" || return 1
   done
-  [ -n "$RST_BUNDLE" ] || { RST_WHY='No finished bundle passes the bundle check.'; return 1; }
+  [ -n "$selected" ] || { RST_WHY='No finished bundle passes the bundle check.'; return 1; }
   # bndl_check's admitted records are copied before another family is read.
-  bndl_check "$RST_BUNDLE" || return 1
+  bndl_check "$selected" || { RST_WHY='The selected bundle failed its final check.'; return 1; }
+  _bndl_sha "$selected/bundle.omb" || { RST_WHY='The selected bundle could not be read.'; return 1; }
   RST_BT=("${REC_T[@]}") RST_BL=("${REC_L[@]}") RST_BN=$REC_N
-  _bndl_sha "$RST_BUNDLE/bundle.omb" || return 1
+  RST_BUNDLE=$selected RST_ORIGIN=$selected_origin RST_AT=$selected_at
   RST_RUN=$BNDL_SHA
   RST_LOG=$OMB_STATE_DIR/restore/runs/$RST_RUN.log
   RST_BACK=$OMB_STATE_DIR/restore/backups/$RST_RUN
@@ -266,7 +267,7 @@ _rst_log_load() {
 _rst_history() {
   # RST_H_*: the last placement plan and the last completed undo for DEST.
   local line dest step
-  RST_H_BEFORE='' RST_H_AFTER='' RST_H_STEP='' RST_H_STATE='' RST_H_PLACED=0 RST_H_PENDING=0
+  RST_H_BEFORE='' RST_H_AFTER='' RST_H_STEP='' RST_H_STATE='' RST_H_PLACED=0 RST_H_PENDING=0 RST_H_PREPARED=0
   [ -f "$RST_W/events" ] || return 0
   while IFS= read -r line; do
     _rst_field "$line" dest dest
@@ -276,6 +277,7 @@ _rst_history() {
       _rst_field "$line" before RST_H_BEFORE
       _rst_field "$line" after RST_H_AFTER
     fi
+    case "$step" in prepare) RST_H_PREPARED=1 ;; undone) RST_H_PREPARED=0 ;; esac
     case "$step" in prepare | undo-plan) RST_H_PENDING=1 ;; undone | kept) RST_H_PENDING=0 ;; esac
     RST_H_STEP=$step
     _rst_field "$line" state RST_H_STATE
@@ -750,7 +752,10 @@ _rst_review_one() {
         { [ -e "$RST_BACKUP" ] || [ -L "$RST_BACKUP" ]; }; then
         RST_REASON[n]="The original is in $RST_BACKUP; undo returns it when the destination is free."
         if [ "${RST_OLD[n]}" != absent ] && [ "${RST_OLD[n]}" != "$RST_H_AFTER" ] && [ "${RST_OLD[n]}" != "$RST_H_BEFORE" ]; then
-          RST_REASON[n]="The original is in $RST_BACKUP. Move the current destination to a safe name, copy the original from $RST_BACKUP back to the destination without removing the backup, then run restore undo before reviewing another Replace."
+          RST_REASON[n]="The original is in $RST_BACKUP. Move the current destination to a safe name, run $(quote_argv cp -a -T -- "$RST_BACKUP" "$path") to copy the original back with its type and mode, without removing the backup. Then run restore undo before reviewing another Replace."
+          if [ "$RST_H_PLACED" != 1 ] && [ "$RST_H_PENDING" = 1 ]; then
+            RST_REASON[n]="The original is in $RST_BACKUP. Move the current destination to a safe name, then run restore undo while the destination is free before reviewing another Replace."
+          fi
         fi
         case "$RST_H_STEP:$RST_H_STATE" in
           prepare:* | status:blocked | status:failed)
@@ -977,7 +982,7 @@ _rst_stage() {
   omb_stop_at restore.stage
 }
 _rst_place() {
-  local n=$1 dest=${RST_DEST[$1]} path stage old=${RST_OLD[$1]} new=${RST_NEW[$1]} backup
+  local n=$1 dest=${RST_DEST[$1]} path stage old=${RST_OLD[$1]} new=${RST_NEW[$1]} backup hint
   path=$RST_HOME/$dest stage=$RST_HOME/$dest.omb-new-$RST_RUN
   omb_pause_at restore.recheck
   if ! _rst_parents "$dest" 1 || ! _rst_node "$path" || [ "$RST_NODE" != "$old" ]; then
@@ -987,6 +992,10 @@ _rst_place() {
   _rst_backup_name "$dest"; backup=$RST_BACKUP
   _rst_history "$dest"
   if [ -e "$backup" ] || [ -L "$backup" ]; then
+    hint="The original is in $backup. Move the current destination to a safe name, run $(quote_argv cp -a -T -- "$backup" "$path") to copy the original back with its type and mode, without removing the backup. Then run restore undo before reviewing another Replace."
+    if [ "$RST_H_PLACED" != 1 ] && [ "$RST_H_PENDING" = 1 ]; then
+      hint="The original is in $backup. Move the current destination to a safe name, then run restore undo while the destination is free before reviewing another Replace."
+    fi
     # Resume only a recorded rename of the exact reviewed original. A second
     # replacement never overwrites that original or reuses its backup name.
     _rst_node "$backup" || return 1
@@ -1002,11 +1011,11 @@ _rst_place() {
         _rst_mark "$n" blocked 'The original was returned; review this item again before replacing it.'; return
       fi
     elif [ "$RST_H_BEFORE" != "$RST_NODE" ] || [ "$RST_H_AFTER" != "$new" ]; then
-      _rst_mark "$n" blocked "The original is in $backup. Move the current destination to a safe name, copy the original from $backup back to the destination without removing the backup, then run restore undo before reviewing another Replace."; return
+      _rst_mark "$n" blocked "$hint"; return
     elif [ "$old" = "$RST_NODE" ]; then
       _rst_preserve "$backup" "$backup.previous" || return 1
     else
-      _rst_mark "$n" blocked "The original is in $backup. Move the current destination to a safe name, copy the original from $backup back to the destination without removing the backup, then run restore undo before reviewing another Replace."; return
+      _rst_mark "$n" blocked "$hint"; return
     fi
   else
     _rst_log prepare "${RST_ITEM[n]}" "$dest" "$old" "$new" ready || return 1
@@ -1222,6 +1231,7 @@ _rst_apply() {
   if [ "$needed" != 1 ]; then
     n=0
     while [ "$n" -lt "$total" ]; do _rst_progress "$n"; n=$((n + 1)); done
+    _rst_apply_summary
     return 0
   fi
   _rst_ready || return 1
@@ -1307,9 +1317,13 @@ _rst_apply() {
       core_message "$level" "$text"
     done <"$RST_W/notices"
   fi
-  local unverified=0 summary=''
-  n=0
-  while [ "$n" -lt "$total" ]; do
+  _rst_apply_summary
+  [ "$RST_STATE" = complete ]
+}
+
+_rst_apply_summary() {
+  local n=0 unverified=0 summary=''
+  while [ "$n" -lt "$RST_N" ]; do
     if [ "${RST_STATUS[n]}" = unverified ]; then unverified=$((unverified + 1)); fi
     n=$((n + 1))
   done
@@ -1317,7 +1331,6 @@ _rst_apply() {
     summary=" $unverified unverified; nothing showed these items installed."
   fi
   _rst_say info "Restore: $RST_STATE; $RST_COUNTS.$summary Omarchy's agent picker chooses its default; permissive launch modes remain Omarchy's choice."
-  [ "$RST_STATE" = complete ]
 }
 
 # Rebuild a stopped copy only after preserving its partial bytes.
@@ -1336,6 +1349,15 @@ _rst_undo_file() {
   stage=$path.omb-undo-$RST_RUN
   if ! _rst_parents "${RST_DEST[n]}" 0 || ! _rst_node "$path"; then return 1; fi
   current=$RST_NODE
+  # Without a placement record, only our pending original may move, and
+  # only into a free destination. Recheck here as well as in the undo judge.
+  if [ "$RST_H_PLACED" != 1 ]; then
+    if [ "$current" != absent ] || [ "$RST_H_PENDING" != 1 ] || [ "$old" = absent ]; then return 1; fi
+    if ! _rst_node "$backup" || [ "$RST_NODE" != "$old" ]; then return 1; fi
+    run mv -T --update=none-fail -- "$backup" "$path" >/dev/null || return 1
+    run sync >/dev/null || return 1
+    _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone; return
+  fi
   if [ "$step" = undo-plan ] && [ "$current" = absent ] && { [ -e "$backup.placed" ] || [ -L "$backup.placed" ]; }; then
     if ! _rst_node "$backup.placed" || [ "$RST_NODE" != "$after" ]; then
       run mv -T --update=none-fail -- "$backup.placed" "$path" >/dev/null || return 1
@@ -1391,29 +1413,43 @@ _rst_undo_file() {
   if ! _rst_node "$path" || [ "$RST_NODE" != "$old" ]; then return 1; fi
   _rst_log undone "${RST_ITEM[n]}" "${RST_DEST[n]}" "$old" "$after" undone
 }
-# A change can reach the machine before its placed event. A retained backup
-# from an already undone cycle does not make a later failed Replace pending.
+# A matching destination does not identify who placed it. Without a current
+# placement record, only a pending original at a free destination can return.
 _rst_undo_needed() {
-  local current
-  [ "$RST_H_PLACED" != 1 ] || return 0
-  [ "$RST_H_STEP" != undo-plan ] || return 0
-  case "${RST_KIND[$1]}" in
+  local n=$1 current path=$RST_HOME/${RST_DEST[$1]}
+  RST_UNDO_WHY=''
+  if [ "$RST_H_PLACED" = 1 ]; then return 0; fi
+  [ "$RST_H_PREPARED" = 1 ] || return 1
+  _rst_backup_name "${RST_DEST[n]}"
+  case "${RST_KIND[n]}" in
     setting)
-      _rst_setting_now "${RST_SRC[$1]}" || return 0
-      [ "$RST_SETTING_FP" = "$RST_H_AFTER" ] && [ "$RST_SETTING_FP" != "$RST_H_BEFORE" ]
-      return ;;
+      RST_UNDO_WHY="Undo refused for setting ${RST_DEST[n]}: restore cannot tell whether it set the current value. The saved previous value is kept at $RST_BACKUP.setting."
+      return 0 ;;
     file | dir | link | bashrc) ;;
     *) return 1 ;;
   esac
-  if ! _rst_parents "${RST_DEST[$1]}" 0 || ! _rst_node "$RST_HOME/${RST_DEST[$1]}"; then return 0; fi
+  if ! _rst_parents "${RST_DEST[n]}" 0 || ! _rst_node "$path"; then
+    RST_UNDO_WHY="Undo refused for ${RST_DEST[n]}: its destination could not be checked; any original remains in $RST_BACKUP."
+    return 0
+  fi
   current=$RST_NODE
-  if [ "$current" = "$RST_H_AFTER" ] && [ "$current" != "$RST_H_BEFORE" ]; then return 0; fi
-  if [ "$RST_H_PENDING" != 1 ] || [ -z "$RST_H_BEFORE" ] || [ "$RST_H_BEFORE" = absent ]; then return 1; fi
-  _rst_backup_name "${RST_DEST[$1]}"
-  if [ -e "$RST_BACKUP" ] || [ -L "$RST_BACKUP" ]; then return 0; fi
-  # Missing or changed recovery bytes must still refuse when the original
-  # moved out of the destination; an edited, never-moved original is skipped.
-  [ "$current" = absent ]
+  if [ "$current" = "$RST_H_AFTER" ] && [ "$current" != "$RST_H_BEFORE" ]; then
+    RST_UNDO_WHY="$path matches what the restore places, but no placement was recorded, so it was left as is."
+    if [ "$RST_H_BEFORE" = absent ]; then RST_UNDO_WHY="$RST_UNDO_WHY There was no original."
+    else RST_UNDO_WHY="$RST_UNDO_WHY The original backup is at $RST_BACKUP."; fi
+  fi
+  if [ "$RST_H_PENDING" = 1 ] && [ -n "$RST_H_BEFORE" ] && [ "$RST_H_BEFORE" != absent ]; then
+    # Keep a missing or changed original a refusal when its destination is
+    # free. The move itself verifies the backup and refuses a new occupant.
+    if [ "$current" = absent ]; then return 0; fi
+    if [ -e "$RST_BACKUP" ] || [ -L "$RST_BACKUP" ]; then
+      if [ -z "$RST_UNDO_WHY" ]; then
+        RST_UNDO_WHY="Undo refused for $path: its destination is occupied; the original backup is at $RST_BACKUP."
+      fi
+      return 0
+    fi
+  fi
+  [ -n "$RST_UNDO_WHY" ]
 }
 # Completed copies are redundant only when the backup or the reviewed desired
 # bytes still match. A partial or unexpected stage remains available for retry.
@@ -1456,11 +1492,22 @@ _rst_undo() {
     [ -n "$RST_H_AFTER" ] || continue
     case "${RST_KIND[n]}" in
       file | dir | link | bashrc)
-        if _rst_undo_needed "$n"; then _rst_undo_file "$n" || changed=1; fi
+        if _rst_undo_needed "$n"; then
+          if [ -n "$RST_UNDO_WHY" ]; then
+            _rst_say warn "$RST_UNDO_WHY"; changed=1
+            continue
+          fi
+          if ! _rst_undo_file "$n"; then
+            _rst_backup_name "${RST_DEST[n]}"
+            _rst_say warn "Undo refused for ${RST_DEST[n]}; its destination or original backup $RST_BACKUP could not be returned."
+            changed=1
+          fi
+        fi
         _rst_undo_clean "$n" || changed=1 ;;
       setting)
         if _rst_undo_needed "$n"; then
-          _rst_undo_setting "$n" || { _rst_say warn "Undo refused for setting ${RST_DEST[n]}; its private backup is retained."; changed=1; }
+          if [ -n "$RST_UNDO_WHY" ]; then _rst_say warn "$RST_UNDO_WHY"; changed=1
+          else _rst_undo_setting "$n" || { _rst_say warn "Undo refused for setting ${RST_DEST[n]}; its private backup is retained."; changed=1; }; fi
         fi ;;
     esac
     [ "$RST_LOG_FAILED" != 1 ] || return 1
@@ -1650,7 +1697,7 @@ _rst_undo_load() {
   local log latest='' wanted
   _rst_load || return 1
   [ "$RST_GUARD_OK" = 1 ] || return 0
-  _rst_parents "${OMB_STATE_DIR#"$RST_HOME"/}/restore/runs/x" 0 || { RST_STATE=blocked RST_N=0; return 0; }
+  _rst_parents "${OMB_STATE_DIR#"$RST_HOME"/}/restore/runs/x" 0 || { RST_STATE=blocked RST_N=0 RST_WHY='The restore run path is not safe.'; return 0; }
   for log in "$OMB_STATE_DIR/restore/runs/"*.log; do
     if [ ! -f "$log" ] || [ -L "$log" ] || [ ! -O "$log" ]; then continue; fi
     wanted=${log##*/}; wanted=${wanted%.log}
@@ -1663,7 +1710,7 @@ _rst_undo_load() {
 }
 rst_undo_run() { RST_CORE=1; _rst_undo_load && [ "$RST_GUARD_OK" = 1 ] && [ -z "$RST_WHY" ] && [ "$RST_N" -gt 0 ] && _rst_undo; }
 rst_undo_judge() {
-  local n=0 bad=0
+  local n=0 bad=0 settings='' destinations=''
   CORE_FINDING=unexpected CORE_JUDGE_TEXT='The restore run could not be read for undo.'
   _rst_undo_load || return 1
   if [ "$RST_GUARD_OK" != 1 ] || [ -n "$RST_WHY" ] || ! [ "$RST_N" -gt 0 ]; then return 1; fi
@@ -1671,12 +1718,18 @@ rst_undo_judge() {
     case "${RST_KIND[n]}" in
       file | dir | link | bashrc | setting)
         _rst_history "${RST_DEST[n]}"
-        case "$RST_H_STEP" in kept | undone) ;; *) if [ -n "$RST_H_AFTER" ] && _rst_undo_needed "$n"; then bad=1; fi ;; esac ;;
+        case "$RST_H_STEP" in kept | undone) ;; *)
+          if [ -n "$RST_H_AFTER" ] && _rst_undo_needed "$n"; then
+            bad=1
+            destinations=$destinations${destinations:+, }${RST_DEST[n]}
+            if [ "${RST_KIND[n]}" = setting ] && [ "$RST_H_PLACED" != 1 ]; then settings=$settings${settings:+, }${RST_DEST[n]}; fi
+          fi ;; esac ;;
     esac
     n=$((n + 1))
   done
-  CORE_FINDING=unexpected CORE_JUDGE_TEXT='Some restored destinations could not be undone.'
-  [ "$bad" != 0 ] || { CORE_FINDING=completed CORE_JUDGE_TEXT='The unchanged restored files were undone.'; }
+  CORE_FINDING=unexpected CORE_JUDGE_TEXT="These restore destinations could not be undone: $destinations."
+  if [ "$bad" = 0 ]; then CORE_FINDING=completed CORE_JUDGE_TEXT='The unchanged restored files were undone.'
+  elif [ -n "$settings" ]; then CORE_JUDGE_TEXT="$CORE_JUDGE_TEXT Restore cannot tell whether it set these settings: $settings. Their saved previous values remain in private backups."; fi
 }
 rst_core_op() {
   local body rows st kind

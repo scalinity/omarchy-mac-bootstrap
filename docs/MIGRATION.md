@@ -444,9 +444,11 @@ snapshot generation shown with its conflicts and diffs; validation and the
 fresh execution basis refuse a changed generation. After typed
 `restore`, it stages beside each destination, rechecks parents and bytes,
 moves an original whole into a private backup and places with no-clobber
-GNU `ln -T` or `mv -T --update=none-fail` forms. The manifest's full SHA-256
-identifies the run. Before any install or placement, apply tests refusal of
-occupied file and directory destinations and success at free names in a
+GNU `ln -T` for regular files, `ln -s -T` for symbolic links, or
+`mv -T --update=none-fail` for folders. File and link stages are removed
+after the link is made. The manifest's full SHA-256 identifies the run.
+Before any install or placement, apply tests refusal of occupied file and
+directory destinations and success at free names in a
 private `restore/no-clobber` folder on the home's filesystem, clearing any
 probes left by a stopped check before reusing it. Unsupported or unsafe placement
 commands stop apply; GNU coreutils 9.5 or later is required. The same SHA
@@ -465,18 +467,25 @@ Partial stages and previous undo cycles are preserved under fresh names.
 Git settings and MCP definitions have private 0600 backups; values never
 reach output or the run log. `restore undo` follows the newest restore run
 log, checks the bytes it actually moved and puts an intervening edit back
-before refusing that item. It returns unchanged settings from their private
-backups and skips kept conflicts and items with no placement on the machine,
-while settling a recorded interrupted backup move. A destination or setting
-matching the recorded after and differing from the before needs undo even
-when its placement event was not written. A retained backup from an already
-undone cycle alone does not require another undo. It removes finished new or undo stages
-only when their bytes match the reviewed content or retained backup;
-independent items continue after a refusal. A second Replace that cannot
-reuse its backup names the original and explains how to keep the current
-destination safely, copy the original back from its retained backup, then
-undo and review another Replace. A successful mise backend install with no
-observed version folder under mise's kebab-case directory name is unverified,
+before refusing that item. Undo reverses only placements recorded in the
+current cycle, after the last `undone`. Without a placement record, a
+destination matching the recorded after and differing from the before is
+left as is and named, with its original's backup or a note that there was
+no original. Its judge reports `unexpected`, naming it. Matching bytes and
+stage names do not establish who placed it. Other states without a pending
+original are skipped silently. A pending original in its checked backup
+returns only when the destination is free; an occupied destination is
+refused, with the backup path shown, and never moved. Settings without a
+current-cycle placement record are never reverted automatically: undo names
+the setting and its private backup, and its judge reports `unexpected`. No
+value is printed. Completed stages are removed only when their bytes match
+the reviewed content or retained backup; cleaning a silently skipped item's
+private stage leaves its destination untouched. Independent items continue
+after refusal. A second Replace names
+`cp -a -T BACKUP DEST` to return a recorded placement's original with its
+type and mode while retaining the backup, before undo and another review.
+An unrecorded pending original instead requires a free destination for undo.
+A successful mise backend install with no observed version folder under mise's kebab-case directory name is unverified,
 warns, and allows later layers to continue. The final complete message counts
 unverified items and says nothing showed them installed. Originals and displaced restored bytes remain in backups. Packages
 and external installer changes require manual reversal. `rst_status_counts` supplies
