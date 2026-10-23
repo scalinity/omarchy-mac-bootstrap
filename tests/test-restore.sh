@@ -19,7 +19,7 @@ t_load
 echo test-restore
 if [ "${1:-}" = child ]; then T=$RST_CHILD_T; else T=$(t_tmp); fi
 OMB_HOME=$REPO
-OMB_TMP=$T/scratch
+OMB_TMP=$T/omarchy-bootstrap.scratch
 mkdir -p "$OMB_TMP"
 REAL_HOME=$HOME
 
@@ -53,27 +53,68 @@ sync() {
   printf 'flush\n' >>"$T/flushes"
   if [ -f "${RST_LOG:-}" ]; then tail -n 1 "$RST_LOG" >>"$T/flushed-lines"; fi
 }
+# Scratch trees use Linux ln's exact-destination form too. BSD ln lacks -T;
+# emulate just that form while keeping the real GNU check below untouched.
+ln() {
+  if [ "${1:-}" = -s ] && [ "${2:-}" = -T ]; then
+    shift 2
+    [ ! -e "${3:-}" ] && [ ! -L "${3:-}" ] || return 1
+    command ln -s "$@"
+  else command ln "$@"; fi
+}
 
+eval "$(declare -f run | sed '1s/run/_restore_real_run/')"
 # run's fixture execution stand-in: no generic evaluator, no external tools.
 # BSD tools on macOS need the same no-replace semantics for fixture tests.
 run() {
-  local cmd=$1 arg src dst key
+  local cmd=$1 arg src dst key i=0 argv
+  local -a shown=()
   shift
   [ "$OMB_INTENT" = act ] && [ "$OMB_DRY_RUN" != 1 ] || return 1
-  printf '%s\n' "$(quote_argv "$cmd" "$@")" >>"$T/record"
+  for arg in "$cmd" "$@"; do
+    i=$((i + 1))
+    if [ "$i" = "${OMB_RUN_WITHHELD:-0}" ]; then shown+=( '<withheld>' ); else shown+=( "$arg" ); fi
+  done
+  argv=$(quote_argv "${shown[@]}")
+  printf '%s\n' "$argv" >>"$T/record"
+  if [ -d "$OMB_STATE_DIR" ]; then log_event exec "$argv"; fi
   case "$cmd" in
-    rst_log_write | rst_stage_write) "$cmd" "$@" ;;
+    rst_log_write | rst_stage_write)
+      if [ "$cmd" = rst_stage_write ] && [ "${RESTORE_TEST_SHORT_SETTING:-0}" = 1 ]; then
+        RESTORE_TEST_SHORT_SETTING=0
+        printf partial >"$2"; chmod 0600 "$2"; return 1
+      fi
+      "$cmd" "$@" ;;
     sync) return 0 ;;
     mkdir | chmod | cp | rm)
       for arg in "$@"; do
         case "$arg" in /*) case "$arg" in "$T"/* | "$TMP_ROOT"/*) ;; *) echo "unsafe test write: $arg" >&2; return 97 ;; esac ;; esac
       done
-      if [ "$cmd" = cp ] && [ "$1" = -a ]; then shift; [ "$1" != -- ] || shift; cp -pR "$@"
+      if [ "$cmd" = cp ] && [ "$1" = -a ]; then
+        shift
+        key=0
+        if [ "$1" = -T ]; then key=1; shift; fi
+        [ "$1" != -- ] || shift
+        if [ "${RESTORE_TEST_STAGE_LINK:-0}" = 1 ]; then
+          RESTORE_TEST_STAGE_LINK=0
+          rm -rf "${2%/}"
+          ln -s "$T/outside" "${2%/}"
+        fi
+        if [ "$key" = 1 ]; then [ ! -e "$2" ] && [ ! -L "$2" ] || return 1; fi
+        if [ "${RESTORE_TEST_PARTIAL_COPY:-0}" = 1 ]; then
+          RESTORE_TEST_PARTIAL_COPY=0
+          printf partial >"$2"
+          return 1
+        fi
+        cp -pR "$@"
       elif [ "$cmd" = chmod ]; then key=$1; shift; [ "$1" != -- ] || shift; chmod "$key" "$@"
       else "$cmd" "$@"; fi ;;
     mv)
       shift 3
       src=$1 dst=$2
+      if [ "${RESTORE_TEST_EDIT_ON_MOVE:-0}" = 1 ]; then
+        case "$dst" in *.placed) printf edited >"$src"; RESTORE_TEST_EDIT_ON_MOVE=0 ;; esac
+      fi
       [ ! -e "$dst" ] && [ ! -L "$dst" ] || return 1
       mv -- "$src" "$dst" ;;
     ln)
@@ -89,20 +130,33 @@ run() {
         for key in "$@"; do printf '%s 1\n' "$key" >"$OMB_FIXTURE/cmd/rst_q_$key"; rm -f "$OMB_FIXTURE/cmd/rst_q_$key.rc"; done
       fi ;;
     git)
-      key=${6:-}
-      printf '%s\n' "${7:-}" >"$OMB_FIXTURE/cmd/rst_git_$key" ;;
+      if [ "${5:-}" = --unset-all ]; then
+        key=$7
+        : >"$OMB_FIXTURE/cmd/rst_git_$key"
+        printf '1\n' >"$OMB_FIXTURE/cmd/rst_git_$key.rc"
+      else
+        key=${6:-}
+        printf '%s\n' "${7:-}" >"$OMB_FIXTURE/cmd/rst_git_$key"
+        rm -f "$OMB_FIXTURE/cmd/rst_git_$key.rc"
+      fi ;;
     claude)
       mkdir -p "$RST_HOME"
       printf '{}\n' >"$T/json"
       [ ! -f "$RST_HOME/.claude.json" ] || cp "$RST_HOME/.claude.json" "$T/json"
-      jq --arg k "$3" --argjson v "$4" '.mcpServers[$k] = $v' "$T/json" >"$RST_HOME/.claude.json" ;;
+      if [ "$2" = remove ]; then
+        jq --arg k "$3" 'del(.mcpServers[$k])' "$T/json" >"$RST_HOME/.claude.json"
+      else jq --arg k "$3" --argjson v "$4" '.mcpServers[$k] = $v' "$T/json" >"$RST_HOME/.claude.json"; fi ;;
     fake-agent)
       mkdir -p "$RST_HOME/.local/share/mise/installs/$1/1/bin"
       : >"$RST_HOME/.local/share/mise/installs/$1/1/bin/$1" ;;
     env | npm | uv)
       if [ "${INSTALL_TAKES:-0}" = 1 ]; then
         case "$cmd" in
-          env) mkdir -p "$RST_HOME/.local/share/mise/installs/$RST_TARGET/${RST_VERSION:-1}/bin" ;;
+          env)
+            key=$RST_HOME/.local/share/mise/installs/$RST_TARGET/${RST_VERSION:-1}/bin
+            mkdir -p "$key"
+            printf '#!/bin/sh\n' >"$key/$RST_TARGET"
+            chmod +x "$key/$RST_TARGET" ;;
           npm)
             mkdir -p "$RST_HOME/.local/share/mise/installs/node/22/lib/node_modules/$RST_TARGET"
             printf '{}\n' >"$RST_HOME/.local/share/mise/installs/node/22/lib/node_modules/$RST_TARGET/package.json" ;;
@@ -131,6 +185,7 @@ setup() {
   OMB_RESTORE_DIR=$F/root/mnt/shared
   OMB_TEST_STOP_AT='' OMB_TEST_FAIL_AT='' OMB_TEST_PAUSE_AT=''
   RST_CORE=0 RST_REPLACE=() CORE_REQ_ARGS=0 INSTALL_TAKES=0 AG_TEST_FAIL=0
+  RESTORE_TEST_EDIT_ON_MOVE=0 RESTORE_TEST_PARTIAL_COPY=0 RESTORE_TEST_STAGE_LINK=0 RESTORE_TEST_SHORT_SETTING=0
   STATE_DIR_OK=''
   state_init
   : >"$T/record"
@@ -142,7 +197,7 @@ replace_all() {
   RST_REPLACE=()
   while [ "$n" -lt "$RST_N" ]; do RST_REPLACE+=("${RST_DEST[n]}"); n=$((n + 1)); done
 }
-apply() { OMB_IFACE_WORD=restore; _rst_apply >"$T/out" 2>&1; RC=$?; }
+apply() { _rst_dataset || return 1; RST_REVIEW=$RST_GEN; OMB_IFACE_WORD=restore; _rst_apply >"$T/out" 2>&1; RC=$?; }
 assert_file() { [ -f "$1" ] && [ "$(cat "$1")" = "$2" ] && ok || fail "$3"; }
 
 rebuild() {
@@ -161,7 +216,7 @@ basebody() {
 # It must never be called in a test subshell (Bash keeps the parent's $$).
 if [ "${1:-}" = child ]; then
   F=$RST_CHILD_F T=$RST_CHILD_T
-  OMB_TMP=$T/child-scratch
+  OMB_TMP=$T/omarchy-bootstrap.child-scratch
   mkdir -p "$OMB_TMP"
   HOME=/home/alex OMB_FIXTURE=$F OMB_PLATFORM=linux OMB_UID=1000 OMB_INTENT=act OMB_PERSIST=1 OMB_DRY_RUN=0
   OMB_STATE_DIR=$F/root/home/alex/.local/state/omarchy-mac-bootstrap OMB_RESTORE_DIR=$F/root/mnt/shared
@@ -171,7 +226,7 @@ if [ "${1:-}" = child ]; then
   _rst_load || exit 20
   replace_all
   if [ "${RST_CHILD_UNDO:-0}" = 1 ]; then OMB_IFACE_WORD=undo; _rst_undo
-  else OMB_IFACE_WORD=restore; _rst_apply; fi
+  else _rst_dataset; RST_REVIEW=$RST_GEN; OMB_IFACE_WORD=restore; _rst_apply; fi
   exit $?
 fi
 child() {
@@ -288,7 +343,7 @@ for boundary in restore.stage restore.backup restore.place; do
   assert_eq "$RC" 1 "restore-fail-$boundary"
   if [ "$boundary" = restore.place ]; then
     _rst_backup_name .config/test.conf
-    assert_file "$RST_BACKUP" original restore-place-failure-retains-backup
+    assert_file "$RST_HOME/.config/test.conf" original restore-place-failure-returns-original
   else assert_file "$F/root/home/alex/.config/test.conf" original "restore-failure-retains-original-$boundary"; fi
   OMB_TEST_FAIL_AT=''
   load; replace_all; apply
@@ -423,8 +478,11 @@ rebuild
 mkdir -p "$F/root/home/alex/.config/opencode" "$F/root/home/alex/.codex"
 printf '{"theme":"omarchy","mcp":{"seed":{"enabled":true}}}\n' >"$F/root/home/alex/.config/opencode/opencode.json"
 printf 'old = true\n' >"$F/root/home/alex/.codex/config.toml"
+chmod 0600 "$F/root/home/alex/.config/opencode/opencode.json"
 load; replace_all; apply
 assert_eq "$RC" 0 restore-agent-configs
+_rst_node "$RST_HOME/.config/opencode/opencode.json"
+assert_contains "$RST_NODE" file:0600: restore-private-opencode-mode
 assert_eq "$(jq -r '.theme' "$F/root/home/alex/.config/opencode/opencode.json")" omarchy restore-opencode-keeps-default
 assert_eq "$(jq -r '.mcp.mine.enabled and .mcp.seed.enabled' "$F/root/home/alex/.config/opencode/opencode.json")" true restore-opencode-merged
 assert_file "$F/root/home/alex/.codex/config.toml" 'new configuration' restore-codex-replaced-whole
@@ -521,7 +579,11 @@ setup
 } >"$T/body"
 rebuild
 printf '# Omarchy Bash defaults\n' >"$F/root/home/alex/.bashrc"
-load; replace_all; apply
+load; _rst_dataset; generated_review=$RST_GEN
+sleep 1
+load; _rst_dataset
+assert_eq "$RST_GEN" "$generated_review" restore-review-generation-generated
+replace_all; apply
 assert_eq "$RC" 0 restore-shell-line-place
 assert_eq "$(grep -c '# omarchy-mac-bootstrap' "$F/root/home/alex/.bashrc")" 1 restore-shell-line-once
 load
@@ -644,14 +706,17 @@ assert_eq "$(rst_status_counts)" '0 0 1 1' restore-counts-failed-and-blocked
 setup
 printf original >"$F/root/home/alex/.config/test.conf"
 load
-CORE_REQ_ARGS=2 CORE_REQ_ARG_NAME=(bundle replace.1)
-CORE_REQ_ARG_VALUE=(20261022T120000Z $'omb-replace 1\nreplace\tdest=.config/test.conf\n')
+_rst_dataset
+CORE_REQ_ARGS=3 CORE_REQ_ARG_NAME=(bundle replace.1 review)
+CORE_REQ_ARG_VALUE=(20261022T120000Z $'omb-replace 1\nreplace\tdest=.config/test.conf\n' "$RST_GEN")
 rst_apply_basis
 assert_eq "$?" 0 restore-valid-replacement
-first_basis=$CORE_BASIS
 printf changed >"$F/root/home/alex/.config/test.conf"
 rst_apply_basis
-[ "$first_basis" != "$CORE_BASIS" ] && ok || fail restore-basis-binds-destination
+assert_eq "$?" 1 restore-review-generation
+assert_eq "$RST_INVALID_CODE" changed restore-review-generation-code
+assert_eq "$CORE_BASIS" '' restore-execute-basis-refuses-changed
+load; _rst_dataset; CORE_REQ_ARG_VALUE[2]=$RST_GEN
 CORE_REQ_ARG_VALUE[1]=$'omb-replace 1\nreplace\tdest=.config/unknown\n'
 rst_apply_basis
 assert_eq "$?" 1 restore-unknown-replacement-refused
@@ -691,6 +756,359 @@ rst_apply_judge 0
 assert_eq "$CORE_FINDING" completed restore-judge-reads-files
 RST_CORE=0
 
+# restore-placement-return: a failed transfer puts the original back; undo
+# can also settle the crash window before a placement or after an obstruction.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+load; replace_all
+OMB_TEST_FAIL_AT=restore.place
+apply
+assert_file "$RST_HOME/.config/test.conf" original restore-placement-return
+OMB_TEST_FAIL_AT=''
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+(child restore.backup) 2>/dev/null
+load
+mkdir "$RST_HOME/.config/test.conf"
+printf obstacle >"$RST_HOME/.config/test.conf/entry"
+load
+assert_contains "${RST_REASON[0]}" "$RST_BACK/" restore-pending-original-location
+apply
+assert_eq "$RC" 1 restore-pending-original-default-rerun
+OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-pending-original-refuses-occupied
+rm "$RST_HOME/.config/test.conf/entry"
+rmdir "$RST_HOME/.config/test.conf"
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-pending-original-undo
+assert_file "$RST_HOME/.config/test.conf" original restore-pending-original-returned
+
+# restore-undo-edit-during-move: fingerprint the moved object, then return an
+# intervening editor save instead of leaving its destination absent.
+setup; load; apply; load
+RESTORE_TEST_EDIT_ON_MOVE=1 OMB_IFACE_WORD=undo
+_rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-undo-edit-during-move
+assert_file "$RST_HOME/.config/test.conf" edited restore-undo-edit-put-back
+
+# restore-undo-blocked-load and restore-undo-empty-load never claim success.
+eval "$(declare -f _rst_load | sed '1s/_rst_load/_restore_saved_load/')"
+_rst_load() { RST_STATE=blocked RST_N=0 RST_HOME=''; return 0; }
+CORE_FINDING=pending
+rst_undo_judge 1
+assert_eq "$CORE_FINDING" unexpected restore-undo-blocked-load
+OMB_IFACE_WORD=undo
+rst_undo_run
+assert_eq "$?" 1 restore-undo-blocked-run
+_rst_load() { RST_STATE=complete RST_N=0 RST_HOME=''; return 0; }
+CORE_FINDING=pending
+rst_undo_judge 1
+assert_eq "$CORE_FINDING" unexpected restore-undo-empty-load
+# shellcheck disable=SC2317
+_rst_load() { _restore_saved_load "$@"; }
+
+# restore-undo-kept: an ordinary kept conflict is outside undo's work.
+setup
+basebody
+rec_line file item config:test dest .config/another.conf mode 0644 sha256 "$SHA" size 18 whole 1 >>"$T/body"
+rebuild
+printf kept >"$F/root/home/alex/.config/another.conf"
+load; apply; load
+OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-kept-run
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" completed restore-undo-kept-judge
+assert_file "$RST_HOME/.config/another.conf" kept restore-undo-kept-untouched
+
+# restore-stage-repeated: preserve multiple partial stages with distinct names.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+(child restore.log) 2>/dev/null
+load; _rst_backup_name .config/test.conf
+printf previous >"$RST_BACKUP.stage"
+printf partial >"$RST_HOME/.config/test.conf.omb-new-$RST_RUN"
+replace_all; apply
+assert_eq "$RC" 0 restore-stage-repeated
+assert_file "$RST_BACKUP.stage" previous restore-stage-old-copy-preserved
+assert_file "$RST_BACKUP.stage.1" partial restore-stage-fresh-copy-preserved
+# restore-undo-partial-copy: a real short write and an existing preserved
+# stage do not trap subsequent attempts in a permanent refusal.
+load
+RESTORE_TEST_PARTIAL_COPY=1 OMB_IFACE_WORD=undo
+_rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-undo-partial-copy-fails
+_rst_backup_name .config/test.conf
+printf earlier >"$RST_BACKUP.undo-stage"
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-partial-copy-retry
+assert_file "$RST_BACKUP.undo-stage.1" partial restore-undo-partial-copy-preserved
+# restore-undo-partial-after-move: the same recovery works after the
+# destination moved, before a stopped undo could return its original.
+load; replace_all; apply; load
+_rst_backup_name .config/test.conf
+# Bind the actual original and placement for this synthetic crash boundary.
+_rst_node "$RST_BACKUP"; undo_old=$RST_NODE
+_rst_node "$RST_HOME/.config/test.conf"; undo_after=$RST_NODE
+_rst_log undo-plan "${RST_ITEM[0]}" .config/test.conf "$undo_old" "$undo_after" ready
+if [ -e "$RST_BACKUP.placed" ]; then mv "$RST_BACKUP.placed" "$RST_BACKUP.placed.saved"; fi
+mv "$RST_HOME/.config/test.conf" "$RST_BACKUP.placed"
+printf partial >"$RST_HOME/.config/test.conf.omb-undo-$RST_RUN"
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-partial-after-move
+assert_file "$RST_HOME/.config/test.conf" original restore-undo-partial-after-move-original
+
+# restore-repeated-cycles: neither original nor placed names are overwritten.
+for cycle in 1 2; do
+  load; replace_all; apply
+  assert_eq "$RC" 0 "restore-repeated-cycles-apply-$cycle"
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 0 "restore-repeated-cycles-undo-$cycle"
+  assert_file "$RST_HOME/.config/test.conf" original "restore-repeated-cycles-original-$cycle"
+done
+# restore-undo-continues: refusing the first item in reverse order still
+# allows the independent earlier item to be undone.
+setup
+basebody
+rec_line file item config:test dest .config/another.conf mode 0644 sha256 "$SHA" size 18 whole 1 >>"$T/body"
+rebuild; load; apply
+load; RESTORE_TEST_EDIT_ON_MOVE=1 OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 1 restore-undo-continues-refused
+[ ! -e "$RST_HOME/.config/test.conf" ] && ok || fail restore-undo-continues-other-item
+assert_file "$RST_HOME/.config/another.conf" edited restore-undo-continues-edited-item
+
+# restore-private-setting-backups: Unicode and trailing newlines survive,
+# existing MCP definitions return, and only private filenames appear in hints.
+setup
+{
+  rec_line item id settings:test class config whole 0
+  rec_line setting item settings:test kind git tool git name user.name value NEWSETTINGVALUE
+  rec_line setting item settings:test kind mcp tool claude name sample value '{"command":"new-setting-server"}'
+} >"$T/body"
+rebuild
+printf 'Jos\303\251 OLDSETTINGVALUE\n\n\n' >"$F/cmd/rst_git_user.name"
+cp "$F/cmd/rst_git_user.name" "$T/old-git-output"
+printf '{"mcpServers":{"sample":{"command":"old-setting-server"}}}\n' >"$F/root/home/alex/.claude.json"
+mkdir -p "$F/root/home/alex/.local/share/mise/installs/claude-code/1/bin"
+: >"$F/root/home/alex/.local/share/mise/installs/claude-code/1/bin/claude-code"
+load; replace_all; apply
+assert_eq "$RC" 0 restore-private-setting-backups
+_rst_backup_name git:user.name
+_rst_node "$RST_BACKUP.setting"
+assert_contains "$RST_NODE" file:0600: restore-setting-backup-private
+assert_contains "$(cat "$T/out")" "$RST_BACKUP.setting" restore-setting-hint-path
+for value in OLDSETTINGVALUE NEWSETTINGVALUE old-setting-server new-setting-server; do
+  assert_not_contains "$(cat "$T/out")" "$value" "restore-setting-terminal-withheld-$value"
+  assert_not_contains "$(cat "$(log_file)")" "$value" "restore-setting-log-withheld-$value"
+  assert_not_contains "$(cat "$RST_LOG")" "$value" "restore-setting-journal-withheld-$value"
+done
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-settings-undo
+cmp -s "$T/old-git-output" "$F/cmd/rst_git_user.name" && ok || fail restore-settings-undo-exact-bytes
+assert_eq "$(jq -r '.mcpServers.sample.command' "$RST_HOME/.claude.json")" old-setting-server restore-settings-undo-mcp
+# restore-setting-save: a failed/short backup cannot change the setting;
+# a stop after the durable backup is safe to resume without replacing it.
+setup
+{
+  rec_line item id settings:test class config whole 0
+  rec_line setting item settings:test kind git tool git name user.name value replacement
+} >"$T/body"
+rebuild
+printf 'original\n' >"$F/cmd/rst_git_user.name"
+load; replace_all
+OMB_TEST_FAIL_AT=restore.setting
+apply
+assert_eq "$RC" 1 restore-setting-save-failure
+assert_file "$F/cmd/rst_git_user.name" original restore-setting-save-failure-original
+OMB_TEST_FAIL_AT=''
+RESTORE_TEST_SHORT_SETTING=1
+load; replace_all; apply
+assert_eq "$RC" 1 restore-setting-short-write
+assert_file "$F/cmd/rst_git_user.name" original restore-setting-short-write-original
+load; replace_all; apply
+assert_eq "$RC" 0 restore-setting-short-write-retry
+_rst_backup_name git:user.name
+assert_file "$RST_BACKUP.setting.partial" partial restore-setting-short-write-preserved
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+(child restore.setting) 2>/dev/null
+assert_eq "$?" 137 restore-setting-save-stop
+assert_file "$F/cmd/rst_git_user.name" original restore-setting-stop-original
+load; replace_all; apply
+assert_eq "$RC" 0 restore-setting-save-resume
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_file "$F/cmd/rst_git_user.name" original restore-setting-save-undo
+
+# restore-withheld-run: the production run boundary masks execute, refusal,
+# dry-run and recorder output without changing the real command's argument.
+(
+  run() { _restore_real_run "$@"; }
+  unset OMB_FIXTURE
+  OMB_TEST_RECORD=$T/withheld-record
+  : >"$OMB_TEST_RECORD"
+  run_withheld 2 printf PRIVATESETTINGVALUE
+  assert_not_contains "$(cat "$OMB_TEST_RECORD")" PRIVATESETTINGVALUE restore-withheld-record
+  assert_contains "$(cat "$OMB_TEST_RECORD")" withheld restore-withheld-record-marker
+  unset OMB_TEST_RECORD
+  run_withheld 2 printf PRIVATESETTINGVALUE >"$T/withheld-actual"
+  assert_file "$T/withheld-actual" PRIVATESETTINGVALUE restore-withheld-actual-argument
+  OMB_DRY_RUN=1
+  run_withheld 2 printf PRIVATESETTINGVALUE >"$T/withheld-dry"
+  assert_not_contains "$(cat "$T/withheld-dry")" PRIVATESETTINGVALUE restore-withheld-dry
+  OMB_DRY_RUN=0 OMB_INTENT=read
+  run_withheld 2 printf PRIVATESETTINGVALUE >"$T/withheld-refused" 2>&1
+  assert_eq "$?" 1 restore-withheld-refusal
+  assert_not_contains "$(cat "$T/withheld-refused")" PRIVATESETTINGVALUE restore-withheld-refused-output
+  assert_not_contains "$(cat "$(log_file)")" PRIVATESETTINGVALUE restore-withheld-real-log
+  printf '%s %s\n' "$T_PASS" "$T_FAIL" >"$T/withheld-counts"
+)
+read -r T_PASS T_FAIL <"$T/withheld-counts"
+
+# restore-setting-absent-and-empty: empty is a real reviewed value; absent
+# settings and servers are removed again by undo.
+setup
+{
+  rec_line item id settings:test class config whole 0
+  rec_line setting item settings:test kind git tool git name user.name value restored
+  rec_line setting item settings:test kind mcp tool claude name sample value '{"command":"sample-server"}'
+} >"$T/body"
+rebuild
+: >"$F/cmd/rst_git_user.name"
+load
+assert_eq "${RST_ACTION[0]}" conflict restore-setting-empty-is-conflict
+printf '1\n' >"$F/cmd/rst_git_user.name.rc"
+mkdir -p "$F/root/home/alex/.local/share/mise/installs/claude-code/1/bin"
+: >"$F/root/home/alex/.local/share/mise/installs/claude-code/1/bin/claude-code"
+load; apply
+assert_eq "$RC" 0 restore-setting-absent-place
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-setting-absent-undo
+assert_eq "$(cat "$F/cmd/rst_git_user.name.rc")" 1 restore-setting-absent-git-unset
+assert_eq "$(jq -r '.mcpServers.sample // "absent"' "$RST_HOME/.claude.json")" absent restore-setting-absent-mcp-removed
+
+# restore-runtime-executable: empty folders and nonexecutable files fail the
+# observation, and a successful stand-in must create executable bytes.
+setup
+{
+  rec_line item id runtime:test class config whole 0
+  rec_line package item runtime:test layer runtimes method mise target node version 22 guess 0
+} >"$T/body"
+rebuild
+mkdir -p "$F/root/home/alex/.local/share/mise/installs/node/22/bin"
+load
+assert_eq "${RST_STATUS[0]}" ready restore-runtime-empty-folder
+printf partial >"$RST_HOME/.local/share/mise/installs/node/22/bin/node"
+chmod 0644 "$RST_HOME/.local/share/mise/installs/node/22/bin/node"
+load
+assert_eq "${RST_STATUS[0]}" ready restore-runtime-nonexecutable
+apply
+assert_eq "${RST_STATUS[0]}" failed restore-runtime-failed-install
+INSTALL_TAKES=1; load; apply
+assert_eq "$RC" 0 restore-runtime-executable
+
+# restore-protected-skill-links: leaves and every ancestor refuse Replace.
+setup; load
+for dest in .agents/skills/omarchy .claude/skills/omarchy .codex/skills/omarchy .config/opencode/skills/omarchy; do
+  while [ -n "$dest" ]; do
+    if _rst_dest_ok "$dest"; then fail "restore-protected-skill-link-$dest"; else ok; fi
+    [ "${dest%/*}" != "$dest" ] || break
+    dest=${dest%/*}
+  done
+done
+# restore-stage-directory-link: no cp into a precreated directory or link.
+setup
+{
+  rec_line item id config:tree class config whole 1
+  rec_line dir item config:tree dest .config/tree mode 0755
+  rec_line file item config:tree dest .config/tree/entry mode 0644 sha256 "$SHA" size 18 whole 1
+} >"$T/body"
+rebuild
+mkdir -p "$T/outside"
+printf outside >"$T/outside/entry"
+load
+RESTORE_TEST_STAGE_LINK=1
+apply
+assert_eq "$RC" 1 restore-stage-directory-link-refused
+assert_file "$T/outside/entry" outside restore-stage-directory-link-no-write
+rm -rf "$T/outside"
+
+# restore-undo-latest-run: a newly exported bundle has no restore history.
+setup; load; apply
+new_bundle=${B%/*}/20261023T120000Z
+cp -R "$B" "$new_bundle"
+sed 's/2026-10-22T12:00:00Z/2026-10-23T12:00:00Z/' "$B/bundle.omb" | sed '/^seal/d' >"$new_bundle/bundle.omb"
+rec_seal_write "$new_bundle/bundle.omb"
+load
+assert_eq "${RST_BUNDLE##*/}" 20261023T120000Z restore-undo-new-bundle-visible
+OMB_IFACE_WORD=undo
+rst_undo_run >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-latest-run
+[ ! -e "$RST_HOME/.config/test.conf" ] && ok || fail restore-undo-latest-run-file
+RST_CORE=0
+# restore-stale-stage-name: only a stage matching the placement is removed.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+(child restore.place) 2>/dev/null
+load
+cp -p "$RST_HOME/.config/test.conf" "$RST_HOME/.config/test.conf.omb-new-$RST_RUN"
+apply
+assert_eq "$RC" 0 restore-stale-stage-name-rerun
+[ ! -e "$RST_HOME/.config/test.conf.omb-new-$RST_RUN" ] && ok || fail restore-stale-stage-name-cleaned
+# restore-private-mode and restore-parent-modes: generated files respect a
+# more private original; ordinary config parents remain traversable.
+setup
+{
+  rec_line item id shell:bash class config whole 1
+  rec_line file item shell:bash dest .config/omarchy-mac-bootstrap/shell.bash mode 0644 sha256 "$SHA" size 18 whole 1
+} >"$T/body"
+rebuild
+printf private >"$F/root/home/alex/.bashrc"
+chmod 0600 "$F/root/home/alex/.bashrc"
+load; replace_all; apply
+_rst_node "$RST_HOME/.bashrc"
+assert_contains "$RST_NODE" file:0600: restore-private-bashrc-mode
+_rst_meta "$RST_HOME/.config/omarchy-mac-bootstrap"
+assert_eq "${RST_META##* }" 0755 restore-parent-config-mode
+_rst_parents .local/new-config/file 1
+_rst_meta "$RST_HOME/.local/new-config"
+assert_eq "${RST_META##* }" 0755 restore-parent-local-mode
+_rst_parents .private/new/file 1
+_rst_meta "$RST_HOME/.private/new"
+assert_eq "${RST_META##* }" 0700 restore-parent-private-mode
+# restore-scratch-guard: an inherited arbitrary folder is never cleared.
+setup
+saved_scratch=$OMB_TMP
+OMB_TMP=$T/unowned-scratch
+mkdir -p "$OMB_TMP/restore/want"
+printf preserve >"$OMB_TMP/restore/want/entry"
+_rst_load
+assert_eq "$?" 1 restore-scratch-guard
+assert_file "$OMB_TMP/restore/want/entry" preserve restore-scratch-guard-preserves-bytes
+OMB_TMP=$saved_scratch
+
+# restore-real-gnu-no-clobber: run the actual Linux placement primitives. This
+# explicit skip is also visible to Linux CI's strict-skip policy.
+coreutils_version=$(mv --version 2>/dev/null | awk 'NR == 1 && /GNU coreutils/ { print $NF }')
+if [ -n "$coreutils_version" ] && ver_ge "$coreutils_version" 9.5; then
+  real=$T/real-coreutils
+  mkdir -p "$real/source" "$real/dest"
+  printf source >"$real/source/entry"
+  printf destination >"$real/dest/entry"
+  mv -T --update=none-fail -- "$real/source" "$real/dest" >/dev/null 2>&1
+  assert_eq "$?" 1 restore-real-mv-refuses-existing-directory
+  assert_file "$real/dest/entry" destination restore-real-mv-no-nesting
+  mv -T --update=none-fail -- "$real/source" "$real/moved"
+  assert_eq "$?" 0 restore-real-mv-success
+  ln -T -- "$real/moved/entry" "$real/dest" >/dev/null 2>&1
+  assert_eq "$?" 1 restore-real-ln-refuses-directory
+  ln -T -- "$real/moved/entry" "$real/linked"
+  assert_eq "$?" 0 restore-real-ln-success
+  cp -a -T -- "$real/moved" "$real/copied"
+  assert_file "$real/copied/entry" source restore-real-cp-creates-directory
+  ln -s "$real/dest" "$real/copy-link"
+  cp -a -T -- "$real/moved" "$real/copy-link" >/dev/null 2>&1
+  assert_eq "$?" 1 restore-real-cp-refuses-link
+  assert_file "$real/dest/entry" destination restore-real-cp-no-follow
+else skip 'restore-real-no-clobber (GNU coreutils 9.5+ absent)'; fi
+
 # restore-entrypoint-refusals: nounset and the actual CLI route, not libraries
 # alone, exercise root, unfinished Omarchy and missing bundle failures.
 setup
@@ -723,10 +1141,12 @@ for kind in bundles review conflicts diff status; do
   c_run detail "$(rec_line page scope restore kind "$kind" generation "$generation" offset 0 limit 50)"
   assert_eq "$(c_result)" 'done ok' "restore-wire-$kind"
 done
-c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)"
+c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" "$(rec_line arg name review value "$generation")"
 assert_eq "$(c_result)" 'done ok' restore-wire-validate
 assert_contains "$C_OUT" $'review\taction=restore.apply' restore-wire-validation-basis
 printf concurrent >"$F/root/home/alex/.config/test.conf"
+c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" "$(rec_line arg name review value "$generation")"
+assert_eq "$(c_result)" 'refused changed' restore-review-generation-wire
 c_run detail "$(rec_line page scope restore kind review generation "$generation" offset 0 limit 50)"
 assert_eq "$(c_result)" 'refused changed' restore-wire-stale-generation
 

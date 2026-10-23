@@ -57,8 +57,10 @@ For a destination `D` under the home:
    tree digest. If not, the item is `blocked` and comes back as a conflict
    in the next review.
 2. **Stage**: the object, checked against its digest, is written beside `D`
-   as `D.omb-new-<run>`, created exclusively (Bash's `noclobber`) with a
-   private umask, given its mode, read back and flushed.
+   as `D.omb-new-<run>`. Files use Bash's `noclobber` and a private umask;
+   folders use `cp -a -T -- SOURCE STAGE` with the stage absent, so the copy
+   creates the folder itself. An existing unrecorded stage or link stops the
+   item. The stage is given its mode, read back and flushed.
 3. **Device check**: an existing `D` must be on the home's filesystem, with
    the backups; a rename to another device would be a copy, so the item is
    `blocked`.
@@ -73,8 +75,11 @@ For a destination `D` under the home:
    `mv -T --update=none-fail -- <stage> D` (GNU coreutils 9.5 and later).
    `-T` is always given, so a folder that appeared at `D` is never taken as
    a place to put the new name inside. If something appeared, the item
-   stops as a conflict and the original stays in its backup. The run log
-   notes the placing.
+   is `blocked`. If the destination is still free, the original is moved
+   back with the same no-clobber move. If something appeared, the original
+   remains in its named backup; the next review names that location, and
+   undo returns it once the destination is free. The run log binds the
+   original before it moves, including a stop before placement.
 6. **Read back** `D` (digest, mode or link text): the item is `placed`.
 
 Folder units (Neovim's folder, a skill folder) and generated files — the
@@ -83,7 +88,10 @@ merged with `jq` (constant filters, values as arguments) from Omarchy's file
 and the person's entries — are built whole beside their target and placed
 the same way. Codex's `config.toml` is kept or replaced whole: this tool
 reads no TOML on Linux. Modes are a ceiling (no setuid, setgid or sticky
-bit, nothing group- or world-writable), and `chown` is never used. One race
+bit, nothing group- or world-writable); a replacement also takes the
+original's more private mode, including generated Bash and OpenCode files.
+New parents under `~/.local` and `~/.config` use 0755; other new parents use
+0700. State and backup folders remain private. `chown` is never used. One race
 remains: a program that keeps the old file open and writes to it after it
 was moved aside writes into the backup, unnoticed.
 
@@ -92,7 +100,14 @@ key by key; Claude Code's MCP servers through `claude mcp add-json <name>
 <json> --scope user`, the definition as one argument. Each is read again
 just before its command, written only if it still has the reviewed value,
 and read back; a write by another program in between is overwritten and not
-detected.
+detected. Before a setting changes, its previous value is saved verbatim in
+one private 0600 file, `<destination-sha>.setting`, inside this run's backup
+folder. The log records only fingerprints, including whether the setting
+existed. Owner commands withhold their value argument from the run log,
+recorder and preview, and their output is suppressed. The reversal hint
+names the backup file; it never prints either value. Undo uses that file to
+restore the previous Git setting or MCP definition, or removes a setting
+that did not exist before.
 
 ### After a crash
 
@@ -102,10 +117,16 @@ moves. After any stop — a crash, a
 power cut, a full disk — the next `restore` judges each item from the
 filesystem: a destination already holding the bundle's version is
 `in-place`; where the destination is gone and its original sits in the
-named backup, placing goes on; anything else is a conflict, left alone. A
-stage left behind is removed only when the journal and read-back fingerprint
-match the intended bytes. A partial or unexpected stage is moved whole to
-a separate backup; unexpected bytes are preserved.
+named backup, the original returns with a no-clobber move before placement
+is retried. Undo can return that original too. An occupied destination is
+left alone; a refused placement is `blocked`, with the backup location
+shown in the next review. An intervening destination blocks that unfinished
+placement, so a later default Keep cannot erase its recovery record. A
+completed stage name left behind is removed
+only when its journal, bytes and placed destination agree. A partial or
+unexpected recorded stage, including an undo stage, is moved whole into the
+backup folder with a fresh suffix before rebuilding it. Existing preserved
+stages and earlier restore/undo cycles never collide or overwrite bytes.
 
 ## Conflicts
 
@@ -118,13 +139,19 @@ every conflict not yet decided. Without the frontend, the text interface
 keeps every conflict. Keep decisions are logged with the destination and
 its fingerprint. The frontend sends explicit replacements in an `omb-replace 1` document; the
 apply basis binds that document, the checked bundle and the reviewed
-destination fingerprints.
+destination fingerprints. `restore.apply` requires `review`, the 64-hex
+generation of the restore snapshot whose conflicts and diffs were shown.
+Validation and execution's fresh basis check refuse with `refused changed`
+if it differs from the current restore dataset. The text interface binds
+the generation of the review it printed too.
 
 Omarchy's seeded files in `~/.config` are the person's after the install: a
 conflict with one is labelled "Omarchy's default", and OpenCode's file is
 merged instead (*Placing a file*). **Omarchy's own files are never
 touched**: `/usr/share/omarchy`, `~/.local/state/omarchy`, its skill links
-in the AI tools' skill folders, its lazy agent wrappers in `~/.local/bin`
+at `~/.agents/skills/omarchy`, `~/.claude/skills/omarchy`,
+`~/.codex/skills/omarchy` and `~/.config/opencode/skills/omarchy`, every
+ancestor that would displace one of those links, its lazy agent wrappers in `~/.local/bin`
 and its default-agent choice (docs/AI-TOOLS.md → *Omarchy's coding agent*).
 
 ## Packages
@@ -134,19 +161,33 @@ approved; `sudo` asks when its policy requires. Each package is judged by
 `pacman -Q`, never by the exit status (the helper exits 0 when it skipped
 everything): one it skipped is `failed` with its reason, and what needs it
 is `blocked`. Then mise, npm and uv install the rest, managed and never
-prompting, each judged by what it put on disk. cargo-binstall, go and
+prompting, each judged by what it put on disk. A mise version folder counts
+only when it holds its runtime's executable with execute permission; an
+empty or incomplete folder does not count. cargo-binstall, go and
 Flathub installs are printed as commands to run by hand.
 
 ## Undo
 
-`restore undo` (typed `undo`) reverses the files, folders and links the
-restore placed: where a destination is exactly what was placed, the
-original comes back from its backup with the same no-clobber forms, or the
-new one is moved to the backup name with `.placed` appended if nothing was
-there; where it changed since, that item is refused, naming what is there
-now. Git settings and MCP servers are reversed by hand; the apply output
-prints owner-command hints (`git config` and `claude mcp remove`). Packages,
-sign-ins and what an external installer changed are not reversible. Backups stay until the person removes
+`restore undo` (typed `undo`) finds the most recently written restore run
+log and checks its bundle, even if a newer bundle has been exported. If
+that bundle is unavailable, the load is blocked or no units can be read,
+undo refuses and its judge cannot report completion.
+
+For each restored file, folder or link, undo moves the destination aside
+first and compares the bytes that actually moved. If they differ from the
+placement, it puts them back with a no-clobber move and refuses that item.
+An unchanged placement returns its original from the backup, or leaves the
+destination absent if it was new. The displaced restored bytes remain at
+`<backup>.placed`; earlier copies are preserved with fresh suffixes. A
+refused item does not stop independent items, and kept conflicts are
+skipped. Partial undo stages are preserved before retrying. An original
+moved aside by an interrupted placement can return once its destination is
+free.
+
+Git settings and MCP definitions return from their private `.setting`
+backups only when the current setting still matches the placement. Their
+values are never shown or logged. Packages, sign-ins and what an external
+installer changed are not reversible. Backups stay until the person removes
 them; `restore status` shows their size.
 
 ## States
