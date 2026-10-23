@@ -14,6 +14,10 @@
 DEV_MODULES="core languages containers editor git github ssh ai time"
 DEV_CORE_PKGS="git github-cli base-devel curl wget jq ripgrep fd fzf tmux btop tree unzip rsync"
 
+# The AI module shares its installer and static observations with restore.
+# shellcheck source=lib/agents.sh
+. "$(dirname "${BASH_SOURCE[0]}")/agents.sh" || return 1
+
 # dev_core_missing — core packages not yet installed. One pacman -Qq per call,
 # matched in the shell: a fresh list, since dev_run_core may just have
 # installed some, and no pipeline to lose a cached value in a subshell.
@@ -44,6 +48,10 @@ pkg_add() {
 # dev_tool_present NAME — on PATH, or where rustup and mise put it (a fresh
 # install is not on this process's PATH yet).
 dev_tool_present() {
+  case "$1" in
+    claude) agent_observe claude-code && [ "$AG_INSTALLED" != none ]; return $? ;;
+    codex | opencode) agent_observe "$1" && [ "$AG_INSTALLED" != none ]; return $? ;;
+  esac
   sys_has "$1" && return 0
   [ -n "${OMB_FIXTURE:-}" ] && return 1
   [ -x "$HOME/.cargo/bin/$1" ] || [ -x "$HOME/.local/share/mise/shims/$1" ] || [ -x "$HOME/.local/bin/$1" ]
@@ -143,7 +151,8 @@ dev_status() {
     ai)
       DEV_S=""
       dev_tool_present claude && DEV_S="claude "
-      dev_tool_present codex && DEV_S="${DEV_S}codex"
+      dev_tool_present codex && DEV_S="${DEV_S}codex "
+      dev_tool_present opencode && DEV_S="${DEV_S}opencode"
       DEV_S=${DEV_S:-none}
       ;;
     time)
@@ -165,6 +174,7 @@ dev_label() {
 }
 
 dev_main() {
+  # shellcheck disable=SC2034 # phase consumed by the shared execution/logging seam
   OMB_PHASE=dev
   [ -n "${LX_ARCH:-}" ] || lx_detect
   cfg_load
@@ -514,66 +524,30 @@ dev_run_ssh() {
 }
 
 dev_run_ai() {
-  ui_note "Asahi kernels use ${LX_PAGESIZE:-16384}-byte pages. After installing, confirm each CLI starts (claude --version, codex --version)."
+  ui_note "Installs through Omarchy's mise packages, keeping one copy per tool. Each new install gets one bounded version check; no version is promised."
   ui_multiselect "Which CLIs?" \
-    "Claude Code|$(dev_tool_present claude && echo installed || echo "native arm64 installer from claude.ai")|off" \
-    "Codex|$(dev_tool_present codex && echo installed || echo "npm $CODEX_NPM_PACKAGE (needs node)")|off" || {
+    "Claude Code|$(dev_tool_present claude && echo installed || echo mise)|off" \
+    "Codex|$(dev_tool_present codex && echo installed || echo mise)|off" \
+    "OpenCode|$(dev_tool_present opencode && echo installed || echo mise)|off" || {
     dev_cancel
     return 0
   }
-  local n
+  local n id
   for n in $UI_PICKED; do
     case "$n" in
-      1) dev_ai_claude ;;
-      2) dev_ai_codex ;;
+      1) id=claude-code ;;
+      2) id=codex ;;
+      3) id=opencode ;;
+      *) continue ;;
     esac
+    if agent_install "$id"; then
+      dev_part_ok "$AG_LABEL ($AG_INSTALL_OUTCOME)"
+    else
+      dev_part_fail "$AG_WHY"
+    fi
   done
   dev_parts_finish "no CLI chosen"
   [ "$DEV_OUTCOME" != failed ]
-}
-
-dev_ai_claude() {
-  if dev_tool_present claude; then
-    ui_ok "Claude Code is already installed."
-    dev_part_ok "Claude Code present"
-    return 0
-  fi
-  if ! fetch_upstream claude-code-install.sh "$CLAUDE_CODE_INSTALL_URL"; then
-    ui_fail "Download failed: $CLAUDE_CODE_INSTALL_URL"
-    dev_part_fail "Claude Code: download failed"
-    return 0
-  fi
-  show_provenance
-  state_set claude_install_sha256 "$FETCH_SHA256"
-  offer_inspection || return 0
-  ui_yesno "Run the Claude Code installer?" n || return 0
-  fetch_unchanged || {
-    dev_part_fail "Claude Code: the download changed before running"
-    return 0
-  }
-  if ! run bash "$FETCH_PATH"; then
-    dev_part_fail "Claude Code install failed"
-  elif dev_verifying && ! dev_tool_present claude; then
-    dev_part_fail "Claude Code: installer finished, but claude is not installed"
-  else
-    dev_part_ok "Claude Code"
-  fi
-}
-
-dev_ai_codex() {
-  if dev_tool_present codex; then
-    ui_ok "Codex is already installed."
-    dev_part_ok "Codex present"
-  elif ! sys_has npm; then
-    ui_warn "npm not found. Install node first (Languages → node), then rerun."
-    dev_part_fail "Codex: npm not found (install node first)"
-  elif ! run npm install -g "$CODEX_NPM_PACKAGE"; then
-    dev_part_fail "Codex install failed"
-  elif dev_verifying && ! dev_tool_present codex; then
-    dev_part_fail "Codex: npm finished, but codex is not installed"
-  else
-    dev_part_ok "Codex"
-  fi
 }
 
 dev_run_time() {

@@ -1,0 +1,4 @@
+NAME="Arch Linux ARM"
+PRETTY_NAME="Arch Linux ARM"
+ID=archarm
+ID_LIKE=arch
