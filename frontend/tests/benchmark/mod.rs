@@ -1611,9 +1611,8 @@ fn frontend_work(
     if loaded.items.len() != c.items || loaded.profiles.len() != c.profiles {
         return Err("invalid loaded counts".into());
     }
-    let cmds: Vec<Cmd>;
-    if c.id == "bench-nav" {
-        cmds = update(
+    let cmds: Vec<Cmd> = if c.id == "bench-nav" {
+        update(
             m,
             Msg::Key(KeyEvent::new(
                 if m.focus == 0 {
@@ -1623,7 +1622,7 @@ fn frontend_work(
                 },
                 KeyModifiers::NONE,
             )),
-        );
+        )
     } else {
         // Benchmark-only filter; no product search UI or request type is added.
         let actions = loaded
@@ -1638,8 +1637,8 @@ fn frontend_work(
         }
         m.snap.as_mut().unwrap().actions = actions;
         m.focus = 1;
-        cmds = Vec::new();
-    }
+        Vec::new()
+    };
     if !cmds.is_empty() {
         return Err("local operation emitted commands".into());
     }
@@ -1647,6 +1646,7 @@ fn frontend_work(
         depth: Depth::None,
         unicode: false,
         console: false,
+        truecolor: false,
     });
     term.draw(|f| screens::draw(f, m, &theme, 50))
         .map_err(|e| e.to_string())?;
@@ -1808,10 +1808,10 @@ impl FrontWorker {
         let (sender, rx) = std::sync::mpsc::channel();
         let reader = std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if let Some(at) = line.find("bench-worker ") {
-                    if sender.send(line[at..].to_owned()).is_err() {
-                        break;
-                    }
+                if let Some(at) = line.find("bench-worker ")
+                    && sender.send(line[at..].to_owned()).is_err()
+                {
+                    break;
                 }
             }
         });

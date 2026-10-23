@@ -6,19 +6,19 @@ expression: text_of(&b)
   Welcome *Journey  Machine  Status  Health  Logs  Plan >
 + Journey -------------------------------------------------+
 | * * * * * * x ~ > .                                      |
-| verify: current - 9 of 10                                |
+| Verify: current step - 9 of 10                           |
 |                                                          |
 | |Where it stands                                         |
 |   [ ] choose a station; Enter opens it; up/down choose   |
 |   actions.                                               |
-|   survey: done                                           |
-|   profile: done                                          |
-|   resolve: done                                          |
-|   plan: done                                             |
-|   asahi: done - recorded by macos                        |
-|   omarchy: done                                          |
-|   shared: blocked - Activate Shared first                |
-|   restore: skipped - No bundle selected                  |
-|   verify: current                                       v|
+|   Survey: done                                           |
+|   Choose what to bring: done                             |
+|   Review choices: done                                   |
+|   Plan storage: done                                     |
+|   Install Asahi: done - recorded by macOS                |
+|   Install Omarchy: done                                  |
+|   Shared storage: blocked - Activate Shared first        |
+|   Restore: skipped - No bundle selected                  |
+|   Verify: current step                                  v|
 +----------------------------------------------------------+
- enter select  up/down move  ? help       may act - fixture
+ enter select  ? help   can make changes - recorded machine

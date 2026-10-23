@@ -29,7 +29,7 @@ expression: "frame(&m, 100, 36)"
 │              ││   Sent: Shared size 150GB · Encrypt Linux 1 · User name alex · Host name         │
 │              ││   omarchy · Keyboard layout us · Time zone America/New_York · Locale             │
 │              ││   en_US.UTF-8 · SSH server 0 · GitHub user octocat · Developer tools 1           │
-│              ││ ! refused · invalid                                                              │
+│              ││ ! Check the input above                                                          │
 │              ││                                                                                  │
 │              ││                                                                                  │
 │              ││                                                                                  │
@@ -37,4 +37,4 @@ expression: "frame(&m, 100, 36)"
 │              ││                                                                                  │
 │              ││                                                                                  │
 └──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
- ⏎ review  Tab next field  esc back                                   may act · 3 actions · fixture
+ ⏎ review  Tab next field  esc back           can make changes · 3 steps offered · recorded machine

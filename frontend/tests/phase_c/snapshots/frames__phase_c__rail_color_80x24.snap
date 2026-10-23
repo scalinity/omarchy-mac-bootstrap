@@ -6,23 +6,23 @@ expression: text_of(&b)
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
 │  Welcome     ││ ●─────●─────●─────●─────●─────●─────✗─────◌─────◆─────○      │
-│▍ Journey     ││ survey      resolve     asahi       shared      verify       │
-│  Machine     ││       profile     plan        omarchy     restore     done   │
-│  Status      ││ verify: current · 9 of 10                                    │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
+│  Status      ││ Verify: current step · 9 of 10                               │
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   [ ] choose a station; Enter opens it; up/down choose       │
 │  Op          ││   actions.                                                   │
-│  Scan        ││   survey: done                                               │
-│  Select      ││   profile: done                                              │
-│  Items       ││   resolve: done                                              │
-│  Review      ││   plan: done                                                 │
-│  Install     ││   asahi: done - recorded by macos                            │
-│  Progress    ││   omarchy: done                                              │
-│  Restore     ││   shared: blocked - Activate Shared first                    │
-│  Qualify     ││   restore: skipped - No bundle selected                      │
-│  Completion  ││   verify: current                                            │
-│              ││   done: todo                                                 │
-│              ││   Current stage  verify                                     ↓│
+│  Scan        ││   Survey: done                                               │
+│  Select      ││   Choose what to bring: done                                 │
+│  Items       ││   Review choices: done                                       │
+│  Review      ││   Plan storage: done                                         │
+│  Install     ││   Install Asahi: done - recorded by macOS                    │
+│  Progress    ││   Install Omarchy: done                                      │
+│  Restore     ││   Shared storage: blocked - Activate Shared first            │
+│  Qualify     ││   Restore: skipped - No bundle selected                      │
+│  Completion  ││   Verify: current step                                       │
+│              ││   Complete: not yet                                          │
+│              ││   Current stage  Verify: current step                       ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit         may act · fixture
+ ⏎ select  ↑↓ move  r refresh  ? help       can make changes · recorded machine

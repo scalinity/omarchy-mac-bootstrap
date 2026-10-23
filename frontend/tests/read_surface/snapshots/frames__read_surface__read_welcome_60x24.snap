@@ -11,18 +11,18 @@ expression: f
 │   changes.                                               │
 │                                                          │
 │ ▍This machine                                            │
-│   Platform      macos                                    │
+│   Platform      macOS                                    │
 │   Architecture  arm64                                    │
-│   Model         MacBookPro18,1                           │
+│   Model ID      MacBookPro18,1                           │
 │   Chip          Apple M1 Pro                             │
 │   Memory        16 GB                                    │
 │   macOS         14.6                                     │
 │                                                          │
 │ ▍The tool and the core                                   │
 │   Interface     frontend 0.2.0, protocol 1               │
-│   Core          core 0.2.0, commit 0123456789ab          │
-│   System        macos, arm64, user                       │
-│   Session       read ceiling, fixture                    │
-│   Read          journey generation 78b203ec6845         ↓│
+│   Bootstrap     version 0.2.0                            │
+│   System        macOS, arm64, user                       │
+│   Session       read-only, no system changes · recorded  │
+│                 machine                                 ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ the journey  ↑↓ scroll  ? help       read-only · fixture
+ ? help     read-only, no system changes · recorded machine

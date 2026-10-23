@@ -25,4 +25,4 @@ expression: f
 │                                                          │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help   read-only · fixture
+ ? help     read-only, no system changes · recorded machine

@@ -25,4 +25,4 @@ expression: "frame(m, w, h)"
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  · mas never travels: only means something on macOS
- ↑↓ choose  ⏎ pick  esc close  r refresh  L logs  ? help      may act · fixture
+ ↑↓ choose  ⏎ pick  esc close  ? help       can make changes · recorded machine

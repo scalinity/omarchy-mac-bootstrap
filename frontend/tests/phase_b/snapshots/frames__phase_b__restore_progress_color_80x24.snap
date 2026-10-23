@@ -7,7 +7,7 @@ expression: text
 ┌ Screens ─────┐┌ Restore progress ────────────────────────────────────────────┐
 │  Welcome     ││ [==========                                ] 1 of 4          │
 │  Journey     ││pkg:ripgrep                                                   │
-│  Machine     ││   · State     not-started                                    │
+│  Machine     ││   · State     not started                                    │
 │  Status      ││   · Bundle    20261022T120000Z from M1 Pro                   │
 │  Health      ││   · Items     4 reviewed; 2 conflicts                        │
 │  Logs        ││   · Backups   0 bytes                                        │
@@ -25,4 +25,4 @@ expression: text
 │              ││   starship.toml [file] - conflict - pending                 ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
                                                      Restore the bundle  1 of 4
- enter review action  d conflicts  r refresh  L logs  ? help  may act · fixture
+ enter review action  d conflicts  ? help   can make changes · recorded machine

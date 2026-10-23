@@ -21,4 +21,4 @@ expression: bottom
 │   Check 38 - pass: observed                              │
 │   > Check 39 - pass: observed                            │
 └──────────────────────────────────────────────────────────┘
- c MCP list (asks first)  ? help          may act · fixture
+ ? help                 can make changes · recorded machine

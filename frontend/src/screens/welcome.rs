@@ -22,12 +22,6 @@ fn pair(label: &str, value: String) -> Item<'static> {
     }
 }
 
-/// The first 12 characters of an identifier, which the detail views show
-/// whole.
-fn short(id: &str) -> &str {
-    id.get(..12).unwrap_or(id)
-}
-
 pub fn items(m: &Model) -> Vec<Item<'_>> {
     let mut v = vec![Item::Heading("Welcome to Omarchy Mac Bootstrap")];
     // What this session may do, from hello's ceiling and the snapshot's
@@ -38,10 +32,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             if h.ceiling == "read" && actions == 0 {
                 "This session is read-only: nothing on this machine changes.".into()
             } else {
-                format!(
-                    "This session may {}: an action runs only when you choose it, and the core checks it again first.",
-                    h.ceiling
-                )
+                "A step runs only when it is chosen; its conditions are checked again first.".into()
             },
             Token::Muted,
         ));
@@ -65,7 +56,11 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     }
     for f in machine {
         v.push(Item::Pair {
-            label: f.label.clone(),
+            label: if f.key == "machine.model" {
+                widgets::model_label(&f.value).into()
+            } else {
+                f.label.clone()
+            },
             value: widgets::fact_value(&f.key, &f.label, &f.value),
             token: Token::Text,
             state: &f.state,
@@ -81,26 +76,24 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
                 "Interface",
                 format!("frontend {VERSION}{dot}protocol {}", h.proto),
             ));
-            let mut core = format!("core {}", h.core);
-            if !h.commit.is_empty() {
-                core.push_str(&format!("{dot}commit {}", short(&h.commit)));
-            }
-            v.push(pair("Core", core));
+            v.push(pair("Bootstrap", format!("version {}", h.core)));
             v.push(pair(
                 "System",
                 format!("{}{dot}{}{dot}{}", h.platform, h.arch, h.user),
             ));
-            let mut session = format!("{} ceiling", h.ceiling);
-            if h.fixture {
-                session.push_str(&format!("{dot}fixture"));
-            }
-            if h.dry_run {
-                session.push_str(&format!("{dot}dry run"));
-            }
-            if m.check {
-                session.push_str(&format!("{dot}the startup check"));
-            }
-            v.push(pair("Session", session));
+            v.push(pair(
+                "Session",
+                crate::widgets::authority(
+                    m,
+                    &crate::theme::Theme::new(crate::theme::Caps {
+                        depth: crate::theme::Depth::None,
+                        truecolor: false,
+                        unicode: true,
+                        console: false,
+                    }),
+                    false,
+                ),
+            ));
         }
         None => v.push(Item::Text(
             "The core has not said who it is yet.".into(),
@@ -118,13 +111,10 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             recorded: false,
         });
     }
-    if let Some(g) = m.generation(crate::read::Scope::Journey) {
-        v.push(pair("Read", format!("journey generation {}", short(g))));
-    }
     v.push(Item::Blank);
     v.push(Item::Heading("Where the journey stands"));
     v.push(Item::Rail);
-    for g in m.snap.as_ref().map(|s| s.guides.as_slice()).unwrap_or(&[]) {
+    for g in m.guides() {
         v.push(pair("Next", g.clone()));
     }
     let blocked = m.snap.as_ref().map_or(0, |s| s.blockers.len());

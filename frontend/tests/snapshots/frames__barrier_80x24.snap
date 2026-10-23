@@ -5,8 +5,8 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
-│  Welcome     ││ survey      resolve     asahi       shared      verify      ↑│
-│▍ Journey     ││       profile     plan        omarchy     restore     done   │
+│  Welcome     ││ Survey      Review      Asahi       Shared      Verify      ↑│
+│▍ Journey     ││       Choices     Plan        Omarchy     Restore     Done   │
 │  Machine     ││ No stage is derived yet: every station is later.             │
 │  Status      ││                                                              │
 │  Health      ││ ▍Where it stands                                             │
@@ -25,4 +25,4 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │              ││ ❯ Read the fixture (test)                                    │
 │              ││   Runs the fake read child.                                  │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help      may act · 1 action · fixture
+ ⏎ select  ? help          can make changes · 1 step offered · recorded machine

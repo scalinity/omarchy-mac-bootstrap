@@ -25,4 +25,4 @@ expression: "frame(m, w, h)"
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ continue  ↑↓ scroll  r refresh  ? help         may act · 3 actions · fixture
+ ⏎ continue  ? help       can make changes · 3 steps offered · recorded machine

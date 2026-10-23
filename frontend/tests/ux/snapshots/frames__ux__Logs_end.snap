@@ -5,20 +5,20 @@ expression: bottom
  ◒ Logs ──────────────────────────────────────────── v0.2.0
   Welcome  Journey  Machine  Status  Health ▍Logs  Plan ›
 ┌ Logs ────────────────────────────────────────────────────┐
-│   info   core  Line 26                                  ↑│
-│   info   core  Line 27                                   │
-│   info   core  Line 28                                   │
-│   info   core  Line 29                                   │
-│   info   core  Line 30                                   │
-│   info   core  Line 31                                   │
-│   info   core  Line 32                                   │
-│   info   core  Line 33                                   │
-│   info   core  Line 34                                   │
-│   info   core  Line 35                                   │
-│   info   core  Line 36                                   │
-│   info   core  Line 37                                   │
-│   info   core  Line 38                                   │
-│ ❯ info   core  Line 39                                   │
-│ rows 1–40 of 40 · generation c0dec0dec0de                │
+│   info core: Line 26                                    ↑│
+│   info core: Line 27                                     │
+│   info core: Line 28                                     │
+│   info core: Line 29                                     │
+│   info core: Line 30                                     │
+│   info core: Line 31                                     │
+│   info core: Line 32                                     │
+│   info core: Line 33                                     │
+│   info core: Line 34                                     │
+│   info core: Line 35                                     │
+│   info core: Line 36                                     │
+│   info core: Line 37                                     │
+│   info core: Line 38                                     │
+│ ❯ info core: Line 39                                     │
+│ rows 27–40 of 40                                         │
 └──────────────────────────────────────────────────────────┘
- ↑↓ move  / filter  f next level  ? help  may act · fixture
+ ↑↓ move  ? help        can make changes · recorded machine

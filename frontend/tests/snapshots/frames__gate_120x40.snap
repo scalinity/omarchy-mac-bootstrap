@@ -13,8 +13,8 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
 │  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ This session's snapshot      │
-│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ holds no machine facts.      │
-│  Machine             ││       profile     plan        omarchy     restore     done   │└──────────────────────────────┘
+│▍ Journey             ││ Survey      Review      Asahi       Shared      Verify       ││ holds no machine facts.      │
+│  Machine             ││       Choices     Plan        Omarchy     Restore     Done   │└──────────────────────────────┘
 │  Status              ││ No stage is derived yet: every station is later.             │
 │  Health              ││                                                              │
 │  Logs                ││ ▍Where it stands                                             │
@@ -41,4 +41,4 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │                      ││                                                              │
 │                      ││                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ continue (exact word)  esc cancel                                                      may act · 3 actions · fixture
+ ⏎ continue (exact word)  esc cancel                              can make changes · 3 steps offered · recorded machine

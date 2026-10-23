@@ -6,7 +6,7 @@ expression: f
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────────────────────────┐
 │  Welcome     ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·        │
-│▍ Journey     ││ survey  profile resolve plan    asahi   omarchy shared  restore verify  done     │
+│▍ Journey     ││ Survey  Choices Review  Plan    Asahi   Omarchy Shared  Restore Verify  Done     │
 │  Machine     ││ No stage is derived yet: every station is later.                                 │
 │  Status      ││                                                                                  │
 │  Health      ││ ▍Where it stands                                                                 │
@@ -21,14 +21,14 @@ expression: f
 │  Progress    ││                                                                                  │
 │  Restore     ││ ▍What you can do now                                                             │
 │  Qualify     ││   Nothing is available now.                                                      │
-│  Completion  ││                                                                                  │
-│              │└──────────────────────────────────────────────────────────────────────────────────┘
+│  Completion  │└──────────────────────────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────────────────────────┐
-│              ││ Platform      macos                                                              │
-│              ││ Architecture  arm64                                                              │
-│              ││ Model         MacBookPro18,1                                                     │
-│              ││ Chip          Apple M1 Pro                                                       │
-│              ││ Memory        16 GB                                                              │
-│              ││ macOS         14.6                                                               │
+│              ││   Platform      macOS                                                            │
+│              ││   Architecture  arm64                                                            │
+│              ││   Model         MacBook Pro (16-inch, M1 Pro, 2021)                              │
+│              ││ Model ID MacBookPro18,1                                                          │
+│              ││   Chip          Apple M1 Pro                                                     │
+│              ││   Memory        16 GB                                                            │
+│              ││   macOS         14.6                                                             │
 └──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit       read-only · no system changes · fixture
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help       read-only, no system changes · recorded machine

@@ -5,20 +5,20 @@ expression: bottom
  ◒ Status ────────────────────────────────────────── v0.2.0
   Welcome  Journey  Machine ▍Status  Health  Logs  Plan ›
 ┌ Status ──────────────────────────────────────────────────┐
-│   Value 26  observed                                    ↑│
-│   Value 27  observed                                     │
-│   Value 28  observed                                     │
-│   Value 29  observed                                     │
-│   Value 30  observed                                     │
-│   Value 31  observed                                     │
-│   Value 32  observed                                     │
-│   Value 33  observed                                     │
-│   Value 34  observed                                     │
-│   Value 35  observed                                     │
-│   Value 36  observed                                     │
-│   Value 37  observed                                     │
-│   Value 38  observed                                     │
-│ ❯ Value 39  observed                                     │
-│ rows 1–40 of 40 · generation c0dec0dec0de                │
+│   Value 26: observed                                    ↑│
+│   Value 27: observed                                     │
+│   Value 28: observed                                     │
+│   Value 29: observed                                     │
+│   Value 30: observed                                     │
+│   Value 31: observed                                     │
+│   Value 32: observed                                     │
+│   Value 33: observed                                     │
+│   Value 34: observed                                     │
+│   Value 35: observed                                     │
+│   Value 36: observed                                     │
+│   Value 37: observed                                     │
+│   Value 38: observed                                     │
+│ ❯ Value 39: observed                                     │
+│ rows 27–40 of 40                                         │
 └──────────────────────────────────────────────────────────┘
- ↑↓ move  / filter  r refresh  ? help     may act · fixture
+ ↑↓ move  ? help        can make changes · recorded machine

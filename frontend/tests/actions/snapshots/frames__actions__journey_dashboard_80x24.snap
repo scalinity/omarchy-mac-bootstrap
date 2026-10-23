@@ -15,7 +15,7 @@ expression: "frame(m, w, h)"
 │  Op          ││ ▍Codes                                                       │
 │  Scan        ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
 │  Select      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Items       ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
+│  Items       ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
 │  Review      ││                  d                                           │
 │  Install     ││                                                              │
 │  Progress    ││ ▍What you can do now                                         │
@@ -23,6 +23,6 @@ expression: "frame(m, w, h)"
 │  Qualify     ││   The text flow's own plan.save.                            ↓│
 │  Completion  │└──────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────┐
-│              ││ Model  MacBookPro18,2                                        │
+│              ││   Model ID      MacBookPro18,2                               │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help     may act · 3 actions · fixture
+ ⏎ select  ? help         can make changes · 3 steps offered · recorded machine

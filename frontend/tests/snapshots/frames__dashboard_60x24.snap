@@ -25,4 +25,4 @@ expression: text(&b)
 │   Runs the fake mutating child under supervision.        │
 │   Hand over the terminal (test)                         ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture
+ ⏎ select  ? help       can make changes · recorded machine

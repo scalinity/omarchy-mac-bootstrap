@@ -11,14 +11,14 @@ expression: text_of(&b)
 │   ✗ blocked  Shared identity unavailable                 │
 │              Activate Shared                             │
 │ ▍Cross-system check                                      │
-│   1  macOS writes - done                                 │
-│   SHA-256 5f2ec1a05f2e; file written                     │
-│   2  Linux checks and writes - done                      │
-│   SHA-256 8acb8acb8acb; digest matches                   │
-│   3  macOS checks - blocked                              │
+│   macOS writes - done                                    │
+│   SHA-256 checksum recorded; file written                │
+│   Linux checks and writes - done                         │
+│   SHA-256 checksum recorded; digest matches              │
+│   macOS checks - blocked                                 │
 │   Read Linux's file and names                            │
 │                                                          │
 │                                                          │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
- ⏎ read again  ? help                     may act · fixture
+ ⏎ read again  ? help   can make changes · recorded machine

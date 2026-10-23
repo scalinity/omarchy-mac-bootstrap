@@ -5,7 +5,7 @@ expression: text
  (o) Restore ----------------------------------------------------------- v0.2.0
  (o) O M A R C H Y  mac bootstrap
 + Screens -----++ Restore progress --------------------------------------------+
-|  Welcome     ||   - State     not-started                                    |
+|  Welcome     ||   - State     not started                                    |
 |  Journey     ||   - Bundle    20261022T120000Z from M1 Pro                   |
 |  Machine     ||   - Items     4 reviewed; 2 conflicts                        |
 |  Status      ||   - Backups   0 bytes                                        |
@@ -25,4 +25,4 @@ expression: text
 |              ||   AI tools                                                   |
 |              ||   Claude Code [agent] - needs-sign-in - needs-sign-in       v|
 +--------------++--------------------------------------------------------------+
- enter review action  d conflicts  r refresh  L logs  ? help  may act - fixture
+ enter review action  d conflicts  ? help   can make changes - recorded machine

@@ -25,4 +25,4 @@ expression: "frame(m, w, h)"
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ scan  ↑↓ scroll  r refresh  L logs  ? help  q quit         may act · fixture
+ ⏎ scan  ↑↓ scroll  r refresh  ? help       can make changes · recorded machine

@@ -45,7 +45,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     for stage in s.stages.iter().filter(|s| s.state == "current") {
         v.push(Item::Pair {
             label: "Current stage".into(),
-            value: stage.name.clone(),
+            value: stage.description(),
             token: Token::Accent,
             state: "info",
             recorded: false,
@@ -57,7 +57,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             Token::Muted,
         ));
     }
-    for g in &s.guides {
+    for g in m.guides() {
         v.push(Item::Text(g.clone(), Token::Text));
     }
     v.extend(s.blockers.iter().map(Item::Blocker));

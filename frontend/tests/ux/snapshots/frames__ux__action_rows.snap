@@ -12,9 +12,9 @@ expression: f
 │                                     M A C   B O O T S T R A P                /______________\                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
-│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ Model  MacBookPro18,2        │
-│▍ Journey             ││ survey      resolve     asahi       shared      verify       │└──────────────────────────────┘
-│  Machine             ││       profile     plan        omarchy     restore     done   │
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││   Model ID      MacBookPro18,│
+│▍ Journey             ││ Survey      Review      Asahi       Shared      Verify       ││                 2            │
+│  Machine             ││       Choices     Plan        Omarchy     Restore     Done   │└──────────────────────────────┘
 │  Status              ││ No stage is derived yet: every station is later.             │
 │  Health              ││                                                              │
 │  Logs                ││ ▍Where it stands                                             │
@@ -27,7 +27,7 @@ expression: f
 │  Install             ││ ▍Codes                                                       │
 │  Progress            ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
 │  Restore             ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Qualification       ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
+│  Qualification       ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
 │  Completion          ││                  d                                           │
 │                      ││                                                              │
 │                      ││ ▍What you can do now                                         │
@@ -71,4 +71,4 @@ expression: f
 │                      ││                                                              │
 │                      ││                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                                     may act · 3 actions · fixture
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit             can make changes · 3 steps offered · recorded machine

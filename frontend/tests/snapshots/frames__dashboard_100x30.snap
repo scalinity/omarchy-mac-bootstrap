@@ -6,7 +6,7 @@ expression: text(&b)
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────────────────────────┐
 │  Welcome     ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·        │
-│▍ Journey     ││ survey  profile resolve plan    asahi   omarchy shared  restore verify  done     │
+│▍ Journey     ││ Survey  Choices Review  Plan    Asahi   Omarchy Shared  Restore Verify  Done     │
 │  Machine     ││ No stage is derived yet: every station is later.                                 │
 │  Status      ││                                                                                  │
 │  Health      ││ ▍Where it stands                                                                 │
@@ -31,4 +31,4 @@ expression: text(&b)
 │              ││                                                                                  │
 │              ││                                                                                  │
 └──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                 may act · 3 actions · fixture
+ ⏎ select  ↑↓ move  r refresh  ? help         can make changes · 3 steps offered · recorded machine

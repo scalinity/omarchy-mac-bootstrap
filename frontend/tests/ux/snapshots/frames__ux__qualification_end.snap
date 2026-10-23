@@ -16,9 +16,9 @@ expression: bottom
 │   result. Detailed core qualification result. Detailed   │
 │   core qualification result. Detailed core               │
 │   qualification result.                                  │
-│   2  Linux checks and writes - done                      │
-│   SHA-256 8acb8acb8acb; digest matches                   │
-│   3  macOS checks - done                                 │
+│   Linux checks and writes - done                         │
+│   SHA-256 checksum recorded; digest matches              │
+│   macOS checks - done                                    │
 │   Read Linux's file and names                            │
 └──────────────────────────────────────────────────────────┘
- ⏎ read again  ? help                     may act · fixture
+ ⏎ read again  ? help   can make changes · recorded machine

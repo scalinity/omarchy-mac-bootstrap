@@ -76,7 +76,15 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         if ready(m, Kind::Step, &mut v) {
             for r in &m.detail(Kind::Step).expect("whole").rows {
                 v.push(Item::Text(
-                    format!("{}  {} - {}", r.key, r.col(1), r.col(0)),
+                    format!(
+                        "{} - {}",
+                        r.col(1),
+                        if r.col(0) == "todo" {
+                            "not yet"
+                        } else {
+                            r.col(0)
+                        }
+                    ),
                     stage_token(r.col(0)),
                 ));
                 v.push(Item::Text(r.col(2).into(), Token::Text));
@@ -120,7 +128,21 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             ));
             for r in rows {
                 v.push(Item::Text(
-                    format!("{} - {}: {}", r.col(1), r.col(0), r.col(2)),
+                    format!(
+                        "{} - {}: {}",
+                        match r.col(1) {
+                            "mac" => "macOS",
+                            "disk" => "Disk",
+                            "shared" => "Shared storage",
+                            "qualification" => "Cross-system check",
+                            "recovery" => "Recovery",
+                            "restore" => "Restore",
+                            "doctor" => "Health",
+                            s => s,
+                        },
+                        r.col(0),
+                        crate::widgets::report_value(r.col(2))
+                    ),
                     match r.col(0) {
                         "pass" => Token::Ok,
                         "warn" => Token::Warn,

@@ -16,23 +16,22 @@ expression: f
 │  Journey             ││   This session is read-only: nothing on this machine changes.                                │
 │  Machine             ││                                                                                              │
 │  Status              ││ ▍This machine                                                                                │
-│  Health              ││   Platform      macos                                                                        │
+│  Health              ││   Platform      macOS                                                                        │
 │  Logs                ││   Architecture  arm64                                                                        │
-│  Plan                ││   Model         MacBookPro18,1                                                               │
+│  Plan                ││   Model ID      MacBookPro18,1                                                               │
 │  Operation           ││   Chip          Apple M1 Pro                                                                 │
 │  Scan                ││   Memory        16 GB                                                                        │
 │  Selection           ││   macOS         14.6                                                                         │
 │  Inventory           ││                                                                                              │
 │  Review              ││ ▍The tool and the core                                                                       │
 │  Install             ││   Interface     frontend 0.2.0, protocol 1                                                   │
-│  Progress            ││   Core          core 0.2.0, commit 0123456789ab                                              │
-│  Restore             ││   System        macos, arm64, user                                                           │
-│  Qualification       ││   Session       read ceiling, fixture                                                        │
-│  Completion          ││   Read          journey generation 78b203ec6845                                              │
-│                      ││                                                                                              │
+│  Progress            ││   Bootstrap     version 0.2.0                                                                │
+│  Restore             ││   System        macOS, arm64, user                                                           │
+│  Qualification       ││   Session       read-only, no system changes · recorded machine                              │
+│  Completion          ││                                                                                              │
 │                      ││ ▍Where the journey stands                                                                    │
 │                      ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·                    │
-│                      ││ survey  profile resolve plan    asahi   omarchy shared  restore verify  done                 │
+│                      ││ Survey  Choices Review  Plan    Asahi   Omarchy Shared  Restore Verify  Done                 │
 │                      ││ No stage is derived yet: every station is later.                                             │
 │                      ││   Next          Run ./omarchy-bootstrap to survey this Mac and plan storage.                 │
 │                      ││                                                                                              │
@@ -40,5 +39,6 @@ expression: f
 │                      ││   Surveyed      not yet (saved record)                                                       │
 │                      ││   Plan          not yet (saved record)                                                       │
 │                      ││                                                                                              │
+│                      ││                                                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────┘
- ⏎ the journey  ↑↓ scroll  r refresh  L logs  ? help  q quit                    read-only · no system changes · fixture
+ ⏎ the journey  ↑↓ scroll  r refresh  L logs  ? help  q quit            read-only, no system changes · recorded machine

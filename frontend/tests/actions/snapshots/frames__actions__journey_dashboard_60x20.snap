@@ -14,11 +14,11 @@ expression: "frame(m, w, h)"
 │ ▍Codes                                                   │
 │   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,│
 │                  tz=America/New_York,loc=en_US.UTF-8,ssh=│
-│                  0,gh=octocat,linux=250,shared=150,dev=1,│
+│                  0,gh=octocat,Linux=250,shared=150,dev=1,│
 │                  plan=1a2b3c4d                           │
 │                                                          │
 │ ▍What you can do now                                     │
 │ ❯ Save the plan                                          │
 │   The text flow's own plan.save.                        ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture
+ ⏎ select  ? help       can make changes · recorded machine

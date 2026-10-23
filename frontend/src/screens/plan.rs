@@ -545,17 +545,14 @@ pub fn items(m: &Model, s: Screen) -> Vec<Item<'_>> {
     ));
     v.push(match (c.status.as_str(), c.code.as_str()) {
         ("done", _) => Item::Verdict(Level::Ok, "checked".into()),
-        ("refused", code) => Item::Verdict(Level::Warn, format!("refused · {code}")),
-        (status, code) => Item::Verdict(Level::Fail, format!("{status} · {code}")),
+        ("refused", _) => Item::Verdict(Level::Warn, "Check the input above".into()),
+        (_, _) => Item::Verdict(Level::Fail, "The check could not finish".into()),
     });
     if !c.text.is_empty() {
         v.push(text(c.text.clone(), Token::Text));
     }
-    for (p, code, t) in c.invalid.iter().filter(|_| !f.storage) {
-        v.push(Item::Verdict(
-            Level::Fail,
-            format!("{} {code}", field_label(p)),
-        ));
+    for (p, _code, t) in c.invalid.iter().filter(|_| !f.storage) {
+        v.push(Item::Verdict(Level::Fail, field_label(p)));
         v.push(text(t.clone(), Token::Text));
     }
     for (l, t) in &c.messages {
@@ -590,10 +587,9 @@ pub fn items(m: &Model, s: Screen) -> Vec<Item<'_>> {
             v.push(pair(&field_label(p), shown, Token::Text));
         }
     }
-    if let Some(basis) = &c.basis {
+    if let Some(_basis) = &c.basis {
         v.push(Item::Blank);
-        v.push(Item::Heading("Review basis"));
-        v.push(text(basis.clone(), Token::Text));
+        v.push(Item::Heading("Review ready"));
         match &offered {
             Some(a) => {
                 v.push(text("a check only: nothing was saved", Token::Muted));

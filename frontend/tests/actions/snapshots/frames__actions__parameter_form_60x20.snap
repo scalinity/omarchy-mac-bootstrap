@@ -17,8 +17,8 @@ expression: "frame(m, w, h)"
 │ ▍As the core reads them                                  │
 │   code  ombdone-1a2b3c4d-8f2a41c0e9b7-f5f0               │
 │                                                          │
-│ ▍Review basis                                            │
-│   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb   │
-│   8acb8acb8acb                                          ↓│
+│ ▍Review ready                                            │
+│   a check only: nothing was saved                        │
+│   ⏎ Take the Linux code: asked first, then the core     ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ check  Tab next field  esc back        may act · fixture
+ ⏎ check                can make changes · recorded machine

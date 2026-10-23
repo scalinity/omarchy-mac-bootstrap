@@ -6,19 +6,19 @@ expression: text_of(&b)
 < Review  Install  Progress  Restore  Qualify *Completion
 + Completion ----------------------------------------------+
 | |Journey stages                                          |
-|   survey: done                                           |
-|   profile: done                                          |
-|   resolve: done                                          |
-|   plan: done                                             |
-|   asahi: done - recorded by macos                        |
-|   omarchy: done                                          |
-|   shared: done                                           |
-|   restore: skipped - No bundle selected                  |
-|   verify: done                                           |
-|   done: done                                             |
+|   Survey: done                                           |
+|   Choose what to bring: done                             |
+|   Review choices: done                                   |
+|   Plan storage: done                                     |
+|   Install Asahi: done - recorded by macOS                |
+|   Install Omarchy: done                                  |
+|   Shared storage: done                                   |
+|   Restore: skipped - No bundle selected                  |
+|   Verify: done                                           |
+|   Complete: done                                         |
 |                                                          |
 | |Report                                                  |
 | ! Report: warn                                           |
-|   6 pass - 1 warn - 0 fail - 1 not-checked              v|
+|   6 pass - 1 warn - 0 fail - 1 not checked              v|
 +----------------------------------------------------------+
- up/down scroll  r refresh  ? help        may act - fixture
+ ? help                 can make changes - recorded machine

@@ -21,4 +21,4 @@ expression: "frame(m, w, h)"
 │                                                          │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
- ↑↓ scroll  r refresh  L logs  ? help     may act · fixture
+ ↑↓ scroll  ? help      can make changes · recorded machine

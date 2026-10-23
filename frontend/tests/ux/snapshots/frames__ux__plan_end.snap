@@ -5,7 +5,9 @@ expression: bottom
  ◒ Plan ──────────────────────────────────────────── v0.2.0
   Welcome  Journey  Machine  Status  Health  Logs ▍Plan ›
 ┌ Storage planner ─────────────────────────────────────────┐
-│   default                                               ↑│
+│ ❯ Developer tools ○ off  ◉ on                           ↑│
+│   a field left empty is not sent: the core answers its   │
+│   default                                                │
 │                                                          │
 │   Sent: Shared size 150GB · Linux size 250GB · Encrypt   │
 │   Linux 1 · User name alex · Host name omarchy ·         │
@@ -14,11 +16,9 @@ expression: bottom
 │   octocat · Developer tools 1                            │
 │ ✓ checked                                                │
 │                                                          │
-│ ▍Review basis                                            │
-│   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb   │
-│   8acb8acb8acb                                           │
+│ ▍Review ready                                            │
 │   a check only: nothing was saved                        │
 │   ⏎ Save the plan: asked first, then the core checks     │
 │   this basis again.                                      │
 └──────────────────────────────────────────────────────────┘
- ⏎ review  Tab next field  esc back       may act · fixture
+ ⏎ review               can make changes · recorded machine

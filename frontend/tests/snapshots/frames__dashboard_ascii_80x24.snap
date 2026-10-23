@@ -6,8 +6,8 @@ expression: a
  (o) O M A R C H Y  mac bootstrap
 + Screens -----++ Journey -----------------------------------------------------+
 |  Welcome     || _-----_-----_-----_-----_-----_-----_-----_-----_-----_      |
-|* Journey     || survey      resolve     asahi       shared      verify       |
-|  Machine     ||       profile     plan        omarchy     restore     done   |
+|* Journey     || Survey      Review      Asahi       Shared      Verify       |
+|  Machine     ||       Choices     Plan        Omarchy     Restore     Done   |
 |  Status      || No stage is derived yet: every station is later.             |
 |  Health      ||                                                              |
 |  Logs        || |Where it stands                                             |
@@ -25,4 +25,4 @@ expression: a
 |              ||   Change the fixture (test)                                  |
 |              ||   Runs the fake mutating child under supervision.           v|
 +--------------++--------------------------------------------------------------+
- enter select  up/down move  r refresh  ? help    may act - 3 actions - fixture
+ enter select  ? help     can make changes - 3 steps offered - recorded machine

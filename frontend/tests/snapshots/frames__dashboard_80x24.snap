@@ -6,8 +6,8 @@ expression: text(&b)
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
 │  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
-│▍ Journey     ││ survey      resolve     asahi       shared      verify       │
-│  Machine     ││       profile     plan        omarchy     restore     done   │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
 │  Status      ││ No stage is derived yet: every station is later.             │
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
@@ -25,4 +25,4 @@ expression: text(&b)
 │              ││   Change the fixture (test)                                  │
 │              ││   Runs the fake mutating child under supervision.           ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help     may act · 3 actions · fixture
+ ⏎ select  ? help         can make changes · 3 steps offered · recorded machine

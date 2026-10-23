@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn pty_storage_presets_custom_200gb_and_review() {
+fn pty_storage_presets_custom_200gb_review_and_save() {
     let readable = Command::new("ps")
         .args(["-p", &std::process::id().to_string(), "-o", "pid="])
         .output()
@@ -80,6 +80,28 @@ fn pty_storage_presets_custom_200gb_and_review() {
     );
     p.wait_for("The installer asks");
     assert!(p.contents().contains("MiB"), "{}", p.contents());
+    p.send(b"\r");
+    p.wait_for("Save this plan?");
+    p.keys("y");
+    p.wait_until("the chosen sizes saved", |p| {
+        let state = std::fs::read_to_string(p.dir.join("state/state.env")).unwrap_or_default();
+        state.lines().any(|l| l == "cfg_linux=200") && state.lines().any(|l| l == "cfg_shared=150")
+    });
+    p.idle();
+    let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+    let execute = trace
+        .lines()
+        .position(|l| l.starts_with("send Execute") && l.contains("plan.save"))
+        .expect("save submitted");
+    let saved = trace
+        .lines()
+        .skip(execute + 1)
+        .find(|l| l.starts_with("outcome "))
+        .expect("save answered");
+    assert!(
+        saved.contains("[100, 111, 110, 101]") && saved.contains("[111, 107]"),
+        "done ok: {saved}"
+    );
     p.send(b"\x1b");
     p.keys("q");
     assert_eq!(p.wait_exit(), 0);

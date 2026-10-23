@@ -11,7 +11,7 @@ mod migrate;
 mod notes;
 pub mod plan;
 mod restore;
-mod table;
+pub(crate) mod table;
 mod welcome;
 
 use crate::app::{Blocker, Fact, Level, Model, Region, Screen};
@@ -183,17 +183,16 @@ fn sidebar(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     if rest.height >= 3 && show(&[Screen::Dashboard, Screen::Welcome]) {
         let inner = widgets::panel(f, rest, "Next steps", t);
         let mut lines = Vec::new();
-        match m.snap.as_ref().map(|s| s.guides.as_slice()).unwrap_or(&[]) {
-            [] => lines.push(Line::styled(
-                " The core gave no next step.",
+        let guides = m.guides();
+        if guides.is_empty() {
+            lines.push(Line::styled(
+                " No next step is available.",
                 t.style(Token::Muted),
-            )),
-            gs => {
-                for g in gs {
-                    for l in widgets::wrap(&t.say(g), width.saturating_sub(2)) {
-                        lines.push(Line::styled(format!(" {l}"), t.style(Token::Text)));
-                    }
-                }
+            ));
+        }
+        for g in guides {
+            for l in widgets::wrap(&t.say(&g), width.saturating_sub(2)) {
+                lines.push(Line::styled(format!(" {l}"), t.style(Token::Text)));
             }
         }
         let blocked = m.snap.as_ref().map_or(0, |s| s.blockers.len());
@@ -233,29 +232,49 @@ pub fn machine_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
         .map(|l| Line::styled(format!(" {l}"), t.style(Token::Muted)))
         .collect();
     }
-    let w = facts
-        .iter()
-        .map(|f| widgets::cells(&f.label))
-        .max()
-        .unwrap_or(0)
-        .min(12);
+    let name = m.snap.as_ref().and_then(|s| {
+        s.facts
+            .iter()
+            .find(|f| f.key == "status.2" && f.label == "Machine")
+    });
+    let w = 12.min(width.saturating_sub(6));
     let mut out = Vec::new();
     for fact in facts {
-        let value = widgets::fit(
-            &t.say(&widgets::fact_value(&fact.key, &fact.label, &fact.value)),
-            width.saturating_sub(w + 3),
-            t.caps.unicode,
-        );
-        out.push(Line::from(vec![
-            Span::styled(
-                format!(
-                    " {:<w$}  ",
-                    widgets::fit(&t.say(&fact.label), w, t.caps.unicode)
-                ),
-                t.style(Token::Muted),
-            ),
-            Span::styled(value, t.style(Token::Text)),
-        ]));
+        if fact.key == "machine.model" {
+            if let Some(name) = name {
+                out.extend(widgets::pair(
+                    t,
+                    "Model",
+                    &t.say(&name.value),
+                    w,
+                    width,
+                    t.style(Token::Text),
+                ));
+                for l in widgets::wrap(&format!("Model ID {}", fact.value), width.saturating_sub(2))
+                {
+                    out.push(Line::styled(format!(" {l}"), t.style(Token::Muted)));
+                }
+            } else {
+                out.extend(widgets::pair(
+                    t,
+                    widgets::model_label(&fact.value),
+                    &fact.value,
+                    w,
+                    width,
+                    t.style(Token::Text),
+                ));
+            }
+        } else {
+            let value = widgets::fact_value(&fact.key, &fact.label, &fact.value);
+            out.extend(widgets::pair(
+                t,
+                &fact.label,
+                &t.say(&value),
+                w,
+                width,
+                t.style(Token::Text),
+            ));
+        }
     }
     out
 }
@@ -479,12 +498,14 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             let lw = w.label.max(8);
             let room = width.saturating_sub(lw + 8).max(8);
             let mut out = Vec::new();
-            for (i, l) in widgets::wrap(&t.say(&fact.value), room)
-                .into_iter()
-                .enumerate()
-            {
+            let value = widgets::fact_value(&fact.key, &fact.label, &fact.value);
+            let label = fact
+                .label
+                .strip_suffix(" bytes")
+                .map_or_else(|| fact.label.clone(), |s| format!("{s} size"));
+            for (i, l) in widgets::wrap(&t.say(&value), room).into_iter().enumerate() {
                 let (g, label) = if i == 0 {
-                    (glyph, widgets::fit(&t.say(&fact.label), lw, t.caps.unicode))
+                    (glyph, widgets::fit(&t.say(&label), lw, t.caps.unicode))
                 } else {
                     (" ", String::new())
                 };

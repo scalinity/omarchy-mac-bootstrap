@@ -203,10 +203,13 @@ fn rail_preserves_states_provenance_reasons_and_old_core_later() {
     let m = journey();
     let s = m.snap.as_ref().unwrap();
     assert_eq!(s.stages.len(), 10);
-    assert_eq!(s.stages[4].description(), "asahi: done - recorded by macos");
+    assert_eq!(
+        s.stages[4].description(),
+        "Install Asahi: done - recorded by macOS"
+    );
     assert_eq!(
         s.stages[6].description(),
-        "shared: blocked - Activate Shared first"
+        "Shared storage: blocked - Activate Shared first"
     );
     frames(&m, "rail");
     let old = ready_on("macos", &format!("generation\tid={GEN}\ttotal=0\n{DONE}"));
@@ -420,7 +423,10 @@ fn completion_verdict_counts_and_receipt_use_only_core_records() {
         assert!(text.contains(&format!("Report: {name}")), "{text}");
         // Full count line at 120 columns; narrow frames wrap it.
         let text = text_of(&render(&m, &theme("color"), 120, 40));
-        assert!(text.contains(counts), "{text}");
+        assert!(
+            text.contains(&counts.replace("not-checked", "not checked")),
+            "{text}"
+        );
         frames(&m, &format!("completion_{name}_report"));
         assert!(m.completion_receipt(&theme("color")).is_none());
         assert!(matches!(
@@ -552,9 +558,9 @@ fn station_focus_keeps_the_rail_visible_above_offered_actions() {
     press(&mut m, KeyCode::Char('['));
     let text = text_of(&render(&m, &theme("color"), 80, 24));
     assert!(
-        text.contains("restore: skipped - No bundle selected"),
+        text.contains("Restore: skipped - No bundle selected"),
         "{text}"
     );
-    assert!(text.contains("recorded by macos"));
+    assert!(text.contains("recorded by macOS"));
     assert!(text.contains("●─────●"));
 }

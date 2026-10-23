@@ -25,4 +25,4 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │ ❯ Read the fixture (test)                                │
 │   Runs the fake read child.                              │
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture
+ ⏎ select  ? help       can make changes · recorded machine

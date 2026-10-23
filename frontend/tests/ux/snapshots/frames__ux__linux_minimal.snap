@@ -35,6 +35,6 @@ expression: "frame(&m, 100, 36)"
 │              ││   Locale en_US.UTF-8 · SSH server 0 · GitHub user octocat · Developer tools 1    │
 │              ││ ✓ checked                                                                        │
 │              ││                                                                                  │
-│              ││ ▍Review basis                                                                   ↓│
+│              ││ ▍Review ready                                                                   ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
- ⏎ review  Tab next field  esc back                                   may act · 3 actions · fixture
+ ⏎ review  Tab next field  esc back           can make changes · 3 steps offered · recorded machine

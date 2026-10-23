@@ -87,14 +87,33 @@ pub struct Stage {
 
 impl Stage {
     pub fn description(&self) -> String {
-        let mut s = format!("{}: {}", self.name, self.state);
+        let name = match self.name.as_str() {
+            "survey" => "Survey",
+            "profile" => "Choose what to bring",
+            "resolve" => "Review choices",
+            "plan" => "Plan storage",
+            "asahi" => "Install Asahi",
+            "omarchy" => "Install Omarchy",
+            "shared" => "Shared storage",
+            "restore" => "Restore",
+            "verify" => "Verify",
+            "done" => "Complete",
+            name => name,
+        };
+        let state = match self.state.as_str() {
+            "todo" => "not yet",
+            "later" => "later",
+            "current" => "current step",
+            state => state,
+        };
+        let mut s = format!("{name}: {state}");
         if self.basis == "recorded" {
             s.push_str(&format!(" - recorded by {}", self.by));
         }
         if !self.detail.is_empty() {
             s.push_str(&format!(" - {}", self.detail));
         }
-        s
+        crate::theme::human_text(&s)
     }
 }
 
@@ -761,6 +780,32 @@ impl Model {
         v.screen != Some(self.screen) || v.focus.is_some() || v.rows.is_empty()
     }
 
+    /// Replace an instruction to restart this interface with its offered step.
+    pub fn guides(&self) -> Vec<String> {
+        let Some(s) = &self.snap else {
+            return Vec::new();
+        };
+        s.guides
+            .iter()
+            .map(|g| {
+                if (g.starts_with("Run ./omarchy-bootstrap to ") || g == "Run ./omarchy-bootstrap.")
+                    && let Some(a) = s.actions.get(self.focus).or_else(|| s.actions.first())
+                {
+                    if self.screen == Screen::Dashboard
+                        && self.region == Region::Work
+                        && self.station.is_none()
+                    {
+                        format!("Next: {} - press Enter", a.label)
+                    } else {
+                        format!("Next: {} (from Journey)", a.label)
+                    }
+                } else {
+                    g.clone()
+                }
+            })
+            .collect()
+    }
+
     pub fn focused(&self) -> Option<&Action> {
         self.snap.as_ref().and_then(|s| s.actions.get(self.focus))
     }
@@ -1046,6 +1091,24 @@ fn level_of(s: &str) -> Level {
 /// The one update function.
 pub fn update(m: &mut Model, msg: Msg) -> Vec<Cmd> {
     let cmds = step(m, msg);
+    for d in m.details.iter_mut().flatten() {
+        let shown = d.shown();
+        if shown.get(d.cursor).is_some_and(|r| !r.focusable(d.kind)) {
+            d.cursor = shown
+                .iter()
+                .enumerate()
+                .skip(d.cursor)
+                .find(|(_, r)| r.focusable(d.kind))
+                .or_else(|| {
+                    shown
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, r)| r.focusable(d.kind))
+                })
+                .map_or(0, |(i, _)| i);
+        }
+    }
     // The inventory's rows follow its tab, whatever moved either.
     let tab = m.categories().get(m.inv.tab).map(|(c, _)| c.clone());
     if let Some(d) = m.detail_mut(Kind::Items) {
@@ -1354,10 +1417,10 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
     let records = match outcome {
         Outcome::Answer(r) => r,
         Outcome::Lost(why) => {
-            if let Req::Detail(p) = &req {
-                if let Some(d) = m.detail_mut(p.kind) {
-                    discard_operation(d);
-                }
+            if let Req::Detail(p) = &req
+                && let Some(d) = m.detail_mut(p.kind)
+            {
+                discard_operation(d);
             }
             // No request starts again in this session: the launcher, which
             // reads the recorded identities itself, decides what is safe.
@@ -2484,7 +2547,7 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             m.status = None;
             return execute(m, t, String::new());
         }
-        m.status = Some((Level::Info, "Not sent: nothing changed.".into()));
+        m.status = None;
         return Vec::new();
     }
     match m.screen {
@@ -3105,16 +3168,20 @@ fn form_enter(m: &mut Model, plan: bool) -> Vec<Cmd> {
         && let Some(basis) = c.basis.clone()
         && let Some(a) = m.offered(scope, &action)
     {
-        // Each declared parameter, in the declared order: the core's normal
-        // value where it gave one, else what was typed; a name the action
-        // does not declare is never sent.
+        // Size normals are byte counts, not size inputs. Keep the exact
+        // validated spelling for them; other declared inputs use normals.
+        // The core binds this same review basis over normalized values.
         let args: Args = f
             .fields
             .iter()
             .filter_map(|fl| {
                 let normal = c.normal_args.iter().find(|(n, _)| *n == fl.name);
                 let typed = c.args.iter().find(|(n, _)| *n == fl.name);
-                normal.or(typed).cloned()
+                if action == "plan.save" && PLAN_SIZES.contains(&fl.name.as_str()) {
+                    typed.cloned()
+                } else {
+                    normal.or(typed).cloned()
+                }
             })
             .collect();
         let t = Target {
@@ -3142,6 +3209,10 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
     } else {
         PAGE_STEP
     };
+    let can_expand = m
+        .detail(kind)
+        .and_then(|d| d.shown().get(d.cursor).copied())
+        .is_some_and(|r| crate::screens::table::expandable(m, kind, r));
     let Some(d) = m.detail_mut(kind) else {
         return Vec::new();
     };
@@ -3172,15 +3243,30 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
     let mut want: Option<(Page, Land)> = None;
     match k.code {
         KeyCode::Down | KeyCode::Char('j') => {
-            if d.cursor < last {
-                d.cursor += 1;
+            if let Some(next) = d
+                .shown()
+                .iter()
+                .enumerate()
+                .skip(d.cursor + 1)
+                .find(|(_, r)| r.focusable(kind))
+                .map(|(i, _)| i)
+            {
+                d.cursor = next;
             } else {
                 want = fetch(d, d.next(limit)).map(|p| (p, Land::First));
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if d.cursor > 0 {
-                d.cursor -= 1;
+            if let Some(prev) = d
+                .shown()
+                .iter()
+                .enumerate()
+                .take(d.cursor)
+                .rev()
+                .find(|(_, r)| r.focusable(kind))
+                .map(|(i, _)| i)
+            {
+                d.cursor = prev;
             } else {
                 want = fetch(d, d.prev(limit)).map(|p| (p, Land::Last));
             }
@@ -3207,7 +3293,7 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
             d.cursor = last;
             want = fetch(d, d.last(limit)).map(|p| (p, Land::Last));
         }
-        KeyCode::Enter if n > 0 => d.open = true,
+        KeyCode::Enter if n > 0 && can_expand => d.open = true,
         KeyCode::Char('/') => d.editing = true,
         KeyCode::Char('f') if kind == Kind::Log => {
             let levels = d.levels();

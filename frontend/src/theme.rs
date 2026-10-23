@@ -7,7 +7,7 @@
 //! never bold with a colour (the Linux console cancels bold when a
 //! normal-intensity colour follows it). `NO_COLOR` is handled here: colours
 //! are dropped and attributes kept, so the focus highlight survives. The
-//! navy backdrop is painted only at 256 colours, and no state depends on it.
+//! sapphire backdrop is painted at full colour depth, and no state depends on it.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -23,6 +23,7 @@ pub enum Depth {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Caps {
     pub depth: Depth,
+    pub truecolor: bool,
     pub unicode: bool,
     /// The Linux virtual console (`TERM=linux`): ASCII, sixteen colours, and
     /// the screen cleared on exit (older kernels have no alternate screen).
@@ -36,6 +37,8 @@ pub fn detect(env: &dyn Fn(&str) -> Option<String>, stdout_tty: bool) -> Caps {
     let get = |k: &str| env(k).unwrap_or_default();
     let term = get("TERM");
     let console = term == "linux";
+    let truecolor =
+        stdout_tty && !console && matches!(get("COLORTERM").as_str(), "truecolor" | "24bit");
     let color = get("OMB_COLOR");
     let mut depth = if !get("NO_COLOR").is_empty()
         || color == "never"
@@ -51,11 +54,11 @@ pub fn detect(env: &dyn Fn(&str) -> Option<String>, stdout_tty: bool) -> Caps {
     } else {
         Depth::Sixteen
     };
-    if console && depth != Depth::None {
-        depth = Depth::Sixteen;
-    }
     if color == "always" {
         depth = Depth::Full;
+    }
+    if console && depth != Depth::None {
+        depth = Depth::Sixteen;
     }
     let locale = env("LC_ALL")
         .filter(|v| !v.is_empty())
@@ -72,7 +75,41 @@ pub fn detect(env: &dyn Fn(&str) -> Option<String>, stdout_tty: bool) -> Caps {
         depth,
         unicode,
         console,
+        truecolor,
     }
+}
+
+/// Display protocol system names as product names, retaining record bytes.
+/// Paths, commands and embedded identifiers stay intact.
+pub fn human_text(s: &str) -> String {
+    s.split_inclusive(|c: char| !c.is_ascii_alphanumeric() && !"_/.-".contains(c))
+        .map(|part| {
+            let end = part
+                .trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && !"_/-".contains(c))
+                .len();
+            let (word, tail) = part.split_at(end);
+            let word = match word {
+                "macos" => "macOS",
+                "linux" => "Linux",
+                "not-started" => "not started",
+                "not-checked" => "not checked",
+                "waiting-for-linux" => "waiting for Linux",
+                "waiting-for-macos" => "waiting for macOS",
+                "awaiting-linux-activation" => "ready to activate on Linux",
+                "awaiting-macos-creation" => "ready to create on macOS",
+                "awaiting-linux-completion" => "waiting for Linux to finish",
+                _ => word,
+            };
+            if word.len() >= 12
+                && word.bytes().all(|b| b.is_ascii_hexdigit())
+                && word.bytes().any(|b| b.is_ascii_alphabetic())
+            {
+                format!("checksum recorded{tail}")
+            } else {
+                format!("{word}{tail}")
+            }
+        })
+        .collect()
 }
 
 /// The meanings the interface styles by.
@@ -100,7 +137,7 @@ pub enum Token {
     Frame,
     /// Panel titles and section headings.
     Heading,
-    /// The page behind everything: a dark navy, at 256 colours only.
+    /// The sapphire page at full colour depth; terminal background otherwise.
     Backdrop,
 }
 
@@ -128,22 +165,26 @@ impl Theme {
                 let c = |n: u8| s.fg(Color::Indexed(n));
                 match t {
                     Text => c(253),
-                    Muted | Pending => c(245),
-                    Rule | Free => c(239),
+                    Muted | Pending => c(249),
+                    Rule | Free => c(244),
                     Accent => c(78),
                     Linux => c(209),
                     Focus => c(78).add_modifier(Modifier::REVERSED),
                     Selected | Ok => c(115),
                     Info | Macos => c(110),
                     Warn => c(222),
-                    Danger => c(204),
-                    Blocked => c(204).add_modifier(Modifier::REVERSED),
-                    Gate => c(209).add_modifier(Modifier::UNDERLINED),
-                    Boot => c(141),
+                    Danger => c(210),
+                    Blocked => c(210).add_modifier(Modifier::REVERSED),
+                    Gate => c(253).add_modifier(Modifier::UNDERLINED),
+                    Boot => c(147),
                     Shared => c(114),
                     Frame => c(44),
-                    Heading => c(39),
-                    Backdrop => s.bg(Color::Indexed(17)),
+                    Heading => c(75),
+                    Backdrop => s.bg(if self.caps.truecolor {
+                        Color::Rgb(13, 59, 132)
+                    } else {
+                        Color::Indexed(18)
+                    }),
                 }
             }
             Depth::Sixteen => {
@@ -179,8 +220,9 @@ impl Theme {
     /// (`lib/ui.sh`) rewritten the same way. Presentation only: the model
     /// keeps the core's bytes.
     pub fn say(&self, s: &str) -> String {
+        let s = human_text(s);
         if self.caps.unicode {
-            return s.to_string();
+            return s;
         }
         s.replace(['—', '–'], "-")
             .replace('→', "->")
@@ -285,6 +327,14 @@ mod tests {
     }
 
     #[test]
+    fn display_names_preserve_paths_and_commands() {
+        assert_eq!(
+            human_text("macos, linux. macos.omb linux.omb ./omarchy-bootstrap /home/linux/bin"),
+            "macOS, Linux. macos.omb linux.omb ./omarchy-bootstrap /home/linux/bin"
+        );
+    }
+
+    #[test]
     fn detection_follows_the_baseline() {
         let c = caps(&[("TERM", "xterm-256color"), ("LANG", "en_US.UTF-8")], true);
         assert_eq!(
@@ -292,7 +342,8 @@ mod tests {
             Caps {
                 depth: Depth::Full,
                 unicode: true,
-                console: false
+                console: false,
+                truecolor: false
             }
         );
         assert_eq!(
@@ -314,7 +365,8 @@ mod tests {
             Caps {
                 depth: Depth::Sixteen,
                 unicode: false,
-                console: true
+                console: true,
+                truecolor: false
             }
         );
         assert_eq!(
@@ -353,6 +405,7 @@ mod tests {
             depth: Depth::None,
             unicode: false,
             console: false,
+            truecolor: false,
         });
         let focus = t.style(Token::Focus);
         assert_eq!(focus.fg, None);
@@ -372,6 +425,7 @@ mod tests {
                 depth,
                 unicode: true,
                 console: false,
+                truecolor: false,
             });
             use Token::*;
             for tok in [
@@ -395,6 +449,7 @@ mod tests {
             depth: Depth::Sixteen,
             unicode: false,
             console: true,
+            truecolor: false,
         });
         assert_eq!(
             ascii.say("on — the installer asks · 1 → 2 … ⏎ ↑↓ ≥ ≈ –"),
@@ -404,6 +459,7 @@ mod tests {
             depth: Depth::Full,
             unicode: true,
             console: false,
+            truecolor: false,
         });
         assert_eq!(uni.say("on — it"), "on — it");
     }
@@ -423,6 +479,110 @@ mod tests {
         }
         for s in [ASCII.mark, ASCII.arrow, UNICODE.mark, UNICODE.arrow] {
             assert!(s.is_ascii() || s.chars().count() == 1, "{s}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod sapphire_tests {
+    use super::*;
+
+    #[test]
+    fn truecolor_is_a_separate_capability() {
+        for value in ["truecolor", "24bit"] {
+            let env = |k: &str| match k {
+                "TERM" => Some("xterm".into()),
+                "COLORTERM" => Some(value.into()),
+                _ => None,
+            };
+            assert!(detect(&env, true).truecolor);
+            assert!(!detect(&env, false).truecolor);
+        }
+        let env = |k: &str| (k == "TERM").then(|| "xterm-256color".into());
+        assert_eq!(detect(&env, true).depth, Depth::Full);
+        assert!(!detect(&env, true).truecolor);
+    }
+
+    #[test]
+    fn backdrop_and_editing_styles_follow_capabilities() {
+        for (depth, truecolor, bg) in [
+            (Depth::Full, true, Some(Color::Rgb(13, 59, 132))),
+            (Depth::Full, false, Some(Color::Indexed(18))),
+            (Depth::Sixteen, false, None),
+            (Depth::None, false, None),
+        ] {
+            let t = Theme::new(Caps {
+                depth,
+                truecolor,
+                unicode: true,
+                console: false,
+            });
+            assert_eq!(t.style(Token::Backdrop).bg, bg);
+            assert_eq!(t.style(Token::Gate).fg, t.style(Token::Text).fg);
+            for token in [Token::Text, Token::Muted, Token::Gate, Token::Frame] {
+                assert!(t.style(token).bg.is_none());
+            }
+        }
+        let t = Theme::new(detect(
+            &|k| match k {
+                "TERM" => Some("linux".into()),
+                "COLORTERM" => Some("truecolor".into()),
+                _ => None,
+            },
+            true,
+        ));
+        assert!(!t.caps.truecolor);
+        assert!(t.style(Token::Backdrop).bg.is_none());
+    }
+
+    fn rgb(c: Color) -> [f64; 3] {
+        match c {
+            Color::Rgb(r, g, b) => [r as f64, g as f64, b as f64],
+            Color::Indexed(i) if i >= 232 => [8.0 + 10.0 * (i - 232) as f64; 3],
+            Color::Indexed(i) if i >= 16 => {
+                let i = i - 16;
+                let level = |n: u8| if n == 0 { 0.0 } else { 55.0 + 40.0 * n as f64 };
+                [level(i / 36), level(i / 6 % 6), level(i % 6)]
+            }
+            _ => panic!("unexpected full-depth colour {c:?}"),
+        }
+    }
+    fn luminance(c: Color) -> f64 {
+        let [r, g, b] = rgb(c).map(|v| {
+            let v = v / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        });
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    #[test]
+    fn every_full_depth_token_has_contrast_on_both_backdrops() {
+        use Token::*;
+        let t = Theme::new(Caps {
+            depth: Depth::Full,
+            truecolor: true,
+            unicode: true,
+            console: false,
+        });
+        for bg in [Color::Rgb(13, 59, 132), Color::Indexed(18)] {
+            for token in [
+                Text, Muted, Pending, Heading, Accent, Focus, Selected, Ok, Info, Warn, Danger,
+                Blocked, Gate, Macos, Linux, Boot, Shared, Frame, Rule, Free,
+            ] {
+                let a = luminance(t.style(token).fg.unwrap());
+                let b = luminance(bg);
+                let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+                // Rule, free space and Linux are disk graphics; their legends use Text.
+                let min = if matches!(token, Rule | Free | Linux) {
+                    2.5
+                } else {
+                    4.5
+                };
+                assert!(ratio >= min, "{token:?} on {bg:?}: {ratio:.3} < {min}");
+            }
         }
     }
 }

@@ -50,8 +50,10 @@ impl Viewport {
                 if line < self.top {
                     self.top = line;
                 }
-                if end > self.top.saturating_add(height) {
-                    self.top = end.saturating_sub(height).min(line);
+                if end.saturating_sub(line) <= height && end > self.top.saturating_add(height) {
+                    self.top = end.saturating_sub(height);
+                } else if line >= self.top.saturating_add(height) {
+                    self.top = line.saturating_add(1).saturating_sub(height);
                 }
             }
         }
@@ -84,8 +86,10 @@ impl Viewport {
             if let Some((id, line, row_end)) = next {
                 self.focus = Some(id);
                 self.top = self.top.min(line);
-                if row_end > self.top + self.height {
-                    self.top = row_end.saturating_sub(self.height).min(line);
+                if row_end.saturating_sub(line) <= self.height && row_end > self.top + self.height {
+                    self.top = row_end.saturating_sub(self.height);
+                } else if line >= self.top + self.height {
+                    self.top = line.saturating_add(1).saturating_sub(self.height);
                 }
             } else {
                 self.top = if down {

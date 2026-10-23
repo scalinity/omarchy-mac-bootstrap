@@ -6,10 +6,14 @@ expression: f
  ◒ OMARCHY  mac bootstrap
 ‹ Journey  Machine  Status  Health  Logs  Plan ▍Op  Scan ›
 ┌ Operation ───────────────────────────────────────────────┐
-│ ❯ Scope   journey                         This scope o…  │
-│   State   unreadable                      What it reco…  │
-│   Worker  unknown                         Whether a wo…  │
-│   Effect  unknown                         What the ope…  │
+│ ❯ Scope: journey                                         │
+│     This scope owns the record.                          │
+│   State: unreadable                                      │
+│     What it recorded is unknown.                         │
+│   Worker: unknown                                        │
+│     Whether a worker remains is unknown.                 │
+│   Effect: unknown                                        │
+│     What the operation changed is unknown.               │
 │                                                          │
 │                                                          │
 │                                                          │
@@ -20,9 +24,5 @@ expression: f
 │                                                          │
 │                                                          │
 │                                                          │
-│                                                          │
-│                                                          │
-│                                                          │
-│ rows 1–4 of 4 · generation 78b203ec6845                  │
 └──────────────────────────────────────────────────────────┘
- ↑↓ move  / filter  r refresh  ? help   read-only · fixture
+ ? help     read-only, no system changes · recorded machine

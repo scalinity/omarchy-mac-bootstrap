@@ -135,7 +135,7 @@ pub fn wrap(s: &str, width: usize) -> Vec<String> {
     out
 }
 
-/// Paint the page behind everything: the navy backdrop at 256 colours, the
+/// Paint the page behind everything: sapphire at full colour depth, the
 /// terminal's own background otherwise (the style is then empty).
 pub fn backdrop(f: &mut Frame, area: Rect, t: &Theme) {
     f.render_widget(Block::new().style(t.style(Token::Backdrop)), area);
@@ -269,10 +269,50 @@ fn nav_label(s: Screen, short: bool) -> &'static str {
 
 /// The navigation rail as a column (wide and standard widths): the current
 /// screen marked, the cursor shown only while the rail has the keys.
+pub fn screen_available(m: &Model, screen: Screen) -> bool {
+    let platform = m.hello.as_ref().map(|h| h.platform.as_str()).unwrap_or("");
+    let stage = |name| {
+        m.snap.as_ref().is_some_and(|s| {
+            s.stages
+                .iter()
+                .any(|s| s.name == name && !matches!(s.state.as_str(), "later" | "todo"))
+        })
+    };
+    match screen {
+        Screen::Plan => platform == "macos",
+        Screen::Progress => platform == "linux",
+        Screen::Scan | Screen::Selection | Screen::Inventory | Screen::Review => {
+            platform == "macos"
+        }
+        Screen::Restore => {
+            stage("restore")
+                || m.detail(crate::read::Kind::Bundles)
+                    .is_some_and(|d| !d.rows.is_empty())
+        }
+        Screen::Qualification => stage("verify"),
+        Screen::Completion => stage("done"),
+        Screen::Shared => {
+            stage("shared")
+                || m.offered(crate::read::Scope::Journey, "shared.create")
+                    .is_some()
+        }
+        _ => true,
+    }
+}
+
 pub fn nav_rail(f: &mut Frame, area: Rect, m: &Model, t: &Theme, short: bool) {
     let inner = panel(f, area, "Screens", t);
+    let target = if m.region == Region::Nav {
+        m.nav
+    } else {
+        NAV.iter().position(|s| *s == m.screen).unwrap_or(m.nav)
+    };
+    let height = inner.height as usize;
+    let start = (target + 1)
+        .saturating_sub(height)
+        .min(NAV.len().saturating_sub(height));
     let mut lines = Vec::new();
-    for (i, s) in NAV.iter().enumerate() {
+    for (i, s) in NAV.iter().enumerate().skip(start).take(height) {
         let label = nav_label(*s, short);
         if m.region == Region::Nav && i == m.nav {
             lines.push(Line::from(vec![
@@ -287,10 +327,45 @@ pub fn nav_rail(f: &mut Frame, area: Rect, m: &Model, t: &Theme, short: bool) {
                 Span::styled(label, t.style(Token::Accent)),
             ]));
         } else {
-            lines.push(Line::styled(format!("  {label}"), t.style(Token::Text)));
+            lines.push(Line::styled(
+                format!("  {label}"),
+                t.style(if screen_available(m, *s) {
+                    Token::Text
+                } else {
+                    Token::Muted
+                }),
+            ));
         }
     }
     f.render_widget(Paragraph::new(lines), inner);
+    if inner.height > 0 && inner.width > 0 {
+        let at = |y| Rect {
+            x: inner.right() - 1,
+            y,
+            width: 1,
+            height: 1,
+        };
+        if start > 0 {
+            line(
+                at(inner.y),
+                f,
+                Line::styled(
+                    if t.caps.unicode { "↑" } else { "^" },
+                    t.style(Token::Muted),
+                ),
+            );
+        }
+        if start + height < NAV.len() {
+            line(
+                at(inner.bottom() - 1),
+                f,
+                Line::styled(
+                    if t.caps.unicode { "↓" } else { "v" },
+                    t.style(Token::Muted),
+                ),
+            );
+        }
+    }
 }
 
 /// The navigation as one line (narrow widths): from the first screen, or
@@ -332,7 +407,14 @@ pub fn nav_line(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         } else if here(s) {
             (t.g.here, t.style(Token::Accent))
         } else {
-            (" ", t.style(Token::Muted))
+            (
+                " ",
+                t.style(if screen_available(m, *s) {
+                    Token::Text
+                } else {
+                    Token::Muted
+                }),
+            )
         };
         spans.push(Span::styled(mark, t.style(Token::Accent)));
         spans.push(Span::styled(label, style));
@@ -367,7 +449,45 @@ pub fn byte_text(value: &str) -> String {
         .unwrap_or_else(|| value.into())
 }
 
+pub fn report_value(value: &str) -> String {
+    value
+        .split("; ")
+        .map(|part| {
+            for (key, label, memory) in [("memory=", "Memory", true), ("disk=", "Disk", false)] {
+                if let Some(n) = part
+                    .strip_prefix(key)
+                    .and_then(|v| v.strip_suffix(" bytes"))
+                    .and_then(|v| v.parse::<u64>().ok())
+                {
+                    return format!(
+                        "{label} {}",
+                        if memory {
+                            format!("{} GB", n / 1_073_741_824)
+                        } else {
+                            gb(n)
+                        }
+                    );
+                }
+            }
+            part.into()
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// Apple identifiers contain no spaces; Linux may supply the full model name.
+pub fn model_label(value: &str) -> &'static str {
+    if value.contains(' ') {
+        "Model"
+    } else {
+        "Model ID"
+    }
+}
+
 pub fn fact_value(key: &str, label: &str, value: &str) -> String {
+    if key == "machine.platform" {
+        return crate::theme::human_text(value);
+    }
     if key == "machine.memory" {
         return value
             .parse::<u64>()
@@ -375,7 +495,14 @@ pub fn fact_value(key: &str, label: &str, value: &str) -> String {
             .map(|v| format!("{} GB", v / 1_073_741_824))
             .unwrap_or_else(|| value.into());
     }
-    if key.ends_with(".bytes") || label.ends_with(" bytes") {
+    if key == "qualify.shared"
+        && let Some((id, mount)) = value.split_once(" at ")
+        && id.len() == 36
+        && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+    {
+        return format!("Verified at {mount}");
+    }
+    if key.ends_with(".bytes") || key.ends_with("_bytes") || label.ends_with(" bytes") {
         byte_text(value)
     } else {
         value.into()
@@ -416,13 +543,12 @@ pub fn strip<'a>(regions: &[crate::read::DiskRegion], t: &Theme, width: usize) -
         .collect();
     let mut order: Vec<usize> = (0..regions.len()).collect();
     order.sort_by_key(|&i| std::cmp::Reverse(regions[i].size as u128 * w as u128 % total));
-    let mut used: usize = share.iter().sum();
-    for i in order {
-        if used >= w {
+    let used: usize = share.iter().sum();
+    for (extra, i) in order.into_iter().enumerate() {
+        if used + extra >= w {
             break;
         }
         share[i] += 1;
-        used += 1;
     }
     let (l, r) = if t.caps.unicode {
         ("▕", "▏")
@@ -624,7 +750,12 @@ pub fn traverse<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
             while cells(&s) < at {
                 s.push(' ');
             }
-            s.push_str(STATIONS[i]);
+            s.push_str(
+                [
+                    "Survey", "Choices", "Review", "Plan", "Asahi", "Omarchy", "Shared", "Restore",
+                    "Verify", "Done",
+                ][i],
+            );
         }
         out.push(Line::styled(s, t.style(Token::Muted)));
     }
@@ -710,26 +841,23 @@ pub fn authority(m: &Model, t: &Theme, short: bool) -> String {
     };
     let dot = format!(" {} ", t.g.dot);
     let actions = m.snap.as_ref().map(|s| s.actions.len());
-    let mut out = match actions {
-        Some(0) if h.ceiling == "read" => {
-            if short {
-                "read-only".to_string()
-            } else {
-                format!("read-only{dot}no system changes")
-            }
-        }
-        Some(n) if n > 0 && !short => format!(
-            "may {}{dot}{n} action{}",
-            h.ceiling,
-            if n == 1 { "" } else { "s" }
-        ),
-        _ => format!("may {}", h.ceiling),
+    let mut out = if h.dry_run {
+        "dry run, nothing is changed".to_string()
+    } else if h.ceiling == "read" && actions == Some(0) {
+        "read-only, no system changes".into()
+    } else if h.ceiling == "plan" {
+        "can save a plan".into()
+    } else {
+        "can make changes".into()
     };
-    if h.fixture {
-        out.push_str(&format!("{dot}fixture"));
+    if !short && let Some(n) = actions.filter(|n| *n > 0) {
+        out.push_str(&format!(
+            "{dot}{n} step{} offered",
+            if n == 1 { "" } else { "s" }
+        ));
     }
-    if h.dry_run {
-        out.push_str(&format!("{dot}dry run"));
+    if h.fixture {
+        out.push_str(&format!("{dot}recorded machine"));
     }
     out
 }

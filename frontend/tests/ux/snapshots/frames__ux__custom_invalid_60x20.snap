@@ -18,7 +18,7 @@ expression: small
 │     The size exceeds the current maximum for this        │
 │     parameter.                                           │
 │   Shared size  ○ none  ○ 50  ○ 100  ◉ 150  ○ 250         │
-│   ○ Custom                                              ↓│
+│   ○ Custom                                               │
+│   Encrypt Linux   ○ off  ◉ on                           ↓│
 └──────────────────────────────────────────────────────────┘
- · Not sent: nothing changed.
- ⏎ review  Tab next field  esc back       may act · fixture
+ ⏎ review               can make changes · recorded machine

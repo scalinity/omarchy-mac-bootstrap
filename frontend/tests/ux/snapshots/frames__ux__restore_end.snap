@@ -16,9 +16,9 @@ expression: bottom
 │   AI tools                                               │
 │   Claude Code [agent] - needs-sign-in - needs-sign-in    │
 │ ▍Restore status                                          │
-│   pkg:ripgrep: pending - not started                     │
+│   ripgrep: pending - not started                         │
 │ ▍Bundles found                                           │
-│   20261022T120000Z - M1 Pro - 2026-10-22                 │
+│   Bundle from M1 Pro - 2026-10-22                        │
 │   4 items; 320 B; ok                                     │
 └──────────────────────────────────────────────────────────┘
- enter review action  ? help              may act · fixture
+ ? help                 can make changes · recorded machine

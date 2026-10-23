@@ -19,7 +19,7 @@ use ratatui::crossterm::{
     terminal::{Clear, ClearType, EnterAlternateScreen, enable_raw_mode},
 };
 use rustix::termios::{OptionalActions, Termios, tcgetattr, tcsetattr};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
@@ -109,17 +109,80 @@ impl Watch {
 }
 
 /// Start the watcher: a quarter-second check for the whole process's life.
-pub fn watch_reads() {
-    std::thread::spawn(|| {
+fn watch_reads(title: Arc<Mutex<Title>>) {
+    std::thread::spawn(move || {
         let mut w = Watch::default();
         loop {
             std::thread::sleep(Duration::from_millis(250));
             if w.stuck(READING.load(Ordering::SeqCst), READS.load(Ordering::SeqCst)) {
                 eprintln!("omb-tui: the terminal went away; the interface stops.");
+                let _ = title
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .leave(&mut io::stdout());
                 std::process::exit(1);
             }
         }
     });
+}
+
+/// One title stack entry belongs to the frontend while it owns the terminal.
+/// Both ordinary restore and the owner panic hook close the same entry.
+struct Title {
+    enabled: bool,
+    pushed: bool,
+    label: String,
+}
+impl Title {
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            pushed: false,
+            label: "Omarchy Installation".into(),
+        }
+    }
+    fn enter(&mut self, w: &mut impl Write) -> io::Result<()> {
+        if !self.enabled || self.pushed {
+            return Ok(());
+        }
+        self.pushed = true;
+        w.write_all(b"\x1b[22;2t")?;
+        write!(w, "\x1b]2;{}\x07", self.label)?;
+        w.flush()
+    }
+    fn set(&mut self, w: &mut impl Write, label: String) -> io::Result<()> {
+        if self.label == label {
+            return Ok(());
+        }
+        self.label = label;
+        if !self.enabled || !self.pushed {
+            return Ok(());
+        }
+        write!(w, "\x1b]2;{}\x07", self.label)?;
+        w.flush()
+    }
+    fn leave(&mut self, w: &mut impl Write) -> io::Result<()> {
+        if !self.pushed {
+            return Ok(());
+        }
+        self.pushed = false;
+        w.write_all(b"\x1b[23;2t")?;
+        w.flush()
+    }
+}
+fn title_label(model: &crate::app::Model) -> String {
+    let stages = model
+        .snap
+        .as_ref()
+        .map(|s| s.stages.as_slice())
+        .unwrap_or(&[]);
+    if stages.iter().any(|s| s.name == "done" && s.state == "done") {
+        "Omarchy Installation | Done".into()
+    } else if let Some(i) = stages.iter().position(|s| s.state == "current") {
+        format!("Omarchy Installation | Step {}", i + 1)
+    } else {
+        "Omarchy Installation".into()
+    }
 }
 
 /// The settings saved at start, shared with the panic hook.
@@ -129,6 +192,7 @@ pub struct Term {
     pub terminal: DefaultTerminal,
     saved: Saved,
     console: bool,
+    title: Arc<Mutex<Title>>,
 }
 
 fn put_back(saved: &Saved) {
@@ -157,9 +221,17 @@ pub fn start(console: bool) -> io::Result<Term> {
     // Ours first: Ratatui's hook, installed by try_init, restores and then
     // calls this one, which puts the saved settings back, shows the cursor,
     // and reports on the normal screen.
+    let title = Arc::new(Mutex::new(Title::new(
+        !console && io::stdin().is_terminal() && io::stdout().is_terminal(),
+    )));
+    let hook_title = title.clone();
     let hook_saved = saved.clone();
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let _ = hook_title
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .leave(&mut io::stdout());
         let _ = ratatui::try_restore();
         let _ = epilogue(&mut io::stdout(), console);
         put_back(&hook_saved);
@@ -172,10 +244,15 @@ pub fn start(console: bool) -> io::Result<Term> {
         Ok(terminal) => {
             // No other thread exists yet: the gate is in place before one can.
             own_panics(std::thread::current().id());
+            let _ = title
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .enter(&mut io::stdout());
             Ok(Term {
                 terminal,
                 saved,
                 console,
+                title,
             })
         }
         Err(e) => {
@@ -189,8 +266,25 @@ pub fn start(console: bool) -> io::Result<Term> {
 }
 
 impl Term {
+    pub fn watch_reads(&self) {
+        watch_reads(self.title.clone());
+    }
+    pub fn update_title(&self, model: &crate::app::Model) {
+        let label = title_label(model);
+        let _ = self
+            .title
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set(&mut io::stdout(), label);
+    }
+
     /// The final restore: every step attempted, whatever fails first.
     pub fn restore(&mut self) {
+        let _ = self
+            .title
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .leave(&mut io::stdout());
         let _ = ratatui::try_restore();
         let _ = epilogue(&mut io::stdout(), self.console);
         put_back(&self.saved);
@@ -201,6 +295,11 @@ impl Term {
     /// already stopped reading the terminal (one thread reads it, and it
     /// reads nothing while a child runs).
     pub fn leave(&mut self) {
+        let _ = self
+            .title
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .leave(&mut io::stdout());
         let _ = ratatui::try_restore();
         let _ = execute!(io::stdout(), Show);
         put_back(&self.saved);
@@ -223,7 +322,10 @@ impl Term {
         }
         self.terminal =
             ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))?;
-        Ok(())
+        self.title
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .enter(&mut io::stdout())
     }
 }
 
@@ -267,5 +369,78 @@ mod tests {
         let mut v = Vec::new();
         epilogue(&mut v, true).unwrap();
         assert_eq!(v, b"\x1b[?25h\x1b[H\x1b[2J");
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+    #[test]
+    fn title_stack_is_restored_at_exit_and_handoff() {
+        let mut title = Title::new(true);
+        let mut bytes = Vec::new();
+        title.enter(&mut bytes).unwrap();
+        for step in 1..=10 {
+            title
+                .set(&mut bytes, format!("Omarchy Installation | Step {step}"))
+                .unwrap();
+        }
+        title.leave(&mut bytes).unwrap();
+        title.enter(&mut bytes).unwrap();
+        title
+            .set(&mut bytes, "Omarchy Installation | Done".into())
+            .unwrap();
+        title.leave(&mut bytes).unwrap();
+        title.leave(&mut bytes).unwrap(); // panic and ordinary restore share one guard
+        let expected = format!(
+            "\x1b[22;2t\x1b]2;Omarchy Installation\x07{}\x1b[23;2t\x1b[22;2t\x1b]2;Omarchy Installation | Step 10\x07\x1b]2;Omarchy Installation | Done\x07\x1b[23;2t",
+            (1..=10)
+                .map(|i| format!("\x1b]2;Omarchy Installation | Step {i}\x07"))
+                .collect::<String>()
+        );
+        assert_eq!(bytes, expected.as_bytes());
+        let console = crate::theme::detect(&|k| (k == "TERM").then(|| "linux".into()), true);
+        let mut console = Title::new(!console.console);
+        let mut bytes = Vec::new();
+        console.enter(&mut bytes).unwrap();
+        console
+            .set(&mut bytes, "Omarchy Installation | Step 1".into())
+            .unwrap();
+        console.leave(&mut bytes).unwrap();
+        assert!(bytes.is_empty());
+    }
+    #[test]
+    fn title_uses_the_cores_current_station() {
+        let mut m = crate::app::Model::default();
+        assert_eq!(title_label(&m), "Omarchy Installation");
+        m.snap = Some(crate::app::Snapshot::default());
+        for i in 0..10 {
+            m.snap.as_mut().unwrap().stages.push(crate::app::Stage {
+                name: if i == 9 {
+                    "done".into()
+                } else {
+                    format!("step{i}")
+                },
+                state: "later".into(),
+                basis: "".into(),
+                by: "".into(),
+                detail: "".into(),
+            });
+        }
+        for i in 0..10 {
+            for s in &mut m.snap.as_mut().unwrap().stages {
+                s.state = "done".into();
+            }
+            m.snap.as_mut().unwrap().stages[i].state = "current".into();
+            if i < 9 {
+                m.snap.as_mut().unwrap().stages[9].state = "later".into();
+            }
+            assert_eq!(
+                title_label(&m),
+                format!("Omarchy Installation | Step {}", i + 1)
+            );
+        }
+        m.snap.as_mut().unwrap().stages[9].state = "done".into();
+        assert_eq!(title_label(&m), "Omarchy Installation | Done");
     }
 }

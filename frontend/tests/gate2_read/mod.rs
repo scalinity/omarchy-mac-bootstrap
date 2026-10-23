@@ -112,6 +112,7 @@ fn frame(m: &Model, w: u16, h: u16) -> String {
         depth: Depth::Full,
         unicode: true,
         console: false,
+        truecolor: false,
     });
     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
     t.draw(|f| screens::draw(f, m, &theme, 50)).unwrap();
@@ -321,12 +322,16 @@ fn the_read_surface_against_the_real_core() {
     for want in [
         "Nothing is available now.",
         next.as_str(),
-        "read-only · no system changes · fixture",
+        "read-only, no system changes · recorded machine",
     ] {
         assert!(f.contains(want), "{want:?} on the dashboard:\n{f}");
     }
     for fact in snap.facts.iter().filter(|f| f.key.starts_with("machine.")) {
-        let head: String = fact.value.chars().take(10).collect();
+        let shown = omb_tui::widgets::fact_value(&fact.key, &fact.label, &fact.value);
+        let head: String = omb_tui::theme::human_text(&shown)
+            .chars()
+            .take(10)
+            .collect();
         assert!(f.contains(&head), "{fact:?} in the sidebar:\n{f}");
     }
     let mut sent = Vec::new();
@@ -348,10 +353,7 @@ fn the_read_surface_against_the_real_core() {
             "one page holds the whole projection"
         );
         let f = frame(&m, 120, 40);
-        assert!(
-            f.contains(&format!("rows 1–{} of {}", d.total, d.total)),
-            "{f}"
-        );
+        assert!(!f.contains("rows "), "all rows fit: {f}");
         for r in &d.rows {
             let label = r.col(if kind == Kind::Machine { 0 } else { 1 });
             assert!(f.contains(label), "{label:?}:\n{f}");
@@ -448,7 +450,7 @@ fn the_read_surface_against_the_real_core() {
     let c = key(&mut m, KeyCode::Char('r'));
     sent.extend(drive(&mut m, &mut s, c));
     let f = frame(&m, 120, 40);
-    assert!(f.contains("refused · overflow"), "{f}");
+    assert!(f.contains("Needs attention"), "{f}");
     assert!(
         f.contains("The selected log window cannot be represented"),
         "{f}"
@@ -474,7 +476,7 @@ fn the_read_surface_against_the_real_core() {
         );
         let f = frame(&m, 120, 40);
         assert!(
-            f.contains("refused · unavailable") && f.contains("Validation answers plan.save"),
+            f.contains("Check the input above") && f.contains("Validation answers plan.save"),
             "{f}"
         );
     }
@@ -513,11 +515,12 @@ fn the_read_surface_against_the_real_core() {
                 "scrolling is local"
             );
             f = frame(&m, 120, 40);
-            if f.contains(&b[..40]) {
+            if f.contains("Review ready") {
                 break;
             }
         }
-        assert!(f.contains(&b[..40]), "the basis, whole:\n{f}");
+        assert!(f.contains("Review ready"), "the review is ready:\n{f}");
+        assert!(!f.contains(&b), "the basis stays internal");
         assert!(f.contains("nothing was saved"), "{f}");
         key(&mut m, KeyCode::BackTab);
         assert!(ctrl(&mut m, 'u').is_empty(), "Ctrl-U clears the field");
@@ -536,7 +539,14 @@ fn the_read_surface_against_the_real_core() {
                 .any(|(n, c, _)| n == "linux_size" && c == "leading-zero"),
             "{ch:?}"
         );
-        assert!(frame(&m, 120, 40).contains("leading-zero"));
+        let reason = &ch
+            .invalid
+            .iter()
+            .find(|(n, _, _)| n == "linux_size")
+            .unwrap()
+            .2;
+        let head: String = reason.chars().take(30).collect();
+        assert!(frame(&m, 120, 40).contains(&head));
     }
 
     // --- What the reads did, and did not do --------------------------------
@@ -584,7 +594,7 @@ fn an_unplannable_and_a_blocked_machine() {
         );
         assert!(ch.messages.iter().any(|(l, _)| l == "warn"), "{ch:?}");
         let f = frame(&m, 120, 40);
-        assert!(f.contains("refused · unplannable"), "{f}");
+        assert!(f.contains("Check the input above"), "{f}");
         assert!(f.contains("A trustworthy plan cannot be computed"), "{f}");
 
         let mut s = w.session("mac-geo-disagree", all);
@@ -620,7 +630,7 @@ fn a_session_without_the_health_and_logs_scopes() {
             "no detail without a data set: {reqs:?}"
         );
         let f = frame(&m, 120, 40);
-        assert!(f.contains("refused · scope"), "{f}");
+        assert!(f.contains("Needs attention"), "{f}");
         assert!(
             f.contains("This session does not include the requested scope."),
             "{f}"
@@ -812,30 +822,38 @@ fn every_fixture(part: usize) {
             unanswered.push(name.as_str());
             continue;
         };
-        let dash = frame(&m, 250, 80);
+        let dash = frame(&m, 250, 400);
         key(&mut m, KeyCode::Left);
         for _ in 0..8 {
             key(&mut m, KeyCode::Up);
         }
         key(&mut m, KeyCode::Enter);
-        let welcome = frame(&m, 250, 80);
+        let welcome = frame(&m, 250, 400);
         for fact in &snap.facts {
             let shown = if fact.key.starts_with("machine.") {
                 &welcome
             } else {
                 &dash
             };
-            let head: String = fact.value.chars().take(60).collect();
+            let value = omb_tui::widgets::fact_value(&fact.key, &fact.label, &fact.value);
+            let head: String = omb_tui::theme::human_text(&value)
+                .chars()
+                .take(60)
+                .collect();
             assert!(shown.contains(&head), "{name}: {fact:?}");
             if fact.key.starts_with("recorded.") && fact.value.chars().count() < 60 {
                 assert!(
-                    dash.contains(&format!("{} · recorded", fact.value)),
+                    dash.contains(&format!(
+                        "{} (saved record)",
+                        omb_tui::theme::human_text(&fact.value)
+                    )),
                     "{name}: {fact:?}"
                 );
             }
         }
-        for g in &snap.guides {
-            let head: String = g.chars().take(60).collect();
+        m.screen = Screen::Dashboard;
+        for g in m.guides() {
+            let head: String = omb_tui::theme::human_text(&g).chars().take(60).collect();
             assert!(dash.contains(&head), "{name}: {g}");
         }
         for (n, kind) in [(2, Kind::Machine), (3, Kind::Status)] {
@@ -845,11 +863,21 @@ fn every_fixture(part: usize) {
             assert!(d.loaded && d.fault.is_none(), "{name}: {d:?}");
             assert_eq!(d.generation, snap.generation, "{name}");
             assert_eq!(d.rows.len() as u64, d.total, "{name}");
-            let f = frame(&m, 250, 80);
+            let f = frame(&m, 250, 400);
             for r in &d.rows {
                 let v = r.col(if kind == Kind::Machine { 1 } else { 2 });
-                let head: String = v.chars().take(40).collect();
-                assert!(f.contains(&head), "{name} {kind:?}: {r:?}");
+                let value = if kind == Kind::Machine {
+                    omb_tui::widgets::fact_value(&r.key, r.col(0), v)
+                } else {
+                    v.into()
+                };
+                let head: String = omb_tui::theme::human_text(&value)
+                    .chars()
+                    .take(40)
+                    .collect();
+                let head = head.split_whitespace().collect::<Vec<_>>().join(" ");
+                let display = f.split_whitespace().collect::<Vec<_>>().join(" ");
+                assert!(display.contains(&head), "{name} {kind:?}: {r:?}");
             }
         }
     }
@@ -918,7 +946,7 @@ fn ux_planner_defaults_presets_and_custom_reach_the_real_core() {
     }
     let w = world();
     let mut s = w.session(primary(), ALL);
-    // SAFETY: own_process runs this test alone. It sends validations only.
+    // SAFETY: own_process runs this test alone, with private fixture state.
     unsafe {
         std::env::set_var("OMB_SESSION_INTENT", "act");
     }
@@ -965,6 +993,45 @@ fn ux_planner_defaults_presets_and_custom_reach_the_real_core() {
             f.contains("The installer asks") && f.contains("New OS size") && f.contains("MiB"),
             "{f}"
         );
+        assert!(key(&mut m, KeyCode::Enter).is_empty());
+        assert!(m.ask.is_some());
+        let cmds = key(&mut m, KeyCode::Char('y'));
+        let execute = cmds
+            .iter()
+            .find_map(|cmd| {
+                if let Cmd::Send(req) = cmd {
+                    Some(req.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let Req::Execute { args, .. } = &execute else {
+            panic!("{execute:?}");
+        };
+        assert!(
+            args.iter().any(|(n, v)| n == "linux_size" && v == b"200GB"),
+            "execute keeps the validated size, not byte-count normals: {args:?}"
+        );
+        assert!(
+            args.iter()
+                .any(|(n, v)| n == "shared_size" && v == b"150GB")
+        );
+        let outcome = wait(&mut s.start(&execute).expect("start plan save"));
+        let Outcome::Answer(records) = &outcome else {
+            panic!("save: {outcome:?}");
+        };
+        let result = records.iter().find(|r| r.ty == "result").unwrap();
+        assert_eq!(
+            (result.text("status"), result.text("code")),
+            (Some("done"), Some("ok")),
+            "{outcome:?}"
+        );
+        let state = std::fs::read_to_string(w.state(primary()).join("state.env")).unwrap();
+        assert!(state.lines().any(|l| l == "cfg_linux=200"), "{state}");
+        assert!(state.lines().any(|l| l == "cfg_shared=150"), "{state}");
+        let cmds = update(&mut m, Msg::Done(execute, outcome));
+        drive(&mut m, &mut s, cmds);
     } else {
         drive(&mut m, &mut s, cmds);
         typed(&mut m, "200GB");
@@ -977,6 +1044,90 @@ fn ux_planner_defaults_presets_and_custom_reach_the_real_core() {
             (c.status.as_str(), c.code.as_str()),
             ("refused", "unavailable")
         );
+    }
+    std::fs::remove_dir_all(w.t).unwrap();
+}
+
+#[test]
+fn ux2_sweep_every_screen_on_the_requested_fixtures() {
+    if !own_process("ux2_sweep_every_screen_on_the_requested_fixtures") {
+        return;
+    }
+    let w = world();
+    let all = "journey,health,logs,plan,profile,export,restore,debug,qualify";
+    let fixtures = if mac() {
+        vec![
+            "mac-m1pro-1tb-roomy",
+            "mac-m1pro-1tb-tight",
+            "journey-mac-created",
+            "linux-omarchy-installed",
+            "linux-shared-ready",
+            "journey-linux-restored",
+        ]
+    } else {
+        vec![
+            "linux-omarchy-installed",
+            "linux-shared-ready",
+            "journey-linux-restored",
+        ]
+    };
+    let capture = repo().join("frontend/.artifacts/ux2-sweep");
+    std::fs::create_dir_all(&capture).unwrap();
+    for fixture in fixtures {
+        let mut session = w.session(fixture, all);
+        // SAFETY: this test runs alone in its process. Only reads/validation are dispatched.
+        unsafe {
+            std::env::set_var("OMB_SESSION_INTENT", "act");
+        }
+        let mut m = started(&mut session);
+        let capture_frame = |m: &Model, screen: Screen| {
+            for (width, height) in [(120, 40), (80, 24)] {
+                let f = frame(m, width, height);
+                std::fs::write(
+                    capture.join(format!("{fixture}-{screen:?}-{width}x{height}.txt")),
+                    &f,
+                )
+                .unwrap();
+                for wrong in [
+                    "generation ",
+                    "value lines ",
+                    "Not sent: nothing changed.",
+                    "Platform      macos",
+                    "17179869184",
+                    "Run ./omarchy-bootstrap to survey",
+                ] {
+                    assert!(!f.contains(wrong), "{fixture} {screen:?} {wrong}: {f}");
+                }
+                assert!(
+                    !f.lines().any(|l| l
+                        .trim_matches(|c: char| c.is_whitespace() || "│|".contains(c))
+                        == "❯"),
+                    "blank focusable row: {fixture} {screen:?}"
+                );
+            }
+        };
+        for (n, screen) in omb_tui::app::NAV.into_iter().enumerate() {
+            if matches!(m.screen, Screen::Plan | Screen::Form) {
+                key(&mut m, KeyCode::Esc);
+            }
+            key(&mut m, KeyCode::Left);
+            for _ in 0..omb_tui::app::NAV.len() {
+                key(&mut m, KeyCode::Up);
+            }
+            for _ in 0..n {
+                key(&mut m, KeyCode::Down);
+            }
+            let cmds = key(&mut m, KeyCode::Enter);
+            drive(&mut m, &mut session, cmds);
+            assert_eq!(m.screen, screen);
+            capture_frame(&m, screen);
+        }
+        for (code, screen) in [('D', Screen::Brief), ('?', Screen::Help)] {
+            let cmds = key(&mut m, KeyCode::Char(code));
+            drive(&mut m, &mut session, cmds);
+            assert_eq!(m.screen, screen);
+            capture_frame(&m, screen);
+        }
     }
     std::fs::remove_dir_all(w.t).unwrap();
 }

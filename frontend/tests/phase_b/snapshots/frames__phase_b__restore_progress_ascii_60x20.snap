@@ -7,7 +7,7 @@ expression: text
 + Restore progress ----------------------------------------+
 | [=========                             ] 1 of 4          |
 |pkg:ripgrep                                               |
-|   - State     not-started                                |
+|   - State     not started                                |
 |   - Bundle    20261022T120000Z from M1 Pro               |
 |   - Items     4 reviewed; 2 conflicts                    |
 |   - Backups   0 bytes                                    |
@@ -21,4 +21,4 @@ expression: text
 |                                                         v|
 +----------------------------------------------------------+
                                  Restore the bundle  1 of 4
- enter review action  ? help              may act - fixture
+ ? help                 can make changes - recorded machine

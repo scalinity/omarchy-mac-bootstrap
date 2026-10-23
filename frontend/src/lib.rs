@@ -112,7 +112,7 @@ pub fn run(args: &[String]) -> i32 {
         Ok(t) => t,
         Err(e) => return fallback(&format!("the terminal could not be prepared ({e})")),
     };
-    terminal::watch_reads();
+    term.watch_reads();
     let mut trace = Trace::open();
     let mut model = Model {
         // Read, never set: the launcher's startup check serves hello and journey only.
@@ -288,6 +288,7 @@ pub fn run(args: &[String]) -> i32 {
 
 /// Draw the whole frame; false when the terminal could not be written.
 fn paint(term: &mut terminal::Term, model: &Model, theme: &theme::Theme) -> bool {
+    term.update_title(model);
     term.terminal
         .draw(|f| screens::draw(f, model, theme, TICK_MS))
         .is_ok()

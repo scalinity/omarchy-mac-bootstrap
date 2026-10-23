@@ -17,12 +17,12 @@ expression: "frame(m, w, h)"
 │  Select      ││ ▍As the core reads them                                      │
 │  Items       ││   code  ombdone-1a2b3c4d-8f2a41c0e9b7-f5f0                   │
 │  Review      ││                                                              │
-│  Install     ││ ▍Review basis                                                │
-│  Progress    ││   8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb8acb   │
-│  Restore     ││   8acb8acb                                                   │
-│  Qualify     ││   a check only: nothing was saved                            │
-│  Completion  ││   ⏎ Take the Linux code: asked first, then the core checks   │
-│              ││   this basis again.                                          │
+│  Install     ││ ▍Review ready                                                │
+│  Progress    ││   a check only: nothing was saved                            │
+│  Restore     ││   ⏎ Take the Linux code: asked first, then the core checks   │
+│  Qualify     ││   this basis again.                                          │
+│  Completion  ││                                                              │
+│              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ check  Tab next field  esc back                 may act · 1 action · fixture
+ ⏎ check  Tab next field   can make changes · 1 step offered · recorded machine

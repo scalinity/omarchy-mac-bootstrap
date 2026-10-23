@@ -5,20 +5,20 @@ expression: bottom
  ◒ Completion ────────────────────────────────────── v0.2.0
 ‹ Review  Install  Progress  Restore  Qualify ▍Completion
 ┌ Completion ──────────────────────────────────────────────┐
-│   restore: skipped - No bundle selected                 ↑│
-│   verify: done                                           │
-│   done: done                                             │
+│   Restore: skipped - No bundle selected                 ↑│
+│   Verify: done                                           │
+│   Complete: done                                         │
 │                                                          │
 │ ▍Report                                                  │
 │ ✓ Report: pass                                           │
-│   8 pass - 0 warn - 0 fail - 0 not-checked               │
-│   mac - pass: Observed by the core                       │
-│   disk - pass: Observed by the core                      │
-│   shared - pass: Observed by the core                    │
-│   linux - pass: Observed by the core                     │
-│   qualification - pass: Observed by the core             │
-│   restore - pass: Observed by the core                   │
-│   doctor - pass: Observed by the core                    │
-│   recovery - pass: Observed by the core                  │
+│   8 pass - 0 warn - 0 fail - 0 not checked               │
+│   macOS - pass: Observed by the core                     │
+│   Disk - pass: Observed by the core                      │
+│   Shared storage - pass: Observed by the core            │
+│   Linux - pass: Observed by the core                     │
+│   Cross-system check - pass: Observed by the core        │
+│   Restore - pass: Observed by the core                   │
+│   Health - pass: Observed by the core                    │
+│   Recovery - pass: Observed by the core                  │
 └──────────────────────────────────────────────────────────┘
- ↑↓ scroll  r refresh  L logs  ? help     may act · fixture
+ ↑↓ scroll  ? help      can make changes · recorded machine

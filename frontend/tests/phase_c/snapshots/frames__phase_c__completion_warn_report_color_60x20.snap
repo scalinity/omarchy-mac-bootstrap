@@ -5,20 +5,20 @@ expression: text_of(&b)
  ◒ Completion ────────────────────────────────────── v0.2.0
 ‹ Review  Install  Progress  Restore  Qualify ▍Completion
 ┌ Completion ──────────────────────────────────────────────┐
-│   restore: skipped - No bundle selected                 ↑│
-│   verify: done                                           │
-│   done: done                                             │
+│   Restore: skipped - No bundle selected                 ↑│
+│   Verify: done                                           │
+│   Complete: done                                         │
 │                                                          │
 │ ▍Report                                                  │
 │ ! Report: warn                                           │
-│   6 pass - 1 warn - 0 fail - 1 not-checked               │
-│   mac - pass: Observed by the core                       │
-│   disk - warn: Observed by the core                      │
-│   shared - pass: Observed by the core                    │
-│   linux - pass: Observed by the core                     │
-│   qualification - pass: Observed by the core             │
-│   restore - pass: Observed by the core                   │
-│   doctor - pass: Observed by the core                    │
-│   recovery - not-checked: Observed by the core           │
+│   6 pass - 1 warn - 0 fail - 1 not checked               │
+│   macOS - pass: Observed by the core                     │
+│   Disk - warn: Observed by the core                      │
+│   Shared storage - pass: Observed by the core            │
+│   Linux - pass: Observed by the core                     │
+│   Cross-system check - pass: Observed by the core        │
+│   Restore - pass: Observed by the core                   │
+│   Health - pass: Observed by the core                    │
+│   Recovery - not checked: Observed by the core           │
 └──────────────────────────────────────────────────────────┘
- ↑↓ scroll  r refresh  L logs  ? help     may act · fixture
+ ↑↓ scroll  ? help      can make changes · recorded machine

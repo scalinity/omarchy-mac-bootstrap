@@ -174,21 +174,25 @@ fn profile(name: &str) -> Theme {
             depth: Depth::Full,
             unicode: true,
             console: false,
+            truecolor: false,
         },
         "sixteen" => Caps {
             depth: Depth::Sixteen,
             unicode: true,
             console: false,
+            truecolor: false,
         },
         "nocolor" => Caps {
             depth: Depth::None,
             unicode: true,
             console: false,
+            truecolor: false,
         },
         "ascii" => Caps {
             depth: Depth::Sixteen,
             unicode: false,
             console: true,
+            truecolor: false,
         },
         _ => unreachable!(),
     };
@@ -462,7 +466,7 @@ fn emphasis_by_token() {
         // No background of its own: the navy backdrop at 256 colours, the
         // terminal's own otherwise.
         let bg = match p {
-            "color" => Color::Indexed(17),
+            "color" => Color::Indexed(18),
             _ => Color::Reset,
         };
         assert_eq!(cell.bg, bg, "{p}: no background of its own");
@@ -485,7 +489,7 @@ fn emphasis_by_token() {
     );
     assert_eq!(
         b[(x, y)].fg,
-        Color::Indexed(204),
+        Color::Indexed(210),
         "blocked is danger's colour"
     );
     let t = profile("nocolor");
@@ -572,3 +576,5 @@ mod phase_b;
 mod phase_c;
 
 mod ux;
+
+mod ux2;

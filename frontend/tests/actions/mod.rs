@@ -265,6 +265,7 @@ pub fn theme(name: &str) -> Theme {
         depth,
         unicode,
         console,
+        truecolor: false,
     })
 }
 
@@ -391,7 +392,7 @@ fn the_generic_requests_are_data_in_the_one_schema() {
 
 /// actions-planner: the fields are the parameters plan.save declares; only
 /// what is typed is sent; the core's answer is shown as it came; Enter on that
-/// review asks, and only y sends the eleven normalised values with the
+/// review asks, and only y sends the validated size strings and other normals with the
 /// review's basis.
 #[test]
 fn the_planner_validates_what_is_typed_and_saves_the_review() {
@@ -414,7 +415,7 @@ fn the_planner_validates_what_is_typed_and_saves_the_review() {
         "Storage planner",
         "381469MiB",
         "America/New_York",
-        "8acb8acb",
+        "Review ready",
         "⏎ Save the plan",
     ] {
         assert!(f.contains(want), "{want:?}:\n{f}");
@@ -448,7 +449,8 @@ fn the_planner_validates_what_is_typed_and_saves_the_review() {
     );
     let names: Vec<&str> = args.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, PARAMS, "the eleven normalised inputs");
-    assert_eq!(args[0].1, b"100000000000");
+    assert_eq!(args[0].1, b"150GB");
+    assert_eq!(args[1].1, b"250GB");
     assert_eq!(
         args[9].1, b"octocat",
         "a default the core answered is sent as it gave it"

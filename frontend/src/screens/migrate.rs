@@ -640,13 +640,25 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
                     size.unwrap_or_default()
                 );
                 let room = width.saturating_sub(cells(&left));
-                lines.push(Line::from(vec![
-                    Span::styled(left, t.style(Token::Text)),
-                    Span::styled(
-                        fit(&t.say(r.col(3)), room, t.caps.unicode),
-                        t.style(Token::Muted),
-                    ),
-                ]));
+                let notes = wrap(&t.say(r.col(3)), room);
+                let notes = if notes.is_empty() {
+                    vec![String::new()]
+                } else {
+                    notes
+                };
+                for (i, note) in notes.into_iter().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            if i == 0 {
+                                left.clone()
+                            } else {
+                                " ".repeat(cells(&left))
+                            },
+                            t.style(Token::Text),
+                        ),
+                        Span::styled(note, t.style(Token::Muted)),
+                    ]));
+                }
             }
         }
     }
@@ -663,17 +675,9 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     }
     if let Some(c) = &m.save_check {
         let (g, tok, word) = match c.status.as_str() {
-            "done" => (t.g.ok, Token::Ok, "checked".to_string()),
-            "refused" => (
-                t.g.warn,
-                Token::Warn,
-                format!("refused {} {}", t.g.dot, c.code),
-            ),
-            s => (
-                t.g.fail,
-                Token::Danger,
-                format!("{s} {} {}", t.g.dot, c.code),
-            ),
+            "done" => (t.g.ok, Token::Ok, "Checked"),
+            "refused" => (t.g.warn, Token::Warn, "Check the choices above"),
+            _ => (t.g.fail, Token::Danger, "The check could not finish"),
         };
         lines.push(Line::styled(format!(" {g} {word}"), t.style(tok)));
         let mut said = |s: &str| {
@@ -684,8 +688,8 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         if !c.text.is_empty() {
             said(&c.text);
         }
-        for (n, code, txt) in &c.invalid {
-            said(&format!("{n} {code}: {txt}"));
+        for (_, _, txt) in &c.invalid {
+            said(txt);
         }
         for (_, txt) in &c.messages {
             said(txt);
@@ -749,6 +753,7 @@ mod tests {
             depth: crate::theme::Depth::None,
             unicode: false,
             console: false,
+            truecolor: false,
         });
         for s in ["include", "exclude", "decide", "never"] {
             assert!(mark(s, &t).0.is_ascii());

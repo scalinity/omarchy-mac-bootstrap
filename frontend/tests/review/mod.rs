@@ -339,8 +339,8 @@ fn m2_execute_replaces_typed_inputs_by_declared_normals() {
     assert_eq!(
         got,
         vec![
-            ("shared_size", b"100000000000".as_slice()),
-            ("linux_size", b"250000000000".as_slice()),
+            ("shared_size", b"150GB".as_slice()),
+            ("linux_size", b"250GB".as_slice()),
             ("user", b"alex".as_slice()),
         ]
     );
