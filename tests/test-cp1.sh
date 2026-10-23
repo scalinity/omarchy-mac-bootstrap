@@ -47,12 +47,17 @@ held() {
     fi
   elif cmp -s "$T/probes" "$T/hello.probes"; then ok; else fail "$1: probes differ from existing hello setup"; fi
   assert_eq "$(cat "$T/owners")" "${2:-}" "$1: only authorized producer, read intent, zero persistence"
-  # Health publishes its one action row, agents.mcp (docs/PROTOCOL.md); a
-  # read consults no other row of the action table.
-  if grep -v '^lookup agents\.mcp$' "$T/lookups" | grep -q .; then
-    fail "$1: an action lookup other than Health's agents.mcp: $(tr '\n' ';' <"$T/lookups")"
+  # Health's own capture publishes its one action row, agents.mcp
+  # (docs/PROTOCOL.md), and consults no other; every other read here, Logs and
+  # the startup check's refusals included, consults the action table not at all.
+  if [ "${2:-}" = 'doctor read 0' ]; then
+    if grep -v '^lookup agents\.mcp$' "$T/lookups" | grep -q .; then
+      fail "$1: an action lookup other than Health's agents.mcp: $(tr '\n' ';' <"$T/lookups")"
+    else
+      ok
+    fi
   else
-    ok
+    assert_empty_file "$T/lookups" "$1: no action lookup"
   fi
   assert_eq "$(t_snapshot "$T/state")" "$before" "$1: no state/log/lock/operation/effect"
   assert_eq "$(find "$SESS" -name '*.core' -o -name '*.worker-*')" '' "$1: no child residue"
