@@ -287,7 +287,7 @@ bad=$(units | docs_sessions_bad)
 # --- docs-backdrop: the backdrop token is a blue of the colour cube, never a grey ----------
 # xterm 17 to 21 are the cube's blue column (red 0, green 0, blue 1 to 5); 16 is black and
 # 232 to 255 are greys, none of which is the dark navy of the reference design.
-bb=$(awk -F'|' '/^\| `backdrop` \|/ { print $4 }' docs/UX.md | grep -oE '^ *[0-9]+' | tr -d ' ')
+bb=$(awk -F'|' '/^\| `backdrop` \|/ { print $4 }' docs/UX.md | grep -oE 'index [0-9]+' | grep -oE '[0-9]+')
 case "$bb" in
   17 | 18 | 19 | 20 | 21) ok ;;
   *) fail "docs-backdrop: docs/UX.md → *Tokens* gives the backdrop the 256-colour value [$bb], not a blue of the colour cube (17 to 21)" ;;
