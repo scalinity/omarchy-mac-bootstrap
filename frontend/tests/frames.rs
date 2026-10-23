@@ -466,7 +466,7 @@ fn emphasis_by_token() {
         // No background of its own: the navy backdrop at 256 colours, the
         // terminal's own otherwise.
         let bg = match p {
-            "color" => Color::Indexed(18),
+            "color" => Color::Indexed(17),
             _ => Color::Reset,
         };
         assert_eq!(cell.bg, bg, "{p}: no background of its own");
@@ -489,7 +489,7 @@ fn emphasis_by_token() {
     );
     assert_eq!(
         b[(x, y)].fg,
-        Color::Indexed(210),
+        Color::Indexed(204),
         "blocked is danger's colour"
     );
     let t = profile("nocolor");

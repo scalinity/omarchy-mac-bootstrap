@@ -7,7 +7,7 @@
 //! never bold with a colour (the Linux console cancels bold when a
 //! normal-intensity colour follows it). `NO_COLOR` is handled here: colours
 //! are dropped and attributes kept, so the focus highlight survives. The
-//! sapphire backdrop is painted at full colour depth, and no state depends on it.
+//! midnight backdrop is painted at full colour depth, and no state depends on it.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -137,7 +137,7 @@ pub enum Token {
     Frame,
     /// Panel titles and section headings.
     Heading,
-    /// The sapphire page at full colour depth; terminal background otherwise.
+    /// The midnight page at full colour depth; terminal background otherwise.
     Backdrop,
 }
 
@@ -165,25 +165,25 @@ impl Theme {
                 let c = |n: u8| s.fg(Color::Indexed(n));
                 match t {
                     Text => c(253),
-                    Muted | Pending => c(249),
-                    Rule | Free => c(244),
+                    Muted | Pending => c(245),
+                    Rule | Free => c(241),
                     Accent => c(78),
                     Linux => c(209),
                     Focus => c(78).add_modifier(Modifier::REVERSED),
                     Selected | Ok => c(115),
                     Info | Macos => c(110),
                     Warn => c(222),
-                    Danger => c(210),
-                    Blocked => c(210).add_modifier(Modifier::REVERSED),
+                    Danger => c(204),
+                    Blocked => c(204).add_modifier(Modifier::REVERSED),
                     Gate => c(253).add_modifier(Modifier::UNDERLINED),
-                    Boot => c(147),
+                    Boot => c(141),
                     Shared => c(114),
                     Frame => c(44),
-                    Heading => c(75),
+                    Heading => c(39),
                     Backdrop => s.bg(if self.caps.truecolor {
-                        Color::Rgb(13, 59, 132)
+                        Color::Rgb(11, 31, 58)
                     } else {
-                        Color::Indexed(18)
+                        Color::Indexed(17)
                     }),
                 }
             }
@@ -484,7 +484,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod sapphire_tests {
+mod backdrop_tests {
     use super::*;
 
     #[test]
@@ -506,8 +506,8 @@ mod sapphire_tests {
     #[test]
     fn backdrop_and_editing_styles_follow_capabilities() {
         for (depth, truecolor, bg) in [
-            (Depth::Full, true, Some(Color::Rgb(13, 59, 132))),
-            (Depth::Full, false, Some(Color::Indexed(18))),
+            (Depth::Full, true, Some(Color::Rgb(11, 31, 58))),
+            (Depth::Full, false, Some(Color::Indexed(17))),
             (Depth::Sixteen, false, None),
             (Depth::None, false, None),
         ] {
@@ -567,7 +567,7 @@ mod sapphire_tests {
             unicode: true,
             console: false,
         });
-        for bg in [Color::Rgb(13, 59, 132), Color::Indexed(18)] {
+        for bg in [Color::Rgb(11, 31, 58), Color::Indexed(17)] {
             for token in [
                 Text, Muted, Pending, Heading, Accent, Focus, Selected, Ok, Info, Warn, Danger,
                 Blocked, Gate, Macos, Linux, Boot, Shared, Frame, Rule, Free,
