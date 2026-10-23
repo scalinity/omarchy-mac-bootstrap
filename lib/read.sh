@@ -204,11 +204,12 @@ core_read_rows() {
 }
 
 core_journey_read() {
-  local sum st placeholder
+  local sum st placeholder ACT_OFFLINE_READ=0
   omb_tmp_init || return 1
   # The rows' own reads print nothing into the dataset: the baseline's text
   # functions they call keep their own output, which no reader sees.
   core_mod_load actions || return 1
+  ACT_OFFLINE_READ=1
   CORE_ROWS=0
   core_rows_snapshot "$ACT_IDS" >/dev/null || return 1
   CORE_ROWS=1

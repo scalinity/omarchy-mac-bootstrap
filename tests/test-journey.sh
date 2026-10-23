@@ -16,7 +16,9 @@ mkdir -p "$T/tool"
 cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$T/tool/"
 # Model the kernel mounting exFAT on first directory access. The real
 # shared_lx_access then re-reads mountinfo before opening qualification files.
+printf '\n. %q\n' "$TESTS_DIR/gate2-probe-taps.sh" >>"$T/tool/lib/common.sh"
 cat >>"$T/tool/lib/common.sh" <<'ACCESS'
+G2_PROBES=${G2_PROBES:-/dev/null}
 sha256sum() { shasum -a 256; }
 ls() {
   case "$*" in
@@ -29,6 +31,13 @@ ls() {
   command ls "$@"
 }
 ACCESS
+cat >>"$T/tool/lib/journey.sh" <<'VERIFY'
+eval "$(declare -f journey_verify_failures | sed '1s/journey_verify_failures/j_test_machine_failures/')"
+journey_verify_failures() {
+  printf 'machine\n' >>"${J_VERIFY_TAP:-/dev/null}"
+  j_test_machine_failures
+}
+VERIFY
 C_HOME=$T/tool
 c_session
 C_STATE=$T/mac-state
@@ -39,7 +48,8 @@ j_stages() {
 }
 j_states() { j_stages | awk '{ printf "%s%s", sep, $2; sep=" " }'; }
 j_snapshot() {
-  c_run snapshot $'scope\tname=journey'
+  : >"$T/journey.probes"; : >"$T/verify.reads"
+  C_ENV="$C_ENV G2_PROBES=$T/journey.probes J_VERIFY_TAP=$T/verify.reads" c_run snapshot $'scope\tname=journey'
   assert_eq "$(c_result) $C_RC $(c_admits snapshot)" 'done ok 0 ok' "$1: real entrypoint snapshot"
   assert_eq "$C_ERR" '' "$1: stderr"
   assert_eq "$(j_stages | awk '{ printf "%s%s", sep, $1; sep=" " }')" 'survey profile resolve plan asahi omarchy shared restore verify done' "$1: exactly ten, rail order"
@@ -51,6 +61,8 @@ j_snapshot() {
       if ($2=="current" && unfinished) bad=1
       if (due && $2!="done" && $2!="skipped") unfinished=1 }
     END {print bad+0}')" 0 "$1: no current stage bypasses unfinished local work"
+  assert_eq "$(awk '$1=="sys_reachable" || $1=="sys_net" {n++} END {print n+0}' "$T/journey.probes")" 0 "$1: snapshot has no network probes"
+  assert_eq "$(wc -l <"$T/verify.reads" | tr -d ' ')" "$(j_stages | awk 'NR<=8 && $2!="done" && $2!="skipped" {pending=1} END {print 1-pending}')" "$1: machine checks run only after all eight predecessors finish"
   # All other stages are derived here.
 
   assert_eq "$(j_stages | awk '($3 == "recorded" && $4 !~ /^(macos|linux)$/) || ($3 == "machine" && NF != 3) { n++ } END { print n+0 }')" 0 "$1: every stage basis and by agree"
@@ -141,33 +153,33 @@ if t_plutil 'journey across macOS and Linux'; then
   C_FIX=$(t_variant mac-m1pro-1tb-roomy)
   # Hardware identity is an existing read-only probe, already in the allowlist.
   cp "$FIX/mig-mac-home/cmd/hardware_plist" "$C_FIX/cmd/hardware_plist"
-  j_snapshot J-FRESH 'done skipped skipped current todo todo skipped skipped done todo'
+  j_snapshot J-FRESH 'done skipped skipped current todo todo skipped skipped todo todo'
   assert_eq "$(j_stages | awk '$3 == "recorded"')" '' 'J-FRESH: no code, no recorded progress'
   mkdir -p "$C_STATE"; chmod 700 "$C_STATE"
   j_profile unresolved
-  j_snapshot J-PROFILE-BEFORE-PLAN 'done done blocked todo todo todo skipped todo done todo' 0
+  j_snapshot J-PROFILE-BEFORE-PLAN 'done done blocked todo todo todo skipped todo todo todo' 0
   rm -f "$C_STATE/profile.omb"
   # The real planner saves the plan and Shared intent; no disk mutation runs.
   choices='\n\n\n\n\n\n\n\n\n\n'
   T_ENV="OMB_STATE_DIR=$C_STATE" t_cli "$C_FIX" "\n4\n\n$choices" plan
   assert_contains "$T_OUT" 'Plan saved' 'J-PLAN: actual text plan'
-  j_snapshot J-PLAN 'done skipped skipped done current todo todo skipped blocked todo'
+  j_snapshot J-PLAN 'done skipped skipped done current todo todo skipped todo todo'
   token=$(awk -F '\t' '$1 == "code" { sub(/^value=/,"",$3); print $3 }' "$C_EV")
   _rec_dec_into token "$token"
   assert_contains "$token" 'plan=' 'J-PLAN: real canonical token'
   digest=$(sed -n 's/^cfg_plan=//p' "$C_STATE/state.env")
   printf 'asahi_launched_at=2026-10-22T12:00:00Z\n' >>"$C_STATE/state.env"
-  j_snapshot J-LAUNCHED 'done skipped skipped done current todo todo skipped blocked todo'
+  j_snapshot J-LAUNCHED 'done skipped skipped done current todo todo skipped todo todo'
   assert_not_contains "$(j_stages)" 'asahi done' 'J-LAUNCHED: a launch receipt never proves installation'
 
   # Profile and resolver each own their existing classifier; corrupt state is
   # blocked, an unfinished scan is not a saved selection.
   j_profile unresolved
-  j_snapshot J-UNRESOLVED 'done done blocked done todo todo todo todo blocked todo' 0
+  j_snapshot J-UNRESOLVED 'done done blocked done todo todo todo todo todo todo' 0
   j_profile resolved
-  j_snapshot J-PROFILE 'done done done done current todo todo todo blocked todo'
+  j_snapshot J-PROFILE 'done done done done current todo todo todo todo todo'
   printf 'corrupt\n' >>"$C_STATE/profile.omb"
-  j_snapshot J-BAD-PROFILE 'done blocked blocked done todo todo todo todo blocked todo' 0
+  j_snapshot J-BAD-PROFILE 'done blocked blocked done todo todo todo todo todo todo' 0
   j_profile resolved
 
   # Linux boots, receives the real token through baseline token_decode/cfg_save,
@@ -183,12 +195,12 @@ if t_plutil 'journey across macOS and Linux'; then
   )
   C_ENV='OMB_SESSION_SCOPES=journey,health,qualify HOME=/home/alex OMB_TEST_QUAL_BYTES=4097'
   J_EXPECT_REC=$(printf 'survey macos\nplan macos')
-  j_snapshot J-BOOTED 'done todo todo done done current todo todo blocked todo'
+  j_snapshot J-BOOTED 'done todo todo done done current todo todo todo todo'
   assert_eq "$(j_stages | awk '$3 == "recorded"')" "$(printf 'survey done recorded macos\nplan done recorded macos')" 'J-TOKEN: survey and plan are recorded before any checked bundle'
   linuxstate=$C_STATE
   C_FIX=$(t_variant linux-shared-absent)
   C_STATE=$linuxstate
-  j_snapshot J-OMARCHY 'done todo todo done done done current todo blocked todo'
+  j_snapshot J-OMARCHY 'done todo todo done done done current todo todo todo'
   # The baseline completion code is checked against macOS's current root.
   donecode=$(code_make ombdone "$digest" 4A7B1C2D-0006-4E5F-8A9B-000000000006)
   sharecode=$(code_make ombshare "$digest" 4A7B1C2D-0007-4E5F-8A9B-000000000007)
@@ -276,6 +288,19 @@ if t_plutil 'journey across macOS and Linux'; then
   j_snapshot J-RERUN 'done done done done done done done done done done' 0
   assert_eq "$(j_stages)" "$body" 'J-RERUN: stage states and provenance unchanged'
   assert_eq "$(t_snapshot "$C_STATE")" "$before" 'J-RERUN: no writes'
+  # The due verify stage ignores network failures, while Health/report keep
+  # the full Doctor and therefore still report that failed reachability.
+  offline_gen=$(j_gen)
+  mv "$C_FIX/net/asahi_home.reachable" "$T/asahi_home.reachable"
+  j_snapshot J-VERIFY-OFFLINE 'done done done done done done done done done done' 0
+  assert_eq "$(j_gen)" "$offline_gen" 'J-VERIFY-OFFLINE: network does not enter the journey generation'
+  j_report J-NETWORK-REPORT
+  assert_contains "$C_OUT" $'key=doctor\tcol=fail' 'J-NETWORK-REPORT: full Doctor still observes network failure'
+  mv "$T/asahi_home.reachable" "$C_FIX/net/asahi_home.reachable"
+  cp "$C_FIX/cmd/diskutil_info_disk0" "$T/disk.before"
+  plutil -replace SMARTStatus -string Failing "$C_FIX/cmd/diskutil_info_disk0"
+  j_snapshot J-VERIFY-MACHINE-FAIL 'done done done done done done done done blocked todo' 0
+  cp "$T/disk.before" "$C_FIX/cmd/diskutil_info_disk0"
   j_report J-MAC-REPORT
   assert_contains "$C_OUT" $'key=linux\tcol=not-checked' 'J-REPORT: a completion code never claims readable Linux health'
   # A passing result read on Linux still cannot end the journey there.
@@ -284,6 +309,15 @@ if t_plutil 'journey across macOS and Linux'; then
   C_ENV='OMB_SESSION_SCOPES=journey,health,qualify HOME=/home/alex OMB_TEST_QUAL_BYTES=4097'
   J_EXPECT_REC=$(printf 'survey macos\nprofile macos\nresolve macos\nplan macos')
   j_snapshot J-LINUX-PASSED 'done done done done done done done done done todo' 0
+  cp "$C_FIX/cmd/ip_route" "$T/route.before"
+  : >"$C_FIX/cmd/ip_route"
+  j_snapshot J-LINUX-OFFLINE-VERIFIED 'done done done done done done done done done todo' 0
+  cp "$T/route.before" "$C_FIX/cmd/ip_route"
+  cp "$C_FIX/cmd/df_root" "$T/df.before"
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/mapper/root 10000000 9999999 1 99%% /\n' >"$C_FIX/cmd/df_root"
+  j_snapshot J-LINUX-MACHINE-FAIL 'done done done done done done done done blocked todo' 0
+  cp "$T/df.before" "$C_FIX/cmd/df_root"
+
   C_FIX=$macfixture C_STATE=$macstate
   C_ENV='OMB_SESSION_SCOPES=journey,health,qualify OMB_TEST_QUAL_BYTES=4097'
   J_EXPECT_REC='omarchy linux'
@@ -314,7 +348,7 @@ if t_plutil 'journey across macOS and Linux'; then
   sed 's/^shared_linux_done=.*/shared_linux_done=invalid/' "$C_STATE/state.env" >"$T/changed"
   cp "$T/changed" "$C_STATE/state.env"
   J_EXPECT_REC=''
-  j_snapshot J-BAD-CODE 'done done done done done todo blocked done blocked todo' 0
+  j_snapshot J-BAD-CODE 'done done done done done todo blocked done todo todo' 0
   assert_eq "$(j_stages | awk '$3 == "recorded"')" '' 'J-BAD-CODE: invalid code establishes nothing'
   # The saved-plan completion rule also holds without Shared after Asahi.
   C_FIX=$(t_variant mac-asahi-complete)
@@ -324,7 +358,7 @@ if t_plutil 'journey across macOS and Linux'; then
   chmod 600 "$C_STATE/state.env"
   C_ENV='OMB_SESSION_SCOPES=journey,health,qualify OMB_TEST_QUAL_BYTES=4097'
   J_EXPECT_REC=''
-  j_snapshot J-INSTALLED-NO-SHARED 'done skipped skipped done done todo skipped skipped done todo' 0
+  j_snapshot J-INSTALLED-NO-SHARED 'done skipped skipped done done todo skipped skipped todo todo' 0
   j_report J-NO-SHARED-REPORT
   assert_contains "$C_OUT" $'key=disk\tcol=not-checked' 'J-NO-SHARED: plan completion does not invent saved disk extents'
 fi

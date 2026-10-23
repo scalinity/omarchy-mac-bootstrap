@@ -480,7 +480,11 @@ a_unavailable() {
   a_use "$T/un-$a-$(basename "$fx")" "$fx"
   a_run snapshot "scope	name=journey"
   why=$(c_result)
+  if [ "$a:${fx##*/}" = network.connect:linux-alarm-fresh ]; then
+    assert_contains " $(a_actions) " " $a " 'M16-stage-reads: route-only snapshot provisionally offers the network check'
+  else
   case " $(a_actions)" in *" $a "*) fail "actions-$a-unavailable: $(basename "$fx") lists it" ;; *) ok ;; esac
+  fi
   a_run execute "exec	action=$a	basis=$ZERO	confirm=$w" "$@"
   assert_eq "$(c_result) $(a_ops)" "refused unavailable " "actions-$a-unavailable: $(basename "$fx") refuses it ($why)"
   assert_empty_file "$A_DIR/record" "actions-$a-unavailable: nothing ran"

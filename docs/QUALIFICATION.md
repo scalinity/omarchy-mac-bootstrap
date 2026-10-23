@@ -30,7 +30,7 @@ survey · profile · resolve · plan · asahi · omarchy · shared · restore ·
 | omarchy | Linux | Omarchy Mac finished: the baseline's marker, conf and encryption signals | no |
 | shared | macOS, then Linux | Shared `created` (macOS) / `ready` (Linux) | yes: not planned |
 | restore | macOS, then Linux | a bundle exported to a verified destination (macOS); the restore `complete` (Linux; docs/RESTORE.md → *States*) | with profile |
-| verify | both | qualification `passed` (with Shared), and doctor has no FAIL | no |
+| verify | both | every preceding stage done or skipped, qualification `passed` (with Shared), and Doctor's machine checks have no FAIL; network checks do not decide it | no |
 | done | macOS | every stage above done or skipped, ending with macOS qualification step 3 when Shared is planned | — |
 
 The profile comes before the plan because what is coming to Linux tells the
@@ -97,11 +97,15 @@ with the saved Shared extents; without Shared the exact pre-install extents
 are not saved, so that report row is not checked. Linux's done stage always
 stays todo: the journey ends on macOS, after qualification step 3 with Shared.
 
-Verify reads qualification only through `qfy_status_read`, if defined. With
-Shared, passed qualification and zero Doctor failures complete verify. A
-missing interface, blocked/failed qualification, or Doctor failure blocks it;
-waiting qualification remains unfinished. Without Shared, Doctor alone gates
-verify. Done requires macOS and all nine preceding stages done or skipped.
+Verify stays todo until all eight preceding stages are done or skipped;
+it makes no Doctor read before then. Once due, it reads qualification through
+`qfy_status_read` and Doctor's failure-capable machine checks only. With Shared,
+passed qualification and no machine FAIL complete verify. A missing interface,
+blocked/failed qualification or machine FAIL blocks it; waiting qualification
+remains unfinished. Without Shared, the machine checks alone gate verify.
+Journey reads never call `sys_reachable` or `sys_net`: installer/GitHub
+reachability and the upstream version never decide verify. The unchanged full
+Doctor, including its network observations, belongs to Health and report. Done requires macOS and all nine preceding stages done or skipped.
 
 The startup check preserves its identity-only reads and zero actions. Its ten
 stages are blocked with `not checked: startup check reads identity only`.
@@ -138,7 +142,7 @@ flowchart TD
 
 Without Shared, the `shared` stage is skipped, the bundle travels on
 removable media, and the cross-OS round trip is not run (verify then rests
-on doctor; see *Without Shared*).
+on the offline machine checks; see *Without Shared*).
 
 
 ## Qualification
@@ -332,7 +336,7 @@ identity before opening the folder; an armed automount alone is not a failure.
 ### Without Shared
 
 The round trip qualifies Shared, so without Shared it is not run and the
-verify stage says so; doctor alone gates `verify`.
+verify stage says so; Doctor's offline machine checks alone gate `verify`, once the preceding stages are complete.
 
 ## Real-hardware qualification (M17)
 

@@ -963,6 +963,14 @@ the next step, `guide id=next step=1`, is the text the baseline prints under
 machine's identity); a fact read from a record has the prefix `recorded.`,
 and the frontend uses a prefix to place and style a fact and never to decide
 what it means. The exact keys are written with each producer's golden.
+Journey snapshots, their details and stage derivation use no `sys_reachable`
+or `sys_net` probes. Their network-dependent action offers are provisional
+from local route information; validate and execute perform fresh reachability
+checks. The network gate describes the local route in both paths, so its
+basis does not claim an unobserved network result. Verify stays todo until
+all preceding stages are done or skipped, then uses the machine-only FAIL
+projection. The full Doctor and network observations remain in Health/report.
+
 The ordinary journey snapshot emits exactly ten `stage` records in rail
 order: `survey profile resolve plan asahi omarchy shared restore verify done`.
 Each uses the machine-derived state, a checked typed code or a checked bundle,

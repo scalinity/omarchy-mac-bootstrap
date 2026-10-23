@@ -31,6 +31,7 @@ ACT_DEV_SCOPE=omarchy
 # The read an offer is made on, once per request (mac or linux); a judge
 # always reads again. The rest carry what a run saw to its judge.
 ACT_READ="" ACT_ONLINE="" ACT_PLAN_OK=0 ACT_BEFORE="" ACT_PRE="" ACT_SEEN="" ACT_TOOK=1 ACT_RC=0
+ACT_OFFLINE_READ=0
 ACT_CODE="" ACT_ARG=""
 
 # act_row ID — the row's CA_* values (docs/PROTOCOL.md → *The action table*);
@@ -151,8 +152,14 @@ act_lx_read() {
   ACT_READ=linux ACT_ONLINE=""
 }
 
-# act_lx_online — LX_ONLINE as lx_online reads it, once per read.
+# Journey offers are provisional from local facts; validate/execute retain
+# lx_online's fresh reachability check. Never make a startup snapshot wait
+# for the network. The gate facts are local in both paths, so bases agree.
 act_lx_online() {
+  if [ "${ACT_OFFLINE_READ:-0}" = 1 ]; then
+    LX_ONLINE=unknown
+    return 0
+  fi
   if [ -z "$ACT_ONLINE" ]; then
     ACT_ONLINE=0
     if sys_reachable github "https://github.com"; then ACT_ONLINE=1; fi
@@ -839,7 +846,7 @@ act_network_offer() {
 
 act_network_facts() {
   if [ "$LX_ROUTE" = 1 ]; then
-    act_fact network.connect now "Now" "a default route, but github.com cannot be reached" warn || return 1
+    act_fact network.connect now "Now" "a default route; reachability is checked before connecting" info || return 1
   else
     act_fact network.connect now "Now" "no default route" warn || return 1
   fi
@@ -895,7 +902,7 @@ act_start_offer() {
     CA_WHY="omarchy-mac-setup must run as root."
     return 1
   fi
-  if [ "$LX_ROUTE" != 1 ] || [ "$LX_ONLINE" != 1 ]; then
+  if [ "$LX_ROUTE" != 1 ] || { [ "$LX_ONLINE" != 1 ] && [ "$LX_ONLINE" != unknown ]; }; then
     CA_WHY="This machine is offline: connect first."
     return 1
   fi

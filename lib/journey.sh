@@ -35,12 +35,60 @@ journey_doctor_counts() (
   # shellcheck disable=SC2317,SC2329 # cmd_doctor calls its presentation sink
   ui_tag() { :; }
   DOC_PASS=0 DOC_WARN=0 DOC_FAIL=0
-  # Only Doctor's closed counters feed stages/report. Its text and diagnostic
+  # Full Doctor counters belong to report, not journey verification. Text and diagnostic
   # stderr are not protocol data (an unreadable macOS resize limit already
   # produces the owner's warning finding).
   cmd_doctor >/dev/null 2>/dev/null
   case $? in 0 | 1) ;; *) return 1 ;; esac
   printf '%s %s %s\n' "$DOC_PASS" "$DOC_WARN" "$DOC_FAIL"
+)
+
+# Verify needs only Doctor's failure-capable machine checks. Warning/info
+# checks (package consistency, Snapper and SSH included) cannot decide it.
+# Keep cmd_doctor unchanged: Health/report still capture its full findings.
+# test-gate2-edge compares this projection with the full Doctor's non-network
+# FAIL rows over the machine fixtures, and refuses any network probe here.
+journey_verify_failures() (
+  local __failed=0 smart avail
+  # shellcheck disable=SC2317,SC2329 # shared_doctor's finding sink
+  doc() { if [ "$1" = fail ]; then __failed=$((__failed + 1)); fi; }
+  case "$OMB_PLATFORM" in
+    macos)
+      mac_detect
+      cfg_load
+      mac_plan_compute
+      [ "$MAC_APPLE_SILICON" = 1 ] || doc fail
+      case "$DEV_TIER" in supported | experimental) ;; *) doc fail ;; esac
+      ver_ge "${MAC_OS_VERSION:-0}" "$ASAHI_MIN_MACOS" || doc fail
+      [ "$MAC_DISK_INTERNAL" = true ] || doc fail
+      smart=$(plist_get "$(sys_cmd "diskutil_info_$MAC_DISK" diskutil info -plist "$MAC_DISK")" SMARTStatus)
+      case "$smart" in Verified | '') ;; *) doc fail ;; esac
+      if [ "$MAC_ASAHI_PRESENT" != 1 ] && [ "$PLAN_LINUX_MAX" -lt "$PLAN_LINUX_MIN" ]; then doc fail; fi
+      [ "$MAC_ADMIN" = 1 ] || doc fail
+      asahi_classify
+      case "$ASAHI_STATE" in
+        none | installed | pending-first-boot | installed-unverified | resized-only) ;;
+        *) doc fail ;;
+      esac
+      ;;
+    linux)
+      lx_detect
+      cfg_load
+      if [ -z "${CFG_user:-}" ] && [ -f "$STATE_SYSTEM_FILE" ]; then cfg_load "$STATE_SYSTEM_FILE"; fi
+      [ "$LX_ARCH" = aarch64 ] || doc fail
+      [ "$LX_APPLE" = 1 ] || doc fail
+      if [ -z "$LX_BOOT_SRC" ] || [ "$LX_BOOT_SRC" = "$LX_ROOT_SRC" ]; then
+        [ "$LX_ROOT_CRYPT" != 1 ] || doc fail
+      fi
+      [ "$LX_ENC_STATE" != probe-failed ] || doc fail
+      sys_has pacman || doc fail
+      avail=$(sys_cmd df_root df -Pk / | awk 'NR==2 {print $4}')
+      if [ -n "$avail" ] && [ "$avail" -lt 2000000 ]; then doc fail; fi
+      ;;
+    *) return 1 ;;
+  esac
+  shared_doctor
+  printf '%s\n' "$__failed"
 )
 
 # qfy owns admission and identity. Never inspect its files or infer its state.
@@ -118,7 +166,7 @@ journey_profile() {
 }
 
 journey_read() {
-  local counts=${1:-} p w f n=0 pending=0 current=0 receipt token_loaded due
+  local counts="${1:-0 0 0}" p w f n=0 pending=0 current=0 receipt token_loaded due verify_due=1
   core_mod_load qualify || return 1
   journey_init
   cfg_load
@@ -183,19 +231,26 @@ journey_read() {
   if [ "$SHARED_STATE" = off ] && [ "${CFG_shared:-0}" = 0 ]; then
     journey_set 6 skipped machine '' 'Shared is not planned'
   fi
-  if [ -z "$counts" ]; then counts=$(journey_doctor_counts) || return 1; fi
   IFS=' ' read -r p w f <<EOF_COUNTS
 $counts
 EOF_COUNTS
   J_DOC_PASS=$p J_DOC_WARN=$w J_DOC_FAIL=$f
   journey_qualification
-  if [ "$f" != 0 ]; then journey_set 8 blocked machine '' 'doctor has FAIL findings'
-  elif [ "${J_STATE[6]}" = skipped ]; then journey_set 8 'done'
-  else
-    case "$J_QFY" in
-      passed) journey_set 8 'done' ;;
-      failed | blocked | unavailable) journey_set 8 blocked machine '' "${J_QWHY:-$J_QFY}" ;;
-    esac
+  while [ "$n" -lt 8 ]; do
+    case "${J_STATE[n]}" in done | skipped) ;; *) verify_due=0 ;; esac
+    n=$((n + 1))
+  done
+  n=0
+  if [ "$verify_due" = 1 ]; then
+    f=$(journey_verify_failures 2>/dev/null) || return 1
+    if [ "$f" != 0 ]; then journey_set 8 blocked machine '' 'doctor machine checks have FAIL findings'
+    elif [ "${J_STATE[6]}" = skipped ]; then journey_set 8 'done'
+    else
+      case "$J_QFY" in
+        passed) journey_set 8 'done' ;;
+        failed | blocked | unavailable) journey_set 8 blocked machine '' "${J_QWHY:-$J_QFY}" ;;
+      esac
+    fi
   fi
   # The first unfinished stage due here owns current. A blocker keeps its
   # state and stops later stages becoming current. Remote work stays todo.
@@ -208,6 +263,7 @@ EOF_COUNTS
           macos:0 | macos:1 | macos:2 | macos:3 | macos:4 | macos:6 | macos:7 | macos:8 | linux:5 | linux:6 | linux:7 | linux:8) due=1 ;;
         esac
         case "$OMB_PLATFORM:$n:$J_QFY" in macos:8:waiting-for-linux | linux:8:waiting-for-macos | linux:8:not-started) due=0 ;; esac
+        if [ "$n" = 8 ] && [ "$verify_due" = 0 ]; then due=0; fi
         if [ "$current" = 0 ] && [ "$due" = 1 ]; then
           if [ "${J_STATE[n]}" = todo ]; then J_STATE[n]=current; fi
           current=1
@@ -352,8 +408,9 @@ journey_report_records() {
 }
 
 cmd_report() {
-  local n=0
-  journey_read || return 1
+  local n=0 counts
+  counts=$(journey_doctor_counts) || return 1
+  journey_read "$counts" || return 1
   journey_report_build || return 1
   ui_section Report 'fresh read; not-checked rows do not change the verdict'
   while [ "$n" -lt "${#J_REPORT_KEY[@]}" ]; do

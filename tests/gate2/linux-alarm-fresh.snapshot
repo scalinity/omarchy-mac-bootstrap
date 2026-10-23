@@ -6,7 +6,7 @@ stage	name=asahi	state=done	basis=machine	by=	at=	detail=
 stage	name=omarchy	state=current	basis=machine	by=	at=	detail=
 stage	name=shared	state=skipped	basis=machine	by=	at=	detail=Shared%20is%20not%20planned
 stage	name=restore	state=todo	basis=machine	by=	at=	detail=
-stage	name=verify	state=done	basis=machine	by=	at=	detail=
+stage	name=verify	state=todo	basis=machine	by=	at=	detail=
 stage	name=done	state=todo	basis=machine	by=	at=	detail=
 fact	scope=journey	key=machine.platform	label=Platform	value=linux	state=info
 fact	scope=journey	key=machine.arch	label=Architecture	value=aarch64	state=info
