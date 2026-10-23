@@ -4,6 +4,7 @@
 
 use crate::read::{Args, Checked, Row};
 use crate::{record, select};
+use std::cell::Cell;
 
 #[derive(Debug, Default)]
 pub struct Restore {
@@ -12,12 +13,28 @@ pub struct Restore {
     pub replacements: Vec<Vec<u8>>,
     pub conflict: usize,
     pub side_by_side: bool,
+    pub side_visible: Cell<bool>,
+    pub side_scroll: usize,
+    /// Wrapped lines in the unified view; drawing bounds End to the page.
+    pub line_scroll: Cell<usize>,
+    /// Chosen conflicts and their displayed diffs awaiting a fresh review.
+    pub previous: Vec<(Row, Vec<Row>)>,
     pub checked: Option<Checked>,
     pub action: usize,
 }
 
 pub fn replacing(choices: &[Vec<u8>], dest: &[u8]) -> bool {
     choices.iter().any(|d| d == dest)
+}
+
+pub fn diff_rows<'a>(rows: &'a [Row], dest: &[u8]) -> Vec<&'a Row> {
+    rows.iter()
+        .filter(|r| {
+            r.id.iter()
+                .rposition(|b| *b == b'#')
+                .is_some_and(|at| &r.id[..at] == dest)
+        })
+        .collect()
 }
 
 pub fn choose(choices: &mut Vec<Vec<u8>>, dest: &[u8], replace: bool) {

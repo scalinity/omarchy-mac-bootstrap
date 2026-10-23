@@ -74,6 +74,7 @@ fn snap() -> String {
         BASIS,
     ));
     s.push_str("param\taction=restore.apply\tname=bundle\ttype=bytes\tkind=\trequired=0\n");
+    s.push_str("param\taction=restore.apply\tname=review\ttype=bytes\tkind=\trequired=1\n");
     for i in 1..=14 {
         s.push_str(&format!(
             "param\taction=restore.apply\tname=replace.{i}\ttype=bytes\tkind=\trequired=0\n"
@@ -328,6 +329,7 @@ fn conflict_choices_default_to_keep_and_the_gate_sends_the_reviewed_bytes() {
         args,
         &vec![
             ("bundle".into(), b"20261022T120000Z".to_vec()),
+            ("review".into(), RGEN.as_bytes().to_vec()),
             (
                 "replace.1".into(),
                 format!("omb-replace 1\nreplace\tdest={DEST}\n").into_bytes()
@@ -403,6 +405,217 @@ fn changed_or_incomplete_conflicts_cannot_authorize_replacement() {
         0,
         "partial review cannot validate"
     );
+}
+
+#[test]
+fn changed_after_viewing_rereads_conflicts_before_a_gate_and_rechecks_choices() {
+    for execute in [false, true] {
+        let mut m = on();
+        conflicts(&mut m);
+        press(&mut m, KeyCode::Char('R'));
+        press(&mut m, KeyCode::Char('n'));
+        press(&mut m, KeyCode::Char('R'));
+        press(&mut m, KeyCode::Esc);
+        let mut req = sent(&press(&mut m, KeyCode::Enter));
+        assert!(matches!(&req, Req::Validate { args, .. }
+            if args.iter().any(|(k, v)| k == "review" && v == RGEN.as_bytes())));
+        if execute {
+            answer(
+                &mut m,
+                req,
+                &format!(
+                    "normal\tname=review\tvalue={}\nreview\taction=restore.apply\tbasis={REVIEW}\n{DONE}",
+                    "dcba".repeat(16)
+                ),
+            );
+            assert_eq!(m.screen, Screen::Gate);
+            typed(&mut m, "restore");
+            req = sent(&press(&mut m, KeyCode::Enter));
+            assert!(matches!(&req, Req::Execute { args, .. }
+                if args.iter().any(|(k, v)| k == "review" && v == RGEN.as_bytes())));
+        }
+        // The synthetic core observed changed destination bytes after the
+        // displayed diff, so it refuses the displayed generation.
+        let c = answer(
+            &mut m,
+            req,
+            "result\tstatus=refused\tcode=changed\ttext=Review%20changed\tnext=\n",
+        );
+        assert_eq!(m.screen, Screen::Conflicts);
+        assert!(m.gate.is_none() && m.rest.checked.is_none());
+        assert!(m.rest.replacements.is_empty());
+        assert_eq!(sent(&c), Req::Snapshot(Scope::Restore));
+        let new_gen = "dcba".repeat(16);
+        let mut c = answer(&mut m, sent(&c), &snap().replace(RGEN, &new_gen));
+        let mut reads = Vec::new();
+        while requests(&c) > 0 {
+            assert!(m.gate.is_none());
+            let req = sent(&c);
+            let Req::Detail(p) = &req else {
+                panic!("{req:?}")
+            };
+            reads.push(p.kind);
+            assert_eq!(p.generation, new_gen);
+            let b = body(p.kind)
+                .replace(RGEN, &new_gen)
+                .replace("model%20%3D%20%22example%22", "model%20%3D%20%22changed%22");
+            c = answer(&mut m, req, &b);
+        }
+        assert!(reads.contains(&Kind::Conflicts) && reads.contains(&Kind::Diff));
+        assert_eq!(m.screen, Screen::Conflicts);
+        assert!(m.gate.is_none() && m.rest.checked.is_none());
+        assert_eq!(m.rest.replacements, [DEST.as_bytes().to_vec()]);
+        press(&mut m, KeyCode::Char('n'));
+        assert!(frame(&m, 120, 40).contains("changed"));
+        let mut c = press(&mut m, KeyCode::Esc);
+        // Restore's other details are read only after returning from the diff.
+        while requests(&c) > 0 {
+            let req = sent(&c);
+            let b = match &req {
+                Req::Snapshot(Scope::Restore) => snap(),
+                Req::Detail(p) => body(p.kind),
+                _ => panic!("{req:?}"),
+            }
+            .replace(RGEN, &new_gen);
+            c = answer(&mut m, req, &b);
+        }
+        assert!(m.gate.is_none());
+        let req = sent(&press(&mut m, KeyCode::Enter));
+        assert!(matches!(req, Req::Validate { args, .. }
+            if args.iter().any(|(k, v)| k == "review" && v == new_gen.as_bytes())));
+    }
+}
+
+#[test]
+fn unified_long_diff_reaches_its_last_character_at_60x20() {
+    let mut m = on();
+    conflicts(&mut m);
+    let long = format!("{}TAIL_CHANGE", "x".repeat(1013));
+    assert_eq!(long.len(), 1024);
+    let rows = row("diff", &format!("{DEST}#1"), &[DEST, "+", &long]);
+    answer(
+        &mut m,
+        page(Kind::Diff),
+        &format!("generation\tid={RGEN}\ttotal=1\n{rows}{DONE}"),
+    );
+    for profile in ["color", "ascii"] {
+        press(&mut m, KeyCode::Home);
+        let f = text_of(&render(&m, &theme(profile), 60, 20));
+        assert!(!f.contains("TAIL_CHANGE"));
+        let mut seen = String::new();
+        for _ in 0..40 {
+            seen.push_str(&text_of(&render(&m, &theme(profile), 60, 20)));
+            assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
+        }
+        assert!(seen.contains("TAIL_CHANGE"));
+        press(&mut m, KeyCode::Home);
+        render(&m, &theme(profile), 60, 20);
+        press(&mut m, KeyCode::PageDown);
+        render(&m, &theme(profile), 60, 20);
+        press(&mut m, KeyCode::PageDown);
+        let f = text_of(&render(&m, &theme(profile), 60, 20));
+        assert!(f.contains("TAIL_CHANGE"), "{f}");
+        press(&mut m, KeyCode::End);
+        let f = text_of(&render(&m, &theme(profile), 60, 20));
+        assert!(f.contains("TAIL_CHANGE"), "{f}");
+        // Selecting the wide layout at the floor still scrolls the unified view.
+        press(&mut m, KeyCode::Char('v'));
+        render(&m, &theme(profile), 60, 20);
+        press(&mut m, KeyCode::Up);
+        assert!(text_of(&render(&m, &theme(profile), 60, 20)).contains("TAIL_CHANGE"));
+    }
+}
+
+#[test]
+fn side_by_side_offsets_survive_end_page_down_and_layout_switches() {
+    let mut m = on();
+    conflicts(&mut m);
+    press(&mut m, KeyCode::Char('v'));
+    frame(&m, 120, 40);
+    press(&mut m, KeyCode::End);
+    assert_eq!(m.rest.side_scroll, 2);
+    let f = frame(&m, 120, 40);
+    assert!(f.matches("[directory]").count() == 2, "{f}");
+    press(&mut m, KeyCode::Char('v'));
+    frame(&m, 120, 40);
+    press(&mut m, KeyCode::End);
+    frame(&m, 120, 40);
+    press(&mut m, KeyCode::Char('v'));
+    let f = frame(&m, 120, 40);
+    assert!(f.matches("[directory]").count() == 2, "{f}");
+    press(&mut m, KeyCode::Home);
+    press(&mut m, KeyCode::PageDown);
+    let f = frame(&m, 120, 40);
+    assert_eq!(m.rest.side_scroll, 2);
+    assert!(f.matches("[directory]").count() == 2, "{f}");
+}
+
+#[test]
+fn refresh_retries_failed_secondary_details_of_the_same_generation() {
+    for screen in [Screen::Restore, Screen::Conflicts] {
+        for kind in [Kind::Diff, Kind::Bundles, Kind::RestoreStatus] {
+            if screen == Screen::Conflicts && kind != Kind::Diff {
+                continue;
+            }
+            for unknown in [false, true] {
+                let mut m = ready_on("linux", &format!("generation\tid={GEN}\ttotal=0\n{DONE}"));
+                let mut c = go(&mut m, Screen::Restore);
+                let mut reads = 0;
+                while requests(&c) > 0 {
+                    let req = sent(&c);
+                    c = match &req {
+                        Req::Snapshot(Scope::Restore) => answer(&mut m, req, &snap()),
+                        Req::Detail(p) if p.kind == kind => {
+                            reads += 1;
+                            if unknown {
+                                update(
+                                    &mut m,
+                                    Msg::Done(req, Outcome::Unknown("first read".into())),
+                                )
+                            } else {
+                                answer(
+                                    &mut m,
+                                    req,
+                                    &format!(
+                                        "generation\tid={RGEN}\ttotal=0\nresult\tstatus=failed\tcode=io\ttext=First%20read\tnext=\n"
+                                    ),
+                                )
+                            }
+                        }
+                        Req::Detail(p) => {
+                            let b = body(p.kind);
+                            answer(&mut m, req, &b)
+                        }
+                        _ => panic!("{req:?}"),
+                    };
+                }
+                assert_eq!(reads, 1);
+                assert!(m.detail(kind).unwrap().fault.is_some());
+                if screen == Screen::Conflicts {
+                    conflicts(&mut m);
+                }
+                assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
+                let mut c = press(&mut m, KeyCode::Char('r'));
+                while requests(&c) > 0 {
+                    let req = sent(&c);
+                    c = match &req {
+                        Req::Snapshot(Scope::Restore) => answer(&mut m, req, &snap()),
+                        Req::Detail(p) => {
+                            if p.kind == kind {
+                                reads += 1;
+                            }
+                            let b = body(p.kind);
+                            answer(&mut m, req, &b)
+                        }
+                        _ => panic!("{req:?}"),
+                    };
+                }
+                assert_eq!(reads, 2);
+                assert!(m.whole(kind));
+                assert!(m.detail(kind).unwrap().fault.is_none());
+            }
+        }
+    }
 }
 
 #[test]
@@ -641,6 +854,7 @@ fn new_wire_requests_pass_the_bash_core_admission() {
     );
     let args = vec![
         ("bundle".into(), b"20261022T120000Z".to_vec()),
+        ("review".into(), RGEN.as_bytes().to_vec()),
         (
             "replace.1".into(),
             format!("omb-replace 1\nreplace\tdest={DEST}\n").into_bytes(),
