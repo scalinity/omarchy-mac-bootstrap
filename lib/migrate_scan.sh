@@ -77,11 +77,14 @@ _scan_pl() { plutil -extract "$2" raw -o - "$1" 2>/dev/null; }
 _scan_pl_ok() { plutil -convert json -o /dev/null "$1" >/dev/null 2>&1; }
 
 # _scan_pl_into VAR FILE KEYPATH — VAR: that value without plutil's final LF;
-# 1 (VAR empty) when there is none.
+# preserve the value's own trailing LFs for the filters. A NUL, which Bash
+# cannot hold, becomes SOH so it is refused as a control byte. 1 when absent.
 _scan_pl_into() {
   local __v __st
-  __v=$(plutil -extract "$3" raw -o - "$2" 2>/dev/null)
-  __st=$?
+  __v=$({ plutil -extract "$3" raw -o - "$2" 2>/dev/null; printf '.%s' "$?"; } | LC_ALL=C tr '\000' '\001')
+  __st=${__v##*.}
+  __v=${__v%.*}
+  __v=${__v%$'\n'}
   [ "$__st" = 0 ] || __v=""
   eval "$1=\$__v"
   return "$__st"
@@ -143,6 +146,7 @@ function udec(s,   o, i, n, c, h1, h2) {
   return o
 }
 function urlok(u,   a, q, n, i, parts, name) {
+  if (u ~ /[[:cntrl:]]/) return 0
   # User information in a URL with a scheme (https://token@host/ included);
   # an scp-like Git remote (git@host:path) names an account, not a secret.
   if (sub(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "", u)) {
@@ -178,7 +182,9 @@ function urlsok(s,   r, at, len) {
 # _scan_url_ok TEXT — 0 when TEXT, and every URL inside it, carries no
 # credential (urlsok above).
 _scan_url_ok() {
-  local r
+  local r LC_ALL=C
+  # Check the whole value before awk splits records at LF.
+  case "$1" in *[[:cntrl:]]*) return 1 ;; esac
   r=$(printf '%s\n' "$1" | LC_ALL=C awk "$_SCAN_URL_FUNCS"'
     { if (!urlsok($0)) bad = 1 }
     END { print (bad || NR == 0) ? "bad" : "ok" }')
@@ -278,6 +284,8 @@ scan_secret_check() {
 # scan_value_ok VALUE — the same shapes over one value (an export, an
 # argument, a header): 0 when none is found.
 scan_value_ok() {
+  local LC_ALL=C
+  case "$1" in *[[:cntrl:]]*) SCAN_HIT="a control byte" && return 1 ;; esac
   SCAN_HIT=$(printf '%s\n' "$1" | LC_ALL=C awk "$_SCAN_SECRET_AWK")
   [ -z "$SCAN_HIT" ]
 }
@@ -331,11 +339,27 @@ END {
   # torn envelope is malformed.
   if (p + 4 > n) bad(); pl = u32(p); p += 4; if (pl < 5 || p + pl > n) bad()
   tl = u32(p); if (tl < 1 || tl > 64 || tl + 4 > pl) bad()
-  if (sstr(p + 4, tl) !~ /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh[.]com|sk-ecdsa-sha2-nistp256@openssh[.]com)$/) bad()
-  p += pl
+  type = sstr(p + 4, tl)
+  if (type !~ /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh[.]com|sk-ecdsa-sha2-nistp256@openssh[.]com)$/) bad()
+  endpub = p + pl; p += 4 + tl
+  # Ed25519 has one 32-byte key; RSA two mpints, DSA four,
+  # ECDSA a curve and point. Security-key variants append an application.
+  fields = 2
+  if (type == "ssh-ed25519") fields = 1
+  else if (type == "ssh-dss") fields = 4
+  else if (type == "sk-ecdsa-sha2-nistp256@openssh.com") fields = 3
+  for (j = 1; j <= fields; j++) {
+    if (p + 4 > endpub) bad(); l = u32(p); p += 4
+    if (l < 1 || p + l > endpub) bad()
+    if ((type == "ssh-ed25519" || type == "sk-ssh-ed25519@openssh.com") && j == 1 && l != 32) bad()
+    p += l
+  }
+  if (p != endpub) bad()
   if (p + 4 > n) bad(); priv = u32(p); p += 4; if (priv < 1 || p + priv > n) bad(); p += priv
   l = ol
   if (cipher !~ /^[a-z0-9@.-]+$/ || kdf !~ /^[a-z0-9@.-]+$/) bad()
+  tag = (cipher == "aes256-gcm@openssh.com" || cipher == "chacha20-poly1305@openssh.com") ? 16 : 0
+  if (p + tag != n) bad()
   rounds = 0
   if (kdf == "bcrypt") {
     if (l < 8) bad()
@@ -348,7 +372,6 @@ END {
     # ChaCha20); an authenticated cipher keeps its 16-byte tag after it.
     bs = (cipher == "chacha20-poly1305@openssh.com") ? 8 : 16
     if (priv % bs != 0) bad()
-    if (cipher != "aes256-ctr" && p + 16 > n) bad()
     print "encrypted " cipher " " kdf " " rounds; exit 0
   }
   print "unsupported " cipher " " kdf " " rounds
@@ -1552,6 +1575,10 @@ _scan_x_tree() {
           _scan_x skip reason "$dest/$path: $SCAN_HIT"
           continue
         fi
+        if [ "$class" = opaque ] && ! _scan_x_source "$(sys_path "$root/$path")"; then
+          _scan_x skip reason "$dest/$path: $SCAN_HIT"
+          continue
+        fi
         _scan_x_file "$(sys_path "$root/$path")" "$dest/$path" "$class"
         ;;
       l)
@@ -1661,7 +1688,7 @@ _scan_x_path() {
   esac
   mrel="$SCAN_HOME/$rel"
   # A trailing slash would make a link test look through the link.
-  while [ "${p%/}" != "$p" ]; do p=${p%/}; done
+  while [ "${#p}" -gt 1 ] && [ "${p%/}" != "$p" ]; do p=${p%/}; done
   if [ -L "$p" ]; then
     if [ "$SCAN_CLASS" != opaque ]; then
       _scan_x skip reason "$SCAN_DEST: a link, never followed"
@@ -1669,7 +1696,7 @@ _scan_x_path() {
     fi
     # A Stow farm: the root is followed once, and only the root.
     t=$(readlink "$p")
-    while [ "${t%/}" != "$t" ]; do t=${t%/}; done
+    while [ "${#t}" -gt 1 ] && [ "${t%/}" != "$t" ]; do t=${t%/}; done
     case "$t" in /*) mrel=$t ;; *) mrel=${mrel%/*}/$t ;; esac
     p=$(sys_path "$mrel")
     if [ -L "$p" ]; then
@@ -1700,9 +1727,70 @@ _scan_x_path() {
 # included. 1, SCAN_HIT saying why, when the last component is itself a link,
 # or the path is the home itself, a folder above it or a place outside it,
 # anything in Library, .ssh or .gnupg, or a path the hard refusals name. The
-# comparisons are made in lower case, as the Mac's file system makes them.
+# spelling checks remain conservative; filesystem identities also catch
+# aliases the Mac equates through Unicode folding or normalisation.
+# shellcheck disable=SC2016 # Perl source; one cached stat per path, no stat utility
+_SCAN_SOURCE_PL='
+my ($home, $path) = @ARGV;
+my (%status, %ids, %dirs, %seen);
+my @dirs;
+sub status {
+  my ($p) = @_;
+  $status{$p} = [stat($p)] unless exists $status{$p};
+  return $status{$p};
+}
+sub identity {
+  my $s = status($_[0]);
+  return @$s ? "$s->[0]:$s->[1]" : "";
+}
+sub emit {
+  my ($p) = @_;
+  return if $seen{$p}++;
+  my $id = identity($p);
+  return unless $id ne "" && $ids{$id};
+  my $rel = substr($p, length($home) + 1);
+  $rel =~ s/([^A-Za-z0-9._~\/:\@+,-])/sprintf("%%%02X", ord($1))/ge;
+  print "$rel\n";
+}
+my $id = identity($path);
+exit 1 if $id eq "";
+if ($id eq identity($home)) { print ".\n"; exit 0; }
+while ($path ne $home && index($path, "$home/") == 0) {
+  $id = identity($path);
+  exit 1 if $id eq "";
+  $ids{$id} = 1;
+  $path =~ s{/[^/]+$}{};
+  push @dirs, $path unless $dirs{$path}++;
+}
+# Fixed protected places are looked up by their canonical names, so the
+# filesystem, rather than an ASCII case fold, decides whether they alias.
+for my $rel (qw(Library .ssh .gnupg .aws .docker/config.json .kube/config
+    .netrc _netrc .git-credentials .pypirc .claude/.credentials.json
+    .codex/auth.json .config/gh/hosts.yml .config/opencode/auth.json
+    .config/opencode/mcp-auth.json .local/share/opencode/auth.json
+    .gnupg/private-keys-v1.d .gnupg/secring.gpg Library/Keychains)) {
+  emit("$home/$rel");
+}
+# Names beside each ancestor catch patterned refusals (.env*, id_*, key
+# suffixes) and hard links without opening any file. Known credential
+# folders also supply identities for files linked into a chosen tree.
+for my $rel (qw(.ssh .aws .gnupg .gnupg/private-keys-v1.d .claude .codex .config/gh)) {
+  my $p = "$home/$rel";
+  my $s = status($p);
+  push @dirs, $p if @$s && ($s->[2] & 0170000) == 0040000 && !$dirs{$p}++;
+}
+for my $dir (@dirs) {
+  opendir(my $dh, $dir) or exit 1;
+  while (defined(my $name = readdir($dh))) {
+    next if $name eq "." || $name eq "..";
+    emit("$dir/$name");
+  }
+  closedir($dh);
+}
+'
+
 _scan_x_source() {
-  local home phys p lhome lphys lsrc
+  local home phys p lhome lphys lsrc alias refused=0 LC_ALL=C
   SCAN_HIT=""
   home=$(cd -P "$(_scan_h "")" 2>/dev/null && pwd -P)
   if [ -z "$home" ]; then SCAN_HIT="the home folder cannot be resolved" && return 1; fi
@@ -1710,7 +1798,7 @@ _scan_x_source() {
   # the last component is refused if it is a link (it is never followed
   # twice), and a path ending in . or .. names a folder, resolved whole.
   p=$1
-  while [ "${p%/}" != "$p" ]; do p=${p%/}; done
+  while [ "${#p}" -gt 1 ] && [ "${p%/}" != "$p" ]; do p=${p%/}; done
   case "${p##*/}" in
     . | ..) phys=$(cd -P "$p" 2>/dev/null && pwd -P) ;;
     *)
@@ -1720,6 +1808,7 @@ _scan_x_source() {
       ;;
   esac
   if [ -z "$phys" ]; then SCAN_HIT="where it leads cannot be resolved" && return 1; fi
+  case "$phys" in *[![:print:]]*) SCAN_HIT="its resolved path holds a byte outside printable ASCII" && return 1 ;; esac
   lhome=$(printf '%s' "$home" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   lphys=$(printf '%s' "$phys" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   case "$lphys" in
@@ -1739,7 +1828,24 @@ _scan_x_source() {
     /.ssh/* | /.gnupg/*) SCAN_HIT="it leads into a folder of keys" && return 1 ;;
   esac
   if scan_refused "$SCAN_SRCREL"; then return 1; fi
-  return 0
+  if ! LC_ALL=C perl -e "$_SCAN_SOURCE_PL" -- "$home" "$phys" >"$SCAN_XO/identity" 2>/dev/null; then
+    rm -f "$SCAN_XO/identity"
+    SCAN_HIT="its filesystem identity cannot be checked"
+    return 1
+  fi
+  while IFS= read -r alias; do
+    alias=$(rec_dec "$alias")
+    case "$alias" in
+      .) SCAN_HIT="it leads to the home folder itself, which is never carried" ;;
+      Library | Library/*) SCAN_HIT="it leads into the Library folder" ;;
+      .ssh | .ssh/* | .gnupg | .gnupg/*) SCAN_HIT="it leads into a folder of keys" ;;
+      *) if ! scan_refused "$alias"; then continue; fi ;;
+    esac
+    refused=1
+    break
+  done <"$SCAN_XO/identity"
+  rm -f "$SCAN_XO/identity"
+  [ "$refused" = 0 ]
 }
 
 # _scan_x_gen DEST — the generated file $SCAN_XO/gen as the next object, its
@@ -1769,14 +1875,12 @@ _scan_home_path() {
 }
 
 # _scan_json_str VALUE — SCAN_JS: VALUE as a JSON string; 1 when it holds a
-# control byte other than TAB or LF.
+# control byte, including TAB or LF that a URL consumer could discard.
 _scan_json_str() {
   local v=$1 LC_ALL=C
+  case "$v" in *[[:cntrl:]]*) SCAN_JS="" && return 1 ;; esac
   v=${v//\\/\\\\}
   v=${v//\"/\\\"}
-  v=${v//$'\t'/\\t}
-  v=${v//$'\n'/\\n}
-  case "$v" in *[[:cntrl:]]*) SCAN_JS="" && return 1 ;; esac
   SCAN_JS="\"$v\""
 }
 
@@ -2010,7 +2114,7 @@ _scan_x_claude_mcp() {
         fi
         ;;
     esac
-    _scan_json_str "$v" || continue
+    if ! _scan_json_str "$v"; then needs=1 && continue; fi
     out="$out$sep\"$k\":$SCAN_JS" sep=,
   done
   n=$(_scan_pl "$f" "$b.args")
@@ -2269,6 +2373,11 @@ function shaped(v) {
 {
   t = $1; n = split($2, P, "."); for (i = 1; i <= n; i++) P[i] = dec(P[i]); v = dec($3)
   top = P[1]
+  if (v ~ /[[:cntrl:]]/) {
+    skip("codex: a configuration value holds a control byte, dropped")
+    if (top == "mcp_servers" && n >= 2) NEEDS[P[2]] = 1
+    next
+  }
   if (n == 1) {
     if (t == "t" || t == "a") next
     if (top == "model" || top == "model_provider" || top == "model_reasoning_effort" || top == "service_tier") { if (t == "s") add("", k(top) " = " q(v)); next }

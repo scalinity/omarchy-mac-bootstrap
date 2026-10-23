@@ -141,7 +141,7 @@ GnuPG private keys, anything in the Keychain (never read), browser profiles,
 | --- | --- |
 | configuration values | supported adapters keep allowlisted fields only |
 | environment values (shell exports, MCP `env`) | a value never travels unless the adapter's allowlist names that variable and its value passes the value grammar; MCP `env` values never travel — they become the tool's own variable reference and the item is `needs-secret` |
-| URLs | a URL with user information (`user@` or `user:pass@`, in any URL with a scheme) or a query or fragment parameter whose name, percent-decoded, is named like a credential (`token`, `key`, `secret`, `sig`, `signature` such as `X-Amz-Signature`, `credential`, `auth`, `password`, `session`) is dropped, and the field flagged; `git@host:path` names an account, not a credential, and passes |
+| URLs | a URL with user information (`user@` or `user:pass@`, in any URL with a scheme) or a query or fragment parameter whose name, percent-decoded, is named like a credential (`token`, `key`, `secret`, `sig`, `signature` such as `X-Amz-Signature`, `credential`, `auth`, `password`, `session`) is dropped, and the field flagged; an argument, URL or configuration value holding a control byte (which URL parsers strip) is dropped the same way; `git@host:path` names an account, not a credential, and passes |
 | Git remotes | the same URL rule; a remote that fails it is withheld from the inventory, for the person to re-enter |
 | command arguments (MCP `args` and OpenCode's `command`, hooks) | an argument after a credential-named flag (`--token`, `--api-key`, `--key`, `--auth`, `--password`, `--secret`), the same flag written `FLAG=VALUE`, an argument holding a URL that fails the URL rule, or one matching a credential shape, is dropped and the item is `needs-secret` |
 | logs and records | hold names, ids, digests and sanitised URLs only |
@@ -213,8 +213,10 @@ carried; the folder shows its most sensitive class and the preview masks
 credential-shaped values. A chosen root is resolved through every link on
 the way and refused when it leads to the home itself, above or outside the
 home, into `~/Library`, `~/.ssh` or `~/.gnupg`, or to a hard-refused path
-(compared in lower case, as the Mac's filesystem compares names), or when
-the link leads to another link;
+(held by device and inode, not by spelling, since the Mac's filesystem
+folds case and Unicode, and refused when its resolved path is not
+printable ASCII), or when the link leads to another link; a link to `/`
+leads outside the home;
 a root that is a link (a GNU Stow farm) is carried as a folder at the
 chosen path, and each file inside is checked by its real path as well as
 by the name it was chosen under.
