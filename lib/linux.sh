@@ -374,6 +374,7 @@ lx_handoff() {
   state_must_set omarchy_launched_at "$(now_utc)" || return 1
   printf '\n'
   fetch_unchanged || return 1
+  lx_ssh_stop || return 1
   run bash "$FETCH_PATH" "${LX_FLAGS[@]}"
   rc=$?
   if [ "$OMB_DRY_RUN" = 1 ]; then
@@ -387,6 +388,27 @@ lx_handoff() {
     ui_note "Its output is on $OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty}); upstream keeps no log file. './omarchy-bootstrap status' shows where the machine is; upstream resumes from the machine's state."
   fi
   return "$rc"
+}
+
+# The start word and launch record precede this change. Never hand setup a
+# machine still accepting the image account over SSH, even after exit 0.
+lx_ssh_stop() {
+  local rc active enabled ar er
+  run systemctl disable --now sshd
+  rc=$?
+  [ "$OMB_DRY_RUN" = 1 ] && return "$rc"
+  active=$(sys_cmd sshd_active systemctl is-active sshd)
+  ar=$?
+  enabled=$(sys_cmd sshd_enabled systemctl is-enabled sshd)
+  er=$?
+  if [ "$rc" = 0 ] && [ "$active" = inactive ] && [ "$ar" = 3 ] &&
+    { [ "$enabled" = disabled ] || [ "$enabled" = masked ]; } && [ "$er" = 1 ]; then
+    ui_ok "SSH is stopped and disabled. Enable key-only access later through ./omarchy-bootstrap dev -> SSH."
+    return 0
+  fi
+  ui_fail "Could not confirm that SSH is stopped and disabled. Omarchy Mac setup was not started."
+  ui_note "Read systemctl is-active sshd and systemctl is-enabled sshd locally, then retry start."
+  return 1
 }
 
 # lx_upstream_status — omarchy-mac-setup --status, as root only: its conf is
