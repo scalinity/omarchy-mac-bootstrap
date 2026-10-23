@@ -344,7 +344,7 @@ EOF
   printf '%s\n' '{"theme":"system","plugin":["opencode-x"],"corp.extra":"harborpassTOP1",
     "mcp":{"corp.mcp":{"type":"remote","url":"https://mcp.example.test","headers":{"Authorization":"Bearer harborpassHDR1"}},
            "local":{"type":"local","command":["server","--token","harborpassCMD1","--api-key=harborpassCMD2","--port","8080"],
-                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOAUTH1"}}},
+                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOA"}}},
     "provider":{"corp.ai":{"options":{"apiKey":"harborpassPROV1"}},
                 "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"}}}}' \
     >"$V/root/Users/alex/.config/opencode/opencode.json"
