@@ -163,13 +163,7 @@ _agent_handoff() {
   if [ "$AG_INSTALLED" = none ]; then AG_WHY='Install this tool before its handoff.'; ui_fail "$AG_WHY"; return 1; fi
   if [ "$operation" = mcp ]; then
     if ! sys_has timeout; then AG_WHY='timeout not found; the live check cannot be bounded.'; ui_fail "$AG_WHY"; return 1; fi
-    if [ "$AG_INSTALLED" = mise ]; then
-      run timeout 30 mise x "$AG_PACKAGE" -- "$AG_BINARY" "$@"
-    else
-      run timeout 30 "$AG_PATH" "$@"
-    fi
-  elif [ "$AG_INSTALLED" = mise ]; then
-    run mise x "$AG_PACKAGE" -- "$AG_BINARY" "$@"
+    run timeout 30 "$AG_PATH" "$@"
   else
     run "$AG_PATH" "$@"
   fi

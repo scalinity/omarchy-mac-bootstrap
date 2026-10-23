@@ -948,8 +948,17 @@ act_start_run() {
 # the classifier reads as it was (it was answered no at its first question),
 # changed nothing.
 act_start_judge() {
+  local seen
   ACT_READ=""
   lx_detect
+  if ! seen=$(act_lx_seen); then
+    act_judged unexpected "The machine's state, including SSH, could not be read after omarchy-mac-setup."
+    return 0
+  fi
+  if [ "$1" != reconcile ] && [ -z "${ACT_SEEN:-}" ]; then
+    act_judged unexpected "The machine's state before omarchy-mac-setup, including SSH, could not be read."
+    return 0
+  fi
   case "$LX_OMARCHY_STATE" in
     installed | in-progress)
       case "$(act_ssh_seen)" in
@@ -968,7 +977,7 @@ act_start_judge() {
       act_judged no-effect "omarchy-mac-setup was not started; nothing changed."
       return 0
     fi
-    if [ -n "$ACT_SEEN" ] && [ "$(act_lx_seen)" = "$ACT_SEEN" ]; then
+    if [ "$seen" = "$ACT_SEEN" ]; then
       act_judged no-effect "omarchy-mac-setup ended, and this machine reads exactly as before it ran."
       return 0
     fi

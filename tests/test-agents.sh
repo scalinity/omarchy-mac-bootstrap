@@ -169,14 +169,18 @@ for id in $(agent_ids); do
   : >"$OMB_TEST_RECORD"
   agent_signin "$id" >/dev/null
   assert_rc "$?" 0 "agents-signin-$id"
-  assert_contains "$(cat "$OMB_TEST_RECORD")" "mise x $AG_PACKAGE -- $AG_BINARY" "agents-signin-owned-$id"
+  assert_eq "$(cat "$OMB_TEST_RECORD")" "$AG_PATH${AG_SIGNIN_ARGS[*]:+ ${AG_SIGNIN_ARGS[*]}}" "agents-handoff-observed-path: signin $id"
   : >"$OMB_TEST_RECORD"
   agent_mcp_list "$id" >/dev/null
-  assert_eq "$(cat "$OMB_TEST_RECORD")" "timeout 30 mise x $AG_PACKAGE -- $AG_BINARY mcp list" "agents-live-request-$id"
+  assert_eq "$(cat "$OMB_TEST_RECORD")" "timeout 30 $AG_PATH mcp list" "agents-handoff-observed-path: mcp $id"
 done
 OMB_FIXTURE=$FIX/agt-foreign
+: >"$OMB_TEST_RECORD"
 agent_signin codex >/dev/null
-assert_contains "$(cat "$OMB_TEST_RECORD")" '/usr/bin/codex login --device-auth' agents-foreign-signin
+assert_eq "$(cat "$OMB_TEST_RECORD")" '/usr/bin/codex login --device-auth' 'agents-handoff-observed-path: foreign signin'
+: >"$OMB_TEST_RECORD"
+agent_mcp_list codex >/dev/null
+assert_eq "$(cat "$OMB_TEST_RECORD")" 'timeout 30 /usr/bin/codex mcp list' 'agents-handoff-observed-path: foreign mcp'
 OMB_FIXTURE=$FIX/agt-wrappers
 agent_mcp_list codex >/dev/null && fail agents-uninstalled-mcp-refused || ok
 OMB_FIXTURE=$FIX/agt-installed OMB_UID=0

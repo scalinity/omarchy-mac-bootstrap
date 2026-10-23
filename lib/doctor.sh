@@ -346,10 +346,18 @@ doc_ssh_config_plain() {
   [ "$depth" -lt 16 ] && [ -f "$file" ] && [ -r "$file" ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%%#*}
+    case "$line" in *[!$' \t\r']*) ;; *) continue ;; esac
     key='' rest=''
-    IFS=$' \t=' read -r key rest <<EOF
+    IFS=$' \t\r=' read -r key rest <<EOF
 $line
 EOF
+    # Unquote a complete keyword without evaluating it. A partial quote,
+    # escape or other unsupported token cannot establish a global policy.
+    case "$key" in
+      \"*\") key=${key#\"}; key=${key%\"} ;;
+      \'*\') key=${key#\'}; key=${key%\'} ;;
+    esac
+    case "$key" in '' | *[!A-Za-z0-9]*) return 1 ;; esac
     key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
     case "$key" in
       match) return 1 ;;
@@ -401,8 +409,8 @@ doc_ssh_facts() {
       DOC_SSH_WHY='sshd -T failed or its authentication settings were incomplete'
       if policy=$(sys_cmd sshd_policy sshd -T); then
         flags=$(printf '%s\n' "$policy" | awk '
-          $1 == "passwordauthentication" { p++; pv=$2; if (NF != 2) bad=1 }
-          $1 == "kbdinteractiveauthentication" { k++; kv=$2; if (NF != 2) bad=1 }
+          tolower($1) == "passwordauthentication" { p++; pv=$2; if (NF != 2) bad=1 }
+          tolower($1) == "kbdinteractiveauthentication" { k++; kv=$2; if (NF != 2) bad=1 }
           END { if (!bad && p == 1 && k == 1) print pv " " kv }')
         case "$flags" in
           'no no') DOC_SSH_CLASS=key-only DOC_SSH_WHY='password and keyboard-interactive login are off' ;;

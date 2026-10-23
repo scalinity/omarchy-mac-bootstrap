@@ -782,6 +782,38 @@ assert_eq "$(a_ssh_judge "$A_SSH_SETUP_FIX" completed)" unexpected 'start-disabl
 printf 'unknown\n' >"$A_SSH_FIX/cmd/sshd_enabled"
 assert_eq "$(a_ssh_judge "$A_SSH_FIX" unreadable)" '1|' 'start-disable-ssh: unknown SSH yields no partial classifier'
 
+# actions-omarchy.start-ssh-unread: a failed before/after read is never a value.
+a_ssh_unread() (
+  t_load >/dev/null 2>&1
+  OMB_HOME=$REPO
+  . "$REPO/lib/actions.sh"
+  OMB_FIXTURE=$1 OMB_STATE_DIR=$T/ssh-unread-state OMB_INTENT=read OMB_PERSIST=0
+  platform_init; state_init; lx_detect
+  ACT_PRE='' ACT_SEEN=$(act_lx_seen)
+  OMB_FIXTURE=$2
+  act_start_judge "$3"
+  printf '%s' "$CORE_FINDING"
+)
+mkdir -p "$T/ssh-unread-state"
+for probe in sshd_active sshd_enabled; do
+  A_SSH_UNREAD_FIX=$(t_variant linux-alarm-fresh)
+  printf '2\n' >"$A_SSH_UNREAD_FIX/cmd/$probe.rc"
+  for after in "$FIX/linux-alarm-fresh" "$FIX/linux-setup-in-progress"; do
+    assert_eq "$(a_ssh_unread "$A_SSH_UNREAD_FIX" "$after" 0)" unexpected \
+      "actions-omarchy.start-ssh-unread: $probe before, ${after##*/} after"
+  done
+  for before in "$FIX/linux-alarm-fresh" "$A_SSH_UNREAD_FIX"; do
+    assert_eq "$(a_ssh_unread "$before" "$A_SSH_UNREAD_FIX" 0)" unexpected \
+      "actions-omarchy.start-ssh-unread: $probe after, ${before##*/} before"
+  done
+  A_SSH_UNREAD_SETUP=$(t_variant linux-setup-in-progress)
+  printf '2\n' >"$A_SSH_UNREAD_SETUP/cmd/$probe.rc"
+  for status in 0 reconcile; do
+    assert_eq "$(a_ssh_unread "$FIX/linux-alarm-fresh" "$A_SSH_UNREAD_SETUP" "$status")" unexpected \
+      "actions-omarchy.start-ssh-unread: $probe after setup, $status"
+  done
+done
+
 # --- omarchy.start -------------------------------------------------------------------
 a_use "$T/start" "$FIX/linux-alarm-fresh"
 a_run snapshot "scope	name=journey"
