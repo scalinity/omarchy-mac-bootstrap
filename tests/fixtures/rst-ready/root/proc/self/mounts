@@ -1,0 +1,3 @@
+/dev/mapper/root / btrfs rw,noatime,compress=zstd:1,subvol=/@ 0 0
+/dev/nvme0n1p5 /boot vfat rw,relatime 0 0
+systemd-1 /mnt/shared autofs rw,relatime,fd=52,pgrp=1,timeout=0,minproto=5,maxproto=5,direct 0 0
