@@ -382,6 +382,24 @@ for location in main included; do
     assert_empty_file "$T_DIR/record" "ssh-config-bytes: $mode in $location no actions"
   done
 done
+# ssh-config-once: a save between the byte check and the parse never reaches
+# the parser; both read the one copy taken before the check.
+OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+OMB_UID=0
+config=$OMB_FIXTURE/root/etc/ssh/sshd_config
+printf '%s\n' 'Match User alarm' '    PasswordAuthentication yes' >>"$config"
+printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' >"$OMB_FIXTURE/saved"
+tr() {
+  if [ ! -e "$OMB_FIXTURE/saved.done" ]; then
+    : >"$OMB_FIXTURE/saved.done"
+    mv -f "$OMB_FIXTURE/saved" "$config"
+  fi
+  command tr "$@"
+}
+doc_ssh_facts
+unset -f tr
+assert_eq "$([ -e "$OMB_FIXTURE/saved.done" ] && echo saved)" saved 'ssh-config-once: the save happened during the check'
+assert_eq "$DOC_SSH_CLASS" cannot-tell 'ssh-config-once: the parser reads the checked bytes'
 OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
 printf '#%4095s\n\tPasswordAuthentication\tno\n\tKbdInteractiveAuthentication\tno' '' >"$OMB_FIXTURE/root/etc/ssh/sshd_config"
 doc_ssh_facts

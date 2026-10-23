@@ -341,13 +341,18 @@ lx_doctor() {
 # rules. Inspect Include files as data only; unsupported quoting, paths or
 # unreadable configuration means the policy cannot be established.
 doc_ssh_config_plain() {
-  local file=$1 depth=$2 line key rest pattern path mapped found
+  local file=$1 depth=$2 line key rest pattern path mapped found copy
   local -a includes
   [ "$depth" -lt 16 ] && [ -f "$file" ] && [ -r "$file" ] || return 1
+  # One read of the file into a private copy: the byte check and the parser
+  # both read that copy, so a save between them cannot slip past the check.
+  omb_tmp_init || return 1
+  copy=$(mktemp "$OMB_TMP/sshconf.XXXXXX") || return 1
+  cat -- "$file" >"$copy" 2>/dev/null || return 1
   # Check bytes before Bash can discard a NUL and before comments are cut.
   # OpenSSH's strlen-based loader can join lines at a NUL. Keep this small
   # reader bounded to 4 KiB per physical line, including ignored comments.
-  LC_ALL=C tr '\000' '\001' <"$file" | LC_ALL=C awk '
+  LC_ALL=C tr '\000' '\001' <"$copy" | LC_ALL=C awk '
     length($0) > 4096 || /[\001-\010\013-\037\177]/ { bad=1 }
     END { exit bad }'
   [ "${PIPESTATUS[0]}:${PIPESTATUS[1]}" = 0:0 ] || return 1
@@ -397,7 +402,7 @@ EOF
         done
         ;;
     esac
-  done <"$file"
+  done <"$copy"
 }
 
 # DOC_SSH_CLASS is closed; neither command diagnostics nor config text is
