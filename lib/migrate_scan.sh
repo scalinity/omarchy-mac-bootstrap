@@ -260,11 +260,19 @@ END {
     if (bits >= 8) { bits -= 8; B[n++] = int(acc / (2 ^ bits)); acc = acc % (2 ^ bits) }
   }
   if (n < 32 || sstr(0, 14) != "openssh-key-v1" || B[14] != 0) bad()
+  # Every length is read only where four bytes remain, and every string it
+  # names must lie whole inside the envelope.
   p = 15
-  l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); cipher = sstr(p, l); p += l
-  l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); kdf = sstr(p, l); p += l
-  l = u32(p); p += 4; if (p + l > n) bad(); opts = p; p += l
-  if (u32(p) != 1) bad()
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); cipher = sstr(p, l); p += l
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); kdf = sstr(p, l); p += l
+  if (p + 4 > n) bad(); ol = u32(p); p += 4; if (p + ol > n) bad(); opts = p; p += ol
+  if (p + 4 > n || u32(p) != 1) bad()
+  p += 4
+  # One key: its public-key string, then the (encrypted) private section,
+  # each present in full; a torn envelope is malformed.
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
+  l = ol
   if (cipher !~ /^[a-z0-9@.-]+$/ || kdf !~ /^[a-z0-9@.-]+$/) bad()
   rounds = 0
   if (kdf == "bcrypt") {

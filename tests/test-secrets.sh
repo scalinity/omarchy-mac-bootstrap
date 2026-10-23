@@ -72,6 +72,41 @@ done
 head -n 2 "$S/.ssh/id_ed25519" >"$T/torn" && printf -- '-----END OPENSSH PRIVATE KEY-----\n' >>"$T/torn"
 scan_ssh_key "$T/torn"
 assert_eq "$SCAN_KEY" malformed "secret-ssh: a torn envelope is malformed"
+# secret-ssh-torn (S12): the envelope must hold the key's public-key string
+# and its private section in full, or it is malformed — never "encrypted".
+k_u32() {
+  local o
+  for o in $((($1 >> 24) & 255)) $((($1 >> 16) & 255)) $((($1 >> 8) & 255)) $(($1 & 255)); do
+    # shellcheck disable=SC2059 # an octal escape built on purpose
+    printf "\\$(printf '%03o' "$o")"
+  done
+}
+k_str() { k_u32 "${#1}" && printf '%s' "$1"; }
+k_key() { # FILE PARTS — a synthetic envelope, its key's strings cut after PARTS of: pub, private, a short private
+  {
+    printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n'
+    {
+      printf 'openssh-key-v1\000'
+      k_str aes256-ctr && k_str bcrypt && k_u32 24 && k_u32 16 && printf 'FIXTURESALT00000' && k_u32 16 && k_u32 1
+      case "$2" in
+        pub) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" ;;
+        whole) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" && k_str "FIXTURE PRIVATE SECTION, NOT A KEY" ;;
+        short) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" && k_u32 400 && printf 'FIXTURE PRIVATE SECTION' ;;
+      esac
+    } | base64 | tr -d '\n' | fold -w 70
+    printf '\n-----END OPENSSH PRIVATE KEY-----\n'
+  } >"$1"
+}
+for parts in none pub short; do
+  k_key "$T/torn-$parts" "$parts"
+  scan_ssh_key "$T/torn-$parts"
+  assert_eq "$SCAN_KEY" malformed "secret-ssh-torn: an envelope cut after its key count ($parts) is malformed"
+  scan_key_check "$T/torn-$parts"
+  assert_rc $? 1 "secret-ssh-torn: and is never carried ($parts)"
+done
+k_key "$T/torn-whole" whole
+scan_key_check "$T/torn-whole"
+assert_rc $? 0 "secret-ssh-torn: the same envelope whole is an encrypted key"
 { cat "$S/.ssh/id_ed25519"; head -c 17000 /dev/zero | tr '\0' 'A'; } >"$T/big"
 scan_key_check "$T/big"
 assert_rc $? 1 "secret-ssh: a key over 16 KiB is refused"
