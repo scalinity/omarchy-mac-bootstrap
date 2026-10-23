@@ -457,10 +457,11 @@ fn phase_sources() -> Fallible<Vec<(String, String)>> {
                     "_self=${BASH_SOURCE[0]}\n_self=$OMB_BENCH_BASE/omarchy-bootstrap\n",
                     1,
                 ),
+                // The entrypoint sources core.sh from one place, _omb_load.
                 (
                     ". \"$OMB_HOME/lib/core.sh\"",
                     ". \"$OMB_BENCH_COPY/core.sh\"",
-                    4,
+                    1,
                 ),
                 (
                     "\nmain \"$@\"\n",
