@@ -353,6 +353,40 @@ printf '%s\n' '"PasswordAuthentication" no' "'KbdInteractiveAuthentication' no" 
 doc_ssh_facts
 assert_eq "$DOC_SSH_CLASS" key-only 'ssh-match-token: quoted global keywords'
 
+# ssh-config-bytes: reject before Bash or comment parsing can lose bytes,
+# in the main file and in a recursively included file alike.
+for location in main included; do
+  for mode in nul cr control del long; do
+    OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+    OMB_UID=0
+    config=$OMB_FIXTURE/root/etc/ssh/sshd_config
+    if [ "$location" = included ]; then
+      printf '%s\n' 'Include more/*.conf' >"$OMB_FIXTURE/root/etc/ssh/sshd_config.d/99-archlinux.conf"
+      mkdir -p "$OMB_FIXTURE/root/etc/ssh/more"
+      config=$OMB_FIXTURE/root/etc/ssh/more/local.conf
+    fi
+    case "$mode" in
+      nul)
+        printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nMa\000ignored\ntch User alarm\n    PasswordAuthentication yes\n' >"$config" ;;
+      cr) printf 'Ma\rtch User alarm\n    PasswordAuthentication yes\n' >"$config" ;;
+      control) printf '# ignored comment\001\n' >"$config" ;;
+      del) printf '# ignored comment\177\n' >"$config" ;;
+      long) printf '#%4096s\n' '' >"$config" ;;
+    esac
+    doc_ssh_facts
+    assert_eq "$DOC_SSH_CLASS" cannot-tell "ssh-config-bytes: $mode in $location"
+    t_cli "$OMB_FIXTURE" '' doctor
+    assert_rc "$T_RC" 0 "ssh-config-bytes: $mode in $location warns"
+    assert_contains "$T_OUT" 'cannot-tell:' "ssh-config-bytes: $mode in $location entrypoint"
+    assert_not_contains "$T_OUT" 'unbound variable' "ssh-config-bytes: $mode in $location clean refusal"
+    assert_empty_file "$T_DIR/record" "ssh-config-bytes: $mode in $location no actions"
+  done
+done
+OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+printf '#%4095s\n\tPasswordAuthentication\tno\n\tKbdInteractiveAuthentication\tno' '' >"$OMB_FIXTURE/root/etc/ssh/sshd_config"
+doc_ssh_facts
+assert_eq "$DOC_SSH_CLASS" key-only 'ssh-config-bytes: 4 KiB line, tabs and final line without newline'
+
 # sshd -T cannot establish the policy of every Match connection. Follow
 # nested Includes as data, and refuse syntax this reader cannot interpret.
 for mode in match nested quoted missing cycle kbd incomplete failed service; do

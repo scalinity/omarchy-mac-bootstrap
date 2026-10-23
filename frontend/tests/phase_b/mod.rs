@@ -408,7 +408,7 @@ fn changed_or_incomplete_conflicts_cannot_authorize_replacement() {
 }
 
 #[test]
-fn changed_after_viewing_rereads_conflicts_before_a_gate_and_rechecks_choices() {
+fn changed_after_viewing_rereads_conflicts_and_resets_every_choice_to_keep() {
     for execute in [false, true] {
         let mut m = on();
         conflicts(&mut m);
@@ -450,6 +450,7 @@ fn changed_after_viewing_rereads_conflicts_before_a_gate_and_rechecks_choices() 
         let mut reads = Vec::new();
         while requests(&c) > 0 {
             assert!(m.gate.is_none());
+            assert!(m.rest.replacements.is_empty());
             let req = sent(&c);
             let Req::Detail(p) = &req else {
                 panic!("{req:?}")
@@ -464,9 +465,11 @@ fn changed_after_viewing_rereads_conflicts_before_a_gate_and_rechecks_choices() 
         assert!(reads.contains(&Kind::Conflicts) && reads.contains(&Kind::Diff));
         assert_eq!(m.screen, Screen::Conflicts);
         assert!(m.gate.is_none() && m.rest.checked.is_none());
-        assert_eq!(m.rest.replacements, [DEST.as_bytes().to_vec()]);
+        assert!(m.rest.replacements.is_empty());
+        assert!(frame(&m, 120, 40).contains("Keep (default)"));
         press(&mut m, KeyCode::Char('n'));
-        assert!(frame(&m, 120, 40).contains("changed"));
+        let f = frame(&m, 120, 40);
+        assert!(f.contains("changed") && f.contains("Keep (default)"), "{f}");
         let mut c = press(&mut m, KeyCode::Esc);
         // Restore's other details are read only after returning from the diff.
         while requests(&c) > 0 {
@@ -480,10 +483,67 @@ fn changed_after_viewing_rereads_conflicts_before_a_gate_and_rechecks_choices() 
             c = answer(&mut m, req, &b);
         }
         assert!(m.gate.is_none());
+        assert!(m.rest.replacements.is_empty());
         let req = sent(&press(&mut m, KeyCode::Enter));
         assert!(matches!(req, Req::Validate { args, .. }
-            if args.iter().any(|(k, v)| k == "review" && v == new_gen.as_bytes())));
+            if args.iter().any(|(k, v)| k == "review" && v == new_gen.as_bytes())
+                && args.iter().any(|(k, v)| k == "replace.1" && v == b"omb-replace 1\n")));
     }
+}
+
+#[test]
+fn changed_beyond_the_displayed_diff_requires_replace_again() {
+    // Same size and same first 1,024 bytes, but different destination bytes.
+    let before = format!(
+        "format = \"{}alpha{}\"\n",
+        "x".repeat(1100),
+        "x".repeat(200)
+    );
+    let after = before.replace("alpha", "bravo");
+    assert_eq!((before.len(), after.len()), (1317, 1317));
+    assert_ne!(before, after);
+    assert_eq!(&before[..1024], &after[..1024]);
+    let shown = |line: &str| {
+        let rows = row("diff", &format!("{DEST}#1"), &[DEST, "-", &line[..1024]]);
+        format!("generation\tid={RGEN}\ttotal=1\n{rows}{DONE}")
+    };
+    assert_eq!(shown(&before), shown(&after));
+
+    let mut m = on();
+    conflicts(&mut m);
+    let conflicts = body(Kind::Conflicts).replace("col=120", "col=1317");
+    answer(&mut m, page(Kind::Conflicts), &conflicts);
+    answer(&mut m, page(Kind::Diff), &shown(&before));
+    press(&mut m, KeyCode::Char('R'));
+    press(&mut m, KeyCode::Esc);
+    let req = sent(&press(&mut m, KeyCode::Enter));
+    let c = answer(
+        &mut m,
+        req,
+        "result\tstatus=refused\tcode=changed\ttext=Review%20changed\tnext=\n",
+    );
+    assert!(m.rest.replacements.is_empty());
+    let new_gen = "dcba".repeat(16);
+    let mut c = answer(&mut m, sent(&c), &snap().replace(RGEN, &new_gen));
+    while requests(&c) > 0 {
+        let req = sent(&c);
+        let Req::Detail(p) = &req else {
+            panic!("{req:?}")
+        };
+        let b = match p.kind {
+            Kind::Conflicts => conflicts.clone(),
+            Kind::Diff => shown(&after),
+            _ => body(p.kind),
+        }
+        .replace(RGEN, &new_gen);
+        c = answer(&mut m, req, &b);
+        assert!(m.rest.replacements.is_empty());
+    }
+    assert_eq!(m.screen, Screen::Conflicts);
+    assert!(m.whole(Kind::Conflicts) && m.whole(Kind::Diff));
+    assert!(frame(&m, 120, 40).contains("Keep (default)"));
+    press(&mut m, KeyCode::Char('R'));
+    assert_eq!(m.rest.replacements, [DEST.as_bytes().to_vec()]);
 }
 
 #[test]

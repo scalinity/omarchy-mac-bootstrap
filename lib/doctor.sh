@@ -344,11 +344,18 @@ doc_ssh_config_plain() {
   local file=$1 depth=$2 line key rest pattern path mapped found
   local -a includes
   [ "$depth" -lt 16 ] && [ -f "$file" ] && [ -r "$file" ] || return 1
+  # Check bytes before Bash can discard a NUL and before comments are cut.
+  # OpenSSH's strlen-based loader can join lines at a NUL. Keep this small
+  # reader bounded to 4 KiB per physical line, including ignored comments.
+  LC_ALL=C tr '\000' '\001' <"$file" | LC_ALL=C awk '
+    length($0) > 4096 || /[\001-\010\013-\037\177]/ { bad=1 }
+    END { exit bad }'
+  [ "${PIPESTATUS[0]}:${PIPESTATUS[1]}" = 0:0 ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%%#*}
-    case "$line" in *[!$' \t\r']*) ;; *) continue ;; esac
+    case "$line" in *[!$' \t']*) ;; *) continue ;; esac
     key='' rest=''
-    IFS=$' \t\r=' read -r key rest <<EOF
+    IFS=$' \t=' read -r key rest <<EOF
 $line
 EOF
     # Unquote a complete keyword without evaluating it. A partial quote,
