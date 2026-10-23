@@ -191,17 +191,20 @@ _scan_url_ok() {
 
 # scan_refused REL — 0 when REL (home-relative) is never carried, whatever is
 # selected (*Hard refusals*, and the credential files refused even inside an
-# opaque folder); SCAN_HIT names the kind.
+# opaque folder); SCAN_HIT names the kind. Compared in lower case: the Mac's
+# file system does not tell .DOCKER from .docker, so neither does this.
 scan_refused() {
-  local rel=$1 base=${1##*/}
+  local rel=$1 low base
   SCAN_HIT=""
-  case "/$rel/" in
-    /Library/) SCAN_HIT="the Library folder, which is never carried as a whole" ;;
+  low=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  base=${low##*/}
+  case "/$low/" in
+    /library/) SCAN_HIT="the Library folder, which is never carried as a whole" ;;
     */.aws/*) SCAN_HIT="cloud credentials (~/.aws)" ;;
     */.docker/config.json/*) SCAN_HIT="container credentials" ;;
     */.kube/config/*) SCAN_HIT="cluster credentials" ;;
     */.gnupg/private-keys-v1.d/* | */.gnupg/secring.gpg/*) SCAN_HIT="a GnuPG private key" ;;
-    */Library/Keychains/*) SCAN_HIT="the Keychain" ;;
+    */library/keychains/*) SCAN_HIT="the Keychain" ;;
   esac
   [ -n "$SCAN_HIT" ] && return 0
   case "$base" in
@@ -1641,6 +1644,8 @@ _scan_x_path() {
       ;;
   esac
   mrel="$SCAN_HOME/$rel"
+  # A trailing slash would make a link test look through the link.
+  while [ "${p%/}" != "$p" ]; do p=${p%/}; done
   if [ -L "$p" ]; then
     if [ "$SCAN_CLASS" != opaque ]; then
       _scan_x skip reason "$SCAN_DEST: a link, never followed"
@@ -1648,6 +1653,7 @@ _scan_x_path() {
     fi
     # A Stow farm: the root is followed once, and only the root.
     t=$(readlink "$p")
+    while [ "${t%/}" != "$t" ]; do t=${t%/}; done
     case "$t" in /*) mrel=$t ;; *) mrel=${mrel%/*}/$t ;; esac
     p=$(sys_path "$mrel")
     if [ -L "$p" ]; then
@@ -1674,40 +1680,46 @@ _scan_x_path() {
 }
 
 # _scan_x_source PATH — where a chosen root really is: SCAN_SRCREL, its
-# home-relative path with every link on the way resolved. 1, SCAN_HIT saying
-# why, when that is the home itself, a folder above it or a place outside
-# it, anything in Library, .ssh or .gnupg, or a path the hard refusals name.
+# home-relative path with every link on the way resolved, the last component
+# included. 1, SCAN_HIT saying why, when the last component is itself a link,
+# or the path is the home itself, a folder above it or a place outside it,
+# anything in Library, .ssh or .gnupg, or a path the hard refusals name. The
+# comparisons are made in lower case, as the Mac's file system makes them.
 _scan_x_source() {
-  local home phys p
+  local home phys p lhome lphys lsrc
   SCAN_HIT=""
   home=$(cd -P "$(_scan_h "")" 2>/dev/null && pwd -P)
   if [ -z "$home" ]; then SCAN_HIT="the home folder cannot be resolved" && return 1; fi
-  # PATH itself is no link (a root link was followed once, and a link to a
-  # link refused): resolving its folder resolves every link on the way. A
-  # path ending in . or .. names a folder, resolved whole.
+  # The folder holding the last component is resolved through every link;
+  # the last component is refused if it is a link (it is never followed
+  # twice), and a path ending in . or .. names a folder, resolved whole.
   p=$1
   while [ "${p%/}" != "$p" ]; do p=${p%/}; done
   case "${p##*/}" in
     . | ..) phys=$(cd -P "$p" 2>/dev/null && pwd -P) ;;
     *)
+      if [ -L "$p" ]; then SCAN_HIT="it leads to another link, which is not followed" && return 1; fi
       phys=$(cd -P "${p%/*}" 2>/dev/null && pwd -P)
       [ -z "$phys" ] || phys=$phys/${p##*/}
       ;;
   esac
   if [ -z "$phys" ]; then SCAN_HIT="where it leads cannot be resolved" && return 1; fi
-  case "$phys" in
-    "$home") SCAN_HIT="it leads to the home folder itself, which is never carried" && return 1 ;;
-    "$home"/*) SCAN_SRCREL=${phys#"$home"/} ;;
+  lhome=$(printf '%s' "$home" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  lphys=$(printf '%s' "$phys" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  case "$lphys" in
+    "$lhome") SCAN_HIT="it leads to the home folder itself, which is never carried" && return 1 ;;
+    "$lhome"/*) SCAN_SRCREL=${phys:$((${#home} + 1))} ;;
     *)
-      case "$home/" in
-        "$phys"/*) SCAN_HIT="it leads to a folder that holds the home folder" ;;
+      case "$lhome/" in
+        "$lphys"/*) SCAN_HIT="it leads to a folder that holds the home folder" ;;
         *) SCAN_HIT="it leads out of the home folder" ;;
       esac
       return 1
       ;;
   esac
-  case "/$SCAN_SRCREL/" in
-    /Library/*) SCAN_HIT="it leads into the Library folder" && return 1 ;;
+  lsrc=${lphys:$((${#lhome} + 1))}
+  case "/$lsrc/" in
+    /library/*) SCAN_HIT="it leads into the Library folder" && return 1 ;;
     /.ssh/* | /.gnupg/*) SCAN_HIT="it leads into a folder of keys" && return 1 ;;
   esac
   if scan_refused "$SCAN_SRCREL"; then return 1; fi

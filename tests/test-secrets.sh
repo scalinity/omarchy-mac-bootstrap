@@ -203,6 +203,41 @@ for c in homecopy:"it%20leads%20to%20the%20home%20folder%20itself" libcopy:"it%2
   assert_not_contains "$carry" "file	" "secret-stow-refused: and nothing of it is carried (${c%%:*})"
 done
 assert_eq "$(grep -rl harborpass "$T"/x-dock "$T"/x-awscopy 2>/dev/null)" "" "secret-stow-refused: no credential reached a carry"
+# secret-stow-slash: a link chain hidden behind a trailing slash is still a
+# link to a link, and is not followed; a single link with one still is.
+ln -s .docker "$SH/hop"
+ln -s ../hop/ "$SH/.config/dockerhop"
+ln -s ../dotfiles/stowed/ "$SH/.config/stowslash"
+stow path:.config/dockerhop "$T/x-hop"
+carry=$(cat "$T/x-hop/carry")
+assert_contains "$carry" "skip	reason=.config/dockerhop:%20a%20link%20to%20a%20link,%20not%20followed" "secret-stow-slash: a chain ending in a slash is refused"
+assert_not_contains "$carry" "file	" "secret-stow-slash: and nothing of it is carried"
+stow path:.config/stowslash "$T/x-slash"
+assert_contains "$(cat "$T/x-slash/carry")" "file	dest=.config/stowslash/conf.ini" "secret-stow-slash: one link written with a slash is followed once"
+# secret-stow-case: the Mac's file system does not tell .DOCKER from .docker,
+# Library from library, .ssh from .SSH; neither do the refusals. Written
+# through the differently cased names, so a case-sensitive system holds the
+# same shapes.
+mkdir -p "$SH/.DOCKER" "$SH/library/Thing" "$SH/.SSH"
+printf '{"auths":{"registry.example":{"auth":"YWxleDpoYXJib3JwYXNz"}}}\n' >"$SH/.DOCKER/config.json"
+printf 'x\n' >"$SH/library/Thing/y"
+ln -s ../.DOCKER "$SH/.config/dockercase"
+ln -s ../library "$SH/.config/libcase"
+ln -s ../.SSH "$SH/.config/sshcase"
+stow path:.config/dockercase "$T/x-dcase"
+carry=$(cat "$T/x-dcase/carry")
+assert_contains "$carry" "skip	reason=.config/dockercase/config.json:%20container%20credentials" "secret-stow-case: a differently cased .docker keeps its refusal"
+assert_not_contains "$carry" "file	dest=.config/dockercase/config.json" "secret-stow-case: its credentials are not carried"
+for c in libcase:"it%20leads%20into%20the%20Library%20folder" sshcase:"it%20leads%20into%20a%20folder%20of%20keys"; do
+  stow "path:.config/${c%%:*}" "$T/x-${c%%:*}"
+  carry=$(cat "$T/x-${c%%:*}/carry")
+  assert_contains "$carry" "skip	reason=.config/${c%%:*}:%20${c#*:}" "secret-stow-case: a differently cased root is refused (${c%%:*})"
+  assert_not_contains "$carry" "file	" "secret-stow-case: and nothing of it is carried (${c%%:*})"
+done
+for rel in .DOCKER/config.json LIBRARY .AWS/credentials ID_RSA .ENV.local library/keychains/login.keychain-db; do
+  scan_refused "$rel"
+  assert_rc $? 0 "secret-stow-case: $rel is refused in any case"
+done
 rm -rf "$SV"
 
 # --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
