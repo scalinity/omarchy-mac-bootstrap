@@ -87,8 +87,8 @@ p_fixture() {
   P_EXTENSIONS=1 p_oracle "$REPO" findings complete
   assert_rc "$?" 0 "$name complete current findings run"
   if [ "$(cat "$fixture/cmd/uname_s")" = Linux ]; then
-    assert_eq "$(grep -c 'col=SSH%20policy\t' "$T/complete.out")" 1 "$name doctor-ssh-findings policy"
-    assert_eq "$(grep -c 'col=Image%20alarm%20account\t' "$T/complete.out")" 1 "$name doctor-ssh-findings image account"
+    assert_eq "$(grep -c $'col=SSH%20policy\t' "$T/complete.out")" 1 "$name doctor-ssh-findings policy"
+    assert_eq "$(grep -c $'col=Image%20alarm%20account\t' "$T/complete.out")" 1 "$name doctor-ssh-findings image account"
   fi
   awk 'BEGIN { FS=OFS="\t" } { $3="key=" NR; print }' "$T/complete.out" >"$T/expected.rows"
   read -r bpass bwarn bfail <<EOF_COUNTS
@@ -179,7 +179,7 @@ C_FIX=$V C_HOME=$REPO C_PATH='' C_ENV=OMB_SESSION_SCOPES=health
 c_run snapshot "scope	name=health"
 g0=$(p_gen)
 c_run detail "page	scope=health	kind=doctor	generation=$g0	offset=0	limit=500"
-total0=$(grep -c '^row\t' "$C_EV")
+total0=$(grep -c $'^row\t' "$C_EV")
 hello=$(sed -n 2p "$C_EV")
 helper() {
   local op=$1 offset=${2:-0}

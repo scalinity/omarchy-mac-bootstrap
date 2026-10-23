@@ -103,7 +103,7 @@ for fx in $fixtures; do
   h_good "$fx snapshot" snapshot
   gen=$(h_gen) pass=$(h_fact pass) warn=$(h_fact warn) failed=$(h_fact fail)
   case "$pass:$warn:$failed" in *::* | :* | *: | *[!0-9:]*) fail "$fx counts are whole numbers: $pass:$warn:$failed" ;; *) ok ;; esac
-  assert_eq "$(grep -c '^fact\tscope=health\tkey=doctor\.' "$C_EV")" 3 "$fx snapshot retains all three count facts"
+  assert_eq "$(grep -c $'^fact\tscope=health\tkey=doctor\\.' "$C_EV")" 3 "$fx snapshot retains all three count facts"
   case "$fx" in
     linux-*) assert_eq "$(h_types)" 'omb-res 1 hello generation fact fact fact result ' "$fx unavailable MCP action is not offered" ;;
     *) assert_eq "$(h_types)" 'omb-res 1 hello generation fact fact fact result ' "$fx macOS snapshot has only counts" ;;
