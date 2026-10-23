@@ -16,8 +16,6 @@
     cp -R linux-shared-ready "$d"
     printf '%s\n' 1000 >"$d/cmd/id_u"
     printf '%s\n' alex >"$d/cmd/id_un"
-    mkdir -p "$d/root/home/alex/.config"
-    chmod 700 "$d/root/home/alex"
     printf '%s\n' '121 120 259:7 / /mnt/shared rw,relatime - exfat /dev/nvme0n1p7 rw,fmask=0177,dmask=0077' >>"$d/root/proc/self/mountinfo"
     b=$d/root/mnt/shared/omarchy-mac-bootstrap/bundles/20261022T120000Z
     mkdir -p "$b/objects"
@@ -34,6 +32,8 @@
     } >"$b/bundle.omb"
     rec_seal_write "$b/bundle.omb"
     if [ "$phase" = restored ]; then
+      mkdir -p "$d/root/home/alex/.config"
+      chmod 700 "$d/root/home/alex"
       cp "$b/objects/$sha" "$d/root/home/alex/.config/journey.conf"
       chmod 0644 "$d/root/home/alex/.config/journey.conf"
     fi
