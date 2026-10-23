@@ -368,6 +368,45 @@ if t_plutil "non-ASCII path inventory"; then
     assert_not_contains "$line" 'kind=key-encrypted' "secret-path-ascii: a non-ASCII filename is never an eligible encrypted-key item"
   done
 fi
+# secret-one-name: no regular file with another hard-link name travels,
+# regardless of the tree class, the other name's spelling or its location.
+ln "$SH/.config/nvim/credential${longs}" "$SH/.config/nvim/ordinary.txt"
+mkdir -p "$SH/dotfiles/one-name"
+printf 'shortpassONENAMEopaque\n' >"$SH/dotfiles/one-name/visible.txt"
+ln "$SH/dotfiles/one-name/visible.txt" "$SH/dotfiles/one-name/alias"$'\n'
+printf 'ordinary one-name file\n' >"$SH/dotfiles/one-name/single.txt"
+printf 'shortpassONENAMEconfig\n' >"$SH/.tmux.conf"
+ln "$SH/.tmux.conf" "$T/config-alias"
+printf 'shortpassONENAMEsingle\n' >"$SH/dotfiles/single.txt"
+ln "$SH/dotfiles/single.txt" "$T/opaque-alias"
+ln "$SH/.ssh/known_hosts" "$T/hosts-alias"
+ln "$SH/.ssh/id_ed25519" "$T/key-alias"
+u=0
+for id in nvim:config path:dotfiles/ascii path:dotfiles/one-name path:.tmux.conf path:dotfiles/single.txt path:.ssh/known_hosts path:.ssh/id_ed25519; do
+  u=$((u + 1))
+  out=$T/x-one-name-$u
+  stow "$id" "$out"
+  carry=$(cat "$out/carry")
+  assert_contains "$carry" 'a%20file%20with%20other%20names%20%28hard%20links%29%20is%20not%20carried,%20because%20another%20name%20could%20hide%20a%20refused%20one' "secret-one-name: $id explains why a hard link is refused"
+  assert_eq "$(grep -rl 'shortpassASCII\|shortpassONENAME' "$out/f")" "" "secret-one-name: $id captures none of the hard-linked bytes"
+  case "$id" in
+    nvim:config)
+      assert_not_contains "$carry" 'file	dest=.config/nvim/ordinary.txt' 'secret-one-name: an adapter tree refuses an ASCII alias of a non-ASCII name'
+      assert_contains "$carry" 'file	dest=.config/nvim/init.lua' 'secret-one-name: an ordinary single-name adapter file still carries'
+      ;;
+    path:dotfiles/ascii)
+      assert_not_contains "$carry" 'file	dest=dotfiles/ascii/ordinary.txt' 'secret-one-name: an opaque tree refuses an ASCII alias of a non-ASCII name'
+      ;;
+    path:dotfiles/one-name)
+      assert_not_contains "$carry" 'file	dest=dotfiles/one-name/visible.txt' 'secret-one-name: an alias ending in LF cannot make a file eligible'
+      assert_contains "$carry" 'file	dest=dotfiles/one-name/single.txt' 'secret-one-name: an ordinary single-name opaque file still carries'
+      ;;
+    *)
+      assert_not_contains "$carry" 'file	' "secret-one-name: $id carries no hard-linked file"
+      assert_eq "$(find "$out/f" -type f)" "" "secret-one-name: $id captures no object"
+      ;;
+  esac
+done
 # secret-stow-case: the Mac's file system does not tell .DOCKER from .docker,
 # Library from library, .ssh from .SSH; neither do the refusals. Written
 # through the differently cased names, so a case-sensitive system holds the
@@ -424,7 +463,7 @@ k_str() { k_u32 "${#1}" && printf '%s' "$1"; }
 # PRIV the private section's length in bytes, short (a length past the end)
 # or none; TAG 1 for the 16 bytes an authenticated cipher keeps after it.
 k_key() {
-  local type curve point
+  local type curve point hex
   {
     printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n'
     {
@@ -443,18 +482,31 @@ k_key() {
         rsa-small) k_u32 21 && k_str ssh-rsa && k_str E && k_str N ;;
         rsa-short) k_u32 16 && k_str ssh-rsa && k_str E ;;
         dss) k_u32 31 && k_str ssh-dss && k_str P && k_str Q && k_str G && k_str Y ;;
-        ecdsa | ecdsa384 | ecdsa521 | ecdsa-short | ecdsa-curve | ecdsa-prefix)
+        ecdsa | ecdsa384 | ecdsa521 | ecdsa-zero | ecdsa384-zero | ecdsa521-zero | ecdsa-short | ecdsa-curve | ecdsa-prefix)
           curve=nistp256 point=65
+          # The standard curves' generator points are valid public points;
+          # no generated or live private key is needed for these fixtures.
+          hex=046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5
           case "$3" in
-            ecdsa384) curve=nistp384 point=97 ;;
-            ecdsa521) curve=nistp521 point=133 ;;
+            ecdsa384 | ecdsa384-zero)
+              curve=nistp384 point=97
+              hex=04aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f
+              ;;
+            ecdsa521 | ecdsa521-zero)
+              curve=nistp521 point=133
+              hex=0400c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66011839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650
+              ;;
             ecdsa-short) point=1 ;;
           esac
           type=ecdsa-sha2-$curve
           [ "$3" != ecdsa-curve ] || curve=nistp521
           k_u32 $((4 + ${#type} + 4 + ${#curve} + 4 + point)) && k_str "$type" && k_str "$curve" && k_u32 "$point"
-          if [ "$3" = ecdsa-short ] || [ "$3" = ecdsa-prefix ]; then printf Q; else printf '\004'; fi
-          if [ "$point" -gt 1 ]; then head -c "$((point - 1))" /dev/zero | tr '\0' F; fi
+          case "$3" in
+            *-zero) printf '\004' && head -c "$((point - 1))" /dev/zero ;;
+            ecdsa-short) printf Q ;;
+            ecdsa-prefix) printf Q && head -c "$((point - 1))" /dev/zero ;;
+            *) perl -e 'print pack("H*", $ARGV[0])' -- "$hex" ;;
+          esac
           ;;
         sk-ed) k_u32 81 && k_str sk-ssh-ed25519@openssh.com && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY && k_str fixture-app ;;
         sk-ec) k_u32 70 && k_str sk-ecdsa-sha2-nistp256@openssh.com && k_str nistp256 && k_str Q && k_str fixture-app ;;
@@ -513,13 +565,49 @@ done
 for c in aes256-ctr aes256-gcm@openssh.com chacha20-poly1305@openssh.com; do
   tag=1
   [ "$c" != aes256-ctr ] || tag=0
-  for parts in "real 144" "rsa 320" "ecdsa 128" "ecdsa384 160" "ecdsa521 192"; do
+  for parts in "real 144" "rsa 320"; do
     # shellcheck disable=SC2086 # public shape and private length, split on purpose
     k_key "$T/canonical" "$c" $parts "$tag"
     scan_key_check "$T/canonical"
     assert_rc $? 0 "secret-ssh-canonical: a complete $c $parts envelope is supported"
   done
+  for parts in "ecdsa 128" "ecdsa384 160" "ecdsa521 192" "ecdsa-zero 128" "ecdsa384-zero 160" "ecdsa521-zero 192"; do
+    # shellcheck disable=SC2086 # public shape and private length, split on purpose
+    k_key "$T/canonical" "$c" $parts "$tag"
+    scan_key_check "$T/canonical"
+    assert_rc $? 1 "secret-ssh-canonical: an ECDSA key never carries ($c $parts)"
+    assert_contains "$SCAN_HIT" 're-create the key on Linux, or carry an Ed25519 or RSA key' 'secret-ssh-canonical: the ECDSA refusal gives the alternatives'
+  done
 done
+# The inventory and export explain the policy for a well-shaped ECDSA key,
+# whether its name starts with id_ or just its header identifies it.
+EK=$(t_variant mig-mac-home)
+for parts in "ecdsa 128" "ecdsa384 160" "ecdsa521 192"; do
+  name=${parts%% *}
+  # shellcheck disable=SC2086 # public shape and private length, split on purpose
+  k_key "$EK/root/Users/alex/.ssh/$name" aes256-ctr $parts 0
+  (
+    OMB_FIXTURE=$EK
+    scan_extract "path:.ssh/$name" "$T/x-$name" >/dev/null 2>&1
+    omb_cleanup
+  )
+  carry=$(cat "$T/x-$name/carry")
+  assert_contains "$carry" 're-create%20the%20key%20on%20Linux,%20or%20carry%20an%20Ed25519%20or%20RSA%20key' "secret-ssh-canonical: export explains why $name stays"
+  assert_not_contains "$carry" 'file	' "secret-ssh-canonical: export carries no $name key"
+done
+if t_plutil 'ECDSA key inventory'; then
+  (
+    OMB_FIXTURE=$EK
+    scan_run "$T/inv-ecdsa" >/dev/null 2>&1
+    omb_cleanup
+  )
+  for name in ecdsa ecdsa384 ecdsa521; do
+    line=$(awk -F '\t' -v id="id=path:.ssh/$name" '$1 == "item" && $2 == id' "$T/inv-ecdsa")
+    assert_contains "$line" 're-create%20the%20key%20on%20Linux,%20or%20carry%20an%20Ed25519%20or%20RSA%20key' "secret-ssh-canonical: the inventory explains why $name stays"
+    assert_not_contains "$line" 'kind=key-encrypted' "secret-ssh-canonical: $name is not eligible for carry"
+  done
+fi
+rm -rf "$EK"
 for parts in "real 16" "ecdsa-short 160" "ecdsa-curve 160" "ecdsa-prefix 160" "ecdsa384 144" "ecdsa521 176" "rsa-small 320" "rsa 304" "dss 160" "sk-ed 160" "sk-ec 160"; do
   # shellcheck disable=SC2086 # public shape and private length, split on purpose
   k_key "$T/canonical" aes256-ctr $parts 0

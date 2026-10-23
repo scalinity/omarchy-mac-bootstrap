@@ -106,6 +106,28 @@ if t_plutil "the scan of a fixture home"; then
   s_scan "$F" "$T/inv2"
   if cmp -s "$T/inv" "$T/inv2"; then ok; else fail "scan-rerun: a second scan of the same home differs"; fi
 
+  # secret-one-name: the inventory explains the same hard-link refusal
+  # as export, including whole adapter trees, single files and SSH keys.
+  ON=$(t_variant mig-mac-home)
+  OH=$ON/root/Users/alex
+  longs=$(printf '\305\277')
+  printf 'shortpassONENAME\n' >"$OH/.config/nvim/credential${longs}"
+  ln "$OH/.config/nvim/credential${longs}" "$OH/.config/nvim/aaa-ordinary.txt"
+  ln "$OH/.tmux.conf" "$T/tmux-alias"
+  ln "$OH/.ssh/id_ed25519" "$T/key-alias"
+  s_scan "$ON" "$T/inv-one-name"
+  assert_rc $? 0 'secret-one-name: hard-linked files do not prevent the rest of the scan'
+  for id in nvim:config path:.tmux.conf path:.ssh/id_ed25519; do
+    assert_contains "$(field "$id" note "$T/inv-one-name")" 'a%20file%20with%20other%20names%20%28hard%20links%29%20is%20not%20carried,%20because%20another%20name%20could%20hide%20a%20refused%20one' "secret-one-name: $id explains its hard-link refusal in the inventory"
+  done
+  for id in path:.tmux.conf path:.ssh/id_ed25519; do
+    assert_eq "$(field "$id" class "$T/inv-one-name")" secret "secret-one-name: $id is not eligible for selection"
+  done
+  t_cli "$ON" '' scan
+  assert_rc "$T_RC" 0 'secret-one-name: hard-linked files are handled through the entrypoint'
+  assert_contains "$T_OUT" 'hard links' 'secret-one-name: the entrypoint explains the refusal'
+  rm -rf "$ON"
+
   # scan-partial: a budget that runs out is partial, never a short complete list.
   s_scan "$F" "$T/inv3" SCAN_LIST_MAX=2
   assert_eq "$(adapter homebrew "$T/inv3")" partial "scan-partial: the formulae past the budget make Homebrew partial"
