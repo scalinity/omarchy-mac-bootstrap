@@ -708,7 +708,11 @@ with intent `act`, gate `test`, terminal `handoff` and cancel `0`.
 with columns state (`done`, `todo`, `failed`, `blocked`), label (`macOS
 writes`, `Linux checks and writes`, `macOS checks`) and detail (digest
 prefixes of 12 hex digits and the reason). The whole dataset, including
-its actions and step rows, supplies the generation.
+its actions and step rows, supplies the generation. The Linux qualification
+record has `dirty:enum(0|1|unknown)`: `unknown` means neither the current
+boot's kernel journal nor `dmesg` could be read without root. The step 2
+and step 3 rows show this informational value; it never changes the
+qualification verdict.
 
 The `restore` scope's `snapshot`, `detail` and validation of `restore.*`
 selects route to `rst_core_op OP` in `lib/migrate_restore.sh`. The `debug`
