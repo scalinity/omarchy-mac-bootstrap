@@ -144,6 +144,8 @@ fn ready() -> Model {
     assert!(bytes(&req).contains("scope\tname=journey\n"));
     let c = answer(&mut m, req, &journey(GEN));
     assert_eq!(requests(&c), 0, "nothing more is read by itself");
+    assert_eq!(m.screen, omb_tui::app::Screen::Welcome);
+    assert!(press(&mut m, KeyCode::Enter).is_empty());
     m
 }
 
@@ -1429,6 +1431,7 @@ fact\tscope=journey\tkey=actions\tlabel=Actions\tvalue=none%20in%20this%20sessio
 {DONE}"
         ),
     );
+    assert_eq!(m.screen, Screen::Dashboard);
     // The dashboard as frontend-check-terminal reads it, at its 120×40.
     let f = frame(&m, 120, 40);
     for want in [
@@ -1556,6 +1559,7 @@ message\tlevel=info\ttext=No%20log%20yet.
             "generation\tid={GEN}\ttotal=0\nguide\tid=next\tstep=1\ttext=This%20Mac%20cannot%20continue.\nblocker\tid=mac.1\ttext=The%20internal%20disk%27s%20layout%20could%20not%20be%20read%20exactly.\tfix=Run%20First%20Aid.\n{DONE}"
         ),
     );
+    assert!(press(&mut b, KeyCode::Enter).is_empty());
     let t = profile("color");
     let buf = render(&b, &t, 120, 40);
     let f = text_of(&buf);

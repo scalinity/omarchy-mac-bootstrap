@@ -2583,15 +2583,29 @@ fn fake_snapshot() -> (Case, Document, Vec<u8>) {
             ],
         )
     });
-    let body = facts
+    let stages = omb_tui::widgets::STATIONS.map(|name| {
+        make(
+            "stage",
+            &[
+                ("name", name),
+                ("state", "blocked"),
+                ("basis", "machine"),
+                ("by", ""),
+                ("at", ""),
+                ("detail", "not checked: startup check reads identity only"),
+            ],
+        )
+    });
+    let body = stages
         .iter()
+        .chain(facts.iter())
         .map(|r| {
             let fields = r
                 .fields
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_slice()))
                 .collect::<Vec<_>>();
-            record::line("fact", &fields)
+            record::line(&r.ty, &fields)
                 .trim_end_matches('\n')
                 .to_string()
         })
@@ -2611,6 +2625,7 @@ fn fake_snapshot() -> (Case, Document, Vec<u8>) {
         ],
     );
     let mut rows = vec![hello, generation];
+    rows.extend(stages);
     rows.extend(facts);
     rows.push(result);
     (
@@ -2647,13 +2662,13 @@ fn wrong_fixture_flag_rejected() {
 #[test]
 fn wrong_fact_count_rejected() {
     let (c, mut d, b) = fake_snapshot();
-    d.records.remove(2);
+    d.records.remove(12);
     assert!(witness(&c, &d, &b).is_err());
 }
 #[test]
 fn wrong_fact_order_rejected() {
     let (c, mut d, b) = fake_snapshot();
-    d.records.swap(2, 3);
+    d.records.swap(12, 13);
     assert!(witness(&c, &d, &b).is_err());
 }
 #[test]

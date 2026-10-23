@@ -75,8 +75,21 @@ fn action_items<'a>(m: &'a Model, id: &str, v: &mut Vec<(usize, Item<'a>)>, sec:
         }
         None => v.push((
             sec,
-            text(format!("The core does not offer {id} now."), Token::Muted),
+            text(
+                format!("The core does not offer {} now.", named(id)),
+                Token::Muted,
+            ),
         )),
+    }
+}
+
+/// An action the page may find unlisted, in the words a person uses.
+fn named(id: &str) -> &str {
+    match id {
+        "asahi.launch" => "the Asahi installer",
+        "network.connect" => "the network step",
+        "shared.create" => "Shared creation",
+        id => id,
     }
 }
 

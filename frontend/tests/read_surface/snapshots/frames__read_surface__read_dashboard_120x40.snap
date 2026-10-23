@@ -21,15 +21,15 @@ expression: f
 │  Plan                ││   Run ./omarchy-bootstrap to survey this Mac and plan        ││   Chip          Apple M1 Pro │
 │  Operation           ││   storage.                                                   ││   Memory        16 GB        │
 │  Scan                ││                                                              ││   macOS         14.6         │
-│  Selection           ││ ▍Facts                                                       │└──────────────────────────────┘
-│  Inventory           ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
-│  Review              ││   Asahi install   none                                       │
-│  Install             ││   Safe Linux max  654 GB                                     │
-│  Progress            ││   Surveyed        not yet (saved record)                     │
-│  Restore             ││   Plan            not yet (saved record)                     │
-│  Qualification       ││                                                              │
-│  Completion          ││ ▍What you can do now                                         │
-│                      ││   Nothing is available now.                                  │
+│  Selection           ││ ▍What you can do now                                         │└──────────────────────────────┘
+│  Inventory           ││   Nothing is available now.                                  │
+│  Review              ││                                                              │
+│  Install             ││ ▍Facts                                                       │
+│  Progress            ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
+│  Restore             ││   Asahi install   none                                       │
+│  Qualification       ││   Safe Linux max  654 GB                                     │
+│  Completion          ││   Surveyed        not yet (saved record)                     │
+│                      ││   Plan            not yet (saved record)                     │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │

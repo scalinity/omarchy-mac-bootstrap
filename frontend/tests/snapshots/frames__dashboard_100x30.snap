@@ -12,19 +12,19 @@ expression: text(&b)
 │  Health      ││ ▍Where it stands                                                                 │
 │  Logs        ││   The core gave no next step for this session.                                   │
 │  Plan        ││                                                                                  │
-│  Op          ││ ▍Facts                                                                           │
-│  Scan        ││   Interface  the foundation: test actions over fixtures                          │
-│  Select      ││   Fixture    mac-m1pro-1tb-roomy                                                 │
-│  Items       ││   Operation  ✓ none                                                              │
-│  Review      ││                                                                                  │
-│  Install     ││ ▍What you can do now                                                             │
-│  Progress    ││ ❯ Read the fixture (test)                                                        │
-│  Restore     ││   Runs the fake read child: its output is shown, its diagnostics kept within     │
-│  Qualify     ││   their limits.                                                                  │
-│  Completion  ││   Change the fixture (test)                                                      │
-│              ││   Runs the fake mutating child under supervision.                                │
-│              ││   Hand over the terminal (test)                                                  │
-│              ││   Runs the fake handoff child on the real terminal.                              │
+│  Op          ││ ▍What you can do now                                                             │
+│  Scan        ││ ❯ Read the fixture (test)                                                        │
+│  Select      ││   Runs the fake read child: its output is shown, its diagnostics kept within     │
+│  Items       ││   their limits.                                                                  │
+│  Review      ││   Change the fixture (test)                                                      │
+│  Install     ││   Runs the fake mutating child under supervision.                                │
+│  Progress    ││   Hand over the terminal (test)                                                  │
+│  Restore     ││   Runs the fake handoff child on the real terminal.                              │
+│  Qualify     ││                                                                                  │
+│  Completion  ││ ▍Facts                                                                           │
+│              ││   Interface  the foundation: test actions over fixtures                          │
+│              ││   Fixture    mac-m1pro-1tb-roomy                                                 │
+│              ││   Operation  ✓ none                                                              │
 │              ││                                                                                  │
 │              ││                                                                                  │
 │              ││                                                                                  │

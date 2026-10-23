@@ -310,6 +310,8 @@ fn the_read_surface_against_the_real_core() {
     let name = primary();
     let mut s = w.session(name, all);
     let mut m = started(&mut s);
+    assert_eq!(m.screen, Screen::Welcome);
+    assert!(key(&mut m, KeyCode::Enter).is_empty());
     assert_eq!(m.screen, Screen::Dashboard);
     let g = m.snap.as_ref().unwrap().generation.clone();
     assert_eq!(g.len(), 64, "the snapshot's generation");
@@ -598,7 +600,8 @@ fn an_unplannable_and_a_blocked_machine() {
         assert!(f.contains("A trustworthy plan cannot be computed"), "{f}");
 
         let mut s = w.session("mac-geo-disagree", all);
-        let m = started(&mut s);
+        let mut m = started(&mut s);
+        key(&mut m, KeyCode::Enter);
         let b = &m.snap.as_ref().unwrap().blockers;
         assert!(!b.is_empty());
         let f = frame(&m, 120, 40);
@@ -822,13 +825,12 @@ fn every_fixture(part: usize) {
             unanswered.push(name.as_str());
             continue;
         };
-        let dash = frame(&m, 250, 400);
-        key(&mut m, KeyCode::Left);
-        for _ in 0..8 {
-            key(&mut m, KeyCode::Up);
-        }
-        key(&mut m, KeyCode::Enter);
+        // The first answer opens Welcome; its Enter opens the Journey.
+        assert_eq!(m.screen, Screen::Welcome, "{name}");
         let welcome = frame(&m, 250, 400);
+        key(&mut m, KeyCode::Enter);
+        assert_eq!(m.screen, Screen::Dashboard, "{name}");
+        let dash = frame(&m, 250, 400);
         for fact in &snap.facts {
             let shown = if fact.key.starts_with("machine.") {
                 &welcome
@@ -1104,6 +1106,15 @@ fn ux2_sweep_every_screen_on_the_requested_fixtures() {
                         == "❯"),
                     "blank focusable row: {fixture} {screen:?}"
                 );
+                // Opening a screen shows its top, and its first row selected.
+                let v = m.viewport.borrow();
+                assert_eq!(
+                    v.top, 0,
+                    "{fixture} {screen:?} {width}x{height} opens at its top"
+                );
+                if let Some(first) = v.rows.first() {
+                    assert_eq!(v.focus, Some(first.0), "{fixture} {screen:?} first row");
+                }
             }
         };
         for (n, screen) in omb_tui::app::NAV.into_iter().enumerate() {

@@ -14,15 +14,15 @@ expression: f
 │  Plan        ││   Run ./omarchy-bootstrap to survey this Mac and plan        │
 │  Op          ││   storage.                                                   │
 │  Scan        ││                                                              │
-│  Select      ││ ▍Facts                                                      ↓│
-│  Items       │└──────────────────────────────────────────────────────────────┘
-│  Review      │┌ System Overview ─────────────────────────────────────────────┐
-│  Install     ││   Platform      macOS                                        │
-│  Progress    ││   Architecture  arm64                                        │
-│  Restore     ││   Model         MacBook Pro (16-inch, M1 Pro, 2021)          │
-│  Qualify     ││ Model ID MacBookPro18,1                                      │
-│  Completion  ││   Chip          Apple M1 Pro                                 │
-│              ││   Memory        16 GB                                        │
-│              ││   macOS         14.6                                         │
+│  Select      ││ ▍What you can do now                                         │
+│  Items       ││   Nothing is available now.                                  │
+│  Review      ││                                                              │
+│  Install     ││ ▍Facts                                                       │
+│  Progress    ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
+│  Restore     ││   Asahi install   none                                       │
+│  Qualify     ││   Safe Linux max  654 GB                                     │
+│  Completion  ││   Surveyed        not yet (saved record)                     │
+│              ││   Plan            not yet (saved record)                     │
+│              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  ⏎ select  ↑↓ move  ? help      read-only, no system changes · recorded machine

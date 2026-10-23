@@ -12,15 +12,15 @@ expression: f
 │  Health      ││ ▍Where it stands                                                                 │
 │  Logs        ││   Run ./omarchy-bootstrap to survey this Mac and plan storage.                   │
 │  Plan        ││                                                                                  │
-│  Op          ││ ▍Facts                                                                           │
-│  Scan        ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
-│  Select      ││   Asahi install   none                                                           │
-│  Items       ││   Safe Linux max  654 GB                                                         │
-│  Review      ││   Surveyed        not yet (saved record)                                         │
-│  Install     ││   Plan            not yet (saved record)                                         │
-│  Progress    ││                                                                                  │
-│  Restore     ││ ▍What you can do now                                                             │
-│  Qualify     ││   Nothing is available now.                                                      │
+│  Op          ││ ▍What you can do now                                                             │
+│  Scan        ││   Nothing is available now.                                                      │
+│  Select      ││                                                                                  │
+│  Items       ││ ▍Facts                                                                           │
+│  Review      ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)                            │
+│  Install     ││   Asahi install   none                                                           │
+│  Progress    ││   Safe Linux max  654 GB                                                         │
+│  Restore     ││   Surveyed        not yet (saved record)                                         │
+│  Qualify     ││   Plan            not yet (saved record)                                         │
 │  Completion  │└──────────────────────────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────────────────────────┐
 │              ││   Platform      macOS                                                            │

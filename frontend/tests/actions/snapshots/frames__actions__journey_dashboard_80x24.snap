@@ -5,22 +5,22 @@ expression: "frame(m, w, h)"
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
-│  Welcome     ││ ▍Where it stands                                            ↑│
-│▍ Journey     ││   After the shutdown, hold the power button and choose       │
-│  Machine     ││   Linux.                                                     │
-│  Status      ││                                                              │
-│  Health      ││ ▍Facts                                                       │
-│  Logs        ││   Asahi install  none                                        │
-│  Plan        ││                                                              │
-│  Op          ││ ▍Codes                                                       │
-│  Scan        ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
-│  Select      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Items       ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
-│  Review      ││                  d                                           │
-│  Install     ││                                                              │
-│  Progress    ││ ▍What you can do now                                         │
-│  Restore     ││ ❯ Save the plan                                              │
-│  Qualify     ││   The text flow's own plan.save.                            ↓│
+│  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
+│  Status      ││ No stage is derived yet: every station is later.             │
+│  Health      ││                                                              │
+│  Logs        ││ ▍Where it stands                                             │
+│  Plan        ││   After the shutdown, hold the power button and choose       │
+│  Op          ││   Linux.                                                     │
+│  Scan        ││                                                              │
+│  Select      ││ ▍What you can do now                                         │
+│  Items       ││ ❯ Save the plan                                              │
+│  Review      ││   The text flow's own plan.save.                             │
+│  Install     ││   Launch the Asahi installer                                 │
+│  Progress    ││   The text flow's own asahi.launch.                          │
+│  Restore     ││   Create Shared                                              │
+│  Qualify     ││   The text flow's own shared.create.                        ↓│
 │  Completion  │└──────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────┐
 │              ││   Model ID      MacBookPro18,2                               │

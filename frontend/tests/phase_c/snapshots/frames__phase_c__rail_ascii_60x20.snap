@@ -9,16 +9,16 @@ expression: text_of(&b)
 | Verify: current step - 9 of 10                           |
 |                                                          |
 | |Where it stands                                         |
+|   Current stage  Verify: current step                    |
+|   The core gave no next step for this session.           |
+|                                                          |
+| |What you can do now                                     |
+|   Nothing is available now.                              |
+|                                                          |
+| |Journey stages                                          |
 |   [ ] choose a station; Enter opens it; up/down choose   |
 |   actions.                                               |
 |   Survey: done                                           |
-|   Choose what to bring: done                             |
-|   Review choices: done                                   |
-|   Plan storage: done                                     |
-|   Install Asahi: done - recorded by macOS                |
-|   Install Omarchy: done                                  |
-|   Shared storage: blocked - Activate Shared first        |
-|   Restore: skipped - No bundle selected                  |
-|   Verify: current step                                  v|
+|   Choose what to bring: done                            v|
 +----------------------------------------------------------+
  enter select  ? help   can make changes - recorded machine

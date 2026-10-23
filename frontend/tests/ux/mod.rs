@@ -231,6 +231,7 @@ fn action_rows_and_navigation_do_not_contradict_the_page() {
 
 fn scroll_roundtrip(mut m: Model, name: &str) {
     let _ = frame(&m, 60, 20);
+    assert_eq!(m.viewport.borrow().top, 0, "{name} opens at its top");
     let total = m.viewport.borrow().total;
     assert!(total > m.viewport.borrow().height, "{name} has overflow");
     press(&mut m, KeyCode::End);
@@ -254,6 +255,168 @@ fn scroll_roundtrip(mut m: Model, name: &str) {
     press(&mut m, KeyCode::PageUp);
     let _ = frame(&m, 60, 20);
     assert_eq!(m.viewport.borrow().top, 0, "{name} page up");
+}
+
+#[test]
+fn first_answer_opens_welcome_and_only_startup_check_bypasses_it() {
+    for check in [false, true] {
+        let mut m = Model {
+            check,
+            ..Model::default()
+        };
+        assert_eq!(m.nav, 0);
+        let req = sent(&m.start());
+        let req = sent(&answer(&mut m, req, DONE));
+        answer(&mut m, req, &mac_journey());
+        assert_eq!(
+            m.screen,
+            if check {
+                Screen::Dashboard
+            } else {
+                Screen::Welcome
+            }
+        );
+        assert_eq!(m.nav, usize::from(check));
+        if !check {
+            for (w, h) in [(80, 24), (120, 40)] {
+                insta::assert_snapshot!(format!("startup_welcome_{w}x{h}"), frame(&m, w, h));
+                assert_eq!(m.viewport.borrow().top, 0);
+            }
+            assert!(press(&mut m, KeyCode::Enter).is_empty());
+            assert_eq!(m.screen, Screen::Dashboard);
+            assert_eq!(m.nav, 1);
+        }
+    }
+    let mut m = ready_on("macos", &mac_journey());
+    go(&mut m, Screen::Welcome);
+    let req = sent(&press(&mut m, KeyCode::Char('r')));
+    answer(&mut m, req, &mac_journey());
+    assert_eq!(
+        m.screen,
+        Screen::Welcome,
+        "a reread keeps the current screen"
+    );
+    // The error screen's retry opens the journey, as before.
+    m.screen = Screen::Fatal;
+    let req = sent(&press(&mut m, KeyCode::Char('r')));
+    let req = sent(&answer(&mut m, req, DONE));
+    answer(&mut m, req, &mac_journey());
+    assert_eq!(m.screen, Screen::Dashboard);
+    assert_eq!(m.nav, 1);
+}
+
+/// Opening a screen leaves its scroll, its viewport and its selection at the
+/// start, whatever the person did on it before.
+#[test]
+fn opening_any_screen_leaves_its_scroll_at_zero_with_its_first_row_selected() {
+    for screen in omb_tui::app::NAV {
+        let mut m = ready_on("macos", &mac_journey());
+        go(&mut m, screen);
+        m.pending = None;
+        if let Some(kind) = screen.kind() {
+            add_rows(&mut m, kind, 40);
+        }
+        frame(&m, 60, 20);
+        press(&mut m, KeyCode::End);
+        frame(&m, 60, 20);
+        // Retained cursors and offsets must not drag a reopened page down.
+        m.pending = None;
+        let other = if screen == Screen::Welcome {
+            Screen::Machine
+        } else {
+            Screen::Welcome
+        };
+        if matches!(m.screen, Screen::Plan | Screen::Form) {
+            press(&mut m, KeyCode::Esc); // the planner's fields keep the arrows
+        }
+        go(&mut m, other);
+        go(&mut m, screen);
+        frame(&m, 60, 20);
+        let v = m.viewport.borrow();
+        assert_eq!(v.top, 0, "{screen:?}");
+        assert_eq!(v.focus, v.rows.first().map(|r| r.0), "{screen:?} first row");
+        assert_eq!(
+            (
+                m.page_scroll,
+                m.dash_scroll,
+                m.welcome_scroll,
+                m.plan_scroll
+            ),
+            (0, 0, 0, 0),
+            "{screen:?}"
+        );
+    }
+    // The overlays open at their own start too.
+    let mut m = ready_on("macos", &mac_journey());
+    for code in ['D', '?'] {
+        let screen = if code == 'D' {
+            Screen::Brief
+        } else {
+            Screen::Help
+        };
+        press(&mut m, KeyCode::Char(code));
+        assert_eq!(m.screen, screen);
+        frame(&m, 60, 20);
+        assert_eq!(m.viewport.borrow().top, 0, "{screen:?}");
+        press(&mut m, KeyCode::Esc);
+    }
+}
+
+/// Help and the brief give the page back as it was left: the person's place
+/// on it is not an opening. (The gate does the same; the restore review's
+/// selection after a refused word is held in phase_b.)
+#[test]
+fn help_and_the_brief_return_to_the_place_left() {
+    let mut m = ready_on("macos", &mac_journey());
+    press(&mut m, KeyCode::Down);
+    assert_eq!(m.focus, 1);
+    for code in ['?', 'D'] {
+        press(&mut m, KeyCode::Char(code));
+        assert_ne!(m.screen, Screen::Dashboard);
+        frame(&m, 80, 24);
+        press(&mut m, KeyCode::Esc);
+        assert_eq!((m.screen, m.focus), (Screen::Dashboard, 1));
+        frame(&m, 80, 24);
+        assert_eq!(m.viewport.borrow().focus, Some(1));
+    }
+}
+
+#[test]
+fn journey_opens_with_the_rail_current_stage_and_action_visible() {
+    let generation = format!("generation\tid={GEN}\ttotal=0\n");
+    let stages = super::phase_c::stages("plan");
+    let stages = stages
+        .strip_prefix(&generation)
+        .and_then(|s| s.strip_suffix(DONE))
+        .unwrap();
+    let body = mac_journey()
+        .replacen(&generation, &format!("{generation}{stages}"), 1)
+        .replace(
+            "guide\tid=boot",
+            "guide\tid=next\tstep=1\ttext=Run%20./omarchy-bootstrap.\nguide\tid=boot",
+        );
+    let mut m = ready_on("macos", &body);
+    for (w, h) in [(80, 24), (120, 40)] {
+        let f = frame(&m, w, h);
+        for want in [
+            "Survey",
+            "Current stage",
+            "Next: Save the plan",
+            "What you can do now",
+            "Save the plan",
+        ] {
+            assert!(f.contains(want), "{w}x{h}: {want}: {f}");
+        }
+        assert!(
+            !f.lines().any(|l| l.ends_with("↑│")),
+            "{w}x{h} opens at its top: {f}"
+        );
+        assert_eq!(m.viewport.borrow().top, 0);
+        insta::assert_snapshot!(format!("journey_open_{w}x{h}"), f);
+    }
+    let cmds = press(&mut m, KeyCode::Enter);
+    assert_eq!(m.screen, Screen::Plan, "Enter acts without prior movement");
+    assert!(matches!(sent(&cmds), omb_tui::app::Req::Validate { .. }));
 }
 
 #[test]

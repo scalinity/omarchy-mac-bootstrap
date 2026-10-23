@@ -3,6 +3,62 @@
 use super::*;
 
 #[test]
+fn pty_opens_welcome_then_journey_at_80x24() {
+    let readable = Command::new("ps")
+        .args(["-p", &std::process::id().to_string(), "-o", "lstart="])
+        .output()
+        .is_ok_and(|o| o.status.success() && !o.stdout.is_empty());
+    assert!(
+        readable,
+        "UNRUN: the launcher PTY requires ps to own its session"
+    );
+    let mac = Path::new("/usr/bin/plutil").exists();
+    let mut p = Pty::start(
+        "welcome",
+        Opts {
+            rows: 24,
+            cols: 80,
+            env: vec![("OMB_TEST_FOUNDATION", String::new())],
+            fixture: if mac {
+                "mac-m1pro-1tb-roomy"
+            } else {
+                "linux-omarchy-installed"
+            },
+            ..Opts::default()
+        },
+    );
+    p.wait_for("Welcome to Omarchy Mac Bootstrap");
+    p.idle();
+    let first = p.contents();
+    assert!(first.contains("▍ Welcome"), "{first}");
+    assert!(first.lines().next().unwrap().contains("Welcome"), "{first}");
+    p.send(b"\r");
+    p.wait_for("What you can do now");
+    p.wait_for(if mac {
+        "Save the plan"
+    } else {
+        "Developer setup"
+    });
+    let f = p.contents();
+    for want in ["Current stage", "Where it stands", "Survey", "▍ Journey"] {
+        assert!(f.contains(want), "{want}: {f}");
+    }
+    // The rail and current stage were not hidden by following the action.
+    assert!(!f.lines().nth(3).unwrap().contains('↑'), "{f}");
+    if mac {
+        p.send(b"\r");
+        p.wait_for("Storage planner");
+        p.idle();
+        p.send(b"\x1b");
+        p.wait_for("What you can do now");
+    }
+    p.keys("q");
+    assert_eq!(p.wait_exit(), 0);
+    assert!(p.restored());
+    assert!(p.sessions().is_empty());
+}
+
+#[test]
 fn pty_storage_presets_custom_200gb_review_and_save() {
     let readable = Command::new("ps")
         .args(["-p", &std::process::id().to_string(), "-o", "pid="])
@@ -37,6 +93,8 @@ fn pty_storage_presets_custom_200gb_review_and_save() {
         assert_eq!(p.wait_exit(), 0);
         return;
     }
+    p.wait_for("Welcome to Omarchy Mac Bootstrap");
+    p.send(b"\r");
     p.wait_for(if mac {
         "Save the plan"
     } else {
@@ -58,16 +116,35 @@ fn pty_storage_presets_custom_200gb_review_and_save() {
     p.wait_for("Storage planner");
     p.idle();
     p.send(b"\x1b[C"); // Balanced -> Linux-heavy: one request.
-    p.idle();
     p.wait_until("500GB validation", |p| {
         std::fs::read_to_string(p.dir.join("trace"))
             .unwrap()
-            .contains("53, 48, 48, 71, 66")
+            .lines()
+            .any(|l| l.starts_with("send Validate") && l.contains("53, 48, 48, 71, 66"))
     });
-    p.send(b"\x1b[C"); // Custom.
     p.idle();
+    let before = std::fs::read_to_string(p.dir.join("trace")).unwrap().len();
+    p.send(b"\x1b[C"); // Custom.
+    // Custom starts empty, and an empty size is not sent.
+    p.wait_until("Custom validation", |p| {
+        std::fs::read_to_string(p.dir.join("trace"))
+            .unwrap()
+            .get(before..)
+            .is_some_and(|t| {
+                t.lines()
+                    .any(|l| l.starts_with("send Validate") && !l.contains("linux_size"))
+            })
+    });
+    p.idle();
+    p.wait_for("◉ Custom");
     p.keys("200");
     p.send(b"\r");
+    p.wait_until("200GB validation", |p| {
+        std::fs::read_to_string(p.dir.join("trace"))
+            .unwrap()
+            .lines()
+            .any(|l| l.starts_with("send Validate") && l.contains("50, 48, 48, 71, 66"))
+    });
     p.idle();
     let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
     assert!(
@@ -102,7 +179,9 @@ fn pty_storage_presets_custom_200gb_review_and_save() {
         saved.contains("[100, 111, 110, 101]") && saved.contains("[111, 107]"),
         "done ok: {saved}"
     );
+    // A lone Esc: the next key would otherwise join it as Alt-key.
     p.send(b"\x1b");
+    p.wait_for("Where it stands");
     p.keys("q");
     assert_eq!(p.wait_exit(), 0);
     assert_eq!(p.termios(), p.initial);

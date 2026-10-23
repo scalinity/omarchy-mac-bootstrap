@@ -21,22 +21,22 @@ expression: f
 │  Plan                ││   After the shutdown, hold the power button and choose       │
 │  Operation           ││   Linux.                                                     │
 │  Scan                ││                                                              │
-│  Selection           ││ ▍Facts                                                       │
-│  Inventory           ││   Asahi install  none                                        │
-│  Review              ││                                                              │
-│  Install             ││ ▍Codes                                                       │
-│  Progress            ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
-│  Restore             ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Qualification       ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
-│  Completion          ││                  d                                           │
+│  Selection           ││ ▍What you can do now                                         │
+│  Inventory           ││ ❯ Save the plan                                              │
+│  Review              ││   The text flow's own plan.save.                             │
+│  Install             ││   Launch the Asahi installer                                 │
+│  Progress            ││   The text flow's own asahi.launch.                          │
+│  Restore             ││   Create Shared                                              │
+│  Qualification       ││   The text flow's own shared.create.                         │
+│  Completion          ││                                                              │
+│                      ││ ▍Facts                                                       │
+│                      ││   Asahi install  none                                        │
 │                      ││                                                              │
-│                      ││ ▍What you can do now                                         │
-│                      ││ ❯ Save the plan                                              │
-│                      ││   The text flow's own plan.save.                             │
-│                      ││   Launch the Asahi installer                                 │
-│                      ││   The text flow's own asahi.launch.                          │
-│                      ││   Create Shared                                              │
-│                      ││   The text flow's own shared.create.                         │
+│                      ││ ▍Codes                                                       │
+│                      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
+│                      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
+│                      ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
+│                      ││                  d                                           │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │

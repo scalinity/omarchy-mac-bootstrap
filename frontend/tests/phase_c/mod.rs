@@ -8,7 +8,7 @@ use omb_tui::read::{Kind, Page, Scope};
 use omb_tui::record::{Family, admit};
 use ratatui::crossterm::event::KeyCode;
 
-fn stages(current: &str) -> String {
+pub(super) fn stages(current: &str) -> String {
     let mut out = format!("generation\tid={GEN}\ttotal=0\n");
     for name in omb_tui::widgets::STATIONS {
         let (state, basis, by, detail) = match name {
@@ -189,13 +189,28 @@ pub(super) fn on_completion(statuses: &[&str]) -> Model {
 fn frames(m: &Model, name: &str) {
     for (w, h) in [(80, 24), (60, 20)] {
         for profile in ["color", "ascii"] {
-            let b = render(m, &theme(profile), w, h);
-            if profile == "ascii" {
-                assert!(b.content().iter().all(|c| c.symbol().is_ascii()));
-            }
-            insta::assert_snapshot!(format!("{name}_{profile}_{w}x{h}"), text_of(&b));
+            snapshot(name, profile, w, h, render(m, &theme(profile), w, h));
         }
     }
+}
+
+/// The same frames with the page scrolled to its end: End acts on the size
+/// the page was last laid out at, so each size is laid out first.
+fn frames_at_end(m: &mut Model, name: &str) {
+    for (w, h) in [(80, 24), (60, 20)] {
+        for profile in ["color", "ascii"] {
+            render(m, &theme(profile), w, h);
+            press(m, KeyCode::End);
+            snapshot(name, profile, w, h, render(m, &theme(profile), w, h));
+        }
+    }
+}
+
+fn snapshot(name: &str, profile: &str, w: u16, h: u16, b: ratatui::buffer::Buffer) {
+    if profile == "ascii" {
+        assert!(b.content().iter().all(|c| c.symbol().is_ascii()));
+    }
+    insta::assert_snapshot!(format!("{name}_{profile}_{w}x{h}"), text_of(&b));
 }
 
 #[test]
@@ -418,7 +433,7 @@ fn completion_verdict_counts_and_receipt_use_only_core_records() {
     ] {
         let mut m = on_completion(&statuses);
         frames(&m, &format!("completion_{name}_stages"));
-        m.page_scroll = 13;
+        frames_at_end(&mut m, &format!("completion_{name}_report"));
         let text = text_of(&render(&m, &theme("color"), 80, 24));
         assert!(text.contains(&format!("Report: {name}")), "{text}");
         // Full count line at 120 columns; narrow frames wrap it.
@@ -427,7 +442,6 @@ fn completion_verdict_counts_and_receipt_use_only_core_records() {
             text.contains(&counts.replace("not-checked", "not checked")),
             "{text}"
         );
-        frames(&m, &format!("completion_{name}_report"));
         assert!(m.completion_receipt(&theme("color")).is_none());
         assert!(matches!(
             &press(&mut m, KeyCode::Char('q'))[..],
@@ -561,6 +575,15 @@ fn station_focus_keeps_the_rail_visible_above_offered_actions() {
         text.contains("Restore: skipped - No bundle selected"),
         "{text}"
     );
-    assert!(text.contains("recorded by macOS"));
+    assert!(text.contains("Current stage"));
     assert!(text.contains("●─────●"));
+    // Three stations earlier, the strip names Asahi and who recorded it.
+    for _ in 0..3 {
+        press(&mut m, KeyCode::Char('['));
+    }
+    let text = text_of(&render(&m, &theme("color"), 80, 24));
+    assert!(
+        text.contains("Install Asahi: done - recorded by macOS"),
+        "{text}"
+    );
 }

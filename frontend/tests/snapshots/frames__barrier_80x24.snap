@@ -5,24 +5,24 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
-│  Welcome     ││ Survey      Review      Asahi       Shared      Verify      ↑│
-│▍ Journey     ││       Choices     Plan        Omarchy     Restore     Done   │
-│  Machine     ││ No stage is derived yet: every station is later.             │
-│  Status      ││                                                              │
-│  Health      ││ ▍Where it stands                                             │
-│  Logs        ││   The core gave no next step for this session.               │
-│  Plan        ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
-│  Op          ││              process it started may still be running.        │
-│  Scan        ││              Restart this Mac (or this Linux system), then   │
-│  Select      ││              run the tool again.                             │
-│  Items       ││                                                              │
-│  Review      ││ ▍Facts                                                       │
-│  Install     ││   Interface  the foundation: test actions over fixtures      │
-│  Progress    ││   Fixture    mac-m1pro-1tb-roomy                             │
-│  Restore     ││   Operation  ✗ test.mutate unsupervised                      │
-│  Qualify     ││                                                              │
-│  Completion  ││ ▍What you can do now                                         │
-│              ││ ❯ Read the fixture (test)                                    │
-│              ││   Runs the fake read child.                                  │
+│  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
+│  Status      ││ No stage is derived yet: every station is later.             │
+│  Health      ││                                                              │
+│  Logs        ││ ▍Where it stands                                             │
+│  Plan        ││   The core gave no next step for this session.               │
+│  Op          ││                                                              │
+│  Scan        ││ ▍What you can do now                                         │
+│  Select      ││ ❯ Read the fixture (test)                                    │
+│  Items       ││   Runs the fake read child.                                  │
+│  Review      ││                                                              │
+│  Install     ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
+│  Progress    ││              process it started may still be running.        │
+│  Restore     ││              Restart this Mac (or this Linux system), then   │
+│  Qualify     ││              run the tool again.                             │
+│  Completion  ││                                                              │
+│              ││ ▍Facts                                                       │
+│              ││   Interface  the foundation: test actions over fixtures     ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  ⏎ select  ? help          can make changes · 1 step offered · recorded machine

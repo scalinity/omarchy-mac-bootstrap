@@ -200,7 +200,7 @@ fn exited(child: &mut dyn Child, f: &Frontend, group: i32, before: Duration) -> 
 
 pub(super) fn hangup_ends_the_session() {
     process_table_required();
-    let p = Pty::start("hangup", options());
+    let mut p = Pty::start("hangup", options());
     let mut owner = OwnedGroup::new(&p);
     p.dashboard();
     p.idle();
@@ -230,14 +230,13 @@ pub(super) fn hangup_ends_the_session() {
 pub(super) fn signals_end_the_idle_session() {
     process_table_required();
     for signal in [Signal::TERM, Signal::HUP] {
-        let p = Pty::start(&format!("sig-{signal:?}"), options());
+        let mut p = Pty::start(&format!("sig-{signal:?}"), options());
         let mut owner = OwnedGroup::new(&p);
         p.dashboard();
         p.idle();
         let f = Frontend::recorded(&p);
         let before = f.cpu().unwrap();
         f.signal(signal);
-        let mut p = p;
         let cpu = exited(&mut *p.child, &f, owner.pid.as_raw_nonzero().get(), before);
         eprintln!(
             "frontend {}: sampled CPU after {signal:?} {cpu:?} (limit 250 ms)",

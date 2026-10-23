@@ -14,10 +14,45 @@ pub struct Viewport {
     pub focus: Option<usize>,
     cursor: Option<usize>,
     manual: bool,
+    /// A page opens at its top with its first row selected, and the window
+    /// follows that row only once a key has moved it or acted on it.
+    engaged: bool,
+    /// The next layout opens engaged: the page under a help, gate, brief or
+    /// form comes back as it was left, and a key can act before a first layout.
+    resume: bool,
 }
 
 impl Viewport {
+    /// The window of a page returned to: the next layout follows its focus.
+    pub fn resuming() -> Self {
+        Self {
+            resume: true,
+            ..Self::default()
+        }
+    }
+
+    fn open(&mut self, screen: Screen) {
+        let engaged = self.resume;
+        *self = Self {
+            screen: Some(screen),
+            engaged,
+            ..Self::default()
+        };
+    }
+
+    /// A key acted on the page: the window follows its focus from here on.
+    /// Before the page has been laid out, its first layout opens engaged.
+    pub fn engage(&mut self) {
+        if self.screen.is_some() {
+            self.engaged = true;
+        } else {
+            self.resume = true;
+        }
+    }
+
+    /// As `engage`, and the window leaves any scrolling the person did.
     pub fn reveal(&mut self) {
+        self.engage();
         self.manual = false;
     }
     pub fn layout(
@@ -30,13 +65,9 @@ impl Viewport {
         initial: usize,
     ) -> usize {
         if self.screen != Some(screen) {
-            *self = Self {
-                screen: Some(screen),
-                top: initial,
-                ..Self::default()
-            };
+            self.open(screen);
         }
-        if !self.manual {
+        if self.engaged && !self.manual {
             self.top = initial;
         }
         self.height = height;
@@ -44,8 +75,9 @@ impl Viewport {
         self.rows = rows;
         if !self.manual || self.cursor != cursor {
             self.focus = cursor;
-            if let Some((line, end)) =
-                cursor.and_then(|id| self.rows.iter().find(|r| r.0 == id).map(|r| (r.1, r.2)))
+            if self.engaged
+                && let Some((line, end)) =
+                    cursor.and_then(|id| self.rows.iter().find(|r| r.0 == id).map(|r| (r.1, r.2)))
             {
                 if line < self.top {
                     self.top = line;
@@ -123,9 +155,57 @@ impl Viewport {
             };
         }
         self.manual = true;
+        self.engaged = true;
         if self.focus.is_some() {
             self.cursor = self.focus;
         }
         Some(self.focus)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A page of 100 lines in a window of 10; two rows far below the top.
+    fn page(v: &mut Viewport, cursor: Option<usize>, initial: usize) -> usize {
+        v.layout(
+            Screen::Dashboard,
+            10,
+            100,
+            vec![(0, 80, 82), (1, 90, 92)],
+            cursor,
+            initial,
+        )
+    }
+
+    #[test]
+    fn a_page_opens_at_zero_until_a_key_moves_or_acts_on_its_focus() {
+        let mut v = Viewport::default();
+        for _ in 0..2 {
+            assert_eq!(page(&mut v, Some(0), 70), 0);
+            assert_eq!(v.focus, Some(0));
+        }
+        v.engage(); // Enter on the selected row.
+        assert_eq!(page(&mut v, Some(0), 0), 72);
+        v.key(KeyCode::Home);
+        assert_eq!(page(&mut v, Some(0), 0), 0);
+        v.key(KeyCode::Down);
+        assert_eq!(page(&mut v, Some(0), 0), 72);
+    }
+
+    #[test]
+    fn moving_the_focus_brings_it_into_the_window() {
+        let mut v = Viewport::default();
+        assert_eq!(page(&mut v, Some(0), 0), 0);
+        v.key(KeyCode::Down);
+        assert_eq!(page(&mut v, Some(1), 0), 82);
+    }
+
+    #[test]
+    fn a_page_returned_to_follows_its_focus_at_once() {
+        let mut v = Viewport::resuming();
+        assert_eq!(page(&mut v, Some(1), 0), 82);
+        assert_eq!(v.focus, Some(1));
     }
 }

@@ -20,23 +20,23 @@ expression: f
 │  Logs                ││ ▍Where it stands                                             ││   Memory        16 GB        │
 │  Plan                ││   Next: Save the plan - press Enter                          │└──────────────────────────────┘
 │  Operation           ││                                                              │
-│  Scan                ││ ▍Facts                                                       │
-│  Selection           ││   Asahi install  none                                        │
-│  Inventory           ││   Machine        MacBook Pro (16-inch, M1 Pro, 2021)         │
-│  Review              ││                                                              │
-│  Install             ││ ▍Codes                                                       │
-│  Progress            ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
-│  Restore             ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Qualification       ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
-│  Completion          ││                  d                                           │
+│  Scan                ││ ▍What you can do now                                         │
+│  Selection           ││ ❯ Save the plan                                              │
+│  Inventory           ││   The text flow's own plan.save.                             │
+│  Review              ││   Launch the Asahi installer                                 │
+│  Install             ││   The text flow's own asahi.launch.                          │
+│  Progress            ││   Create Shared                                              │
+│  Restore             ││   The text flow's own shared.create.                         │
+│  Qualification       ││                                                              │
+│  Completion          ││ ▍Facts                                                       │
+│                      ││   Asahi install  none                                        │
+│                      ││   Machine        MacBook Pro (16-inch, M1 Pro, 2021)         │
 │                      ││                                                              │
-│                      ││ ▍What you can do now                                         │
-│                      ││ ❯ Save the plan                                              │
-│                      ││   The text flow's own plan.save.                             │
-│                      ││   Launch the Asahi installer                                 │
-│                      ││   The text flow's own asahi.launch.                          │
-│                      ││   Create Shared                                              │
-│                      ││   The text flow's own shared.create.                         │
+│                      ││ ▍Codes                                                       │
+│                      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
+│                      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
+│                      ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
+│                      ││                  d                                           │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │

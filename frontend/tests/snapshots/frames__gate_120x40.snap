@@ -20,8 +20,8 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Logs                ││ ▍Where it stands                                             │
 │  Plan                ││   The core gave no next step for this session.               │
 │  Operation           ││                                                              │
-│  Scan                ││ ▍Facts                                                       │
-│  Selection           ││   Interface  the foundation: test actions over fixtures      │
+│  Scan                ││ ▍What you can do now                                         │
+│  Selection           ││   Read the fixture (test)                                    │
 │  Inventory      ┌──────────────────────────────────────────────────────────────────────────────────┐
 │  Review         │ ▍Change the fixture (test)                                                       │
 │  Install        │                                                                                  │
@@ -30,9 +30,9 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Qualification  │                                                                                  │
 │  Completion     │   Type test to continue    tes▏                                                  │
 │                 └──────────────────────────────────────────────────────────────────────────────────┘
-│                      ││   Runs the fake mutating child under supervision.            │
-│                      ││   Hand over the terminal (test)                              │
-│                      ││   Runs the fake handoff child on the real terminal.          │
+│                      ││   Interface  the foundation: test actions over fixtures      │
+│                      ││   Fixture    mac-m1pro-1tb-roomy                             │
+│                      ││   Operation  ✓ none                                          │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │

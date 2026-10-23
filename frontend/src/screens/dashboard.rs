@@ -12,6 +12,10 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::Paragraph;
 
+/// The rows the Journey keeps for itself beside the machine panel: the rail,
+/// where the journey stands, and the first of the offered actions.
+const WORKSPACE_ROWS: u16 = 18;
+
 /// What a code's kind is called on the screen.
 fn code_label(kind: &str) -> String {
     match kind {
@@ -29,18 +33,6 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         ));
         return v;
     };
-    if !s.stages.is_empty() {
-        v.push(Item::Text(
-            "[ ] choose a station; Enter opens it; up/down choose actions.".into(),
-            Token::Muted,
-        ));
-        v.extend(s.stages.iter().map(|s| {
-            Item::Text(
-                s.description(),
-                crate::screens::journey::stage_token(&s.state),
-            )
-        }));
-    }
     // The station the core says is current, in its words.
     for stage in s.stages.iter().filter(|s| s.state == "current") {
         v.push(Item::Pair {
@@ -59,6 +51,15 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     }
     for g in m.guides() {
         v.push(Item::Text(g.clone(), Token::Text));
+    }
+    v.push(Item::Blank);
+    v.push(Item::Heading("What you can do now"));
+    if s.actions.is_empty() {
+        v.push(Item::Text("Nothing is available now.".into(), Token::Muted));
+    }
+    v.extend((0..s.actions.len()).map(Item::Action));
+    if !(s.blockers.is_empty() && s.warnings.is_empty() && s.messages.is_empty()) {
+        v.push(Item::Blank);
     }
     v.extend(s.blockers.iter().map(Item::Blocker));
     v.extend(s.warnings.iter().map(Item::Warning));
@@ -95,18 +96,27 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
             });
         }
     }
-    v.push(Item::Blank);
-    v.push(Item::Heading("What you can do now"));
-    if s.actions.is_empty() {
-        v.push(Item::Text("Nothing is available now.".into(), Token::Muted));
+    if !s.stages.is_empty() {
+        v.push(Item::Blank);
+        v.push(Item::Heading("Journey stages"));
+        v.push(Item::Text(
+            "[ ] choose a station; Enter opens it; up/down choose actions.".into(),
+            Token::Muted,
+        ));
+        v.extend(s.stages.iter().map(|s| {
+            Item::Text(
+                s.description(),
+                crate::screens::journey::stage_token(&s.state),
+            )
+        }));
     }
-    v.extend((0..s.actions.len()).map(Item::Action));
     v
 }
 
 pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     // At the standard width the sidebar's machine panel moves under the
-    // workspace's own, when there is room for both.
+    // workspace's own, when the workspace keeps room for the rail, the
+    // current stage and the first offered action above the fold.
     let width = area.width.saturating_sub(2) as usize;
     let machine = machine_lines(m, t, width);
     let side_h = machine.len() as u16 + 2;
@@ -114,13 +124,14 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
         .snap
         .as_ref()
         .is_some_and(|s| s.facts.iter().any(|f| f.key.starts_with("machine.")));
-    let (main, side) = if tier == Tier::Standard && has_machine && area.height >= side_h + 12 {
-        let [a, b] =
-            Layout::vertical([Constraint::Min(10), Constraint::Length(side_h)]).areas(area);
-        (a, Some(b))
-    } else {
-        (area, None)
-    };
+    let (main, side) =
+        if tier == Tier::Standard && has_machine && area.height >= side_h + WORKSPACE_ROWS {
+            let [a, b] =
+                Layout::vertical([Constraint::Min(10), Constraint::Length(side_h)]).areas(area);
+            (a, Some(b))
+        } else {
+            (area, None)
+        };
     let reading = m.reading(|r| *r == crate::app::Req::Snapshot(crate::read::Scope::Journey));
     let title = if reading {
         format!("Journey {} reading", t.g.dot)

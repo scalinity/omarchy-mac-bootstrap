@@ -12,17 +12,17 @@ expression: text(&b)
 │ ▍Where it stands                                         │
 │   The core gave no next step for this session.           │
 │                                                          │
-│ ▍Facts                                                   │
-│   Interface  the foundation: test actions over fixtures  │
-│   Fixture    mac-m1pro-1tb-roomy                         │
-│   Operation  ✓ none                                      │
-│                                                          │
 │ ▍What you can do now                                     │
 │ ❯ Read the fixture (test)                                │
 │   Runs the fake read child: its output is shown, its     │
 │   diagnostics kept within their limits.                  │
 │   Change the fixture (test)                              │
 │   Runs the fake mutating child under supervision.        │
-│   Hand over the terminal (test)                         ↓│
+│   Hand over the terminal (test)                          │
+│   Runs the fake handoff child on the real terminal.      │
+│                                                          │
+│ ▍Facts                                                   │
+│   Interface  the foundation: test actions over fixtures  │
+│   Fixture    mac-m1pro-1tb-roomy                        ↓│
 └──────────────────────────────────────────────────────────┘
  ⏎ select  ? help       can make changes · recorded machine

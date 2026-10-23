@@ -713,7 +713,7 @@ impl Default for Model {
             lost: false,
             check: false,
             region: Region::Work,
-            nav: 1,
+            nav: 0,
             side: false,
             details: Default::default(),
             operation_stale: false,
@@ -1090,7 +1090,16 @@ fn level_of(s: &str) -> Level {
 
 /// The one update function.
 pub fn update(m: &mut Model, msg: Msg) -> Vec<Cmd> {
+    let before = m.screen;
+    let under = under(m);
     let cmds = step(m, msg);
+    if m.screen != before {
+        if Some(m.screen) == under {
+            *m.viewport.borrow_mut() = crate::viewport::Viewport::resuming();
+        } else {
+            opened(m);
+        }
+    }
     for d in m.details.iter_mut().flatten() {
         let shown = d.shown();
         if shown.get(d.cursor).is_some_and(|r| !r.focusable(d.kind)) {
@@ -1488,8 +1497,12 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                 let old = m.generation(Scope::Journey).map(str::to_string);
                 m.snap = Some(s);
                 moved_on(m, Scope::Journey, old);
-                if matches!(m.screen, Screen::Connecting | Screen::Fatal) {
+                if m.screen == Screen::Connecting && !m.check {
+                    m.screen = Screen::Welcome;
+                    m.nav = 0;
+                } else if matches!(m.screen, Screen::Connecting | Screen::Fatal) {
                     m.screen = Screen::Dashboard;
+                    m.nav = 1;
                 }
                 let c = regenerated(m, Scope::Journey, &id);
                 return settle(m, c);
@@ -2580,19 +2593,97 @@ fn key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
     }
 }
 
-/// Open SCREEN in the workspace, and read what it needs if this is its
-/// first time.
-fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
-    if m.screen != s {
-        m.page_scroll = 0;
+/// The screen that help, the gate, the brief or a form returns to: it comes
+/// back as it was left, not as a page opened anew.
+fn under(m: &Model) -> Option<Screen> {
+    match m.screen {
+        Screen::Help => Some(m.back),
+        Screen::Gate => m.gate.as_ref().map(|g| g.back),
+        Screen::Brief => Some(m.brief_back),
+        Screen::Form => Some(m.form.back),
+        _ => None,
     }
+}
+
+/// A newly opened screen starts at its top, with its first row selected; the
+/// window follows that row once a key moves or acts on it.
+fn opened(m: &mut Model) {
+    *m.viewport.borrow_mut() = crate::viewport::Viewport::default();
+    match m.screen {
+        Screen::Welcome => m.welcome_scroll = 0,
+        Screen::Dashboard => {
+            m.dash_scroll = 0;
+            m.focus = 0;
+            m.station = None;
+        }
+        Screen::Plan => {
+            m.plan_scroll = 0;
+            m.plan.field = crate::screens::plan::field_order(&m.plan)
+                .first()
+                .copied()
+                .unwrap_or(0);
+            m.plan.unit_focus = false;
+        }
+        Screen::Form => {
+            m.plan_scroll = 0;
+            m.form.field = crate::screens::plan::field_order(&m.form)
+                .first()
+                .copied()
+                .unwrap_or(0);
+            m.form.unit_focus = false;
+        }
+        Screen::Selection => {
+            m.page_scroll = 0;
+            m.sel = 0;
+        }
+        Screen::Inventory => {
+            m.page_scroll = 0;
+            m.inv.choice = 0;
+            m.inv.open = false;
+        }
+        Screen::Review => {
+            m.page_scroll = 0;
+            m.rev = 0;
+        }
+        Screen::Restore => {
+            m.page_scroll = 0;
+            m.rest.action = 0;
+        }
+        Screen::Conflicts => {
+            m.page_scroll = 0;
+            m.rest.conflict = 0;
+            m.rest.side_scroll = 0;
+            m.rest.line_scroll.set(0);
+        }
+        Screen::Logs => {
+            m.page_scroll = 0;
+            m.scroll = 0;
+        }
+        Screen::Help => m.help_scroll = 0,
+        Screen::Gate => m.gate_scroll.set(0),
+        Screen::Connecting | Screen::Fatal => {}
+        _ => m.page_scroll = 0,
+    }
+    if let Some(kind) = m.screen.kind()
+        && let Some(d) = m.detail_mut(kind)
+    {
+        d.cursor = 0;
+        close_value(d);
+    }
+}
+
+/// Open SCREEN in the workspace, reading what it needs for its first visit.
+/// The screen already shown keeps its place.
+fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
     m.status = None;
+    let moved = m.screen != s;
     m.screen = s;
     m.region = Region::Work;
     m.side = false;
     if let Some(i) = NAV.iter().position(|n| *n == s) {
         m.nav = i;
     }
+    let mut check = None;
     if s == Screen::Plan {
         plan_fields(m);
         if !m.check
@@ -2603,9 +2694,14 @@ fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
                 .all(|n| m.plan.fields.iter().any(|f| f.name == *n))
         {
             crate::screens::plan::defaults(m);
-            let args = m.plan.args();
-            return validate(m, "plan.save".into(), args);
+            check = Some(m.plan.args());
         }
+    }
+    if moved {
+        opened(m);
+    }
+    if let Some(args) = check {
+        return validate(m, "plan.save".into(), args);
     }
     let mut cmds = Vec::new();
     if s == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
@@ -2762,66 +2858,72 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             }
             Vec::new()
         }
-        _ => match m.region {
-            Region::Nav => nav_key(m, k),
-            Region::Work => match m.screen {
-                Screen::Dashboard => dashboard_key(m, k),
-                Screen::Welcome => {
-                    if k.code == KeyCode::Enter {
-                        return open(m, Screen::Dashboard);
-                    }
-                    let n = crate::screens::blocks(m, Screen::Welcome);
-                    scroll_key(&mut m.welcome_scroll, n, &k);
-                    Vec::new()
-                }
-                Screen::Logs if m.logs_tab == LogsTab::Diagnostics => {
-                    let n = m.logs.len();
-                    scroll_key(&mut m.scroll, n, &k);
-                    Vec::new()
-                }
-                Screen::Install => {
-                    let ids = install_actions(m);
-                    page_key(m, k, Scope::Journey, ids)
-                }
-                Screen::Shared => page_key(m, k, Scope::Journey, &["shared.create"]),
-                Screen::Scan => page_key(m, k, Scope::Profile, &["profile.scan"]),
-                Screen::Progress => page_key(m, k, Scope::Journey, &[]),
-                Screen::Restore => restore_key(m, k),
-                Screen::Qualification => match k.code {
-                    KeyCode::Enter => refresh(m),
-                    KeyCode::Char('t') if m.whole(Kind::Step) && m.qualify.fault.is_none() => {
-                        match m.offered(Scope::Qualify, "qualify.run") {
-                            Some(a) => choose(m, a, Scope::Qualify),
-                            None => Vec::new(),
+        _ => {
+            // A key the screen takes acts on its focus: the window follows it.
+            if m.region == Region::Work {
+                m.viewport.borrow_mut().engage();
+            }
+            match m.region {
+                Region::Nav => nav_key(m, k),
+                Region::Work => match m.screen {
+                    Screen::Dashboard => dashboard_key(m, k),
+                    Screen::Welcome => {
+                        if k.code == KeyCode::Enter {
+                            return open(m, Screen::Dashboard);
                         }
+                        let n = crate::screens::blocks(m, Screen::Welcome);
+                        scroll_key(&mut m.welcome_scroll, n, &k);
+                        Vec::new()
                     }
-                    _ => {
+                    Screen::Logs if m.logs_tab == LogsTab::Diagnostics => {
+                        let n = m.logs.len();
+                        scroll_key(&mut m.scroll, n, &k);
+                        Vec::new()
+                    }
+                    Screen::Install => {
+                        let ids = install_actions(m);
+                        page_key(m, k, Scope::Journey, ids)
+                    }
+                    Screen::Shared => page_key(m, k, Scope::Journey, &["shared.create"]),
+                    Screen::Scan => page_key(m, k, Scope::Profile, &["profile.scan"]),
+                    Screen::Progress => page_key(m, k, Scope::Journey, &[]),
+                    Screen::Restore => restore_key(m, k),
+                    Screen::Qualification => match k.code {
+                        KeyCode::Enter => refresh(m),
+                        KeyCode::Char('t') if m.whole(Kind::Step) && m.qualify.fault.is_none() => {
+                            match m.offered(Scope::Qualify, "qualify.run") {
+                                Some(a) => choose(m, a, Scope::Qualify),
+                                None => Vec::new(),
+                            }
+                        }
+                        _ => {
+                            let n = crate::screens::blocks(m, m.screen);
+                            scroll_key(&mut m.page_scroll, n, &k);
+                            Vec::new()
+                        }
+                    },
+                    Screen::Completion => {
                         let n = crate::screens::blocks(m, m.screen);
                         scroll_key(&mut m.page_scroll, n, &k);
                         Vec::new()
                     }
+                    Screen::Conflicts => conflict_key(m, k),
+                    Screen::Brief => {
+                        let n = crate::screens::blocks(m, Screen::Brief);
+                        scroll_key(&mut m.page_scroll, n, &k);
+                        Vec::new()
+                    }
+                    Screen::Health if k.code == KeyCode::Char('c') => mcp_check(m),
+                    Screen::Selection => selection_key(m, k),
+                    Screen::Inventory => inventory_key(m, k),
+                    Screen::Review => review_key(m, k),
+                    s => match s.kind() {
+                        Some(kind) => table_key(m, kind, k),
+                        None => Vec::new(),
+                    },
                 },
-                Screen::Completion => {
-                    let n = crate::screens::blocks(m, m.screen);
-                    scroll_key(&mut m.page_scroll, n, &k);
-                    Vec::new()
-                }
-                Screen::Conflicts => conflict_key(m, k),
-                Screen::Brief => {
-                    let n = crate::screens::blocks(m, Screen::Brief);
-                    scroll_key(&mut m.page_scroll, n, &k);
-                    Vec::new()
-                }
-                Screen::Health if k.code == KeyCode::Char('c') => mcp_check(m),
-                Screen::Selection => selection_key(m, k),
-                Screen::Inventory => inventory_key(m, k),
-                Screen::Review => review_key(m, k),
-                s => match s.kind() {
-                    Some(kind) => table_key(m, kind, k),
-                    None => Vec::new(),
-                },
-            },
-        },
+            }
+        }
     }
 }
 
@@ -3729,6 +3831,15 @@ mod tests {
             &mut m,
             Msg::Done(Req::Snapshot(Scope::Journey), Outcome::Answer(snap)),
         );
+        assert_eq!(m.screen, Screen::Welcome);
+        assert_eq!(m.nav, 0);
+        assert!(
+            update(
+                &mut m,
+                Msg::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            )
+            .is_empty()
+        );
         assert_eq!(m.screen, Screen::Dashboard);
         m
     }
@@ -3801,6 +3912,59 @@ mod tests {
         assert_eq!(m.gate_input, "");
         update(&mut m, press(KeyCode::Esc));
         assert_eq!(m.screen, Screen::Dashboard);
+    }
+
+    #[test]
+    fn opening_a_screen_leaves_its_scroll_and_selection_at_the_start() {
+        for screen in NAV {
+            let mut m = ready();
+            m.screen = if screen == Screen::Machine {
+                Screen::Status
+            } else {
+                Screen::Machine
+            };
+            m.page_scroll = 7;
+            m.dash_scroll = 7;
+            m.welcome_scroll = 7;
+            m.plan_scroll = 7;
+            m.scroll = 7;
+            m.focus = 2;
+            m.sel = 3;
+            m.rev = 4;
+            m.inv.choice = 5;
+            m.rest.action = 1;
+            m.station = Some(4);
+            let _ = open(&mut m, screen);
+            assert_eq!(m.screen, screen);
+            match screen {
+                Screen::Welcome => assert_eq!(m.welcome_scroll, 0, "{screen:?}"),
+                Screen::Dashboard => {
+                    assert_eq!((m.dash_scroll, m.focus, m.station), (0, 0, None));
+                }
+                Screen::Plan => assert_eq!(m.plan_scroll, 0, "{screen:?}"),
+                Screen::Selection => assert_eq!((m.page_scroll, m.sel), (0, 0)),
+                Screen::Inventory => assert_eq!((m.page_scroll, m.inv.choice), (0, 0)),
+                Screen::Review => assert_eq!((m.page_scroll, m.rev), (0, 0)),
+                Screen::Restore => assert_eq!((m.page_scroll, m.rest.action), (0, 0)),
+                Screen::Logs => assert_eq!((m.page_scroll, m.scroll), (0, 0)),
+                _ => assert_eq!(m.page_scroll, 0, "{screen:?}"),
+            }
+            // The next layout opens the window at the top, not engaged.
+            assert!(m.viewport.borrow().screen.is_none(), "{screen:?}");
+        }
+    }
+
+    #[test]
+    fn help_and_the_brief_give_the_page_back_as_it_was_left() {
+        let mut m = ready();
+        update(&mut m, press(KeyCode::Down));
+        assert_eq!(m.focus, 1);
+        for code in ['?', 'D'] {
+            update(&mut m, press(KeyCode::Char(code)));
+            assert_ne!(m.screen, Screen::Dashboard);
+            update(&mut m, press(KeyCode::Esc));
+            assert_eq!((m.screen, m.focus), (Screen::Dashboard, 1));
+        }
     }
 
     #[test]

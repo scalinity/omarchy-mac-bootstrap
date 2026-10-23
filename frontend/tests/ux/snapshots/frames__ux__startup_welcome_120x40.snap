@@ -1,0 +1,44 @@
+---
+source: tests/ux/mod.rs
+expression: "frame(&m, w, h)"
+---
+ ◒ Welcome ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Welcome ─────────────────────────────────────────────────────────────────────────────────────┐
+│▍ Welcome             ││ ▍Welcome to Omarchy Mac Bootstrap                                                            │
+│  Journey             ││   A step runs only when it is chosen; its conditions are checked again first.                │
+│  Machine             ││                                                                                              │
+│  Status              ││ ▍This machine                                                                                │
+│  Health              ││   Model ID   MacBookPro18,2                                                                  │
+│  Logs                ││                                                                                              │
+│  Plan                ││ ▍The tool and the core                                                                       │
+│  Operation           ││   Interface  frontend 0.2.0, protocol 1                                                      │
+│  Scan                ││   Bootstrap  version 0.2.0                                                                   │
+│  Selection           ││   System     macOS, arm64, user                                                              │
+│  Inventory           ││   Session    can make changes · 3 steps offered · recorded machine                           │
+│  Review              ││                                                                                              │
+│  Install             ││ ▍Where the journey stands                                                                    │
+│  Progress            ││ ·───────·───────·───────·───────·───────·───────·───────·───────·───────·                    │
+│  Restore             ││ Survey  Choices Review  Plan    Asahi   Omarchy Shared  Restore Verify  Done                 │
+│  Qualification       ││ No stage is derived yet: every station is later.                                             │
+│  Completion          ││   Next       After the shutdown, hold the power button and choose Linux.                     │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+│                      ││                                                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────┘
+ ⏎ the journey  ↑↓ scroll  r refresh  L logs  ? help  q quit      can make changes · 3 steps offered · recorded machine

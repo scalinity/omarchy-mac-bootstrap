@@ -11,18 +11,18 @@ expression: text_of(&b)
 |  Status      || Verify: current step - 9 of 10                               |
 |  Health      ||                                                              |
 |  Logs        || |Where it stands                                             |
-|  Plan        ||   [ ] choose a station; Enter opens it; up/down choose       |
-|  Op          ||   actions.                                                   |
-|  Scan        ||   Survey: done                                               |
-|  Select      ||   Choose what to bring: done                                 |
-|  Items       ||   Review choices: done                                       |
-|  Review      ||   Plan storage: done                                         |
-|  Install     ||   Install Asahi: done - recorded by macOS                    |
-|  Progress    ||   Install Omarchy: done                                      |
-|  Restore     ||   Shared storage: blocked - Activate Shared first            |
-|  Qualify     ||   Restore: skipped - No bundle selected                      |
-|  Completion  ||   Verify: current step                                       |
-|              ||   Complete: not yet                                          |
-|              ||   Current stage  Verify: current step                       v|
+|  Plan        ||   Current stage  Verify: current step                        |
+|  Op          ||   The core gave no next step for this session.               |
+|  Scan        ||                                                              |
+|  Select      || |What you can do now                                         |
+|  Items       ||   Nothing is available now.                                  |
+|  Review      ||                                                              |
+|  Install     || |Journey stages                                              |
+|  Progress    ||   [ ] choose a station; Enter opens it; up/down choose       |
+|  Restore     ||   actions.                                                   |
+|  Qualify     ||   Survey: done                                               |
+|  Completion  ||   Choose what to bring: done                                 |
+|              ||   Review choices: done                                       |
+|              ||   Plan storage: done                                        v|
 +--------------++--------------------------------------------------------------+
  enter select  up/down move  ? help         can make changes - recorded machine

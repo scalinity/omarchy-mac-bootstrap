@@ -164,6 +164,8 @@ fn dashboard(barrier: bool) -> Model {
         &mut m,
         Msg::Done(Req::Snapshot(Scope::Journey), Outcome::Answer(snap)),
     );
+    assert_eq!(m.screen, Screen::Welcome);
+    update(&mut m, key(KeyCode::Enter));
     assert_eq!(m.screen, Screen::Dashboard);
     m
 }

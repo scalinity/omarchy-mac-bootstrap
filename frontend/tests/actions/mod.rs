@@ -98,6 +98,9 @@ pub fn ready_on(platform: &str, body: &str) -> Model {
     assert_eq!(req, Req::Snapshot(Scope::Journey));
     let c = answer_on(&mut m, req, body, platform);
     assert_eq!(requests(&c), 0);
+    assert_eq!(m.screen, Screen::Welcome);
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0);
+    assert_eq!(m.screen, Screen::Dashboard);
     m
 }
 
@@ -661,7 +664,7 @@ fn only_listed_actions_are_offered() {
     go(&mut m, Screen::Install);
     let f = frame(&m, 120, 70);
     assert!(
-        f.contains("does not offer asahi.launch now")
+        f.contains("does not offer the Asahi installer now")
             && f.contains("FileVault is still encrypting."),
         "{f}"
     );

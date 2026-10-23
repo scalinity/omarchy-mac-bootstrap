@@ -13,16 +13,16 @@ expression: a
 |  Logs        || |Where it stands                                             |
 |  Plan        ||   The core gave no next step for this session.               |
 |  Op          ||                                                              |
-|  Scan        || |Facts                                                       |
-|  Select      ||   Interface  the foundation: test actions over fixtures      |
-|  Items       ||   Fixture    mac-m1pro-1tb-roomy                             |
-|  Review      ||   Operation  + none                                          |
-|  Install     ||                                                              |
-|  Progress    || |What you can do now                                         |
-|  Restore     || > Read the fixture (test)                                    |
-|  Qualify     ||   Runs the fake read child: its output is shown, its         |
-|  Completion  ||   diagnostics kept within their limits.                      |
-|              ||   Change the fixture (test)                                  |
-|              ||   Runs the fake mutating child under supervision.           v|
+|  Scan        || |What you can do now                                         |
+|  Select      || > Read the fixture (test)                                    |
+|  Items       ||   Runs the fake read child: its output is shown, its         |
+|  Review      ||   diagnostics kept within their limits.                      |
+|  Install     ||   Change the fixture (test)                                  |
+|  Progress    ||   Runs the fake mutating child under supervision.            |
+|  Restore     ||   Hand over the terminal (test)                              |
+|  Qualify     ||   Runs the fake handoff child on the real terminal.          |
+|  Completion  ||                                                              |
+|              || |Facts                                                       |
+|              ||   Interface  the foundation: test actions over fixtures     v|
 +--------------++--------------------------------------------------------------+
  enter select  ? help     can make changes - 3 steps offered - recorded machine

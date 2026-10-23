@@ -5,20 +5,20 @@ expression: bottom
  ◒ Journey ───────────────────────────────────────── v0.2.0
   Welcome ▍Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Journey ─────────────────────────────────────────────────┐
-│   Asahi install  none                                   ↑│
+│   Save the plan                                         ↑│
+│   The text flow's own plan.save.                         │
+│   Launch the Asahi installer                             │
+│   The text flow's own asahi.launch.                      │
+│ ❯ Create Shared                                          │
+│   The text flow's own shared.create.                     │
+│                                                          │
+│ ▍Facts                                                   │
+│   Asahi install  none                                    │
 │                                                          │
 │ ▍Codes                                                   │
 │   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,│
 │                  tz=America/New_York,loc=en_US.UTF-8,ssh=│
 │                  0,gh=octocat,Linux=250,shared=150,dev=1,│
 │                  plan=1a2b3c4d                           │
-│                                                          │
-│ ▍What you can do now                                     │
-│   Save the plan                                          │
-│   The text flow's own plan.save.                         │
-│   Launch the Asahi installer                             │
-│   The text flow's own asahi.launch.                      │
-│ ❯ Create Shared                                          │
-│   The text flow's own shared.create.                     │
 └──────────────────────────────────────────────────────────┘
  ⏎ select  ? help       can make changes · recorded machine

@@ -57,6 +57,12 @@ takes for the report.
 Every screen holds at 80×24 and at the 60×20 floor, in ASCII and with no
 colour.
 
+The first journey answer after Connecting opens Welcome, with Welcome
+selected in Screens; Enter goes on to Journey. A startup-check session
+(`frontend-check`, which serves the journey only) opens on Journey, never on
+Welcome. A retry from the error screen opens Journey. A reread and the return
+from a handoff keep the screen they are on.
+
 ## Direction: a panelled instrument
 
 The interface is a full-screen terminal application with a strong, quiet
@@ -226,11 +232,11 @@ that.
 The ten stations are `survey`, `profile`, `resolve`, `plan`, `asahi`,
 `omarchy`, `shared`, `restore`, `verify`, `done` (docs/QUALIFICATION.md).
 A station that only the other system can see is drawn with its recorded
-state and *recorded by macos* or *recorded by linux*. The state list below
-the strip gives every station's state and provenance, and the core's reason
-for a skipped or blocked station. `[` and `]` select a station, starting at
-the current one; Enter opens it. The strip's summary names the selected
-station. Up/down return to the dashboard's actions.
+state and *recorded by macos* or *recorded by linux*. The list of stations at
+the foot of the page gives every station's state and provenance, and the
+core's reason for a skipped or blocked station. `[` and `]` select a station,
+starting at the current one; Enter opens it. The strip's summary names the
+selected station. Up/down return to the dashboard's actions.
 
 A journey snapshot either supplies all ten `stage` records in canonical
 order, or supplies none. With none, the stations keep their *later*
@@ -264,13 +270,27 @@ copied.
 Every overflowing workspace scrolls by its rendered lines, including wrapped
 text. Up/down select the next focusable row in that direction; past the
 first or last row they scroll the content. Page Up/Down move a visible page,
-Home/End reach the top/bottom, and the focused row stays visible. When a
-page contains only prose, the panel has the keys. An edge arrow appears
-only while more lines can be reached in that direction. Text fields keep
-the letter keys for typing; the vim aliases apply outside fields.
+Home/End reach the top/bottom. A screen opens at its top, with its first
+focusable row selected. The window follows that row only once the person has
+moved the focus or pressed a key that acts on it, and then keeps it visible.
+A page whose first row lies below the fold therefore still opens at its
+heading, and Enter acts on the selected row all the same: on Journey it takes
+the offered step before any focus movement. Help, the brief, the gate and a
+parameter form give back the page they covered as it was left, not as a page
+opened anew. When a page contains only prose, the panel has the keys. An edge
+arrow appears only while more lines can be reached in that direction. Text
+fields keep the letter keys for typing; the vim aliases apply outside fields.
 
 The vim letters are aliases, never the only way. Help (`?`) lists every
 binding of the current screen, generated from the same keymap as the hints.
+
+Journey reads, top to bottom: the rail; Where it stands, with the current
+stage and the next step; What you can do now, with the actions the snapshot
+lists, followed by the blockers, warnings and notices; Facts; Codes; and last
+the list of all ten stations. The rail, the current stage and the offered step
+are in view together on opening at 80×24 and at 120×40. At the standard width
+the System Overview panel sits under Journey only while Journey keeps 18 rows;
+below that, Welcome and Machine hold those facts.
 
 ## Confirmation
 
@@ -503,7 +523,7 @@ and *keep the rest* keeps every conflict after this one):
 | # | Screen | Pattern | At 60 columns | Main keys |
 | --- | --- | --- | --- | --- |
 | 1 | Welcome and machine identity | one page of facts: this machine, the tool and the core, the frontend's verified release (target, SHA-256), where the journey stands; facts read from a record are named *recorded* | labels shorten; the sidebar is a panel of its own (`s`) | `⏎` `?` `q` |
-| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the blockers, the next step, and the views of status, doctor and details; only the actions the snapshot lists | one-line rail, the card only | `⏎`, the stage's own keys |
+| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the next step, the actions the snapshot lists (and only those), then the blockers, the views of status, doctor and details, and the list of stations | one-line rail, the card only | `⏎`, the stage's own keys |
 | 3 | Environment scan | adapters with live counts and states (`done`, `partial`, `denied`) | same | Ctrl-C cancels (safe) |
 | 4 | Migration selection | the categories, each with its count, whether it is included and its estimated size; defaults marked by who chose; a category opens its list | sizes drop | `Space` `⏎` |
 | 5–9, 11 | Inventory by category | one list and detail, a tab per category (secrets among them), decisions first; the detail pane holds an item's choices, a folder's contents and an AI tool's components | the detail on Enter | `f` `Space` `/` `⏎` |
