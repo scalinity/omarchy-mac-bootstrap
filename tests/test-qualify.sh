@@ -261,10 +261,53 @@ for boundary in qualify.stream qualify.linux; do
   q_go
   assert_rc "$QRC" 0 "qualify-write-failure-$boundary-retry"
 done
-q_setup linux; q_import
-printf 'exfat (nvme0n1p7): volume was not properly unmounted\n' >"$F/cmd/qualify_dirty"
-q_go
-assert_contains "$(cat "$Q/linux.omb")" 'dirty=1' qualify-linux-dirty-recorded
+# Journal access is preferred; unreadable logs are informational. Match the
+# driver's complete warning for the identified device, never another one.
+dirty_warning='Volume was not properly unmounted. Some data may be corrupt. Please run fsck.'
+for source in journal-clean journal-dirty dmesg-fallback unknown other-device device-prefix other-message other-driver; do
+  q_setup linux; q_import
+  expected_dirty=0
+  case "$source" in
+    journal-clean)
+      # A readable clean journal wins even if dmesg contains a dirty warning.
+      printf 'exFAT-fs (nvme0n1p7): %s\n' "$dirty_warning" >"$F/cmd/qualify_dirty" ;;
+    journal-dirty)
+      printf 'Oct 23 kernel: exFAT-fs (nvme0n1p7): %s\n' "$dirty_warning" >"$F/cmd/qualify_journal"
+      expected_dirty=1 ;;
+    dmesg-fallback)
+      printf '1\n' >"$F/cmd/qualify_journal.rc"
+      printf '[123.456] exFAT-fs (nvme0n1p7): %s\n' "$dirty_warning" >"$F/cmd/qualify_dirty"
+      expected_dirty=1 ;;
+    unknown)
+      printf '1\n' >"$F/cmd/qualify_journal.rc"
+      printf '1\n' >"$F/cmd/qualify_dirty.rc"
+      # Partial output from a failed read must not claim a checked flag.
+      printf 'exFAT-fs (nvme0n1p7): %s\n' "$dirty_warning" >"$F/cmd/qualify_journal"
+      cp "$F/cmd/qualify_journal" "$F/cmd/qualify_dirty"
+      expected_dirty=unknown ;;
+    other-device)
+      printf 'exFAT-fs (nvme0n1p6): %s\n' "$dirty_warning" >"$F/cmd/qualify_journal" ;;
+    device-prefix)
+      printf 'exFAT-fs (nvme0n1p70): %s\n' "$dirty_warning" >"$F/cmd/qualify_journal" ;;
+    other-message)
+      printf 'exFAT-fs (nvme0n1p7): dirty flag information\n' >"$F/cmd/qualify_journal" ;;
+    other-driver)
+      printf 'other-exFAT-fs (nvme0n1p7): %s\n' "$dirty_warning" >"$F/cmd/qualify_journal" ;;
+  esac
+  q_go
+  assert_rc "$QRC" 0 "qualify-dirty-$source-completes"
+  rec_admit_file qlinux - "$Q/linux.omb"
+  assert_rc $? 0 "qualify-dirty-$source-admitted"
+  observed_dirty=''
+  _qfy_get observed_dirty "${REC_L[0]}" dirty
+  assert_eq "$observed_dirty" "$expected_dirty" "qualify-dirty-$source-recorded"
+  assert_contains "$QOUT" "Linux exFAT dirty flag: $expected_dirty" "qualify-dirty-$source-shown"
+  if [ "$source" = unknown ]; then
+    assert_contains "$QOUT" 'The kernel log could not be read' qualify-dirty-unknown-log-message
+    assert_contains "$QOUT" 'dirty flag could not be checked' qualify-dirty-unknown-check-message
+    assert_contains "$QOUT" 'Shut down cleanly' qualify-dirty-unknown-shutdown
+  fi
+done
 
 # Every writer stage counts, even when the final hash command succeeds.
 for broken in producer tee hash short; do
@@ -282,11 +325,10 @@ assert_rc "$QRC" 0 qualify-mismatch-step2-continues
 rec_admit_file qlinux - "$Q/linux.omb"
 _qfy_get read_hash "${REC_L[0]}" read_sha256
 assert_not_contains "$read_hash" 22408e42a1590b66ec35d317281cd4858907752051ae16996a1c33cc08776cf4 qualify-mismatch-step2-recorded
-for unavailable in space dirty kernel hash; do
+for unavailable in space kernel hash; do
   q_setup linux; q_import
   case "$unavailable" in
     space) printf 'bad\n' >"$F/cmd/qualify_space" ;;
-    dirty) rm "$F/cmd/qualify_dirty" ;;
     kernel) printf 'not an id\n' >"$F/cmd/qualify_kernel" ;;
     hash) sed '/^sha256sum$/d' "$F/commands" >"$F/newcommands"; cp "$F/newcommands" "$F/commands" ;;
   esac
@@ -350,8 +392,11 @@ if t_plutil 'qualification macOS steps'; then
   q_setup linux
   cp -R "$MAC_Q/." "$Q/"
   state_set cfg_plan "${mac_plan:0:8}"
+  printf '1\n' >"$F/cmd/qualify_journal.rc"
+  printf '1\n' >"$F/cmd/qualify_dirty.rc"
   q_go
   assert_rc "$QRC" 0 qualify-round-trip-step2
+  assert_contains "$(cat "$Q/linux.omb")" 'dirty=unknown' qualify-round-trip-dirty-unknown
   LINUX_Q=$Q
   # Finish on the original Mac and plan; no manually copied digest.
   F=$MAC_RUN Q=$MAC_Q OMB_FIXTURE=$MAC_RUN OMB_STATE_DIR=$MAC_STATE REC_TMP=''
@@ -360,6 +405,7 @@ if t_plutil 'qualification macOS steps'; then
   cp -R "$LINUX_Q/." "$Q/"
   q_go
   assert_rc "$QRC" 0 qualify-step3-success
+  assert_contains "$QOUT" 'Qualification passed; Linux exFAT dirty flag: unknown.' qualify-dirty-unknown-verdict
   q_status passed qualify-passed
   for file in macos.omb linux.omb result.omb; do if [ -f "$Q/$file" ]; then ok; else fail "qualify-keeps-$file"; fi; done
   for file in data.macos.bin data.linux.bin names-macos names-linux; do if [ ! -e "$Q/$file" ]; then ok; else fail "qualify-pass-removes-$file"; fi; done
@@ -483,6 +529,17 @@ assert_eq "$(c_answered detail 'done ok')" '' qualify-core-recorded-step-page
 assert_contains "$C_OUT" '08:00:00%20EDT' qualify-step-time-eastern
 c_run detail "$(rec_line page scope qualify kind step generation "$qgen" offset 0 limit 10)"
 assert_eq "$(c_answered detail 'refused changed')" '' qualify-core-generation-binds-records
+cp "$FIX/qualify-records/linux.omb" "$C_FIX/root/mnt/shared/omarchy-mac-bootstrap/qualify/"
+q_change "$C_FIX/root/mnt/shared/omarchy-mac-bootstrap/qualify/linux.omb" 's/dirty=0/dirty=unknown/'
+c_run snapshot $'scope\tname=qualify'
+assert_eq "$(c_answered snapshot 'done ok')" '' qualify-dirty-unknown-snapshot
+fresh_gen=$(printf '%s\n' "$C_OUT" | sed -n 's/^generation.id=\([a-f0-9]*\).*/\1/p')
+c_run detail "$(rec_line page scope qualify kind step generation "$fresh_gen" offset 0 limit 10)"
+assert_eq "$(c_answered detail 'done ok')" '' qualify-dirty-unknown-page
+for step in 2 3; do
+  dirty_row=$(printf '%s\n' "$C_OUT" | awk -F '\t' -v step="$step" '$1 == "row" && $3 == "key=" step')
+  assert_contains "$dirty_row" 'dirty%20unknown' "qualify-dirty-unknown-row-$step"
+done
 C_ENV='OMB_SESSION_SCOPES=journey OMB_TEST_QUAL_BYTES=4097'
 c_run snapshot $'scope\tname=qualify'
 assert_eq "$(c_answered snapshot 'refused scope')" '' qualify-core-scope-before-producer

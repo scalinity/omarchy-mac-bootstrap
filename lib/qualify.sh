@@ -11,7 +11,7 @@ _qfy_schema() {
       [ "$2" = "$3" ] || return 1
       case "$3" in
         macos) REC_SPEC='schema:uint plan:hex64 shared_guid:bytes os:enum(macos) commit:hex40? at:utc bytes:uint sha256:hex64 name:bytes*' ;;
-        linux) REC_SPEC='schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:bool' ;;
+        linux) REC_SPEC='schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:enum(0|1|unknown)' ;;
         result) REC_SPEC='schema:uint previous:hex64 os:enum(macos) commit:hex40? at:utc data_ok:bool return_ok:bool names_ok:bool verdict:enum(passed|failed) reason:id?' ;;
       esac ;;
     card) REC_CARD=1 ;;
@@ -399,8 +399,23 @@ qfy_run() {
       _qfy_add_list name "$written" || return 1
       _qfy_save macos || return 1 ;;
     2)
-      logs=$(sys_cmd qualify_dirty dmesg) || { ui_fail 'The exFAT dirty flag could not be read from the kernel log.'; return 1; }
-      if printf '%s\n' "$logs" | grep -E "exfat.*$SH_NAME.*(dirty|not properly unmounted)" >/dev/null; then dirty=1; fi
+      if logs=$(sys_cmd qualify_journal journalctl -k -b 0 --no-pager -q); then :
+      elif logs=$(sys_cmd qualify_dirty dmesg); then :
+      else
+        dirty=unknown
+        ui_warn 'The kernel log could not be read, so an exFAT dirty flag could not be checked. Shut down cleanly before switching systems next time.'
+      fi
+      # Literal driver text and the complete device delimiter: another
+      # partition, including one with this name as a prefix, cannot match.
+      if [ "$dirty" != unknown ]; then
+        if printf '%s\n' "$logs" | awk -v device="$SH_NAME" '
+          BEGIN { warning = "exFAT-fs (" device "): Volume was not properly unmounted. Some data may be corrupt. Please run fsck." }
+          {
+            at = index($0, warning)
+            if (at && substr($0, at) == warning && (at == 1 || substr($0, at - 1, 1) ~ /[[:space:]]/)) found = 1
+          }
+          END { exit !found }'; then dirty=1; fi
+      fi
       kernel=$(sys_cmd qualify_kernel uname -r) || return 1
       _rec_type_ok id "$kernel" || return 1
       _qfy_clean_side linux || return 1
@@ -516,6 +531,10 @@ qfy_core_op() {
       _qfy_get dirty "$QFY_L" dirty
       detail="read ${read_sha:0:12}; wrote ${sha:0:12}; dirty $dirty"
       if [ "$read_sha" != "$mac_sha" ]; then state=failed; detail="$detail; macOS digest mismatch"; fi
+    fi
+    if [ "$n" = 3 ] && [ -n "$QFY_L" ]; then
+      _qfy_get dirty "$QFY_L" dirty
+      detail="$detail; Linux dirty $dirty"
     fi
     if [ "$QFY_STATE" = blocked ]; then state=blocked detail=$QFY_WHY
     elif [ "$n" = 3 ] && [ "$QFY_STATE" = failed ]; then state=failed detail="$detail; $QFY_WHY"; fi

@@ -14,6 +14,7 @@ printf '%s\n' shasum >>qualify-macos/commands
 put qualify-linux/cmd/qualify_space 'Filesystem 1024-blocks Used Available Capacity Mounted on
 /dev/nvme0n1p7 146484375 1000 140000000 1% /mnt/shared'
 cp qualify-linux/cmd/qualify_space qualify-macos/cmd/qualify_space
+put qualify-linux/cmd/qualify_journal 'kernel: exFAT-fs (nvme0n1p7): mounted filesystem'
 put qualify-linux/cmd/qualify_dirty 'exfat: mounted cleanly'
 put qualify-linux/cmd/qualify_kernel 6.18.0-asahi
 put qualify-linux/cmd/qualify_commit 0123456789012345678901234567890123456789

@@ -169,7 +169,7 @@ takes no file argument, so there it is a whole-system `sync`.
 | Record | Written by | Schema |
 | --- | --- | --- |
 | `macos` (`macos.omb`) | macOS, step 1 | `schema:uint plan:hex64 shared_guid:bytes os:enum(macos) commit:hex40? at:utc bytes:uint sha256:hex64 name:bytes*` |
-| `linux` (`linux.omb`) | Linux, step 2 | `schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:bool` |
+| `linux` (`linux.omb`) | Linux, step 2 | `schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:enum(0\|1\|unknown)` |
 | `result` (`result.omb`) | macOS, step 3 | `schema:uint previous:hex64 os:enum(macos) commit:hex40? at:utc data_ok:bool return_ok:bool names_ok:bool verdict:enum(passed\|failed) reason:id?` |
 
 `plan` retains the full SHA-256 of the baseline Shared intent body,
@@ -287,9 +287,16 @@ sequenceDiagram
   starts over.
 - **Clean shutdowns**: each step ends by saying to shut down fully, not to
   sleep (docs/SHARED.md); an exFAT dirty flag seen by Linux is recorded
-  (`dirty`) and shown in the verdict. Linux reads its kernel log with
-  `dmesg` for the verified partition's exFAT dirty warning; an unreadable
-  log stops step 2 before it writes anything. It never asks for root.
+  (`dirty`) and shown in the verdict and step rows. Linux first reads the
+  current boot's kernel messages with `journalctl -k -b 0 --no-pager -q`,
+  falling back to `dmesg`, as the everyday user. It matches the exFAT
+  driver's `exFAT-fs (DEVICE): Volume was not properly unmounted. Some data
+  may be corrupt. Please run fsck.` warning only for the verified Shared
+  partition's kernel name. If neither log can be read, step 2 continues
+  with `dirty=unknown` and says that the dirty flag could not be checked;
+  step 3 and the step rows show `unknown`. Shut down cleanly before
+  switching systems next time. The flag is information: `0`, `1` and
+  `unknown` never change the verdict. It never asks for root.
 - Before a run, a read-only space preview credits the allocation in that
   side's fixed data files which cleanup will remove. The writer measures
   free space again after cleanup; only that final read permits the stream.
