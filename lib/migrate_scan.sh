@@ -1990,49 +1990,145 @@ _scan_x_claude_plugins() {
   rm -f "$SCAN_XO/mk"
 }
 
+# _scan_oc_names KEYPATH — SCAN_OC: a JSON object of the names under
+# KEYPATH of OpenCode's file, each value replaced by its {env:NAME}
+# reference (no value is read); 1 when KEYPATH holds no object.
+_scan_oc_names() {
+  local n obj="" sep=""
+  _scan_pl "$SCAN_OC_FILE" "$1" >"$SCAN_XO/oc.names" 2>/dev/null || return 1
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    _scan_var "$n"
+    _scan_json_str "$n" || continue
+    obj="$obj$sep$SCAN_JS:\"{env:$SCAN_VAR}\"" sep=,
+  done <"$SCAN_XO/oc.names"
+  SCAN_OC="{$obj}"
+}
+
+# _scan_oc_server NAME — SCAN_OC: one OpenCode MCP server rebuilt from its
+# allowlisted fields: type, enabled and timeout as they are; the command
+# array under the argument rules; the URL under the URL rule; environment
+# and header values as {env:NAME}. Any other field is left behind.
+_scan_oc_server() {
+  local b="mcp.$1" k v n i arr="" asep="" prev="" out="" sep="" needs=""
+  _scan_pl "$SCAN_OC_FILE" "$b" >"$SCAN_XO/oc.fields" 2>/dev/null || return 1
+  while IFS= read -r k; do
+    case "$k" in
+      type | enabled | timeout)
+        _scan_json_of "$SCAN_OC_FILE" "$b.$k" || continue
+        out="$out$sep\"$k\":$SCAN_JV" sep=,
+        ;;
+      command)
+        n=$(_scan_pl "$SCAN_OC_FILE" "$b.command")
+        case "$n" in '' | *[!0-9]*) continue ;; esac
+        i=0 arr="" asep="" prev=""
+        while [ "$i" -lt "$n" ]; do
+          _scan_pl_into v "$SCAN_OC_FILE" "$b.command.$i"
+          i=$((i + 1))
+          if ! _scan_arg_ok "$prev" "$v"; then
+            prev=$v needs=1
+            continue
+          fi
+          prev=$v
+          _scan_home_path "$v"
+          _scan_json_str "$SCAN_HP" || continue
+          arr="$arr$asep$SCAN_JS" asep=,
+        done
+        out="$out$sep\"command\":[$arr]" sep=,
+        ;;
+      url)
+        _scan_pl_into v "$SCAN_OC_FILE" "$b.url" || continue
+        if ! _scan_url_ok "$v"; then
+          _scan_x skip reason "opencode mcp $1: its URL holds a credential, dropped"
+          needs=1
+          continue
+        fi
+        _scan_json_str "$v" || continue
+        out="$out$sep\"url\":$SCAN_JS" sep=,
+        ;;
+      environment | headers)
+        _scan_oc_names "$b.$k" || continue
+        out="$out$sep\"$k\":$SCAN_OC" sep=,
+        needs=1
+        ;;
+      *) _scan_text "$k" && _scan_x skip reason "opencode mcp $1: $SCAN_TX left behind" ;;
+    esac
+  done <"$SCAN_XO/oc.fields"
+  [ -z "$needs" ] || _scan_x skip reason "opencode mcp $1: needs-secret (set its variables on Linux)"
+  SCAN_OC="{$out}"
+}
+
+# _scan_oc_provider NAME — SCAN_OC: one OpenCode provider rebuilt from its
+# allowlisted fields (npm, name, models, and options.baseURL under the URL
+# rule); its other options, the API key among them, are left behind.
+_scan_oc_provider() {
+  local b="provider.$1" k v out="" sep=""
+  _scan_pl "$SCAN_OC_FILE" "$b" >"$SCAN_XO/oc.fields" 2>/dev/null || return 1
+  while IFS= read -r k; do
+    case "$k" in
+      npm | name | models)
+        _scan_json_of "$SCAN_OC_FILE" "$b.$k" || continue
+        out="$out$sep\"$k\":$SCAN_JV" sep=,
+        ;;
+      options)
+        if _scan_pl_into v "$SCAN_OC_FILE" "$b.options.baseURL" && _scan_url_ok "$v" && _scan_json_str "$v"; then
+          out="$out$sep\"options\":{\"baseURL\":$SCAN_JS}" sep=,
+        fi
+        _scan_x skip reason "opencode provider $1: options other than baseURL left behind (an API key is set again on Linux)"
+        ;;
+      *) _scan_text "$k" && _scan_x skip reason "opencode provider $1: $SCAN_TX left behind" ;;
+    esac
+  done <"$SCAN_XO/oc.fields"
+  SCAN_OC="{$out}"
+}
+
+# _scan_x_opencode — OpenCode's configuration rebuilt from allowlisted keys
+# (docs/AI-TOOLS.md → *OpenCode*): nothing of the file is copied through, so
+# what no rule names, a server or provider whose name a key path cannot
+# address included, is left out rather than left in.
 _scan_x_opencode() {
-  local f w k p v
+  local f k p out="{" sep="" obj osep kind
   f=$(_scan_h .config/opencode/opencode.json)
   [ -f "$f" ] || return 1
-  w=$SCAN_XO/oc.json
-  cp "$f" "$w" || return 1
-  if _scan_pl_keys "$f" "$SCAN_XO/ok"; then
+  SCAN_OC_FILE=$f
+  for k in \$schema theme model small_model keybinds agent command instructions permission; do
+    _scan_json_of "$f" "$k" || continue
+    out="$out$sep\"$k\":$SCAN_JV" sep=,
+  done
+  for kind in mcp provider; do
+    _scan_pl "$f" "$kind" >"$SCAN_XO/oc.top" 2>/dev/null || continue
+    obj="" osep=""
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      case "$p" in
+        *.* | *[!A-Za-z0-9_@:/-]*)
+          _scan_x skip reason "opencode $kind: an entry whose name holds a dot or an unusual byte, left out"
+          continue
+          ;;
+      esac
+      if [ "$kind" = mcp ]; then _scan_oc_server "$p" || continue; else _scan_oc_provider "$p" || continue; fi
+      _scan_json_str "$p" || continue
+      obj="$obj$osep$SCAN_JS:$SCAN_OC" osep=,
+    done <"$SCAN_XO/oc.top"
+    out="$out$sep\"$kind\":{$obj}" sep=,
+  done
+  if _scan_pl_keys "$f" "$SCAN_XO/oc.top"; then
     while IFS= read -r k; do
-      case "$k" in \$schema | mcp | agent | command | instructions | permission | provider | theme | model | small_model | keybinds) continue ;; esac
-      case "$k" in *.*) continue ;; esac
-      plutil -remove "$k" "$w" >/dev/null 2>&1
-      _scan_x skip reason "opencode $k: left behind"
-    done <"$SCAN_XO/ok"
+      case "$k" in \$schema | theme | model | small_model | keybinds | agent | command | instructions | permission | mcp | provider) continue ;; esac
+      case "$k" in
+        plugin) _scan_x skip reason "opencode plugins run code: not carried" ;;
+        *.* | *[!A-Za-z0-9_-]*) _scan_x skip reason "opencode: a key whose name holds a dot or an unusual byte, left behind" ;;
+        *) _scan_x skip reason "opencode $k: left behind" ;;
+      esac
+    done <"$SCAN_XO/oc.top"
   fi
-  _scan_pl "$w" plugin >/dev/null && plutil -remove plugin "$w" >/dev/null 2>&1
-  _scan_pl "$w" provider >"$SCAN_XO/ok" 2>/dev/null
-  while IFS= read -r p; do
-    case "$p" in '' | *.*) continue ;; esac
-    if _scan_pl "$w" "provider.$p.options.apiKey" >/dev/null; then
-      plutil -remove "provider.$p.options.apiKey" "$w" >/dev/null 2>&1
-      _scan_x skip reason "opencode provider $p: its API key dropped"
-    fi
-  done <"$SCAN_XO/ok"
-  _scan_pl "$w" mcp >"$SCAN_XO/ok" 2>/dev/null
-  while IFS= read -r p; do
-    case "$p" in '' | *.*) continue ;; esac
-    for k in environment headers; do
-      _scan_pl "$w" "mcp.$p.$k" >"$SCAN_XO/ok2" 2>/dev/null || continue
-      while IFS= read -r v; do
-        case "$v" in '' | *.*) continue ;; esac
-        _scan_var "$v"
-        plutil -replace "mcp.$p.$k.$v" -string "{env:$SCAN_VAR}" "$w" >/dev/null 2>&1
-      done <"$SCAN_XO/ok2"
-      _scan_x skip reason "opencode mcp $p: needs-secret ($k values become {env:NAME})"
-    done
-    if _scan_pl_into v "$w" "mcp.$p.url" && ! _scan_url_ok "$v"; then
-      plutil -remove "mcp.$p.url" "$w" >/dev/null 2>&1
-      _scan_x skip reason "opencode mcp $p: its URL holds a credential, dropped"
-    fi
-  done <"$SCAN_XO/ok"
-  plutil -convert json -r -o "$SCAN_XO/gen" "$w" >/dev/null 2>&1 || { rm -f "$w" "$SCAN_XO/ok" "$SCAN_XO/ok2"; return 1; }
-  rm -f "$w" "$SCAN_XO/ok" "$SCAN_XO/ok2"
-  _scan_x skip reason "opencode plugins run code: not carried"
+  printf '%s}' "$out" >"$SCAN_XO/oc.json"
+  if ! plutil -convert json -r -o "$SCAN_XO/gen" "$SCAN_XO/oc.json" >/dev/null 2>&1; then
+    rm -f "$SCAN_XO"/oc.*
+    _scan_x skip reason ".config/opencode/opencode.json: could not be rebuilt"
+    return 0
+  fi
+  rm -f "$SCAN_XO"/oc.*
   _scan_x_gen .config/opencode/opencode.json
 }
 

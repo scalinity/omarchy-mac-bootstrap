@@ -264,6 +264,33 @@ EOF
   assert_contains "$(cat "$T/x-cmcp/carry")" "%22args%22:%5B%22--port%22,%228080%22%5D" "secret-args: its other arguments stay"
   if grep -q harborpass "$T/inv-url"; then fail "secret-url: a remote's encoded credential reached the inventory"; else ok; fi
   assert_contains "$(grep 'id=project:code/app' "$T/inv-url")" "its%20remote%20holds%20a%20credential" "secret-url: the remote is withheld, saying why"
+
+  # secret-opencode-dotted (S1) and secret-opencode-command (S2): OpenCode's
+  # file is rebuilt from allowlisted fields, so a server or provider whose
+  # name a key path cannot address is left out, and its command is held to
+  # the argument rules.
+  printf '%s\n' '{"theme":"system","plugin":["opencode-x"],"corp.extra":"harborpassTOP1",
+    "mcp":{"corp.mcp":{"type":"remote","url":"https://mcp.example.test","headers":{"Authorization":"Bearer harborpassHDR1"}},
+           "local":{"type":"local","command":["server","--token","harborpassCMD1","--api-key=harborpassCMD2","--port","8080"],
+                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOAUTH1"}}},
+    "provider":{"corp.ai":{"options":{"apiKey":"harborpassPROV1"}},
+                "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"}}}}' \
+    >"$V/root/Users/alex/.config/opencode/opencode.json"
+  (
+    OMB_FIXTURE=$V
+    scan_extract opencode:config "$T/x-oc" >/dev/null 2>&1
+    omb_cleanup
+  )
+  assert_eq "$(grep -rl harborpass "$T/x-oc")" "" "secret-opencode-dotted: no credential of a dotted server, provider or key travels"
+  src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-oc/carry")
+  oc=$(tr -d ' \n' <"$T/x-oc/$src")
+  assert_not_contains "$oc" "corp.mcp" "secret-opencode-dotted: the dotted server is left out"
+  assert_not_contains "$oc" "corp.ai" "secret-opencode-dotted: and the dotted provider"
+  assert_contains "$(cat "$T/x-oc/carry")" "an%20entry%20whose%20name%20holds%20a%20dot" "secret-opencode-dotted: saying so"
+  assert_contains "$oc" '"command":["server","--port","8080"]' "secret-opencode-command: the command keeps only what the argument rules allow"
+  assert_contains "$oc" '"environment":{"MODE":"{env:MODE}"}' "secret-opencode-command: environment values become references"
+  assert_contains "$oc" '"baseURL":"https:\/\/api.example.test"' "secret-opencode-dotted: a provider keeps its base URL"
+  assert_contains "$(cat "$T/x-oc/carry")" "opencode%20mcp%20local:%20needs-secret" "secret-opencode-command: and the server needs its secrets set again"
   rm -rf "$V"
 
   # --- secret-opaque and secret-carry, through the core ----------------------
