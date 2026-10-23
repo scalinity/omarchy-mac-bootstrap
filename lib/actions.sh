@@ -1036,17 +1036,27 @@ act_resume_seen() {
 # act_resume_stage — the classifier's stage of the setup, one rank per step
 # in the order it takes them (docs/UPSTREAM.md → What the setup does):
 # /boot on its own partition (0, 1); the root's encryption (0 none, 1
-# staged, 2 re-encrypting, 3 complete; ? when it cannot be read); Omarchy's
-# runtime (0, 1).
+# staged, 2 re-encrypting, 3 complete); Omarchy's runtime (0, 1). Any step
+# whose signal cannot be read is ?; empty output alone is not known absence.
 act_resume_stage() {
-  local boot=0 enc='?' omarchy=0
-  [ -n "$LX_BOOT_SRC" ] && boot=1
+  local boot='?' enc='?' omarchy=0 src f version
+  if src=$(sys_cmd findmnt_boot findmnt -no SOURCE /boot); then
+    boot=0
+    [ -n "$src" ] && boot=1
+  fi
   case "$LX_ENC_STATE" in
     none) enc=0 ;;
     migrating) if [ "$LX_ROOT_CRYPT" = 1 ]; then enc=2; else enc=1; fi ;;
     complete) enc=3 ;;
   esac
-  [ -n "$LX_OMARCHY_VERSION" ] && omarchy=1
+  f=$(sys_path "$OMARCHY_RUNTIME_VERSION")
+  if [ -f "$f" ]; then
+    omarchy='?'
+    if version=$(head -1 "$f" 2>/dev/null); then
+      omarchy=0
+      [ -n "$version" ] && omarchy=1
+    fi
+  fi
   printf '%s%s%s' "$boot" "$enc" "$omarchy"
 }
 
@@ -1067,10 +1077,10 @@ act_stage_move() {
   ACT_MOVE=forward
 }
 
-# Omarchy's classification on a fresh read. Installed is completed; still
-# under way is completed only when the classifier's stage moved forward
-# since the resume began; a service that failed or a status that could not
-# be read never is. A setup that could not be run (exit 126 or 127, or its
+# Omarchy's classification on a fresh read. Completed requires a fully read
+# stage that moved forward from a fully read stage before the resume; a
+# service that failed or a signal that could not be read never is progress.
+# A setup that could not be run (exit 126 or 127, or its
 # executable gone) is never completed: no effect when nothing reads
 # otherwise than before, else unexpected; so is a resume never run.
 act_resume_judge() {
@@ -1091,11 +1101,7 @@ act_resume_judge() {
       ;;
   esac
   case "$LX_OMARCHY_STATE" in
-    installed)
-      act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
-      return 0
-      ;;
-    in-progress) ;;
+    installed | in-progress) ;;
     *)
       act_judged unexpected "Omarchy is $LX_OMARCHY_STATE after the resume."
       return 0
@@ -1112,7 +1118,11 @@ act_resume_judge() {
       act_judged unexpected "$OMS_SELF is not there, and the machine does not read as it did before."
     fi
   elif [ "$ACT_MOVE" = forward ]; then
-    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, a step further than before."
+    if [ "$LX_OMARCHY_STATE" = installed ]; then
+      act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
+    else
+      act_judged completed "omarchy-mac-setup advanced: it is still part-way through, a step further than before."
+    fi
   elif [ "$seen" = "$before" ]; then
     act_judged no-effect "omarchy-mac-setup ran, and nothing it changes reads otherwise than before."
   else
