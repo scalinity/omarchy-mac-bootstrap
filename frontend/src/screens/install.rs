@@ -29,16 +29,34 @@ fn text(s: impl Into<String>, tok: Token) -> Item<'static> {
     Item::Text(s.into(), tok)
 }
 
-/// Whether the session's system is macOS, as `hello` says.
-fn macos(m: &Model) -> bool {
-    m.hello.as_ref().is_none_or(|h| h.platform != "linux")
+/// The session's system, as `hello` says; none before `hello`.
+fn platform(m: &Model) -> Option<&str> {
+    m.hello.as_ref().map(|h| h.platform.as_str())
 }
 
-/// The page's title and its stepper's sections (none for Shared creation).
+fn macos(m: &Model) -> bool {
+    platform(m) == Some("macos")
+}
+
+/// The console Omarchy Mac's setup writes to, as the core names it.
+const CONSOLE: &str = "omarchy.console";
+
+/// The sentence of the core's console fact; nothing without it.
+fn console(snap: &crate::app::Snapshot) -> Option<Item<'static>> {
+    let f = snap.facts.iter().find(|f| f.key == CONSOLE)?;
+    Some(text(
+        format!("Omarchy Mac's setup writes to {}.", f.value),
+        Token::Text,
+    ))
+}
+
+/// The page's title and its stepper's sections (none for Shared creation,
+/// nor for an Install page before `hello` names the system).
 fn page(m: &Model, s: Screen) -> (&'static str, &'static [&'static str]) {
     match s {
         Screen::Install if macos(m) => ("Asahi handoff", &ASAHI),
-        Screen::Install => ("Linux continuation", &LINUX),
+        Screen::Install if platform(m) == Some("linux") => ("Linux continuation", &LINUX),
+        Screen::Install => ("Install", &[]),
         Screen::Progress => ("Omarchy progress", &LINUX),
         _ => ("Shared creation", &[]),
     }
@@ -145,7 +163,7 @@ pub fn sections(m: &Model, s: Screen) -> Vec<(usize, Item<'_>)> {
             v.push((3, Item::Blank));
             go_items(m, &["asahi.launch"], "⏎", &mut v, 3);
         }
-        Screen::Install => {
+        Screen::Install if platform(m) == Some("linux") => {
             v.push((0, Item::Heading("The plan this system was given")));
             if snap.codes.iter().any(|(k, _)| k == "token") {
                 tokens(snap, &mut v, 0);
@@ -200,20 +218,35 @@ pub fn sections(m: &Model, s: Screen) -> Vec<(usize, Item<'_>)> {
             if STARTS.iter().all(|id| snap.action(id).is_none()) {
                 v.push((3, text("Nothing to start here now.", Token::Muted)));
             }
+            if let Some(c) = console(snap) {
+                v.push((3, c));
+            }
+        }
+        Screen::Install => {
+            v.push((
+                0,
+                text(
+                    "The core has not said which system this is, so this page shows nothing to run.",
+                    Token::Muted,
+                ),
+            ));
         }
         Screen::Progress => {
             v.push((3, Item::Heading("Omarchy Mac's setup")));
+            if let Some(c) = console(snap) {
+                v.push((3, c));
+            }
             v.push((
                 3,
                 text(
-                    "Omarchy Mac's setup runs on tty1 (Ctrl+Alt+F1) and keeps no log of its own; this page shows what the machine shows. r reads it again.",
+                    "This page shows what the core read; r reads it again.",
                     Token::Muted,
                 ),
             ));
             let signals: Vec<_> = snap
                 .facts
                 .iter()
-                .filter(|f| f.key.starts_with("omarchy."))
+                .filter(|f| f.key.starts_with("omarchy.") && f.key != CONSOLE)
                 .collect();
             if signals.is_empty() {
                 v.push((

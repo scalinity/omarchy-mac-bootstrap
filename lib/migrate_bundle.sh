@@ -83,10 +83,13 @@ _bndl_size() {
 # components at most 255 bytes, 1 024 in all, 32 deep; a link's text
 # relative, with no control byte, never climbing above the home. All
 # together: no dest twice, nothing beneath a file or a link, no file or link
-# where another entry needs a folder. strict (the bundle check): the first
+# where another entry needs a folder, and no link whose target passes
+# through or names another link the bundle places (a chain such as a -> .
+# and b -> a/.. leaves the home). strict (the bundle check): the first
 # failure, "line<TAB>why", and status 1. items (export): every item whose
 # entries break a rule against itself or the items accepted before it,
-# "item<TAB>why", that item's entries taken back.
+# "item<TAB>why", that item's entries taken back; then every item with a
+# link through another accepted link.
 # shellcheck disable=SC2016 # awk source: awk expands its own variables
 BNDL_DEST_AWK='
 function bytes(s,   t) { t = s; return length(s) - 2 * gsub(/%/, "", t) }
@@ -127,12 +130,28 @@ function together(ty, d,   n, c, i, p) {
   }
   return ""
 }
-function add(ty, d,   n, c, i, p) {
+function through(d, t,   n, c, i, s, st, p, k) {
+  n = split(d, c, "/")
+  s = n - 1
+  for (i = 1; i < n; i++) st[i] = c[i]
+  n = split(t, c, "/")
+  for (i = 1; i <= n; i++) {
+    if (c[i] == "" || c[i] == ".") continue
+    if (c[i] == "..") { if (--s < 0) return "a link whose target climbs out of the home"; continue }
+    st[++s] = c[i]
+    p = st[1]
+    for (k = 2; k <= s; k++) p = p "/" st[k]
+    if ((p in kind) && kind[p] == "link") return "a link whose target passes through another link of the bundle"
+  }
+  return ""
+}
+function add(ty, d, t,   n, c, i, p) {
   kind[d] = ty
   n = split(d, c, "/")
   p = ""
   for (i = 1; i < n; i++) { p = (i == 1) ? c[1] : p "/" c[i]; under[p]++ }
   added[++na] = d
+  if (ty == "link") { ld[++nl] = d; lt[nl] = t; lline[nl] = NR; litem[nl] = cur }
 }
 function takeback(   k, d, n, c, i, p) {
   for (k = 1; k <= na; k++) {
@@ -142,11 +161,12 @@ function takeback(   k, d, n, c, i, p) {
     p = ""
     for (i = 1; i < n; i++) { p = (i == 1) ? c[1] : p "/" c[i]; if (--under[p] == 0) delete under[p] }
   }
+  nl = lstart
 }
 function close_item() { if (cur != "" && bad != "") { print cur "\t" bad; takeback() } na = 0; bad = "" }
-BEGIN { FS = "\t"; cur = ""; na = 0; bad = "" }
+BEGIN { FS = "\t"; cur = ""; na = 0; nl = 0; lstart = 0; bad = "" }
 {
-  if ($1 != cur) { close_item(); cur = $1 }
+  if ($1 != cur) { close_item(); cur = $1; lstart = nl }
   if (mode == "items" && bad != "") next
   why = grammar($3)
   if (why == "" && $2 == "link") why = linkok($3, $4)
@@ -156,9 +176,20 @@ BEGIN { FS = "\t"; cur = ""; na = 0; bad = "" }
     bad = why
     next
   }
-  add($2, $3)
+  add($2, $3, $4)
 }
-END { if (!failed && mode == "items") close_item() }'
+END {
+  if (failed) exit 1
+  if (mode == "items") close_item()
+  # Once every entry is known: a link whose target passes through a link
+  # the bundle itself places resolves elsewhere than its text says.
+  for (k = 1; k <= nl; k++) {
+    why = through(ld[k], lt[k])
+    if (why == "") continue
+    if (mode == "strict") { print lline[k] "\t" why; exit 1 }
+    if (!(litem[k] in shown)) { print litem[k] "\t" why; shown[litem[k]] = 1 }
+  }
+}'
 
 # bndl_check DIR — the bundle check: bundle.omb admitted with its seal;
 # every destination against the grammar, then all of them together; every
@@ -211,9 +242,9 @@ bndl_check() {
       sha=$REC_RAW
       _rec_field_raw "${REC_L[i]}" size
       size=$REC_RAW
-      case "$seen" in *" $sha "*) i=$((i + 1)) && continue ;; esac
-      seen="$seen$sha "
       f=$dir/objects/$sha
+      # Every file record's size and limit, a repeated object's included;
+      # only the hashing is done once per object.
       if [ -L "$dir/objects" ] || [ ! -f "$f" ] || [ -L "$f" ]; then
         BNDL_WHY="object $sha is missing or not a plain file"
         return 1
@@ -222,10 +253,16 @@ bndl_check() {
         BNDL_WHY="object $sha is not the size bundle.omb records"
         return 1
       fi
-      if ! _bndl_sha "$f" || [ "$BNDL_SHA" != "$sha" ]; then
-        BNDL_WHY="object $sha does not match its digest"
-        return 1
-      fi
+      case "$seen" in
+        *" $sha "*) ;;
+        *)
+          seen="$seen$sha "
+          if ! _bndl_sha "$f" || [ "$BNDL_SHA" != "$sha" ]; then
+            BNDL_WHY="object $sha does not match its digest"
+            return 1
+          fi
+          ;;
+      esac
     fi
     i=$((i + 1))
   done

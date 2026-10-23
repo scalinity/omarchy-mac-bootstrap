@@ -359,18 +359,19 @@ pub fn gb(bytes: u64) -> String {
 
 /// A region's glyph, token and name (docs/UX.md → *Glyphs*, *Tokens*):
 /// without colour the strip's letters, since macOS and Linux share a glyph.
-fn region_look<'a>(role: &str, t: &Theme) -> (&'a str, Token, &'a str) {
+fn region_look<'a>(role: &str, t: &Theme) -> (&'a str, &'a str, Token, &'a str) {
     let u = t.caps.unicode && t.caps.depth != crate::theme::Depth::None;
-    match role {
-        "macos" => (if u { "█" } else { "M" }, Token::Macos, "macOS"),
-        "linux" => (if u { "█" } else { "L" }, Token::Linux, "Linux"),
-        "shared" => (if u { "▚" } else { "s" }, Token::Shared, "Shared"),
-        "free" => (if u { " " } else { "." }, Token::Free, "free"),
-        "apple" => (if u { "▒" } else { "b" }, Token::Boot, "Apple"),
-        "stub" => (if u { "▒" } else { "b" }, Token::Boot, "boot"),
-        "efi" => (if u { "▒" } else { "b" }, Token::Boot, "EFI"),
-        _ => (if u { "░" } else { "o" }, Token::Muted, "other"),
-    }
+    let (glyph, letter, tok, name) = match role {
+        "macos" => ("█", "M", Token::Macos, "macOS"),
+        "linux" => ("█", "L", Token::Linux, "Linux"),
+        "shared" => ("▚", "s", Token::Shared, "Shared"),
+        "free" => (" ", ".", Token::Free, "free"),
+        "apple" => ("▒", "b", Token::Boot, "Apple"),
+        "stub" => ("▒", "b", Token::Boot, "boot"),
+        "efi" => ("▒", "b", Token::Boot, "EFI"),
+        _ => ("░", "o", Token::Muted, "other"),
+    };
+    (if u { glyph } else { letter }, letter, tok, name)
 }
 
 /// The disk strip, a scale bar (docs/UX.md → *Direction*): each region the
@@ -405,8 +406,15 @@ pub fn strip<'a>(regions: &[crate::read::DiskRegion], t: &Theme, width: usize) -
     };
     let mut bar = vec![Span::raw(" "), Span::styled(l, t.style(Token::Rule))];
     for (reg, n) in regions.iter().zip(&share) {
-        let (g, tok, _) = region_look(&reg.role, t);
-        bar.push(Span::styled(g.repeat(*n), t.style(tok)));
+        // Each region opens with its letter, so places that share a glyph
+        // (macOS and Linux) are told apart by more than colour.
+        let (g, letter, tok, _) = region_look(&reg.role, t);
+        if *n > 0 {
+            bar.push(Span::styled(
+                format!("{letter}{}", g.repeat(*n - 1)),
+                t.style(tok),
+            ));
+        }
     }
     bar.push(Span::styled(r, t.style(Token::Rule)));
     let end = gb(total.min(u64::MAX as u128) as u64);
@@ -425,31 +433,37 @@ pub fn strip<'a>(regions: &[crate::read::DiskRegion], t: &Theme, width: usize) -
         scale.push(' ');
     }
     scale.push_str(&end);
-    // What each place holds, in the order the places first come: its glyph
-    // (the strip's letter in ASCII), its name and its size.
-    let mut names: Vec<(String, u64, &str)> = Vec::new();
-    for reg in regions {
-        let (g, _, name) = region_look(&reg.role, t);
-        let name = if reg.label.is_empty() {
-            name.to_string()
-        } else {
-            reg.label.clone()
-        };
-        match names.iter_mut().find(|n| n.0 == name) {
-            Some(n) => n.1 = n.1.saturating_add(reg.size),
-            None => names.push((name, reg.size, g)),
-        }
-    }
-    let legend: Vec<String> = names
+    // Each region the core sent, in its order: its letter, its name and its
+    // size; never two regions added together.
+    let legend: Vec<String> = regions
         .iter()
-        .map(|(n, s, g)| format!("{g} {n} {}", gb(*s)).trim_start().to_string())
+        .map(|reg| {
+            let (_, letter, _, name) = region_look(&reg.role, t);
+            let name = if reg.label.is_empty() {
+                name.to_string()
+            } else {
+                t.say(&reg.label)
+            };
+            format!("{letter} {name} {}", gb(reg.size))
+        })
         .collect();
     let mut out = vec![Line::from(bar), Line::styled(scale, t.style(Token::Muted))];
-    for l in wrap(
-        &legend.join(&format!(" {} ", t.g.dot)),
-        width.saturating_sub(2),
-    ) {
-        out.push(Line::styled(format!(" {l}"), t.style(Token::Text)));
+    // Whole entries per line, so a region's name and size stay together.
+    let sep = format!(" {} ", t.g.dot);
+    let room = width.saturating_sub(2);
+    let mut cur = String::new();
+    for e in legend {
+        if !cur.is_empty() && cells(&cur) + cells(&sep) + cells(&e) > room {
+            out.push(Line::styled(format!(" {cur}"), t.style(Token::Text)));
+            cur.clear();
+        }
+        if !cur.is_empty() {
+            cur.push_str(&sep);
+        }
+        cur.push_str(&e);
+    }
+    if !cur.is_empty() {
+        out.push(Line::styled(format!(" {cur}"), t.style(Token::Text)));
     }
     out
 }

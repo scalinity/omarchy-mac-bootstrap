@@ -326,7 +326,7 @@ function number(p,   t, c, d, lim) {
   }
   refuse("a value outside the subset")
 }
-function value(p, depth,   c, n, s) {
+function value(p, depth,   c, n, s, ln0) {
   c = cur()
   if (c == "\"" || c == SQ) {
     s = str()
@@ -356,6 +356,9 @@ function value(p, depth,   c, n, s) {
   if (c == "{") {
     if (depth >= 16) refuse("arrays or inline tables nested more than 16 deep")
     P++
+    # The whole table on its line: a value inside it (an array, a
+    # multi-line string) may not carry it onto the next.
+    ln0 = LN
     KIND[p] = "L"
     emit("t", p, "")
     ws()
@@ -363,6 +366,7 @@ function value(p, depth,   c, n, s) {
     if (cur() == "}") { P++; return }
     for (;;) {
       keyval(p, depth + 1)
+      if (LN != ln0) { LN = ln0; refuse("an inline table over several lines") }
       ws()
       if (eol()) refuse("an inline table over several lines")
       c = cur()

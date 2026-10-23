@@ -457,10 +457,11 @@ fn phase_sources() -> Fallible<Vec<(String, String)>> {
                     "_self=${BASH_SOURCE[0]}\n_self=$OMB_BENCH_BASE/omarchy-bootstrap\n",
                     1,
                 ),
+                // The entrypoint sources core.sh from one place, _omb_load.
                 (
                     ". \"$OMB_HOME/lib/core.sh\"",
                     ". \"$OMB_BENCH_COPY/core.sh\"",
-                    4,
+                    1,
                 ),
                 (
                     "\nmain \"$@\"\n",
@@ -1433,8 +1434,28 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
         {
             return bad("validation basis/answers");
         }
+        // Every input plan.save declares is answered once (the two sizes as
+        // given, the nine choices at their defaults), and the two sizes are
+        // the ones the case asked for.
         let normal = records(d, "normal");
-        if normal.len() != 2
+        const INPUTS: [&str; 11] = [
+            "shared_size",
+            "linux_size",
+            "enc",
+            "user",
+            "host",
+            "kmap",
+            "tz",
+            "loc",
+            "ssh",
+            "gh",
+            "dev",
+        ];
+        let mut names: Vec<&str> = normal.iter().map(|r| txt(r, "name")).collect();
+        names.sort_unstable();
+        let mut want = INPUTS.to_vec();
+        want.sort_unstable();
+        if names != want
             || !normal
                 .iter()
                 .any(|r| txt(r, "name") == "linux_size" && txt(r, "value") == "250000000000")

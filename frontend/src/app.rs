@@ -390,14 +390,21 @@ impl Form {
         self.checked.as_ref().is_some_and(|c| c.args == self.args())
     }
 
-    /// Take PARAMS as the fields, keeping what was typed for a name that
-    /// stays; nothing changes when the names are the same.
+    /// Take PARAMS as the fields, as the core now declares them, keeping
+    /// what was typed for a name that stays; a review of other fields is
+    /// dropped.
     fn declare(&mut self, params: &[(String, String, Vec<String>, bool)]) {
         let same = self.fields.len() == params.len()
             && self.fields.iter().zip(params).all(|(f, p)| f.name == p.0);
         if same {
+            for (f, (_, ty, choices, required)) in self.fields.iter_mut().zip(params) {
+                f.ty = ty.clone();
+                f.choices = choices.clone();
+                f.required = *required;
+            }
             return;
         }
+        self.checked = None;
         let old = std::mem::take(&mut self.fields);
         self.fields = params
             .iter()
@@ -499,8 +506,17 @@ pub struct Model {
     pub ask: Option<Target>,
     /// The person's migration choices made in this session.
     pub picks: Vec<Pick>,
+    /// The choices a save in flight carries: only these are cleared when it
+    /// is done, so a choice made meanwhile stays.
+    pub sent_picks: Vec<Pick>,
     /// The core's answer to the last check of those choices.
     pub save_check: Option<Checked>,
+    /// The journey is read once the action's own scope has been: after a
+    /// profile action, the journey's stages and actions may have moved too.
+    pub then_journey: bool,
+    /// The first line shown of a gate's facts, which scroll between the
+    /// action's label and its field.
+    pub gate_scroll: std::cell::Cell<usize>,
     pub inv: Inv,
     /// The steps the running action reported (label, done, total), and its
     /// messages: kept until the next action.
@@ -591,7 +607,10 @@ impl Default for Model {
             gate: None,
             ask: None,
             picks: Vec::new(),
+            sent_picks: Vec::new(),
             save_check: None,
+            then_journey: false,
+            gate_scroll: std::cell::Cell::new(0),
             inv: Inv::default(),
             steps: Vec::new(),
             notes: Vec::new(),
@@ -686,6 +705,14 @@ impl Model {
         shown
             .get(d.cursor.min(shown.len().saturating_sub(1)))
             .copied()
+    }
+
+    /// Every row of KIND's data set is held, from one generation: only then
+    /// may a screen speak of all of them, or of none.
+    pub fn whole(&self, k: Kind) -> bool {
+        self.detail(k).is_some_and(|d| {
+            d.loaded && !d.changed && d.offset == 0 && d.rows.len() as u64 >= d.total
+        })
     }
 
     /// The choices the focused item offers: (choice id, label, guess).
@@ -981,7 +1008,19 @@ fn demand(m: &mut Model) -> Vec<Cmd> {
         if kind == Kind::Operation && m.operation_stale {
             return Vec::new();
         }
-        if m.detail(kind).is_some() {
+        if let Some(d) = m.detail(kind) {
+            // A kind the screens speak of as a whole (every item of a
+            // category, an item's choices, what opaque covers) is read to
+            // its end, page after page of one generation.
+            let more = read_whole(kind)
+                && d.loaded
+                && !d.changed
+                && d.fault.is_none()
+                && (d.rows.len() as u64) < d.total;
+            if more {
+                let p = d.page(d.rows.len() as u64, detail_limit(kind, m.limit));
+                return m.page(p, Land::First);
+            }
             continue;
         }
         let Some(id) = m.generation(kind.scope()).map(str::to_string) else {
@@ -995,10 +1034,20 @@ fn demand(m: &mut Model) -> Vec<Cmd> {
     Vec::new()
 }
 
-/// Quit if asked to; otherwise what the screen still needs.
+/// The kinds held whole: their pages are joined, never shown one at a time.
+fn read_whole(kind: Kind) -> bool {
+    matches!(kind, Kind::Items | Kind::Choices | Kind::Opaque)
+}
+
+/// Quit if asked to; otherwise the journey after another scope's action,
+/// then what the screen still needs.
 fn settle(m: &mut Model, cmds: Vec<Cmd>) -> Vec<Cmd> {
     if m.quit_after {
         return vec![Cmd::Quit(0, String::new())];
+    }
+    if cmds.is_empty() && m.then_journey && m.pending.is_none() && !m.lost {
+        m.then_journey = false;
+        return m.refresh();
     }
     if cmds.is_empty() {
         return demand(m);
@@ -1048,6 +1097,11 @@ fn regenerated(m: &mut Model, scope: Scope, id: &str) -> Vec<Cmd> {
                 offset: 0,
                 limit: detail_limit(k, limit),
             });
+        } else if moved && scope == Scope::Profile {
+            // The person's choices are made over these rows: they are read
+            // again from the new generation, never shown under it.
+            m.details[k.index()] = None;
+            continue;
         } else if moved {
             d.changed = true;
         }
@@ -1058,6 +1112,50 @@ fn regenerated(m: &mut Model, scope: Scope, id: &str) -> Vec<Cmd> {
     match fresh {
         Some(p) => m.page(p, Land::First),
         None => Vec::new(),
+    }
+}
+
+/// SCOPE's generation moved from OLD: what was checked or asked against the
+/// old one is dropped, and said.
+fn moved_on(m: &mut Model, scope: Scope, old: Option<String>) {
+    if old.as_deref() == m.generation(scope) {
+        return;
+    }
+    if scope == Scope::Profile {
+        m.save_check = None;
+    }
+    if m.ask.as_ref().is_some_and(|t| t.scope == scope) {
+        m.ask = None;
+        m.status = Some((
+            Level::Info,
+            "Not sent: what it was asked about changed since you looked.".into(),
+        ));
+    }
+}
+
+/// The person's choices over a whole inventory of a new read: a choice of
+/// an item that is gone, or that never travels now, is dropped, and said.
+fn recheck_picks(m: &mut Model) {
+    let Some(d) = m.details[Kind::Items.index()].as_ref() else {
+        return;
+    };
+    let before = m.picks.len();
+    let rows = &d.rows;
+    m.picks.retain(|p| {
+        rows.iter()
+            .any(|r| r.id == p.id && r.col(select::COL_STATE) != "never")
+    });
+    let gone = before - m.picks.len();
+    if gone > 0 {
+        m.status = Some((
+            Level::Warn,
+            format!(
+                "{gone} choice{} no longer match{} an item of the inventory and {} dropped.",
+                if gone == 1 { "" } else { "s" },
+                if gone == 1 { "es" } else { "" },
+                if gone == 1 { "was" } else { "were" }
+            ),
+        ));
     }
 }
 
@@ -1128,7 +1226,9 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                     m.focus = s.actions.len().saturating_sub(1);
                 }
                 let id = s.generation.clone();
+                let old = m.generation(Scope::Journey).map(str::to_string);
                 m.snap = Some(s);
+                moved_on(m, Scope::Journey, old);
                 if matches!(m.screen, Screen::Connecting | Screen::Fatal) {
                     m.screen = Screen::Dashboard;
                 }
@@ -1155,6 +1255,7 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                     .filter(|k| k.scope() == scope)
                     .find_map(|k| m.detail(k).filter(|d| d.loaded))
                     .map(|d| d.generation.clone());
+                let before = m.generation(scope).map(str::to_string);
                 let r = m.scope_mut(scope);
                 let old = r.snap.replace(s);
                 r.held = [old, r.held.take()]
@@ -1162,6 +1263,7 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                     .flatten()
                     .find(|o| o.generation != id && Some(&o.generation) == shown.as_ref());
                 r.fault = None;
+                moved_on(m, scope, before);
                 regenerated(m, scope, &id)
             } else {
                 // A refused or failed read supplies no data set: the last
@@ -1231,7 +1333,22 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             let d = m.detail_mut(kind).expect("made above");
             match (status.as_str(), code.as_str()) {
                 ("done", _) => match crate::read::generation(&records) {
-                    Some((id, total)) if id == p.generation => {
+                    // The next page of a kind held whole, from the same
+                    // generation: joined to the rows already held.
+                    Some((id, total))
+                        if read_whole(kind)
+                            && p.offset > 0
+                            && d.loaded
+                            && id == p.generation
+                            && id == d.generation
+                            && p.offset == d.rows.len() as u64 =>
+                    {
+                        d.rows.extend(crate::read::rows(&records, kind));
+                        d.total = total;
+                    }
+                    Some((id, total))
+                        if id == p.generation && (!read_whole(kind) || p.offset == 0) =>
+                    {
                         d.rows = crate::read::rows(&records, kind);
                         d.total = total;
                         d.offset = p.offset;
@@ -1260,6 +1377,9 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                     }
                     d.fault = Some(Fault::Said { status, code, text });
                 }
+            }
+            if kind == Kind::Items && m.whole(Kind::Items) {
+                recheck_picks(m);
             }
             settle(m, Vec::new())
         }
@@ -1313,11 +1433,17 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                     }
                 }
                 if action == "profile.save" {
-                    m.picks.clear();
+                    // The choices it carried are saved; one made meanwhile
+                    // stays the person's.
+                    let sent = std::mem::take(&mut m.sent_picks);
+                    m.picks.retain(|p| !sent.contains(p));
                     m.save_check = None;
                 }
             }
-            // Every action is followed by a fresh read of its scope.
+            m.sent_picks.clear();
+            // Every action is followed by a fresh read of its scope, and of
+            // the journey after another scope's.
+            m.then_journey = m.exec_scope != Scope::Journey;
             let c = m.reread(m.exec_scope);
             settle(m, c)
         }
@@ -1328,20 +1454,12 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
 /// check of the migration choices — which, reviewed, is asked to be saved.
 fn validated(m: &mut Model, c: Checked) -> Vec<Cmd> {
     if c.action == "profile.save" {
-        let basis = (c.status == "done").then(|| c.basis.clone()).flatten();
-        let args = c.args.clone();
         m.save_check = Some(c);
-        if let (Some(basis), Some(action)) = (basis, m.offered(Scope::Profile, "profile.save")) {
-            ask(
-                m,
-                Target {
-                    action,
-                    args,
-                    basis,
-                    scope: Scope::Profile,
-                    back: m.screen,
-                },
-            );
+        // Asked only where it was asked for, on the Review with no field
+        // taking keys; elsewhere the check waits for Enter on the save.
+        if m.screen == Screen::Review && !typing(m) {
+            let c = save_go_on(m);
+            return settle(m, c);
         }
         return settle(m, Vec::new());
     }
@@ -1424,6 +1542,8 @@ fn unknown(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
                     "The core stopped without a complete answer ({why}); reading the machine again."
                 ),
             ));
+            m.sent_picks.clear();
+            m.then_journey = m.exec_scope != Scope::Journey;
             let c = m.reread(m.exec_scope);
             settle(m, c)
         }
@@ -1441,6 +1561,7 @@ fn not_sent(m: &mut Model, req: Req, why: String) -> Vec<Cmd> {
             if m.operation_stale {
                 m.invalidate_operation(fault);
             }
+            m.sent_picks.clear();
             m.reopen = None;
             m.status = Some((
                 Level::Fail,
@@ -1525,10 +1646,23 @@ fn ask(m: &mut Model, t: Target) {
     m.ask = Some(t);
 }
 
-/// Send T with WORD, and return to the screen it was chosen on.
+/// Send T with WORD, and return to the screen it was chosen on. A save of
+/// the choices goes only with the parts the core checked, and only while
+/// they are still the person's choices.
 fn execute(m: &mut Model, t: Target, word: String) -> Vec<Cmd> {
-    m.exec_scope = t.scope;
     m.screen = t.back;
+    if t.action.id == "profile.save" {
+        if choice_args(m).as_ref() != Some(&t.args) {
+            m.status = Some((
+                Level::Warn,
+                "Not sent: the choices changed since the core checked them; ⏎ on the save checks them again."
+                    .into(),
+            ));
+            return Vec::new();
+        }
+        m.sent_picks = m.picks.clone();
+    }
+    m.exec_scope = t.scope;
     let label = t.action.label.clone();
     m.send(
         Req::Execute {
@@ -1548,6 +1682,7 @@ fn execute(m: &mut Model, t: Target, word: String) -> Vec<Cmd> {
 fn open_gate(m: &mut Model, t: Target) -> Vec<Cmd> {
     m.gate_input.clear();
     m.gate_note = None;
+    m.gate_scroll.set(0);
     m.back = t.back;
     m.gate = Some(t);
     m.screen = Screen::Gate;
@@ -1618,23 +1753,49 @@ fn choose(m: &mut Model, a: Action, scope: Scope) -> Vec<Cmd> {
         scope,
         back,
     };
-    if t.action.gate.is_empty() {
+    if !t.action.gate.is_empty() {
+        open_gate(m, t)
+    } else if t.action.intent == "read" {
+        // A read changes nothing: it is sent at once.
         execute(m, t, String::new())
     } else {
-        open_gate(m, t)
+        // An act or a plan with no word: a question, default no.
+        ask(m, t);
+        Vec::new()
     }
 }
 
-/// The person's migration choices, checked by the core before any save: one
-/// `omb-select 1` document of them, split into `select.1` … `select.14`.
+/// The save's arguments for the choices as they are now: one `omb-select 1`
+/// document over the whole inventory, split into `select.1` … `select.14`;
+/// None while the inventory is not held whole, or when the document is more
+/// than the parts carry.
+fn choice_args(m: &Model) -> Option<Args> {
+    if !m.whole(Kind::Items) {
+        return None;
+    }
+    let rows = &m.detail(Kind::Items)?.rows;
+    select::split(&select::document(rows, &m.picks))
+}
+
+/// The person's migration choices, checked by the core before any save; a
+/// check of exactly these choices goes on to the question or the gate.
 fn save_choices(m: &mut Model) -> Vec<Cmd> {
-    let rows = m
-        .detail(Kind::Items)
-        .filter(|d| d.loaded)
-        .map(|d| d.rows.clone())
-        .unwrap_or_default();
-    let doc = select::document(&rows, &m.picks);
-    let Some(args) = select::split(&doc) else {
+    if !m.whole(Kind::Items) {
+        let d = m.detail(Kind::Items);
+        let (held, total) = d.map_or((0, 0), |d| (d.rows.len(), d.total));
+        m.status = Some((
+            Level::Info,
+            if d.is_some_and(|d| d.loaded) {
+                format!(
+                    "The inventory is not read whole yet ({held} of {total} items); the save waits for all of it."
+                )
+            } else {
+                "The inventory is not read yet: the save is made of it.".to_string()
+            },
+        ));
+        return Vec::new();
+    }
+    let Some(args) = choice_args(m) else {
         m.status = Some((
             Level::Warn,
             format!(
@@ -1645,6 +1806,12 @@ fn save_choices(m: &mut Model) -> Vec<Cmd> {
         ));
         return Vec::new();
     };
+    if m.save_check.as_ref().is_some_and(|c| c.args == args) {
+        let c = save_go_on(m);
+        if !c.is_empty() || m.ask.is_some() || m.screen == Screen::Gate {
+            return c;
+        }
+    }
     m.save_check = None;
     m.send(
         Req::Validate {
@@ -1654,6 +1821,36 @@ fn save_choices(m: &mut Model) -> Vec<Cmd> {
         true,
         "checking the choices",
     )
+}
+
+/// The save goes on from a check the core answered for exactly the choices
+/// as they are now: to its gate where it has a word, else to a question.
+fn save_go_on(m: &mut Model) -> Vec<Cmd> {
+    let Some(c) = m.save_check.clone() else {
+        return Vec::new();
+    };
+    let Some(basis) = c.basis.clone().filter(|_| c.status == "done") else {
+        return Vec::new();
+    };
+    if choice_args(m).as_ref() != Some(&c.args) {
+        return Vec::new();
+    }
+    let Some(action) = m.offered(Scope::Profile, "profile.save") else {
+        return Vec::new();
+    };
+    let t = Target {
+        action,
+        args: c.args,
+        basis,
+        scope: Scope::Profile,
+        back: Screen::Review,
+    };
+    if t.action.gate.is_empty() {
+        ask(m, t);
+        Vec::new()
+    } else {
+        open_gate(m, t)
+    }
 }
 
 /// The planner's fields: `plan.save`'s parameters where the core lists it,
@@ -1669,7 +1866,9 @@ fn plan_fields(m: &mut Model) {
                 .collect()
         })
         .unwrap_or_default();
-    if params.is_empty() {
+    // The check of the two sizes only where the core lists no plan.save at
+    // all: a listed one is asked only for what it declares.
+    if m.offered(Scope::Journey, "plan.save").is_none() {
         params = PLAN_SIZES
             .iter()
             .map(|n| (n.to_string(), "text".to_string(), Vec::new(), false))
@@ -1885,12 +2084,10 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                     scroll_key(&mut m.scroll, n, &k);
                     Vec::new()
                 }
-                Screen::Install => page_key(
-                    m,
-                    k,
-                    Scope::Journey,
-                    &["asahi.launch", "omarchy.start", "omarchy.resume"],
-                ),
+                Screen::Install => {
+                    let ids = install_actions(m);
+                    page_key(m, k, Scope::Journey, ids)
+                }
                 Screen::Shared => page_key(m, k, Scope::Journey, &["shared.create"]),
                 Screen::Scan => page_key(m, k, Scope::Profile, &["profile.scan"]),
                 Screen::Progress => page_key(m, k, Scope::Journey, &[]),
@@ -2049,6 +2246,7 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
         KeyCode::Enter => return Some(form_enter(m, plan)),
         _ => {
             let f = p.fields.get_mut(at)?;
+            let mut full = false;
             match k.code {
                 // A choice: Space steps through the core's choices.
                 KeyCode::Char(' ') if !f.choices.is_empty() => {
@@ -2064,8 +2262,12 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
                     f.value.clear()
                 }
                 KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if f.value.chars().count() < 64 {
-                        f.value.push(c);
+                    // As much as one argument carries, as the request writes it.
+                    let next = format!("{}{c}", f.value);
+                    if crate::record::encode(next.as_bytes()).len() <= VALUE_MAX {
+                        f.value = next;
+                    } else {
+                        full = true;
                     }
                 }
                 KeyCode::Backspace => {
@@ -2073,10 +2275,21 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
                 }
                 _ => return None,
             }
+            if full {
+                m.status = Some((
+                    Level::Warn,
+                    format!(
+                        "A value is at most {VALUE_MAX} bytes as the request writes it; the rest was not typed."
+                    ),
+                ));
+            }
         }
     }
     Some(Vec::new())
 }
+
+/// The most one argument's value may be, as the request writes it.
+const VALUE_MAX: usize = 4096;
 
 /// Enter in a form: a review the core answered for exactly what is typed,
 /// of an action it still lists, goes on — to its gate, or to a question —
@@ -2093,11 +2306,18 @@ fn form_enter(m: &mut Model, plan: bool) -> Vec<Cmd> {
         && let Some(basis) = c.basis.clone()
         && let Some(a) = m.offered(scope, &action)
     {
-        let args = if c.normal_args.is_empty() {
-            c.args.clone()
-        } else {
-            c.normal_args.clone()
-        };
+        // Each declared parameter, in the declared order: the core's normal
+        // value where it gave one, else what was typed; a name the action
+        // does not declare is never sent.
+        let args: Args = f
+            .fields
+            .iter()
+            .filter_map(|fl| {
+                let normal = c.normal_args.iter().find(|(n, _)| *n == fl.name);
+                let typed = c.args.iter().find(|(n, _)| *n == fl.name);
+                normal.or(typed).cloned()
+            })
+            .collect();
         let t = Target {
             action: a,
             args,
@@ -2241,6 +2461,16 @@ fn dashboard_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
 /// The keys of a page that offers one of IDS from SCOPE's snapshot (the
 /// first listed): Enter chooses it; `n` chooses `network.connect` where it is
 /// listed; the moving keys scroll.
+/// The actions the Install page describes, by the system `hello` named: the
+/// Asahi launch on macOS, Omarchy Mac's start on Linux, none before `hello`.
+pub fn install_actions(m: &Model) -> &'static [&'static str] {
+    match m.hello.as_ref().map(|h| h.platform.as_str()) {
+        Some("macos") => &["asahi.launch"],
+        Some("linux") => &["omarchy.start", "omarchy.resume"],
+        _ => &[],
+    }
+}
+
 fn page_key(m: &mut Model, k: KeyEvent, scope: Scope, ids: &[&str]) -> Vec<Cmd> {
     match k.code {
         KeyCode::Enter => match ids.iter().find_map(|id| m.offered(scope, id)) {
@@ -2248,12 +2478,20 @@ fn page_key(m: &mut Model, k: KeyEvent, scope: Scope, ids: &[&str]) -> Vec<Cmd> 
             None => {
                 m.status = Some((
                     Level::Info,
-                    "Nothing on this page is offered now: the core lists no such action.".into(),
+                    if ids.is_empty() {
+                        "This page offers no action: it shows what the core read."
+                    } else {
+                        "Nothing on this page is offered now: the core lists no such action."
+                    }
+                    .into(),
                 ));
                 Vec::new()
             }
         },
-        KeyCode::Char('n') if m.screen == Screen::Install => {
+        KeyCode::Char('n')
+            if m.screen == Screen::Install
+                && m.hello.as_ref().is_some_and(|h| h.platform == "linux") =>
+        {
             match m.offered(Scope::Journey, "network.connect") {
                 Some(a) => choose(m, a, Scope::Journey),
                 None => Vec::new(),
@@ -2275,13 +2513,24 @@ fn selection_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             let Some(cat) = cats.get(m.sel) else {
                 return Vec::new();
             };
-            let Some(d) = m.detail(Kind::Items).filter(|d| d.loaded) else {
+            // All of a category's items, only once every item is held.
+            let d = m.detail(Kind::Items);
+            if !m.whole(Kind::Items) {
                 m.status = Some((
                     Level::Info,
-                    "The inventory is not read yet: its items are chosen once it is.".into(),
+                    match d.filter(|d| d.loaded) {
+                        Some(d) => format!(
+                            "The inventory is still being read ({} of {} items): a whole category is chosen once all of it is.",
+                            d.rows.len(),
+                            d.total
+                        ),
+                        None => "The inventory is not read yet: its items are chosen once it is."
+                            .to_string(),
+                    },
                 ));
                 return Vec::new();
-            };
+            }
+            let Some(d) = d else { return Vec::new() };
             let rows: Vec<Row> = d
                 .rows
                 .iter()
@@ -2399,6 +2648,29 @@ fn review_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
 }
 
 fn gate_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
+    // The moving keys scroll what the gate says between its label and its
+    // field; they are never text. The frame keeps the line within the facts.
+    let top = m.gate_scroll.get_mut();
+    match k.code {
+        KeyCode::Down => *top = top.saturating_add(1),
+        KeyCode::Up => *top = top.saturating_sub(1),
+        KeyCode::PageDown => *top = top.saturating_add(PAGE_STEP),
+        KeyCode::PageUp => *top = top.saturating_sub(PAGE_STEP),
+        KeyCode::Home => *top = 0,
+        KeyCode::End => *top = usize::MAX,
+        _ => {}
+    }
+    if matches!(
+        k.code,
+        KeyCode::Down
+            | KeyCode::Up
+            | KeyCode::PageDown
+            | KeyCode::PageUp
+            | KeyCode::Home
+            | KeyCode::End
+    ) {
+        return Vec::new();
+    }
     match k.code {
         KeyCode::Esc => {
             m.screen = m.gate.take().map_or(Screen::Dashboard, |g| g.back);

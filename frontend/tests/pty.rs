@@ -1425,7 +1425,14 @@ fn pty_gate2_reads_through_the_launcher() {
             ..Opts::default()
         },
     );
-    p.wait_for("Nothing is available now.");
+    // The fixture's one offered row under "What you can do now": the plan's
+    // save on the macOS fixture, the developer setup on the Linux one.
+    let row = if mac {
+        "Save the plan"
+    } else {
+        "Developer setup"
+    };
+    p.wait_for(row);
     p.wait_for("every station is later");
     p.idle();
     // r: drawn running before the answer, then answered.
@@ -1495,9 +1502,18 @@ fn pty_gate2_reads_through_the_launcher() {
     }
     p.send(b"\r");
     p.wait_for("Linux size");
-    p.keys("250GB");
-    p.send(b"\t");
-    p.keys("100GB");
+    // Linux 250 GB beside 100 GB of Shared: on macOS the fields are what
+    // plan.save declares, Shared's size first; on Linux, where no plan.save
+    // is listed, the plan check's two sizes, Linux's first.
+    if mac {
+        p.keys("100GB");
+        p.send(b"\t");
+        p.keys("250GB");
+    } else {
+        p.keys("250GB");
+        p.send(b"\t");
+        p.keys("100GB");
+    }
     p.send(b"\r");
     if mac {
         p.wait_for("you type 614730MiB");
@@ -1506,7 +1522,7 @@ fn pty_gate2_reads_through_the_launcher() {
     }
     p.idle();
     p.send(b"\x1b");
-    p.wait_for("Nothing is available now.");
+    p.wait_for(row);
     p.keys("q");
     assert_eq!(p.wait_exit(), 0);
     assert!(p.restored(), "the terminal came back");

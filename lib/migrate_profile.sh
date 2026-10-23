@@ -233,7 +233,7 @@ _prof_view() {
         else { ST = "exclude"; WHY = "an encrypted SSH key: typed carry includes it" }
       } else if (cl == "secret") { ST = "never"; WHY = "never carried: a credential" }
       else if (cl == "mac-only") { ST = "never"; WHY = "only means something on macOS" }
-      else if (k == "refused" || k == "recognised" || k == "session" || k == "link" || k == "special") { ST = "never"; WHY = (k == "recognised") ? "recognised, not migrated yet" : (k == "refused" ? "carries nothing (see its note)" : "never carried") }
+      else if (k == "refused" || k == "recognised" || k == "session" || (k == "link" && cl != "opaque") || k == "special") { ST = "never"; WHY = (k == "recognised") ? "recognised, not migrated yet" : (k == "refused" ? "carries nothing (see its note)" : "never carried") }
       else if (rs == "unsupported" || rs == "mac-only") { ST = "never"; WHY = (rs == "unsupported") ? "not available for Linux on this Mac" : "only means something on macOS" }
       else if (cl == "opaque") {
         if (s == "include") { if (OPQ) ST = "include"; else { ST = "decide"; WHY = "waits for the typed word opaque" } }

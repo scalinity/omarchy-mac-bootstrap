@@ -141,13 +141,13 @@ GnuPG private keys, anything in the Keychain (never read), browser profiles,
 | --- | --- |
 | configuration values | supported adapters keep allowlisted fields only |
 | environment values (shell exports, MCP `env`) | a value never travels unless the adapter's allowlist names that variable and its value passes the value grammar; MCP `env` values never travel — they become the tool's own variable reference and the item is `needs-secret` |
-| URLs | a URL with user information (`user:pass@`) or a query parameter named like a credential (`token`, `key`, `secret`, `sig`, `auth`, `password`) is dropped, and the field flagged |
-| Git remotes | the same URL rule; a remote that fails it is shown for the person to re-enter |
-| command arguments (MCP `args`, hooks) | an argument after a credential-named flag (`--token`, `--api-key`, `--password`, `--secret`), or matching a credential shape, is dropped and the item is `needs-secret` |
+| URLs | a URL with user information (`user@` or `user:pass@`, in any URL with a scheme) or a query or fragment parameter whose name, percent-decoded, is named like a credential (`token`, `key`, `secret`, `sig`, `signature` such as `X-Amz-Signature`, `credential`, `auth`, `password`, `session`) is dropped, and the field flagged; `git@host:path` names an account, not a credential, and passes |
+| Git remotes | the same URL rule; a remote that fails it is withheld from the inventory, for the person to re-enter |
+| command arguments (MCP `args` and OpenCode's `command`, hooks) | an argument after a credential-named flag (`--token`, `--api-key`, `--key`, `--auth`, `--password`, `--secret`), the same flag written `FLAG=VALUE`, an argument holding a URL that fails the URL rule, or one matching a credential shape, is dropped and the item is `needs-secret` |
 | logs and records | hold names, ids, digests and sanitised URLs only |
 | MCP configuration | re-created from neutral records with the rules above (docs/AI-TOOLS.md) |
 | SSH | `~/.ssh/config` is `config`, its `UseKeychain` lines dropped (Linux's OpenSSH refuses them); `known_hosts` is `sensitive`; private keys are refused except below |
-| `.env` files | refused |
+| `.env*` files (every name starting with `.env`: `.envrc`, `.env-production`, `.envrc.local`) | refused |
 | Keychain references (`credential.helper osxkeychain`, a `security` command in `apiKeyHelper`) | dropped as macOS-only and flagged |
 
 ### The one secret exception: an encrypted SSH key
@@ -175,7 +175,7 @@ Three kinds of content, three different promises:
 
 | Kind | Promise | Not promised |
 | --- | --- | --- |
-| **parsed configuration** of a supported adapter (Git settings, MCP definitions, the AI tools' settings, Codex's configuration, Ghostty and Starship settings) | only its allowlisted fields leave macOS; its known credential fields never do; the credential-shape scan rejects on top | that an allowlisted field never holds a credential in a form nobody recognises |
+| **parsed configuration** of a supported adapter (Git settings, MCP definitions, the AI tools' settings, Codex's configuration, Ghostty and Starship settings; Starship's file is rebuilt from its prompt settings, module display fields, palettes and directory substitutions, its custom modules and unknown fields left behind and listed) | only its allowlisted fields leave macOS; its known credential fields never do; the credential-shape scan rejects on top | that an allowlisted field never holds a credential in a form nobody recognises |
 | **files a supported adapter carries whole** (instructions, skills, a Neovim tree, a tmux configuration) | the hard refusals and the whole-length scan apply; a credential of a shape the scan knows excludes the file; the review marks each as "carried whole" | that the file is secret-free: a scan that finds nothing proves nothing |
 | **opaque custom paths** | excluded by default; carried only after typed `opaque`, with the warning that Shared is not encrypted; known credential files inside are still refused; the scan still runs | anything about their contents: they are outside the secret guarantee |
 
@@ -200,14 +200,21 @@ memory, shell history, application data from `~/Library`. History
 
 ## Chosen folders
 
-Discovery lists names, sizes and types under `~` and `~/.config` without
-reading inside; what an adapter owns (`~/.claude`, `~/.codex`,
-`~/.config/nvim`) goes to that adapter. Opening a folder walks it
-(`sys_walk`) and classifies each file, and the folder shows its most
-sensitive class; the preview masks credential-shaped values. A root that
-is a link (a GNU Stow farm) is followed once, and the folder it names is
-carried as a folder at the chosen path. Never the home folder itself, or
-`~/Library` as a whole.
+Discovery lists names and types under `~` and `~/.config` without
+reading inside: a candidate folder has no size until it is carried, and a
+link is listed by its text, never followed. The one read below the top is
+project discovery: one level of a top-level folder that is neither a link
+nor protected (`~/code`), and only each child checkout's `.git/config` and
+`.git/HEAD`. What an adapter owns (`~/.claude`, `~/.codex`,
+`~/.config/nvim`) goes to that adapter. A folder's contents are read
+(`sys_walk`), each file classified, and a denial reported only when it is
+carried; the folder shows its most sensitive class and the preview masks
+credential-shaped values. A chosen root is resolved through every link on
+the way and refused when it leads to the home itself, above or outside the
+home, into `~/Library`, `~/.ssh` or `~/.gnupg`, or to a hard-refused path;
+a root that is a link (a GNU Stow farm) is carried as a folder at the
+chosen path, and each file inside is checked by its real path as well as
+by the name it was chosen under.
 
 ## The Migration Profile
 

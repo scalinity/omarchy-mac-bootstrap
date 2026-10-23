@@ -8,10 +8,10 @@ expression: "frame(m, w, h)"
 
    Terminal    not needed: it runs with no terminal
 
+   It covers 1 path:
    ~/.config/kitty  4.0 GB
 
    Type opaque to continue    ▏
-
 
 
 

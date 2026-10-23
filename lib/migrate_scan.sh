@@ -119,20 +119,56 @@ _scan_text() {
   SCAN_TX=${1//[![:print:]]/?}
 }
 
-# _scan_url_ok URL — 0 when a URL carries no credential: no user information
-# and no query parameter named like one (docs/MIGRATION.md → *Secret channels*).
+# The URL rule (docs/MIGRATION.md → *Secret channels*), as awk functions
+# both the shell check and Codex's conversion use. urlok(U) is 1 when U holds
+# no user information and no query or fragment parameter whose name, once
+# percent-decoded, is named like a credential or a signature (token, key,
+# secret, sig, auth, password, credential, session: X-Amz-Signature and
+# X-Amz-Credential among them).
+# shellcheck disable=SC2016 # awk source
+_SCAN_URL_FUNCS='
+function uhex(c) { return index("0123456789abcdef", tolower(c)) - 1 }
+function udec(s,   o, i, n, c, h1, h2) {
+  o = ""
+  n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "%" && i + 2 <= n) {
+      h1 = uhex(substr(s, i + 1, 1)); h2 = uhex(substr(s, i + 2, 1))
+      if (h1 >= 0 && h2 >= 0) { o = o sprintf("%c", h1 * 16 + h2); i += 2; continue }
+    }
+    if (c == "+") c = " "
+    o = o c
+  }
+  return o
+}
+function urlok(u,   a, q, n, i, parts, name) {
+  # User information in a URL with a scheme (https://token@host/ included);
+  # an scp-like Git remote (git@host:path) names an account, not a secret.
+  if (sub(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "", u)) {
+    a = u
+    sub(/[\/?#].*/, "", a)
+    if (index(udec(a), "@")) return 0
+  }
+  if (!match(u, /[?#]/)) return 1
+  q = substr(u, RSTART + 1)
+  n = split(q, parts, /[&;?#]/)
+  for (i = 1; i <= n; i++) {
+    name = parts[i]
+    sub(/=.*/, "", name)
+    name = tolower(udec(name))
+    if (name ~ /(token|key|secret|sig|auth|pass|credential|session)/) return 0
+  }
+  return 1
+}'
+
+# _scan_url_ok URL — 0 when a URL carries no credential (urlok above).
 _scan_url_ok() {
-  local LC_ALL=C u=$1 q
-  case "$u" in
-    *://*@*) u=${u#*://} && case "${u%%/*}" in *@*) return 1 ;; esac ;;
-  esac
-  case "$u" in *\?*) ;; *) return 0 ;; esac
-  q=$(printf '%s' "${u#*\?}" | tr '[:upper:]' '[:lower:]')
-  case "&$q" in
-    *'&token'* | *'&key'* | *'&secret'* | *'&sig'* | *'&auth'* | *'&password'* | *'&api_key'* | *'&apikey'* | *'&access_token'*) return 1 ;;
-    *[_-]token=* | *[_-]key=* | *[_-]secret=*) return 1 ;;
-  esac
-  return 0
+  local r
+  r=$(printf '%s\n' "$1" | LC_ALL=C awk "$_SCAN_URL_FUNCS"'
+    { if (!urlok($0)) bad = 1 }
+    END { print (bad || NR == 0) ? "bad" : "ok" }')
+  [ "$r" = ok ]
 }
 
 # ---------------------------------------------------------------------------
@@ -158,7 +194,7 @@ scan_refused() {
     id_*.pub) ;;
     id_*) SCAN_HIT="an SSH private key" ;;
     *.pem | *.key | *.p12 | *.pfx | *.jks | *.keystore) SCAN_HIT="a key or certificate file" ;;
-    .env | .env.* | .envrc) SCAN_HIT="an environment file (.env)" ;;
+    .env*) SCAN_HIT="an environment file (.env)" ;;
     credentials | credentials.json | .credentials.json | .git-credentials | .pypirc) SCAN_HIT="a credentials file" ;;
     hosts.yml | auth.json | mcp-auth.json) SCAN_HIT="a sign-in file" ;;
     .netrc | _netrc) SCAN_HIT="a .netrc file" ;;
@@ -177,23 +213,28 @@ scan_refused() {
 # shellcheck disable=SC2016 # awk source
 _SCAN_SECRET_AWK='
 function hit(k) { print k; found = 1; exit 0 }
-function tok(re, min, k,   s) {
+# A shape is measured without the delimiter before it, so one at the start
+# of a line, or alone on it, is held to the same length as one after a
+# space or a quote: MIN is the length of the token alone.
+function tok(re, min, k,   s, n) {
   s = line
   while (match(s, re)) {
-    if (RLENGTH >= min) hit(k)
+    n = RLENGTH
+    if (substr(s, RSTART, 1) ~ /[^A-Za-z0-9]/) n--
+    if (n >= min) hit(k)
     s = substr(s, RSTART + RLENGTH)
   }
 }
 {
   line = $0
   if (line ~ /-----BEGIN[ A-Z0-9]*PRIVATE KEY( BLOCK)?-----/) hit("a private key")
-  tok("(^|[^A-Za-z0-9])sk-ant-[A-Za-z0-9_-]+", 28, "an Anthropic API key")
-  tok("(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]+", 24, "an API key (sk-)")
-  tok("(^|[^A-Za-z0-9])gh[pousr]_[A-Za-z0-9]+", 40, "a GitHub token")
-  tok("(^|[^A-Za-z0-9])github_pat_[A-Za-z0-9_]+", 33, "a GitHub token")
-  tok("(^|[^A-Za-z0-9])xox[abposr]-[A-Za-z0-9-]+", 15, "a Slack token")
-  tok("(^|[^A-Za-z0-9])AKIA[0-9A-Z]+", 21, "an AWS access key")
-  tok("(^|[^A-Za-z0-9])AIza[0-9A-Za-z_-]+", 40, "a Google API key")
+  tok("(^|[^A-Za-z0-9])sk-ant-[A-Za-z0-9_-]+", 27, "an Anthropic API key")
+  tok("(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]+", 23, "an API key (sk-)")
+  tok("(^|[^A-Za-z0-9])gh[pousr]_[A-Za-z0-9]+", 39, "a GitHub token")
+  tok("(^|[^A-Za-z0-9])github_pat_[A-Za-z0-9_]+", 32, "a GitHub token")
+  tok("(^|[^A-Za-z0-9])xox[abposr]-[A-Za-z0-9-]+", 14, "a Slack token")
+  tok("(^|[^A-Za-z0-9])AKIA[0-9A-Z]+", 20, "an AWS access key")
+  tok("(^|[^A-Za-z0-9])AIza[0-9A-Za-z_-]+", 39, "a Google API key")
   tok("eyJ[A-Za-z0-9_-]+[.]eyJ[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+", 40, "a JSON Web Token")
   low = tolower(line)
   while (match(low, /(pass(word|wd|phrase)?|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth)[a-z0-9_]*["\047]?[ \t]*[:=][ \t]*["\047]?[a-z0-9+\/=_.-]+/)) {
@@ -260,11 +301,19 @@ END {
     if (bits >= 8) { bits -= 8; B[n++] = int(acc / (2 ^ bits)); acc = acc % (2 ^ bits) }
   }
   if (n < 32 || sstr(0, 14) != "openssh-key-v1" || B[14] != 0) bad()
+  # Every length is read only where four bytes remain, and every string it
+  # names must lie whole inside the envelope.
   p = 15
-  l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); cipher = sstr(p, l); p += l
-  l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); kdf = sstr(p, l); p += l
-  l = u32(p); p += 4; if (p + l > n) bad(); opts = p; p += l
-  if (u32(p) != 1) bad()
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); cipher = sstr(p, l); p += l
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || l > 64 || p + l > n) bad(); kdf = sstr(p, l); p += l
+  if (p + 4 > n) bad(); ol = u32(p); p += 4; if (p + ol > n) bad(); opts = p; p += ol
+  if (p + 4 > n || u32(p) != 1) bad()
+  p += 4
+  # One key: its public-key string, then the (encrypted) private section,
+  # each present in full; a torn envelope is malformed.
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
+  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
+  l = ol
   if (cipher !~ /^[a-z0-9@.-]+$/ || kdf !~ /^[a-z0-9@.-]+$/) bad()
   rounds = 0
   if (kdf == "bcrypt") {
@@ -1009,7 +1058,9 @@ _scan_ad_terminal() {
   f=$(_scan_h .config/starship.toml)
   if [ -f "$f" ]; then
     if toml_read "$f" "$SCAN_TMP/starship"; then
-      _scan_whole .config/starship.toml starship:config parsed terminal "Starship settings"
+      _scan_size "$f"
+      _scan_item starship:config parsed terminal "Starship settings" "" "" yes observed config .config/starship.toml "$SCAN_SIZE" \
+        "the settings Starship documents carried by name; custom modules run commands: not carried"
     else
       _scan_item starship:config refused terminal "Starship settings" "" "" yes unknown config .config/starship.toml "" \
         "refused by the TOML reader at line $TOML_AT: $TOML_WHY; carries nothing"
@@ -1250,6 +1301,9 @@ SCAN_CONFIG_OWNED=" nvim ghostty kitty wezterm alacritty tmux starship.toml atui
 # and branch, read from .git, never copied.
 _scan_project() {
   local rel=$1 g url head note
+  # A link is never followed while discovering: it may lead anywhere,
+  # a protected folder included.
+  [ ! -L "$(_scan_h "$rel")" ] || return 1
   g=$(_scan_h "$rel/.git")
   [ -f "$g/config" ] && [ -f "$g/HEAD" ] || return 1
   url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' "$g/config")
@@ -1267,10 +1321,12 @@ _scan_project() {
 }
 
 # _scan_chosen REL — one entry offered as a chosen folder: opaque (no adapter
-# understands it), refused by path when it is a known credential file; a
-# link at its root (a Stow farm) followed once.
+# understands it), refused by path when it is a known credential file.
+# Discovery reads no folder's contents before it is chosen: a folder is
+# listed by its name alone, and a link by its name and its text, never
+# followed (a Stow root is followed once, at export, if it is chosen).
 _scan_chosen() {
-  local rel=$1 p t note="" ev=observed size="" kind=folder
+  local rel=$1 p t
   p=$(_scan_h "$rel")
   if scan_refused "$rel"; then
     _scan_item "path:$rel" file secrets "$rel" "" "" yes observed secret "$rel" "" "never carried: $SCAN_HIT"
@@ -1278,37 +1334,17 @@ _scan_chosen() {
   fi
   if [ -L "$p" ]; then
     t=$(readlink "$p")
-    case "$t" in /*) t=$(sys_path "$t") ;; *) t=${p%/*}/$t ;; esac
-    if [ -d "$t" ]; then
-      note="a link to $(readlink "$p"), followed once; "
-      p=$t
-    elif [ -f "$t" ]; then
-      kind=file note="a link to $(readlink "$p"), followed once; "
-      p=$t
-    else
-      _scan_item "path:$rel" link folders "$rel" "" "" yes unknown opaque "$rel" "" "a link whose target is missing"
-      return 0
-    fi
+    _scan_item "path:$rel" link folders "$rel" "" "" yes observed opaque "$rel" "" \
+      "a link to $t: followed once, and only if it is chosen; opaque: its contents are not checked field by field"
   elif [ -f "$p" ]; then
-    kind="file"
-  elif [ ! -d "$p" ]; then
-    _scan_item "path:$rel" special folders "$rel" "" "" yes observed mac-only "$rel" "" "not a file or folder: never carried"
-    return 0
-  fi
-  if [ "$kind" = folder ]; then
-    sys_walk "${p#"${OMB_FIXTURE:+$OMB_FIXTURE/root}"}" "$SCAN_MAX" >"$SCAN_TMP/tree"
-    case $? in
-      0) ;;
-      3) ev=unknown note="${note}partial: more than $SCAN_MAX entries; " ;;
-      4) ev=unknown note="${note}denied: some entries could not be read; " ;;
-      *) ev=unknown note="${note}could not be listed; " ;;
-    esac
-    size=$(LC_ALL=C awk -F '\t' '$1 == "f" { b += $2 } END { printf "%d", b }' "$SCAN_TMP/tree")
+    _scan_size "$p"
+    _scan_item "path:$rel" file folders "$rel" "" "" yes observed opaque "$rel" "$SCAN_SIZE" "opaque: its contents are not checked field by field"
+  elif [ -d "$p" ]; then
+    _scan_item "path:$rel" folder folders "$rel" "" "" yes observed opaque "$rel" "" \
+      "opaque: read only if it is chosen, and its contents are not checked field by field"
   else
-    _scan_size "$p" && size=$SCAN_SIZE
+    _scan_item "path:$rel" special folders "$rel" "" "" yes observed mac-only "$rel" "" "not a file or folder: never carried"
   fi
-  _scan_item "path:$rel" "$kind" folders "$rel" "" "" yes "$ev" opaque "$rel" "$size" \
-    "${note}opaque: its contents are not checked field by field"
 }
 
 _scan_ad_folders() {
@@ -1458,12 +1494,13 @@ _scan_x_file() {
   _scan_x_macpaths "$SCAN_XO/$SCAN_OBJ" "$dest"
 }
 
-# _scan_x_tree MACHINE-ROOT REL DEST CLASS — a folder carried whole: its
-# folders, its files (each refused by path or by the scan on its own), and
+# _scan_x_tree MACHINE-ROOT REL DEST CLASS SRCREL — a folder carried whole:
+# its folders, its files (each refused by path, under the name it was chosen
+# by, REL, and where it really is, SRCREL, or by the scan on its own), and
 # the links whose target, resolved from the link's own folder, stays inside
 # the item and passes through no other link.
 _scan_x_tree() {
-  local root=$1 rel=$2 dest=$3 class=$4 dmode=0755 t s m path link
+  local root=$1 rel=$2 dest=$3 class=$4 srcrel=$5 dmode=0755 t s m path link
   [ "$class" = config ] || dmode=0700
   _scan_x dir dest "$dest" mode "$dmode"
   sys_walk "$root" "$SCAN_MAX" >"$SCAN_XO/walk"
@@ -1478,7 +1515,7 @@ _scan_x_tree() {
     case "$t" in
       d) _scan_x dir dest "$dest/$path" mode "$dmode" ;;
       f)
-        if scan_refused "$rel/$path"; then
+        if scan_refused "$rel/$path" || scan_refused "$srcrel/$path"; then
           _scan_x skip reason "$dest/$path: $SCAN_HIT"
           continue
         fi
@@ -1604,13 +1641,63 @@ _scan_x_path() {
       return 0
     fi
   fi
+  if [ ! -f "$p" ] && [ ! -d "$p" ]; then
+    _scan_x skip reason "$SCAN_DEST: not a file or folder"
+    return 0
+  fi
+  # A chosen root is held to the refusals where it really is, not only
+  # under the name it was chosen by.
+  SCAN_SRCREL=$rel
+  if [ "$SCAN_CLASS" = opaque ] && ! _scan_x_source "$p"; then
+    _scan_x skip reason "$SCAN_DEST: $SCAN_HIT"
+    return 0
+  fi
   if [ -f "$p" ]; then
     _scan_x_file "$p" "$SCAN_DEST" "$SCAN_CLASS"
-  elif [ -d "$p" ]; then
-    _scan_x_tree "$mrel" "$rel" "$SCAN_DEST" "$SCAN_CLASS"
   else
-    _scan_x skip reason "$SCAN_DEST: not a file or folder"
+    _scan_x_tree "$mrel" "$rel" "$SCAN_DEST" "$SCAN_CLASS" "$SCAN_SRCREL"
   fi
+}
+
+# _scan_x_source PATH — where a chosen root really is: SCAN_SRCREL, its
+# home-relative path with every link on the way resolved. 1, SCAN_HIT saying
+# why, when that is the home itself, a folder above it or a place outside
+# it, anything in Library, .ssh or .gnupg, or a path the hard refusals name.
+_scan_x_source() {
+  local home phys p
+  SCAN_HIT=""
+  home=$(cd -P "$(_scan_h "")" 2>/dev/null && pwd -P)
+  if [ -z "$home" ]; then SCAN_HIT="the home folder cannot be resolved" && return 1; fi
+  # PATH itself is no link (a root link was followed once, and a link to a
+  # link refused): resolving its folder resolves every link on the way. A
+  # path ending in . or .. names a folder, resolved whole.
+  p=$1
+  while [ "${p%/}" != "$p" ]; do p=${p%/}; done
+  case "${p##*/}" in
+    . | ..) phys=$(cd -P "$p" 2>/dev/null && pwd -P) ;;
+    *)
+      phys=$(cd -P "${p%/*}" 2>/dev/null && pwd -P)
+      [ -z "$phys" ] || phys=$phys/${p##*/}
+      ;;
+  esac
+  if [ -z "$phys" ]; then SCAN_HIT="where it leads cannot be resolved" && return 1; fi
+  case "$phys" in
+    "$home") SCAN_HIT="it leads to the home folder itself, which is never carried" && return 1 ;;
+    "$home"/*) SCAN_SRCREL=${phys#"$home"/} ;;
+    *)
+      case "$home/" in
+        "$phys"/*) SCAN_HIT="it leads to a folder that holds the home folder" ;;
+        *) SCAN_HIT="it leads out of the home folder" ;;
+      esac
+      return 1
+      ;;
+  esac
+  case "/$SCAN_SRCREL/" in
+    /Library/*) SCAN_HIT="it leads into the Library folder" && return 1 ;;
+    /.ssh/* | /.gnupg/*) SCAN_HIT="it leads into a folder of keys" && return 1 ;;
+  esac
+  if scan_refused "$SCAN_SRCREL"; then return 1; fi
+  return 0
 }
 
 # _scan_x_gen DEST — the generated file $SCAN_XO/gen as the next object, its
@@ -1680,11 +1767,17 @@ _scan_cred_flag() {
 }
 
 # _scan_arg_ok PREV ARG — 0 when a command argument may travel: neither a
-# credential-named flag nor the argument after one, nor credential-shaped
+# credential-named flag, written alone or as FLAG=VALUE, nor the argument
+# after one, nor a URL that fails the URL rule, nor credential-shaped
 # (*Secret channels*).
 _scan_arg_ok() {
   if _scan_cred_flag "$1" || _scan_cred_flag "$2"; then return 1; fi
-  case "$2" in --token=* | --api-key=* | --apikey=* | --password=* | --secret=* | --access-token=*) return 1 ;; esac
+  case "$2" in
+    -*=*) if _scan_cred_flag "${2%%=*}"; then return 1; fi ;;
+  esac
+  case "$2" in
+    *://*) if ! _scan_url_ok "$2"; then return 1; fi ;;
+  esac
   scan_value_ok "$2"
 }
 
@@ -1935,59 +2028,155 @@ _scan_x_claude_plugins() {
   rm -f "$SCAN_XO/mk"
 }
 
+# _scan_oc_names KEYPATH — SCAN_OC: a JSON object of the names under
+# KEYPATH of OpenCode's file, each value replaced by its {env:NAME}
+# reference (no value is read); 1 when KEYPATH holds no object.
+_scan_oc_names() {
+  local n obj="" sep=""
+  _scan_pl "$SCAN_OC_FILE" "$1" >"$SCAN_XO/oc.names" 2>/dev/null || return 1
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    _scan_var "$n"
+    _scan_json_str "$n" || continue
+    obj="$obj$sep$SCAN_JS:\"{env:$SCAN_VAR}\"" sep=,
+  done <"$SCAN_XO/oc.names"
+  SCAN_OC="{$obj}"
+}
+
+# _scan_oc_server NAME — SCAN_OC: one OpenCode MCP server rebuilt from its
+# allowlisted fields: type, enabled and timeout as they are; the command
+# array under the argument rules; the URL under the URL rule; environment
+# and header values as {env:NAME}. Any other field is left behind.
+_scan_oc_server() {
+  local b="mcp.$1" k v n i arr="" asep="" prev="" out="" sep="" needs=""
+  _scan_pl "$SCAN_OC_FILE" "$b" >"$SCAN_XO/oc.fields" 2>/dev/null || return 1
+  while IFS= read -r k; do
+    case "$k" in
+      type | enabled | timeout)
+        _scan_json_of "$SCAN_OC_FILE" "$b.$k" || continue
+        out="$out$sep\"$k\":$SCAN_JV" sep=,
+        ;;
+      command)
+        n=$(_scan_pl "$SCAN_OC_FILE" "$b.command")
+        case "$n" in '' | *[!0-9]*) continue ;; esac
+        i=0 arr="" asep="" prev=""
+        while [ "$i" -lt "$n" ]; do
+          _scan_pl_into v "$SCAN_OC_FILE" "$b.command.$i"
+          i=$((i + 1))
+          if ! _scan_arg_ok "$prev" "$v"; then
+            prev=$v needs=1
+            continue
+          fi
+          prev=$v
+          _scan_home_path "$v"
+          _scan_json_str "$SCAN_HP" || continue
+          arr="$arr$asep$SCAN_JS" asep=,
+        done
+        out="$out$sep\"command\":[$arr]" sep=,
+        ;;
+      url)
+        _scan_pl_into v "$SCAN_OC_FILE" "$b.url" || continue
+        if ! _scan_url_ok "$v"; then
+          _scan_x skip reason "opencode mcp $1: its URL holds a credential, dropped"
+          needs=1
+          continue
+        fi
+        _scan_json_str "$v" || continue
+        out="$out$sep\"url\":$SCAN_JS" sep=,
+        ;;
+      environment | headers)
+        _scan_oc_names "$b.$k" || continue
+        out="$out$sep\"$k\":$SCAN_OC" sep=,
+        needs=1
+        ;;
+      *) _scan_text "$k" && _scan_x skip reason "opencode mcp $1: $SCAN_TX left behind" ;;
+    esac
+  done <"$SCAN_XO/oc.fields"
+  [ -z "$needs" ] || _scan_x skip reason "opencode mcp $1: needs-secret (set its variables on Linux)"
+  SCAN_OC="{$out}"
+}
+
+# _scan_oc_provider NAME — SCAN_OC: one OpenCode provider rebuilt from its
+# allowlisted fields (npm, name, models, and options.baseURL under the URL
+# rule); its other options, the API key among them, are left behind.
+_scan_oc_provider() {
+  local b="provider.$1" k v out="" sep=""
+  _scan_pl "$SCAN_OC_FILE" "$b" >"$SCAN_XO/oc.fields" 2>/dev/null || return 1
+  while IFS= read -r k; do
+    case "$k" in
+      npm | name | models)
+        _scan_json_of "$SCAN_OC_FILE" "$b.$k" || continue
+        out="$out$sep\"$k\":$SCAN_JV" sep=,
+        ;;
+      options)
+        if _scan_pl_into v "$SCAN_OC_FILE" "$b.options.baseURL" && _scan_url_ok "$v" && _scan_json_str "$v"; then
+          out="$out$sep\"options\":{\"baseURL\":$SCAN_JS}" sep=,
+        fi
+        _scan_x skip reason "opencode provider $1: options other than baseURL left behind (an API key is set again on Linux)"
+        ;;
+      *) _scan_text "$k" && _scan_x skip reason "opencode provider $1: $SCAN_TX left behind" ;;
+    esac
+  done <"$SCAN_XO/oc.fields"
+  SCAN_OC="{$out}"
+}
+
+# _scan_x_opencode — OpenCode's configuration rebuilt from allowlisted keys
+# (docs/AI-TOOLS.md → *OpenCode*): nothing of the file is copied through, so
+# what no rule names, a server or provider whose name a key path cannot
+# address included, is left out rather than left in.
 _scan_x_opencode() {
-  local f w k p v
+  local f k p out="{" sep="" obj osep kind
   f=$(_scan_h .config/opencode/opencode.json)
   [ -f "$f" ] || return 1
-  w=$SCAN_XO/oc.json
-  cp "$f" "$w" || return 1
-  if _scan_pl_keys "$f" "$SCAN_XO/ok"; then
+  SCAN_OC_FILE=$f
+  for k in \$schema theme model small_model keybinds agent command instructions permission; do
+    _scan_json_of "$f" "$k" || continue
+    out="$out$sep\"$k\":$SCAN_JV" sep=,
+  done
+  for kind in mcp provider; do
+    _scan_pl "$f" "$kind" >"$SCAN_XO/oc.top" 2>/dev/null || continue
+    obj="" osep=""
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      case "$p" in
+        *.* | *[!A-Za-z0-9_@:/-]*)
+          _scan_x skip reason "opencode $kind: an entry whose name holds a dot or an unusual byte, left out"
+          continue
+          ;;
+      esac
+      if [ "$kind" = mcp ]; then _scan_oc_server "$p" || continue; else _scan_oc_provider "$p" || continue; fi
+      _scan_json_str "$p" || continue
+      obj="$obj$osep$SCAN_JS:$SCAN_OC" osep=,
+    done <"$SCAN_XO/oc.top"
+    out="$out$sep\"$kind\":{$obj}" sep=,
+  done
+  if _scan_pl_keys "$f" "$SCAN_XO/oc.top"; then
     while IFS= read -r k; do
-      case "$k" in \$schema | mcp | agent | command | instructions | permission | provider | theme | model | small_model | keybinds) continue ;; esac
-      case "$k" in *.*) continue ;; esac
-      plutil -remove "$k" "$w" >/dev/null 2>&1
-      _scan_x skip reason "opencode $k: left behind"
-    done <"$SCAN_XO/ok"
+      case "$k" in \$schema | theme | model | small_model | keybinds | agent | command | instructions | permission | mcp | provider) continue ;; esac
+      case "$k" in
+        plugin) _scan_x skip reason "opencode plugins run code: not carried" ;;
+        *.* | *[!A-Za-z0-9_-]*) _scan_x skip reason "opencode: a key whose name holds a dot or an unusual byte, left behind" ;;
+        *) _scan_x skip reason "opencode $k: left behind" ;;
+      esac
+    done <"$SCAN_XO/oc.top"
   fi
-  _scan_pl "$w" plugin >/dev/null && plutil -remove plugin "$w" >/dev/null 2>&1
-  _scan_pl "$w" provider >"$SCAN_XO/ok" 2>/dev/null
-  while IFS= read -r p; do
-    case "$p" in '' | *.*) continue ;; esac
-    if _scan_pl "$w" "provider.$p.options.apiKey" >/dev/null; then
-      plutil -remove "provider.$p.options.apiKey" "$w" >/dev/null 2>&1
-      _scan_x skip reason "opencode provider $p: its API key dropped"
-    fi
-  done <"$SCAN_XO/ok"
-  _scan_pl "$w" mcp >"$SCAN_XO/ok" 2>/dev/null
-  while IFS= read -r p; do
-    case "$p" in '' | *.*) continue ;; esac
-    for k in environment headers; do
-      _scan_pl "$w" "mcp.$p.$k" >"$SCAN_XO/ok2" 2>/dev/null || continue
-      while IFS= read -r v; do
-        case "$v" in '' | *.*) continue ;; esac
-        _scan_var "$v"
-        plutil -replace "mcp.$p.$k.$v" -string "{env:$SCAN_VAR}" "$w" >/dev/null 2>&1
-      done <"$SCAN_XO/ok2"
-      _scan_x skip reason "opencode mcp $p: needs-secret ($k values become {env:NAME})"
-    done
-    if _scan_pl_into v "$w" "mcp.$p.url" && ! _scan_url_ok "$v"; then
-      plutil -remove "mcp.$p.url" "$w" >/dev/null 2>&1
-      _scan_x skip reason "opencode mcp $p: its URL holds a credential, dropped"
-    fi
-  done <"$SCAN_XO/ok"
-  plutil -convert json -r -o "$SCAN_XO/gen" "$w" >/dev/null 2>&1 || { rm -f "$w" "$SCAN_XO/ok" "$SCAN_XO/ok2"; return 1; }
-  rm -f "$w" "$SCAN_XO/ok" "$SCAN_XO/ok2"
-  _scan_x skip reason "opencode plugins run code: not carried"
+  printf '%s}' "$out" >"$SCAN_XO/oc.json"
+  if ! plutil -convert json -r -o "$SCAN_XO/gen" "$SCAN_XO/oc.json" >/dev/null 2>&1; then
+    rm -f "$SCAN_XO"/oc.*
+    _scan_x skip reason ".config/opencode/opencode.json: could not be rebuilt"
+    return 0
+  fi
+  rm -f "$SCAN_XO"/oc.*
   _scan_x_gen .config/opencode/opencode.json
 }
 
-# _SCAN_CODEX_AWK — Codex's configuration, carried as a new config.toml in
-# Codex's own shape from the reader's records (docs/AI-TOOLS.md → *Codex's
-# configuration*): allowlisted keys only; env values become env_vars names;
-# header values, bearer tokens and credential-shaped arguments dropped; the
-# rest listed. Writes the file to stdout and one reason per line to `skips`.
+# _SCAN_TOMLW_FUNCS — what a conversion from the reader's records to a new
+# TOML file shares: dec (a record value or path component), q (a basic
+# string), k (a key, bare or quoted), lit (a value as written), skip (a
+# reason, to the file in -v skips), add (a line into a section, sections
+# kept in the order first seen).
 # shellcheck disable=SC2016 # awk source
-_SCAN_CODEX_AWK='
+_SCAN_TOMLW_FUNCS='
 function dec(s,   o, i) {
   o = ""
   while ((i = index(s, "%")) > 0) { o = o substr(s, 1, i - 1) sprintf("%c", HV[substr(s, i + 1, 2)]); s = substr(s, i + 3) }
@@ -2010,24 +2199,6 @@ function q(s,   o, i, c, n, a) {
 function k(s) { return s ~ /^[A-Za-z0-9_-]+$/ ? s : q(s) }
 function skip(r) { print r > skips }
 function lit(t, v) { return t == "s" ? q(v) : v }
-function homep(v) {
-  if (index(v, home "/") == 1) return target "/" substr(v, length(home) + 2)
-  if (v == home) return target
-  if (index(v, "/Volumes/Shared/") == 1) return "/mnt/shared/" substr(v, 17)
-  return v
-}
-function urlok(u,   a, l) {
-  l = tolower(u)
-  a = l; sub(/^[a-z]+:\/\//, "", a); sub(/\/.*/, "", a)
-  if (index(a, "@")) return 0
-  if (l ~ /[?&](token|key|secret|sig|auth|password|api_key|apikey|access_token)[^=&]*=/) return 0
-  return 1
-}
-function credname(n,   l) { l = tolower(n); return l ~ /(token|key|secret|sig|auth|password)/ }
-function credflag(a) { return tolower(a) ~ /^--(token|api-key|apikey|password|secret|key|auth|access-token)$/ }
-function shaped(v) {
-  return v ~ /(^|[^A-Za-z0-9])(sk-[A-Za-z0-9_-]|gh[pousr]_[A-Za-z0-9]|github_pat_|xox[abposr]-|AKIA[0-9A-Z]|AIza[0-9A-Za-z_-]|eyJ[A-Za-z0-9_-]+[.]eyJ)/
-}
 function add(sec, line) {
   if (!(sec in SEEN)) { SEEN[sec] = 1; ORDER[++NS] = sec }
   if (line != "") BODY[sec] = BODY[sec] line "\n"
@@ -2035,6 +2206,26 @@ function add(sec, line) {
 BEGIN {
   for (i = 1; i < 256; i++) { ORD[sprintf("%c", i)] = i; HV[sprintf("%02X", i)] = i }
   FS = "\t"
+}'
+
+# _SCAN_CODEX_AWK — Codex's configuration, carried as a new config.toml in
+# Codex's own shape from the reader's records (docs/AI-TOOLS.md → *Codex's
+# configuration*): allowlisted keys only; env values become env_vars names;
+# header values, bearer tokens and credential-shaped arguments dropped; the
+# rest listed. Writes the file to stdout and one reason per line to `skips`.
+# Runs after _SCAN_URL_FUNCS and _SCAN_TOMLW_FUNCS.
+# shellcheck disable=SC2016 # awk source
+_SCAN_CODEX_AWK='
+function homep(v) {
+  if (index(v, home "/") == 1) return target "/" substr(v, length(home) + 2)
+  if (v == home) return target
+  if (index(v, "/Volumes/Shared/") == 1) return "/mnt/shared/" substr(v, 17)
+  return v
+}
+function credname(n,   l) { l = tolower(n); return l ~ /(token|key|secret|sig|auth|password)/ }
+function credflag(a) { return tolower(a) ~ /^--(token|api-key|apikey|password|secret|key|auth|access-token)$/ }
+function shaped(v) {
+  return v ~ /(^|[^A-Za-z0-9])(sk-[A-Za-z0-9_-]|gh[pousr]_[A-Za-z0-9]|github_pat_|xox[abposr]-|AKIA[0-9A-Z]|AIza[0-9A-Za-z_-]|eyJ[A-Za-z0-9_-]+[.]eyJ)/
 }
 {
   t = $1; n = split($2, P, "."); for (i = 1; i <= n; i++) P[i] = dec(P[i]); v = dec($3)
@@ -2064,7 +2255,7 @@ BEGIN {
     if (f == "args") {
       if (n == 3 && t == "a") { ARGS[s] = ARGS[s] ""; HASARGS[s] = 1; next }
       if (n == 4 && t == "s") {
-        if (credflag(PREV[s]) || credflag(v) || shaped(v) || v ~ /^--(token|api-key|apikey|password|secret|access-token)=/) { NEEDS[s] = 1; PREV[s] = v; next }
+        if (credflag(PREV[s]) || credflag(v) || shaped(v) || (index(v, "=") && credflag(substr(v, 1, index(v, "=") - 1))) || (v ~ /:\/\// && !urlok(v))) { NEEDS[s] = 1; PREV[s] = v; next }
         PREV[s] = v
         ARGS[s] = ARGS[s] (ARGS[s] == "" ? "" : ", ") q(homep(v)); next
       }
@@ -2138,7 +2329,7 @@ _scan_x_codex() {
     return 0
   fi
   : >"$SCAN_XO/skips"
-  LC_ALL=C awk -v home="$SCAN_HOME" -v target="$SCAN_TARGET_HOME" -v skips="$SCAN_XO/skips" "$_SCAN_CODEX_AWK" "$SCAN_XO/codex.rec" >"$SCAN_XO/gen"
+  LC_ALL=C awk -v home="$SCAN_HOME" -v target="$SCAN_TARGET_HOME" -v skips="$SCAN_XO/skips" "$_SCAN_URL_FUNCS$_SCAN_TOMLW_FUNCS$_SCAN_CODEX_AWK" "$SCAN_XO/codex.rec" >"$SCAN_XO/gen"
   while IFS= read -r f; do
     _scan_text "$f"
     _scan_x skip reason "$SCAN_TX"
@@ -2152,6 +2343,79 @@ _scan_x_codex() {
   fi
   rm -f "$SCAN_XO/check"
   _scan_x_gen .codex/config.toml
+}
+
+# _SCAN_STARSHIP_AWK — Starship's configuration, carried as a new
+# starship.toml from the reader's records with a field allowlist: the
+# prompt's top-level settings, each module's display fields, palettes and
+# directory substitutions. A custom module (it runs a command) and every
+# field no rule names, an api_key among them, are left behind and listed.
+# Runs after _SCAN_TOMLW_FUNCS.
+# shellcheck disable=SC2016 # awk source
+_SCAN_STARSHIP_AWK='
+BEGIN {
+  n = split("format right_format continuation_prompt scan_timeout command_timeout add_newline palette follow_symlinks", a, " ")
+  for (i = 1; i <= n; i++) TOP[a[i]] = 1
+  n = split("format style symbol disabled truncation_length truncation_symbol truncate_to_repo success_symbol error_symbol " \
+    "vimcmd_symbol vimcmd_visual_symbol vimcmd_replace_symbol vimcmd_replace_one_symbol home_symbol read_only read_only_style " \
+    "fish_style_pwd_dir_length use_logical_path use_os_path_sep repo_root_style before_repo_root_style repo_root_format " \
+    "show_always min_time show_milliseconds show_notifications min_time_to_notify threshold ignore_branches only_attached " \
+    "always_show_remote heuristic version_format conflicted ahead behind diverged up_to_date untracked stashed modified staged " \
+    "renamed deleted typechanged ignore_submodules commit_hash_length tag_symbol only_detached tag_disabled time_format " \
+    "utc_time_offset time_range use_12hr ssh_only ssh_symbol trim_at style_user style_root", a, " ")
+  for (i = 1; i <= n; i++) FIELD[a[i]] = 1
+}
+{
+  t = $1; n = split($2, P, "."); for (i = 1; i <= n; i++) P[i] = dec(P[i]); v = dec($3)
+  if (t == "t") next
+  if (n == 1) {
+    if ((P[1] in TOP) && t != "a") add("", k(P[1]) " = " lit(t, v))
+    else if (t != "a") skip("starship " P[1] ": left behind")
+    next
+  }
+  if (P[1] == "custom") { if (!CUSTOM++) skip("starship custom modules run commands: not carried"); next }
+  if (P[1] == "palettes" && n == 3 && t == "s") { add("[palettes." k(P[2]) "]", k(P[3]) " = " q(v)); next }
+  if (P[1] == "directory" && P[2] == "substitutions" && n == 3 && t == "s") { add("[directory.substitutions]", q(P[3]) " = " q(v)); next }
+  if (n == 2 && (P[2] in FIELD) && t != "a") { add("[" k(P[1]) "]", k(P[2]) " = " lit(t, v)); next }
+  if (n == 3 && P[2] ~ /^detect_(extensions|files|folders)$/ && P[3] ~ /^[0-9]+$/ && t == "s") {
+    key = P[1] SUBSEP P[2]
+    AR[key] = (AR[key] == "" ? "" : AR[key] ", ") q(v)
+    next
+  }
+  if (n == 2 && t == "a" && P[2] ~ /^detect_(extensions|files|folders)$/) { add("[" k(P[1]) "]", P[2] " = [" AR[P[1] SUBSEP P[2]] "]"); next }
+  if (t != "a") skip("starship " P[1] "." P[2] ": left behind")
+}
+END {
+  printf "# Carried from macOS by omarchy-mac-bootstrap: the settings Starship documents, by name.\n"
+  printf "%s", BODY[""]
+  for (i = 1; i <= NS; i++) if (ORDER[i] != "") printf "\n%s\n%s", ORDER[i], BODY[ORDER[i]]
+}'
+
+# _scan_x_starship — Starship's configuration through the strict reader and
+# the field allowlist; refused whole, it carries nothing.
+_scan_x_starship() {
+  local f r
+  f=$(_scan_h .config/starship.toml)
+  [ -f "$f" ] || return 1
+  if ! toml_read "$f" "$SCAN_XO/starship.rec"; then
+    _scan_x skip reason ".config/starship.toml: refused by the TOML reader at line $TOML_AT ($TOML_WHY)"
+    rm -f "$SCAN_XO/starship.rec"
+    return 0
+  fi
+  : >"$SCAN_XO/skips"
+  LC_ALL=C awk -v skips="$SCAN_XO/skips" "$_SCAN_TOMLW_FUNCS$_SCAN_STARSHIP_AWK" "$SCAN_XO/starship.rec" >"$SCAN_XO/gen"
+  while IFS= read -r r; do
+    _scan_text "$r"
+    _scan_x skip reason "$SCAN_TX"
+  done <"$SCAN_XO/skips"
+  rm -f "$SCAN_XO/skips" "$SCAN_XO/starship.rec"
+  if ! toml_read "$SCAN_XO/gen" "$SCAN_XO/check"; then
+    rm -f "$SCAN_XO/gen" "$SCAN_XO/check"
+    _scan_x skip reason ".config/starship.toml: the rebuilt file did not read back; carries nothing"
+    return 0
+  fi
+  rm -f "$SCAN_XO/check"
+  _scan_x_gen .config/starship.toml
 }
 
 # scan_extract ITEM_ID OUTDIR — what the item carries, in its Linux form:
@@ -2174,16 +2438,7 @@ scan_extract() {
   case "$id" in
     shell:bash) _scan_x_shellbash || rc=1 ;;
     ghostty:config) _scan_x_ghostty || rc=1 ;;
-    starship:config)
-      if [ ! -f "$(_scan_h .config/starship.toml)" ]; then
-        rc=1
-      elif toml_read "$(_scan_h .config/starship.toml)" "$SCAN_XO/check"; then
-        _scan_x_file "$(_scan_h .config/starship.toml)" .config/starship.toml config
-      else
-        _scan_x skip reason ".config/starship.toml: refused by the TOML reader at line $TOML_AT ($TOML_WHY)"
-      fi
-      rm -f "$SCAN_XO/check"
-      ;;
+    starship:config) _scan_x_starship || rc=1 ;;
     ssh:config) _scan_x_ssh || rc=1 ;;
     git:config) _scan_x_git "$(_scan_h .gitconfig)" || rc=1 ;;
     git:config-xdg) _scan_x_git "$(_scan_h .config/git/config)" || rc=1 ;;

@@ -32,7 +32,7 @@ c_uname_arm "$T/native"
 C_PATH="$T/native:/usr/bin:/bin:/usr/sbin:/sbin" C_ENV='OMB_FIXTURE= OMB_FRONTEND_DEV=' c_run snapshot "scope	name=journey"
 # The core answers its reads on a real machine (Gate 3); an unreleased
 # frontend still runs only against fixtures (the launcher, and the lock check).
-if [ "$(c_result)" != 'refused unavailable' ]; then ok; else fail "a production read is answered"; fi
+if w=$(c_answered snapshot 'done ok'); then ok; else fail "a production read is answered: $w"; fi
 c_run hello "arg	name=future	value=x"
 assert_eq "$C_RC" 2 'unknown request content refused'
 c_run future

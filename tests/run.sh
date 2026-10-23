@@ -32,7 +32,11 @@ lint() {
     echo "shellcheck"
     # Per file for each file's own findings; cross-file "unused"/"unassigned"
     # codes are checked through the entrypoint, which sources everything.
-    "$sc" -S style -e SC2034,SC2154,SC2153 omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/*.sh tests/proto/corpus.sh tests/children/* || status=1
+    # One process per file: ShellCheck holds what it has read until it
+    # exits, and the whole list in one process peaked near 14 GB.
+    for f in omarchy-bootstrap lib/*.sh tests/*.sh tests/fixtures/*.sh tests/proto/corpus.sh tests/children/*; do
+      "$sc" -S style -e SC2034,SC2154,SC2153 "$f" || status=1
+    done
     "$sc" -x omarchy-bootstrap || status=1
     [ "$status" = 0 ] && echo "  ok"
   elif [ "${OMB_REQUIRE_SHELLCHECK:-0}" = 1 ]; then
