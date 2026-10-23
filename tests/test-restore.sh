@@ -84,9 +84,14 @@ run() {
         RESTORE_TEST_SHORT_SETTING=0
         printf partial >"$2"; chmod 0600 "$2"; return 1
       fi
+      if [ "$cmd" = rst_log_write ] && [ "${RESTORE_TEST_SETTING_LOG_FAIL:-0}" = 1 ]; then
+        RESTORE_TEST_SETTING_LOG_FAIL=0
+        return 1
+      fi
       "$cmd" "$@" ;;
     sync) return 0 ;;
     mkdir | chmod | cp | rm)
+      if [ "$cmd" = mkdir ] && [ "${RESTORE_TEST_CHECK_MKDIR_FAIL:-0}" = 1 ]; then return 1; fi
       for arg in "$@"; do
         case "$arg" in /*) case "$arg" in "$T"/* | "$TMP_ROOT"/*) ;; *) echo "unsafe test write: $arg" >&2; return 97 ;; esac ;; esac
       done
@@ -121,6 +126,11 @@ run() {
       if [ "${RESTORE_TEST_EDIT_ON_MOVE:-0}" = 1 ]; then
         case "$dst" in *.placed) printf edited >"$src"; RESTORE_TEST_EDIT_ON_MOVE=0 ;; esac
       fi
+      # Directory-only option loss must be caught even when file moves are safe.
+      if [ "${RESTORE_TEST_CLOBBER:-0}" = directory ] && [ -d "$src" ] && [ -d "$dst" ]; then
+        if rmdir "$dst" 2>/dev/null; then mv -- "$src" "$dst"; return; fi
+        return 1
+      fi
       [ ! -e "$dst" ] && [ ! -L "$dst" ] || return 1
       mv -- "$src" "$dst" ;;
     ln)
@@ -144,6 +154,9 @@ run() {
         key=${6:-}
         printf '%s\n' "${7:-}" >"$OMB_FIXTURE/cmd/rst_git_$key"
         rm -f "$OMB_FIXTURE/cmd/rst_git_$key.rc"
+      fi
+      if [ "${RESTORE_TEST_FAIL_AFTER_SETTING:-0}" = 1 ]; then
+        RESTORE_TEST_FAIL_AFTER_SETTING=0 RESTORE_TEST_SETTING_LOG_FAIL=1
       fi ;;
     claude)
       mkdir -p "$RST_HOME"
@@ -194,6 +207,7 @@ setup() {
   RST_CORE=0 RST_REPLACE=() CORE_REQ_ARGS=0 INSTALL_TAKES=0 AG_TEST_FAIL=0
   RESTORE_TEST_EDIT_ON_MOVE=0 RESTORE_TEST_PARTIAL_COPY=0 RESTORE_TEST_STAGE_LINK=0 RESTORE_TEST_SHORT_SETTING=0
   RESTORE_TEST_CLOBBER=0 RESTORE_TEST_BACKEND_NO_FOLDER=0
+  RESTORE_TEST_FAIL_AFTER_SETTING=0 RESTORE_TEST_SETTING_LOG_FAIL=0 RESTORE_TEST_CHECK_MKDIR_FAIL=0
   STATE_DIR_OK=''
   state_init
   : >"$T/record"
@@ -250,6 +264,37 @@ cleanup_restore_tests() {
   done
 }
 trap cleanup_restore_tests EXIT
+
+# restore-home-refusal: publish no unchecked home, and stop undo before it
+# walks parents or searches for runs. Each spelling passes the relative check.
+eval "$(declare -f _rst_parents | sed '1s/_rst_parents/_restore_home_parents/')"
+_rst_parents() { printf '%s\n' "$1" >>"$T/home-reads"; _restore_home_parents "$@"; }
+for bad_home in missing file prefix-link; do
+  setup
+  case "$bad_home" in
+    missing) HOME=/home/missing ;;
+    file) HOME=/home/file; printf ordinary >"$F/root/home/file" ;;
+    prefix-link)
+      mkdir -p "$F/root/home/real/leaf"
+      ln -s real "$F/root/home/linked"
+      HOME=/home/linked/leaf ;;
+  esac
+  _rst_safe_rel "${HOME#/}"
+  assert_eq "$?" 0 "restore-home-refusal-safe-spelling-$bad_home"
+  RST_HOME=stale
+  _rst_home
+  assert_eq "$?" 1 "restore-home-refusal-check-$bad_home"
+  assert_eq "$RST_HOME" '' "restore-home-refusal-unpublished-$bad_home"
+  : >"$T/home-reads"
+  rst_cmd undo >"$T/out" 2>&1
+  assert_eq "$?" 1 "restore-home-refusal-undo-$bad_home"
+  assert_contains "$(cat "$T/out")" 'The home is not a real folder owned by this user.' "restore-home-refusal-reason-$bad_home"
+  assert_not_contains "$(cat "$T/out")" 'No restore run is available to undo.' "restore-home-refusal-not-hidden-$bad_home"
+  assert_empty_file "$T/home-reads" "restore-home-refusal-no-descendant-read-$bad_home"
+done
+_rst_parents() { _restore_home_parents "$@"; }
+setup; load
+assert_eq "${RST_GUARD_OK:-0}" 1 restore-home-guard-passed
 
 # restore-never-root: root is refused before a machine or bundle read.
 setup
@@ -1196,21 +1241,37 @@ apply
 assert_eq "$RC" 0 restore-backend-unverified-continues
 assert_eq "${RST_STATUS[1]}" unverified restore-backend-unverified-state
 assert_contains "$(cat "$T/out")" 'not verified' restore-backend-unverified-warning
+assert_contains "$(tail -n 1 "$T/out")" '1 unverified; nothing showed these items installed' restore-backend-unverified-final-count
 assert_file "$RST_HOME/.config/test.conf" 'new configuration' restore-backend-unverified-later-file
 assert_eq "$(rst_status_counts)" '1 0 0 1' restore-backend-unverified-count
 load; : >"$T/record"; apply
 assert_empty_file "$T/record" restore-backend-unverified-no-reinstall
 
-# restore-second-replace-hint: an edited placement cannot be undone in place.
-setup
-printf original >"$F/root/home/alex/.config/test.conf"
-load; replace_all; apply
-printf edited >"$RST_HOME/.config/test.conf"
-load; replace_all; apply
-_rst_backup_name .config/test.conf
-assert_contains "${RST_REASON[0]}" "$RST_BACKUP" restore-second-replace-original-location
-assert_contains "${RST_REASON[0]}" 'Move the current destination' restore-second-replace-actionable-hint
-assert_file "$RST_HOME/.config/test.conf" edited restore-second-replace-preserves-current
+# restore-second-replace-hint: follow the advice both during review (the last
+# placement is still complete) and after a second Replace was refused.
+for hint_stage in review placement; do
+  setup
+  printf original >"$F/root/home/alex/.config/test.conf"
+  load; replace_all; apply
+  printf edited >"$RST_HOME/.config/test.conf"
+  load
+  if [ "$hint_stage" = placement ]; then replace_all; apply; fi
+  _rst_backup_name .config/test.conf
+  hint=${RST_REASON[0]}
+  assert_contains "$hint" "$RST_BACKUP" "restore-second-replace-original-location-$hint_stage"
+  assert_contains "$hint" 'Move the current destination' "restore-second-replace-actionable-hint-$hint_stage"
+  assert_file "$RST_HOME/.config/test.conf" edited "restore-second-replace-preserves-current-$hint_stage"
+  mv "$RST_HOME/.config/test.conf" "$RST_HOME/.config/test.saved"
+  # Perform the extra copy only when the printed instructions include it.
+  case "$hint" in *'copy the original from'*) cp -p "$RST_BACKUP" "$RST_HOME/.config/test.conf" ;; esac
+  load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+  assert_eq "$?" 0 "restore-second-replace-follow-hint-undo-$hint_stage"
+  assert_file "$RST_HOME/.config/test.conf" original "restore-second-replace-follow-hint-original-$hint_stage"
+  load; replace_all; apply
+  assert_eq "$RC" 0 "restore-second-replace-follow-hint-apply-$hint_stage"
+  assert_file "$RST_HOME/.config/test.saved" edited "restore-second-replace-follow-hint-edit-$hint_stage"
+  assert_file "$RST_HOME/.config/test.conf" 'new configuration' "restore-second-replace-follow-hint-new-$hint_stage"
+done
 
 # restore-undo-stage-cleanup: a refused or failed undo removes only its
 # completed copy, once the retained backup proves those bytes redundant.
@@ -1265,6 +1326,109 @@ for recovery in changed missing; do
   assert_eq "$CORE_FINDING" unexpected "restore-undo-pending-original-$recovery-judge"
   RST_CORE=0
 done
+
+# restore-undo-unlogged: the machine can change before its journal append.
+setup
+(child restore.place) 2>/dev/null
+assert_eq "$?" 137 restore-undo-unlogged-file-stop
+load; _rst_history .config/test.conf
+assert_eq "$RST_H_PLACED" 0 restore-undo-unlogged-file-no-event
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" unexpected restore-undo-unlogged-file-judge-before
+RST_CORE=0 OMB_IFACE_WORD=undo
+_rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-unlogged-file-run
+[ ! -e "$RST_HOME/.config/test.conf" ] && ok || fail restore-undo-unlogged-file-removed
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" completed restore-undo-unlogged-file-judge-after
+RST_CORE=0
+setup
+{
+  rec_line item id settings:test class config whole 1
+  rec_line setting item settings:test kind git tool git name user.name value Restored
+} >"$T/body"
+rebuild
+printf 'Original\n' >"$F/cmd/rst_git_user.name"
+load; replace_all
+RESTORE_TEST_FAIL_AFTER_SETTING=1
+apply
+assert_eq "$RC" 1 restore-undo-unlogged-setting-append-fails
+assert_file "$F/cmd/rst_git_user.name" Restored restore-undo-unlogged-setting-changed
+load; _rst_history git:user.name
+assert_eq "$RST_H_PLACED" 0 restore-undo-unlogged-setting-no-event
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" unexpected restore-undo-unlogged-setting-judge-before
+RST_CORE=0 OMB_IFACE_WORD=undo
+_rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-unlogged-setting-run
+assert_file "$F/cmd/rst_git_user.name" Original restore-undo-unlogged-setting-restored
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" completed restore-undo-unlogged-setting-judge-after
+RST_CORE=0
+# A failed later Replace has no placement; an older placed event is not proof.
+setup
+printf original >"$F/root/home/alex/.config/test.conf"
+load; replace_all; apply
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+printf edited >"$RST_HOME/.config/test.conf"
+load; replace_all; apply
+assert_eq "$RC" 1 restore-undo-later-replace-refused
+load; OMB_IFACE_WORD=undo; _rst_undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-later-replace-skipped
+rst_undo_offer
+assert_eq "$?" 0 restore-undo-later-replace-offered
+OMB_IFACE_WORD=undo; rst_cmd undo >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-later-replace-text-route
+OMB_IFACE_WORD=undo; rst_undo_run >"$T/undo" 2>&1
+assert_eq "$?" 0 restore-undo-later-replace-core-route
+rst_undo_judge 0
+assert_eq "$CORE_FINDING" completed restore-undo-later-replace-judge
+assert_file "$RST_HOME/.config/test.conf" edited restore-undo-later-replace-edit-retained
+RST_CORE=0
+
+# restore-self-check-directory: a plain rename replaces an empty directory.
+setup; load; _rst_ready
+RESTORE_TEST_CLOBBER=directory
+_rst_no_clobber >"$T/out" 2>&1
+assert_eq "$?" 1 restore-self-check-directory-option-loss
+RESTORE_TEST_CLOBBER=0
+mkdir -p "$OMB_STATE_DIR/restore/no-clobber"
+printf leftover >"$OMB_STATE_DIR/restore/no-clobber/stopped"
+_rst_no_clobber >"$T/out" 2>&1
+assert_eq "$?" 0 restore-self-check-leftover-retry
+[ ! -e "$OMB_STATE_DIR/restore/no-clobber" ] && ok || fail restore-self-check-leftover-removed
+RESTORE_TEST_CHECK_MKDIR_FAIL=1
+_rst_no_clobber >"$T/out" 2>&1
+assert_eq "$?" 1 restore-self-check-mkdir-refused
+assert_contains "$(cat "$T/out")" 'could not create' restore-self-check-mkdir-reason
+RESTORE_TEST_CHECK_MKDIR_FAIL=0
+RST_DEVICE=another-device
+_rst_no_clobber >"$T/out" 2>&1
+assert_eq "$?" 1 restore-self-check-device-refused
+assert_contains "$(cat "$T/out")" 'another filesystem' restore-self-check-device-reason
+assert_not_contains "$(cat "$T/out")" coreutils restore-self-check-device-no-option-blame
+
+# restore-backend-kebab: observe mise's namespaces, never links or latest.
+setup; load
+RST_METHOD=mise-backend RST_VERSION=1
+for case_pair in 'npm:@antfu/ni npm-antfu-ni' 'cargo:eza cargo-eza' \
+  'vfox:version-fox/vfox-nodejs vfox-version-fox-vfox-nodejs' \
+  'aqua:BurntSushi/ripgrep aqua-burnt-sushi-ripgrep' \
+  'github:XMLHttpRequest/abc123Def github-xml-http-request-abc123-def'; do
+  read -r RST_TARGET directory <<<"$case_pair"
+  base=$RST_HOME/.local/share/mise/installs/$directory
+  mkdir -p "$base/latest" "$T/backend-version"
+  ln -s "$T/backend-version" "$base/1"
+  _rst_pkg_present
+  assert_eq "$?" 1 "restore-backend-kebab-links-latest-$directory"
+  rm "$base/1"; mkdir "$base/1"
+  _rst_pkg_present
+  assert_eq "$?" 0 "restore-backend-kebab-found-$directory"
+done
+RST_TARGET=$'github:owner/caf\303\251'
+mkdir -p "$RST_HOME/.local/share/mise/installs/$RST_TARGET/1"
+_rst_pkg_present
+assert_eq "$?" 1 restore-backend-kebab-nonascii-unverified
 
 # restore-real-gnu-no-clobber: run the actual Linux placement primitives. This
 # explicit skip is also visible to Linux CI's strict-skip policy.
@@ -1326,6 +1490,28 @@ done
 c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" "$(rec_line arg name review value "$generation")"
 assert_eq "$(c_result)" 'done ok' restore-wire-validate
 assert_contains "$C_OUT" $'review\taction=restore.apply' restore-wire-validation-basis
+# restore-validation-field: bundle errors take precedence; review errors
+# name review only after the checked bundle has been identified.
+for invalid_case in missing-bundle wrong-bundle missing-review malformed-review changed-review; do
+  invalid_field=review invalid_code=invalid
+  case "$invalid_case" in
+    missing-bundle)
+      invalid_field=bundle
+      c_run validate $'select\taction=restore.apply' "$(rec_line arg name review value "$generation")" ;;
+    wrong-bundle)
+      invalid_field=bundle
+      c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261021T120000Z)" "$(rec_line arg name review value "$generation")" ;;
+    missing-review)
+      c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" ;;
+    malformed-review)
+      c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" "$(rec_line arg name review value malformed)" ;;
+    changed-review)
+      invalid_code=changed
+      c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" "$(rec_line arg name review value "$(printf '%064d' 0)")" ;;
+  esac
+  assert_eq "$(c_result)" "refused $invalid_code" "restore-validation-field-result-$invalid_case"
+  assert_contains "$C_OUT" "$(printf 'invalid\tname=%s\tcode=%s' "$invalid_field" "$invalid_code")" "restore-validation-field-$invalid_case"
+done
 printf concurrent >"$F/root/home/alex/.config/test.conf"
 c_run validate $'select\taction=restore.apply' "$(rec_line arg name bundle value 20261022T120000Z)" "$(rec_line arg name review value "$generation")"
 assert_eq "$(c_result)" 'refused changed' restore-review-generation-wire

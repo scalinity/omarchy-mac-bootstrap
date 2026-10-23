@@ -6,7 +6,9 @@
 (docs/MIGRATION.md) onto Omarchy; the AI tools' part is in docs/AI-TOOLS.md.
 It runs as the everyday user, never as root (`EUID` 0 is refused), after
 Omarchy has finished, and writes only inside that user's home; system
-changes go through `omarchy-pkg-add`, which asks for `sudo` itself. It lists
+changes go through `omarchy-pkg-add`, which asks for `sudo` itself. The home must be a real folder owned by that user, with no link in its
+absolute prefix. The guard checks it before searching for bundles, runs or
+backups; undo reports the same home refusal as apply and status. It lists
 the finished bundles it finds on Shared or in `DIR`, each with its origin
 and time, and selects the newest one that passes the bundle check.
 
@@ -51,14 +53,16 @@ writer; a failed flush stops the run. A torn receipt supplies no observation.
 For a destination `D` under the home:
 
 Before installing packages or placing items, apply checks the placement
-commands in a fresh private folder inside the restore state folder, on the
-home's filesystem. Both file and directory destinations must make
+commands in the private `restore/no-clobber` folder inside the restore state
+folder, on the home's filesystem. Both file and empty directory destinations
+must make
 `mv -T --update=none-fail` and `ln -T` refuse, with both sides unchanged;
 symbolic links are checked too. Transfers to free names must also succeed,
 so an unknown option cannot pass as a safe refusal. A failed check stops
 apply with a plain explanation. GNU coreutils 9.5 or later is required.
-The check folder is removed afterwards; a completed rerun with nothing to
-place performs no check or mutation.
+The folder holds only synthetic probes. Each check removes any folder left by
+a stopped check before creating it again, and removes it on return. A
+completed rerun with nothing to place performs no check or mutation.
 
 1. **Re-check**, before each item, not only before the run: every folder
    from the home down to `D`'s parent is a real directory owned by the user
@@ -162,13 +166,17 @@ apply basis binds that document, the checked bundle and the reviewed
 destination fingerprints. `restore.apply` requires `review`, the 64-hex
 generation of the restore snapshot whose conflicts and diffs were shown.
 Validation and execution's fresh basis check refuse with `refused changed`
-if it differs from the current restore dataset. The text interface binds
+if it differs from the current restore dataset. Validation names `bundle`
+for a missing or unchecked bundle, and `review` for a missing, malformed or
+changed review. The text interface binds
 the generation of the review it printed too.
 
 If a second Replace finds the original's backup name occupied, it keeps
 both copies and names that backup. When the current destination has been
-edited, the hint says to move it to a safe name before running
-`restore undo`, then review another Replace.
+edited, the hint says to move it to a safe name, copy the original from its
+backup back to the destination while retaining the backup, run `restore undo`,
+then review another Replace. The copy lets undo recognize the returned original
+even when the previous placement completed.
 
 Omarchy's seeded files in `~/.config` are the person's after the install: a
 conflict with one is labelled "Omarchy's default", and OpenCode's file is
@@ -192,19 +200,28 @@ empty or incomplete folder does not count. cargo-binstall, go and
 Flathub installs are printed as commands to run by hand.
 
 For a mise backend target (`aqua:`, `github:` or `ubi:`), observation looks
-only for a version folder under `installs/<name as typed>/`; no executable
-name is inferred from the target. A successful `mise use -g` with no such
+only for a version folder under `installs/<kebab-case name>/`, using mise
+v2026.9.12's heck 0.5.0 naming rule on the target as typed: punctuation
+separates words, case boundaries split words, and letters become lowercase.
+For example, `aqua:BurntSushi/ripgrep` uses `aqua-burnt-sushi-ripgrep`.
+Only printable ASCII targets are observed; other names stay unverified.
+Links and a real `latest` folder do not count. No executable name is inferred
+from the target. A successful `mise use -g` with no such
 folder is `unverified`: installed according to the command, with a warning
 that the installation was not verified. It never blocks later layers and
 is not installed again on a rerun of that bundle. Status counts it as
 pending, rather than verified; a matching version folder clears that state.
+When apply completes with unverified items, its final message gives their
+count and says nothing showed them installed.
 
 ## Undo
 
 `restore undo` (typed `undo`) finds the most recently written restore run
 log and checks its bundle, even if a newer bundle has been exported. If
-that bundle is unavailable, the load is blocked or no units can be read,
-undo refuses and its judge cannot report completion.
+that bundle is unavailable, the home or log fails its checks, or no units
+can be read, undo refuses and its judge cannot report completion. A readable
+run whose items are blocked can still undo its actual changes or finish
+without changing items never placed.
 
 For each restored file, folder or link, undo moves the destination aside
 first and compares the bytes that actually moved. If they differ from the
@@ -213,8 +230,11 @@ An unchanged placement returns its original from the backup, or leaves the
 destination absent if it was new. The displaced restored bytes remain at
 `<backup>.placed`; earlier copies are preserved with fresh suffixes. A
 refused item does not stop independent items, and kept conflicts and items
-with no completed placement are skipped. A recorded interrupted backup
-move still needs recovery. A refused or failed undo removes its finished
+with no change on the machine are skipped. Even without a completed placement
+event, a destination or setting matching the recorded after and differing
+from the before needs undo. A recorded interrupted backup move still needs
+recovery; a retained backup from an already undone cycle alone does not. A
+refused or failed undo removes its finished
 `.omb-undo-` copy only when its bytes match the retained original backup.
 Undo of a stopped restore also removes a finished `.omb-new-` stage when
 it matches the recorded and freshly reviewed desired bytes. Partial undo
@@ -243,7 +263,7 @@ them; `restore status` shows their size.
 | `in-place` | already there, exactly as the bundle has it |
 | `kept` | a conflict kept as it is |
 | `failed` | tried and did not take, with the reason |
-| `unverified` | a mise backend install succeeded, but its version folder was not found under the name as typed; later layers continue |
+| `unverified` | a mise backend install succeeded, but its version folder was not found under its mise directory name; later layers continue |
 | `blocked` | not tried, with the reason: something it needs failed, a link on its path, another device, or a change since the review |
 | `needs-sign-in` | restored, waiting for the tool's sign-in; clears by itself when the sign-in file appears (presence only, never read; docs/AI-TOOLS.md → *What is observed*) |
 | `needs-secret` | restored without its secret values; names the variables to set |

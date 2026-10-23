@@ -447,7 +447,8 @@ moves an original whole into a private backup and places with no-clobber
 GNU `ln -T` or `mv -T --update=none-fail` forms. The manifest's full SHA-256
 identifies the run. Before any install or placement, apply tests refusal of
 occupied file and directory destinations and success at free names in a
-private folder on the home's filesystem. Unsupported or unsafe placement
+private `restore/no-clobber` folder on the home's filesystem, clearing any
+probes left by a stopped check before reusing it. Unsupported or unsafe placement
 commands stop apply; GNU coreutils 9.5 or later is required. The same SHA
 names `restore/runs/<sha>.log` and `restore/backups/<sha>/` under the state
 directory. Every append is flushed; complete records are admitted and torn
@@ -465,14 +466,19 @@ Git settings and MCP definitions have private 0600 backups; values never
 reach output or the run log. `restore undo` follows the newest restore run
 log, checks the bytes it actually moved and puts an intervening edit back
 before refusing that item. It returns unchanged settings from their private
-backups and skips kept conflicts and items never placed, while settling a
-recorded interrupted backup move. It removes finished new or undo stages
+backups and skips kept conflicts and items with no placement on the machine,
+while settling a recorded interrupted backup move. A destination or setting
+matching the recorded after and differing from the before needs undo even
+when its placement event was not written. A retained backup from an already
+undone cycle alone does not require another undo. It removes finished new or undo stages
 only when their bytes match the reviewed content or retained backup;
 independent items continue after a refusal. A second Replace that cannot
 reuse its backup names the original and explains how to keep the current
-destination before undo. A successful mise backend install with no observed
-version folder is installed but unverified, warns, and allows later layers
-to continue. Originals and displaced restored bytes remain in backups. Packages
+destination safely, copy the original back from its retained backup, then
+undo and review another Replace. A successful mise backend install with no
+observed version folder under mise's kebab-case directory name is unverified,
+warns, and allows later layers to continue. The final complete message counts
+unverified items and says nothing showed them installed. Originals and displaced restored bytes remain in backups. Packages
 and external installer changes require manual reversal. `rst_status_counts` supplies
 Health with verified (`placed` or `in-place`), kept, failed and pending
 counts, in that order. Pending includes items waiting on a person; an

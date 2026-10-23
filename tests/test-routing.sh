@@ -94,6 +94,9 @@ for arg in '' "$restore_dir" status undo; do
   fi
   assert_rc "$T_RC" 1 "restore $arg reaches the implementation and checks the home"
   assert_contains "$(t_flat "$T_OUT")" "The home is not a real folder owned by this user." "restore $arg reports the home refusal"
+  if [ "$arg" = undo ]; then
+    assert_not_contains "$T_OUT" 'No restore run is available to undo.' restore-route-undo-preserves-home-refusal
+  fi
   assert_empty_file "$T_DIR/record" "restore $arg runs nothing"
   if [ "$arg" = status ]; then
     assert_eq "$(t_snapshot "$T_DIR/state")" '(absent)' 'restore status is read-only'
@@ -171,7 +174,7 @@ for scope in restore debug; do
 done
 c_run validate 'select	action=restore.apply'
 assert_eq "$(c_answered validate 'refused invalid')" '' 'restore validation refusal is admitted'
-assert_contains "$C_OUT" 'invalid	name=bundle	code=invalid' 'restore validation requires a checked bundle'
+assert_contains "$C_OUT" $'invalid\tname=bundle\tcode=invalid' restore-route-validation-bundle
 
 # --- The guard itself: run and downloads refuse outside an action command ---------------
 t_load

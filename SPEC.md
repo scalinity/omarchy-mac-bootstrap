@@ -573,7 +573,7 @@ fail or not checked. docs/QUALIFICATION.md.
 | --- | --- | --- |
 | profile | `not-scanned`, `scanned`, `selected`, `saved`, `invalid` | docs/MIGRATION.md |
 | resolution (per item) | `unresolved`, `needs-decision`, `resolved`, `unsupported`, then on Linux `ready` or `unavailable` | docs/RESOLVER.md |
-| restore | `not-started`, `partial`, `blocked`, `complete`; per item `placed`, `in-place`, `kept`, `failed`, `blocked`, `needs-sign-in`, `needs-secret` | docs/RESTORE.md |
+| restore | `not-started`, `partial`, `blocked`, `complete`; per item `placed`, `in-place`, `kept`, `failed`, `unverified`, `blocked`, `needs-sign-in`, `needs-secret` | docs/RESTORE.md |
 | AI tool (observed) | `installed`, `ran-at-restore`, `configured`, `signed-in-file`, each on its own | docs/AI-TOOLS.md |
 | system SSH (Linux) | `off`, `key-only`, `passwords`, `cannot-tell` | docs/TROUBLESHOOTING.md |
 | operation (per scope) | none; running (its supervising core alive); `unsupervised`; `failed`; `unreadable` (until `operation clear`) | docs/PROTOCOL.md |
