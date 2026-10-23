@@ -178,12 +178,13 @@ pub fn defaults(m: &mut Model) {
             m.plan.custom[si] = !presets(si).iter().any(|(_, v)| *v == field.value);
         }
     }
-    m.plan.field = m
+    let linux = m
         .plan
         .fields
         .iter()
         .position(|f| f.name == "linux_size")
         .unwrap_or(0);
+    m.plan.go_to(linux);
 }
 
 pub fn field_lines<'a>(
@@ -494,7 +495,9 @@ pub fn items(m: &Model, s: Screen) -> Vec<Item<'_>> {
     let Some(c) = &f.checked else {
         if !m.reading(|r| matches!(r, crate::app::Req::Validate { .. })) {
             v.push(text(
-                if plan && offered.is_none() {
+                if f.due && m.pending.is_some() {
+                    "The core checks these as soon as the request in flight ends."
+                } else if plan && offered.is_none() {
                     "Type the sizes, then ⏎ to check them."
                 } else {
                     "Type or choose, then ⏎: the core checks it."

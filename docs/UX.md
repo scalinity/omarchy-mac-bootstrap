@@ -398,8 +398,10 @@ narrower the detail opens on Enter):
 The planner opens with one validation of its displayed sizes and the
 choices already entered. Size validation stops at the first missing size,
 before the core returns choice defaults, so the frontend supplies its
-starting presets in this one request. The reply never triggers a second
-validation. When saving, Linux and Shared keep exactly the size strings
+starting presets in this one request. When another request is running as the
+planner opens, that validation is owed: the page says it waits, and it is
+sent once, as soon as the running request ends. The reply never triggers a
+second validation. When saving, Linux and Shared keep exactly the size strings
 that were validated (`200GB`, for example); byte-count `normal` records
 are display values, while other choices use their returned normals. The
 core returns the defaults of omitted choices as `normal` records; these fill the fields. Without saved sizes in the
@@ -411,7 +413,9 @@ one validation; its response never triggers another request.
 Left/right select a preset in the focused Linux or Shared row. Custom
 opens a number field, followed by GB, TB and %; GB starts selected. Tab
 moves from the number to its unit selector, left/right change the unit,
-and Tab moves on to the next field. `200` with GB selected is sent as
+and Tab moves on to the next field; moving to another field by any key,
+Up and Down included, leaves the unit selector, which belongs to the field it
+was reached on. `200` with GB selected is sent as
 `200GB`. Typing stays neutral. Once the core answers, its invalid text
 appears directly under that field, or its normalized size is shown there.
 The scale bar and installer answers come from the current core response.
@@ -432,7 +436,13 @@ outside the panel; generation hashes and value-line counters stay internal.
 
 System Overview shows the marketing model name when the snapshot supplies
 it, with a muted Model ID below. Without that name, an Apple identifier is
-labelled Model ID; a full model name read from Linux is labelled Model. Protocol system values display as macOS and Linux.
+labelled Model ID; a full model name read from Linux is labelled Model. Protocol system values display as macOS and Linux
+in prose only. What the owner may have to type, compare or copy is shown
+byte for byte as the core gave it: a run of text between spaces holding
+`=` (a `name=value` field, which takes in the whole resume token), `/`, `\` or
+`~` (a path, file name or command) or `@` (an address) is left alone, and
+the resume token, the other codes and the user name are shown as given
+whatever they spell, so a user called `linux` is shown as `linux`.
 An instruction to run this interface again is replaced by its offered
 step; reboot, other-system and token-command instructions stay intact.
 The Screens list follows its focus, marks scrollable ends, and dims screens
@@ -537,7 +547,7 @@ and *keep the rest* keeps every conflict after this one):
 | 20 | Restore progress | the work grouped by layer, the current item, what is blocked, handoffs announced; the bar only from the core's counts | the current group only; core item counts remain visible | `n` `p` action, `⏎` review, `d` conflicts |
 | 21 | Conflict and diff | each conflict of the restore review as a diff of both sides: Keep by default, Replace, and *keep the rest* for every conflict after it | unified diff; side by side needs 120 columns | `k` Keep, `R` Replace, `K` keep following, `n` `p` `v` |
 | 22 | Health | doctor's checks with restore and AI rows: each tool's observed facts (docs/AI-TOOLS.md → *What is observed*); a tool's own `mcp list` on request | one tool per group | `c` |
-| 23 | Qualification | the state, Shared's identity, the due step and the three core step rows with their observed results; an offered run opens the typed `test` gate and hands off this terminal | rows wrap; recorded checksums are described in words | `⏎` reads again; `t` opens the gate |
+| 23 | Qualification | the state, Shared's identity, the due step and the three core step rows with their observed results; an offered run opens the typed `test` gate and hands off this terminal | rows wrap; recorded checksums are described in words | `⏎` reads again; `t` opens the gate, or says why it cannot: the core lists no run, or the steps are not read in full |
 | 24 | Logs and diagnostics | the tool's log (the entries `logs` shows) and the core's diagnostics, a tab each; filter by level | same | `/` `Tab` `f` `⏎` |
 | 25 | Completion | every stage, and the report's check table under its verdict and counts; on `q`, only when the core's `done` stage is `done`, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` (ASCII: `+ journey complete - ./omarchy-bootstrap report`) | same | `q` |
 

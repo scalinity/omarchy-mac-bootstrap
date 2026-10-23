@@ -441,6 +441,9 @@ pub struct Form {
     pub field: usize,
     pub checked: Option<Checked>,
     pub fault: Option<Fault>,
+    /// The planner's first check of its sizes is owed: `demand` sends it once
+    /// nothing is pending, so it never starts a second request.
+    pub due: bool,
     /// The scope that listed the action, and the screen the form came from.
     pub scope: Scope,
     pub back: Screen,
@@ -458,6 +461,7 @@ impl Default for Form {
             field: 0,
             checked: None,
             fault: None,
+            due: false,
             scope: Scope::Journey,
             back: Screen::Dashboard,
         }
@@ -492,6 +496,14 @@ impl Form {
             .filter(|f| !f.value.is_empty())
             .map(|f| (f.name.clone(), f.value.clone().into_bytes()))
             .collect()
+    }
+
+    /// The keys go to FIELD. The unit selector belongs to the field it was
+    /// reached on, so it never follows to another: this is the one place the
+    /// field changes.
+    pub fn go_to(&mut self, field: usize) {
+        self.field = field;
+        self.unit_focus = false;
     }
 
     /// The last answer is for exactly what the fields hold now.
@@ -529,7 +541,7 @@ impl Form {
                     .unwrap_or_default(),
             })
             .collect();
-        self.field = 0;
+        self.go_to(0);
     }
 }
 
@@ -689,6 +701,9 @@ pub const MESSAGES_MAX: usize = 500;
 pub const PAGE_STEP: usize = 10;
 
 const BUSY: &str = "One thing at a time: this runs once the current request ends.";
+
+/// What a page says when the key for an action finds none listed.
+const NOT_OFFERED: &str = "Nothing on this page is offered now: the core lists no such action.";
 
 impl Default for Model {
     fn default() -> Model {
@@ -914,7 +929,15 @@ impl Model {
         self.pending.as_ref().is_some_and(|p| f(&p.req))
     }
 
+    /// The one place a request starts. One request runs at a time, followed
+    /// to its end (docs/PROTOCOL.md): while one is pending, nothing starts,
+    /// whoever asks. Callers that can see it coming check `pending` first so
+    /// they change nothing before asking; this refusal is what holds when
+    /// they do not.
     fn send(&mut self, req: Req, cancellable: bool, label: &str) -> Vec<Cmd> {
+        if self.pending.is_some() {
+            return self.busy();
+        }
         if matches!(req, Req::Execute { .. }) {
             self.invalidate_operation(Fault::NoAnswer(
                 "An action was submitted; a fresh Journey snapshot is required.".into(),
@@ -1221,6 +1244,15 @@ fn demand(m: &mut Model) -> Vec<Cmd> {
     if m.screen == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
         return Vec::new();
     }
+    // The planner's first check, owed since its screen was opened while
+    // something else ran.
+    if m.screen == Screen::Plan && m.plan.due {
+        m.plan.due = false;
+        if m.offered(Scope::Journey, "plan.save").is_some() {
+            let args = m.plan.args();
+            return validate(m, "plan.save".into(), args);
+        }
+    }
     let scope = match m.screen {
         Screen::Gate => m.gate.as_ref().map(|g| g.scope),
         s => s.scope(),
@@ -1279,12 +1311,9 @@ fn read_whole(kind: Kind) -> bool {
     )
 }
 
-/// Quit if asked to; otherwise the journey after another scope's action,
-/// then what the screen still needs.
+/// The journey after another scope's action, then what the screen still
+/// needs.
 fn settle(m: &mut Model, cmds: Vec<Cmd>) -> Vec<Cmd> {
-    if m.quit_after {
-        return vec![Cmd::Quit(0, String::new())];
-    }
     if cmds.is_empty() && m.then_journey && m.pending.is_none() && !m.lost {
         m.then_journey = false;
         return m.refresh();
@@ -1420,7 +1449,20 @@ fn recheck_picks(m: &mut Model) {
     }
 }
 
+/// The one place an answer is taken in. A quit asked for while the request
+/// ran (`q` then `y`, SIGTERM, SIGHUP, a lost terminal) wins over whatever
+/// the answer leads to — a gate, a question, a read — so no answer, of any
+/// kind of request, can leave the session waiting for nothing. A quit the
+/// answer itself chose (the core's refusal, a lost core) keeps its status.
 fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
+    let cmds = answered(m, req, outcome);
+    if m.quit_after && !cmds.iter().any(|c| matches!(c, Cmd::Quit(..))) {
+        return vec![Cmd::Quit(0, String::new())];
+    }
+    cmds
+}
+
+fn answered(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
     m.pending = None;
     m.progress = None;
     let records = match outcome {
@@ -2618,19 +2660,19 @@ fn opened(m: &mut Model) {
         }
         Screen::Plan => {
             m.plan_scroll = 0;
-            m.plan.field = crate::screens::plan::field_order(&m.plan)
+            let first = crate::screens::plan::field_order(&m.plan)
                 .first()
                 .copied()
                 .unwrap_or(0);
-            m.plan.unit_focus = false;
+            m.plan.go_to(first);
         }
         Screen::Form => {
             m.plan_scroll = 0;
-            m.form.field = crate::screens::plan::field_order(&m.form)
+            let first = crate::screens::plan::field_order(&m.form)
                 .first()
                 .copied()
                 .unwrap_or(0);
-            m.form.unit_focus = false;
+            m.form.go_to(first);
         }
         Screen::Selection => {
             m.page_scroll = 0;
@@ -2683,7 +2725,6 @@ fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
     if let Some(i) = NAV.iter().position(|n| *n == s) {
         m.nav = i;
     }
-    let mut check = None;
     if s == Screen::Plan {
         plan_fields(m);
         if !m.check
@@ -2694,14 +2735,12 @@ fn open(m: &mut Model, s: Screen) -> Vec<Cmd> {
                 .all(|n| m.plan.fields.iter().any(|f| f.name == *n))
         {
             crate::screens::plan::defaults(m);
-            check = Some(m.plan.args());
+            // Sent by `demand`, below or when the request in flight ends.
+            m.plan.due = true;
         }
     }
     if moved {
         opened(m);
-    }
-    if let Some(args) = check {
-        return validate(m, "plan.save".into(), args);
     }
     let mut cmds = Vec::new();
     if s == Screen::Logs && m.logs_tab == LogsTab::Diagnostics {
@@ -2759,8 +2798,8 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                     m.focus = row;
                     m.station = None;
                 }
-                Screen::Plan => m.plan.field = row,
-                Screen::Form => m.form.field = row,
+                Screen::Plan => m.plan.go_to(row),
+                Screen::Form => m.form.go_to(row),
                 Screen::Selection => m.sel = row,
                 Screen::Review => m.rev = row,
                 Screen::Inventory if m.inv.open => m.inv.choice = row,
@@ -2890,12 +2929,7 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                     Screen::Restore => restore_key(m, k),
                     Screen::Qualification => match k.code {
                         KeyCode::Enter => refresh(m),
-                        KeyCode::Char('t') if m.whole(Kind::Step) && m.qualify.fault.is_none() => {
-                            match m.offered(Scope::Qualify, "qualify.run") {
-                                Some(a) => choose(m, a, Scope::Qualify),
-                                None => Vec::new(),
-                            }
-                        }
+                        KeyCode::Char('t') => qualify_test(m),
                         _ => {
                             let n = crate::screens::blocks(m, m.screen);
                             scroll_key(&mut m.page_scroll, n, &k);
@@ -3078,14 +3112,12 @@ fn field_key(m: &mut Model, k: &KeyEvent) -> Option<Vec<Cmd>> {
         KeyCode::Tab | KeyCode::Down => {
             let order = crate::screens::plan::field_order(p);
             let pos = order.iter().position(|i| *i == at).unwrap_or(0);
-            p.field = order.get(pos + 1).copied().unwrap_or(at);
-            p.unit_focus = false;
+            p.go_to(order.get(pos + 1).copied().unwrap_or(at));
         }
         KeyCode::BackTab | KeyCode::Up => {
             let order = crate::screens::plan::field_order(p);
             let pos = order.iter().position(|i| *i == at).unwrap_or(0);
-            p.field = order.get(pos.saturating_sub(1)).copied().unwrap_or(at);
-            p.unit_focus = false;
+            p.go_to(order.get(pos.saturating_sub(1)).copied().unwrap_or(at));
         }
         // Back, as everywhere; the fields stay as typed.
         KeyCode::Esc => {
@@ -3510,7 +3542,7 @@ fn page_key(m: &mut Model, k: KeyEvent, scope: Scope, ids: &[&str]) -> Vec<Cmd> 
                     if ids.is_empty() {
                         "This page offers no action: it shows what the core read."
                     } else {
-                        "Nothing on this page is offered now: the core lists no such action."
+                        NOT_OFFERED
                     }
                     .into(),
                 ));
@@ -3529,6 +3561,25 @@ fn page_key(m: &mut Model, k: KeyEvent, scope: Scope, ids: &[&str]) -> Vec<Cmd> 
         _ => {
             let n = crate::screens::blocks(m, m.screen);
             scroll_key(&mut m.page_scroll, n, &k);
+            Vec::new()
+        }
+    }
+}
+
+/// `t` on the Qualification screen: the step the core offers, else why it
+/// does not.
+fn qualify_test(m: &mut Model) -> Vec<Cmd> {
+    if !m.whole(Kind::Step) || m.qualify.fault.is_some() {
+        m.status = Some((
+            Level::Info,
+            "The qualification steps are not read in full; r reads again.".into(),
+        ));
+        return Vec::new();
+    }
+    match m.offered(Scope::Qualify, "qualify.run") {
+        Some(a) => choose(m, a, Scope::Qualify),
+        None => {
+            m.status = Some((Level::Info, NOT_OFFERED.into()));
             Vec::new()
         }
     }
@@ -3842,6 +3893,24 @@ mod tests {
         );
         assert_eq!(m.screen, Screen::Dashboard);
         m
+    }
+
+    #[test]
+    fn a_request_never_starts_while_another_is_pending() {
+        let mut m = Model::default();
+        assert_eq!(m.start(), vec![Cmd::Send(Req::Hello)]);
+        let pending = m.pending.clone();
+        assert!(pending.is_some());
+        for c in [
+            m.refresh(),
+            m.read(Scope::Profile),
+            m.reread(Scope::Journey),
+            m.send(Req::Snapshot(Scope::Health), true, "reading health"),
+        ] {
+            assert!(c.is_empty(), "{c:?}");
+            assert_eq!(m.pending, pending, "the request followed is unchanged");
+        }
+        assert_eq!(m.status, Some((Level::Info, BUSY.into())));
     }
 
     #[test]

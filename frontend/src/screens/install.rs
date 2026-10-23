@@ -305,7 +305,7 @@ fn tokens<'a>(snap: &'a crate::app::Snapshot, v: &mut Vec<(usize, Item<'a>)>, se
                 } else {
                     kind.clone()
                 },
-                value: value.clone(),
+                value: crate::theme::verbatim(value),
                 token: Token::Text,
                 state: "info",
                 recorded: false,

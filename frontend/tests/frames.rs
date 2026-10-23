@@ -580,3 +580,6 @@ mod phase_c;
 mod ux;
 
 mod ux2;
+
+/// The phase C frontend review's confirmed defects, one test each.
+mod fefix;

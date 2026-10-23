@@ -14,7 +14,7 @@ expression: bottom
 │ ▍Resume token                                            │
 │   Resume token        omb2:enc=1,user=alex,host=m1pro,kma│
 │                       p=us,tz=America/New_York,loc=en_US.│
-│                       UTF-8,ssh=0,gh=octocat,Linux=250,sh│
+│                       UTF-8,ssh=0,gh=octocat,linux=250,sh│
 │                       ared=150,dev=1,plan=1a2b3c4d       │
 │                                                          │
 │   ⏎ opens the gate: type yes to run Launch the Asahi     │

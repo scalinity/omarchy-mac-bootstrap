@@ -35,7 +35,7 @@ expression: f
 │                      ││ ▍Codes                                                       │
 │                      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
 │                      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│                      ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
+│                      ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
 │                      ││                  d                                           │
 │                      ││                                                              │
 │                      ││                                                              │

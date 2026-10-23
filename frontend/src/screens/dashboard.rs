@@ -89,7 +89,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         for (kind, value) in &s.codes {
             v.push(Item::Pair {
                 label: code_label(kind),
-                value: value.clone(),
+                value: crate::theme::verbatim(value),
                 token: Token::Text,
                 state: "info",
                 recorded: false,
