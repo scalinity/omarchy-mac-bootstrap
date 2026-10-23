@@ -205,13 +205,16 @@ reading inside: a candidate folder has no size until it is carried, and a
 link is listed by its text, never followed. The one read below the top is
 project discovery: one level of a top-level folder that is neither a link
 nor protected (`~/code`), and only each child checkout's `.git/config` and
-`.git/HEAD`. What an adapter owns (`~/.claude`, `~/.codex`,
+`.git/HEAD`, none of them through a link (a checkout whose `.git` or either
+file is a link is listed by name, not read). What an adapter owns (`~/.claude`, `~/.codex`,
 `~/.config/nvim`) goes to that adapter. A folder's contents are read
 (`sys_walk`), each file classified, and a denial reported only when it is
 carried; the folder shows its most sensitive class and the preview masks
 credential-shaped values. A chosen root is resolved through every link on
 the way and refused when it leads to the home itself, above or outside the
-home, into `~/Library`, `~/.ssh` or `~/.gnupg`, or to a hard-refused path;
+home, into `~/Library`, `~/.ssh` or `~/.gnupg`, or to a hard-refused path
+(compared in lower case, as the Mac's filesystem compares names), or when
+the link leads to another link;
 a root that is a link (a GNU Stow farm) is carried as a folder at the
 chosen path, and each file inside is checked by its real path as well as
 by the name it was chosen under.
