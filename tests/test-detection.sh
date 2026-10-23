@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Detection over fixtures: macOS (plist parsing needs plutil, so those cases
 # run on macOS only) and Linux (runs anywhere).
-# shellcheck disable=SC2015 # ok/fail always return 0
+# shellcheck disable=SC2015,SC2329 # assertions and callbacks in loaded libraries
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 t_load
@@ -313,5 +313,105 @@ assert_eq "${LX_FLAGS[*]}" "--encrypt --user alex --hostname m1pro --keymap uk" 
 CFG_enc=0
 lx_setup_flags
 assert_eq "${LX_FLAGS[*]}" "--no-encrypt --user alex --hostname m1pro --keymap uk" "setup flags, not encrypted"
+
+# --- SSH: effective authentication and the image account ----------------------
+for row in 'off off locked' 'key-only key-only locked' 'passwords passwords usable' 'cannot-tell cannot-tell locked' 'user cannot-tell unknown'; do
+  read -r fx want alarm <<EOF
+$row
+EOF
+  OMB_FIXTURE=$FIX/dbg-ssh-$fx
+  OMB_UID=$(sys_cmd id_u id -u)
+  doc_ssh_facts
+  assert_eq "$DOC_SSH_CLASS $DOC_ALARM_STATE" "$want $alarm" "ssh-$fx class and account status"
+done
+assert_contains "$DOC_SSH_WHY" 'root is needed' 'ssh-user explains why policy cannot be read'
+
+# sshd -T cannot establish the policy of every Match connection. Follow
+# nested Includes as data, and refuse syntax this reader cannot interpret.
+for mode in match nested quoted missing cycle kbd incomplete failed service; do
+  OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+  OMB_UID=0
+  case "$mode" in
+    match) printf '%s\n' 'Match User alarm' >>"$OMB_FIXTURE/root/etc/ssh/sshd_config" ;;
+    nested)
+      printf '%s\n' 'Include more/*.conf' >"$OMB_FIXTURE/root/etc/ssh/sshd_config.d/99-archlinux.conf"
+      mkdir -p "$OMB_FIXTURE/root/etc/ssh/more"
+      printf '%s\n' 'mAtCh Address 192.0.2.1' >"$OMB_FIXTURE/root/etc/ssh/more/local.conf"
+      ;;
+    quoted) printf '%s\n' 'Include "sshd_config.d/*.conf"' >"$OMB_FIXTURE/root/etc/ssh/sshd_config" ;;
+    missing) printf '%s\n' 'Include missing.conf' >"$OMB_FIXTURE/root/etc/ssh/sshd_config" ;;
+    cycle) printf '%s\n' 'Include sshd_config' >"$OMB_FIXTURE/root/etc/ssh/sshd_config" ;;
+    kbd) printf '%s\n' 'passwordauthentication no' 'kbdinteractiveauthentication yes' >"$OMB_FIXTURE/cmd/sshd_policy" ;;
+    incomplete) printf '%s\n' 'passwordauthentication no' >"$OMB_FIXTURE/cmd/sshd_policy" ;;
+    failed) printf '%s\n' 1 >"$OMB_FIXTURE/cmd/sshd_policy.rc" ;;
+    service) printf '%s\n' 1 >"$OMB_FIXTURE/cmd/sshd_active.rc" ;;
+  esac
+  doc_ssh_facts
+  want=cannot-tell
+  if [ "$mode" = kbd ]; then want=passwords; fi
+  assert_eq "$DOC_SSH_CLASS" "$want" "ssh-$mode conservatively classified"
+done
+
+OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+OMB_UID=0
+printf '%s\n' '  Include=sshd_config.d/*.conf # local files' >"$OMB_FIXTURE/root/etc/ssh/sshd_config"
+printf '%s\n' '# Match User alarm' 'KbdInteractiveAuthentication no' >"$OMB_FIXTURE/root/etc/ssh/sshd_config.d/99-archlinux.conf"
+doc_ssh_facts
+assert_eq "$DOC_SSH_CLASS" key-only 'ssh-comments and equals syntax are data'
+
+t_cli dbg-ssh-passwords '' doctor
+assert_rc "$T_RC" 0 'ssh-password warning does not fail doctor'
+assert_contains "$T_OUT" 'passwords:' 'ssh-doctor class'
+assert_contains "$(t_flat "$T_OUT")" 'alarm / alarm' 'ssh-doctor names image password'
+assert_contains "$(t_flat "$T_OUT")" 'sudo passwd -l alarm' 'ssh-doctor lock command'
+assert_empty_file "$T_DIR/record" 'ssh-doctor never locks the account itself'
+t_cli dbg-ssh-user '' doctor
+assert_contains "$(t_flat "$T_OUT")" 'cannot-tell: root is needed' 'ssh-non-root entrypoint'
+
+# The text start path shares lx_install/lx_handoff with omarchy.start.
+# The first mutation is stop-and-disable; only verified off reaches setup.
+start_input='\n\nstart\n'
+start_token=omb1:enc=1,user=alex,host=omarchy,kmap=us
+T_ENV="OMB_TEST_AFTER=$FIX/dbg-ssh-off" t_cli dbg-ssh-passwords "$start_input" resume "$start_token"
+assert_rc "$T_RC" 0 'ssh-start succeeds once service is off'
+commands=$(cat "$T_DIR/record")
+assert_eq "$(printf '%s\n' "$commands" | head -1)" 'systemctl disable --now sshd' 'ssh-disable precedes setup'
+assert_contains "$commands" 'bash ' 'ssh-verified stop permits setup'
+assert_contains "$T_OUT" 'SSH is stopped and disabled.' 'ssh-start reports confirmed stop'
+assert_empty_file "$T_DIR/shims.log" 'ssh-start only records commands'
+
+for mode in active enabled unknown command-failed; do
+  after=$(t_variant dbg-ssh-off)
+  case "$mode" in
+    active) printf '%s\n' active >"$after/cmd/sshd_active"; rm "$after/cmd/sshd_active.rc" ;;
+    enabled) printf '%s\n' enabled >"$after/cmd/sshd_enabled"; rm "$after/cmd/sshd_enabled.rc" ;;
+    unknown) rm "$after/cmd/sshd_enabled" ;;
+  esac
+  T_ENV="OMB_TEST_AFTER=$after"
+  if [ "$mode" = command-failed ]; then T_ENV="$T_ENV OMB_TEST_RC=1"; fi
+  t_cli dbg-ssh-passwords "$start_input" resume "$start_token"
+  T_ENV=''
+  assert_rc "$T_RC" 1 "ssh-$mode stops start"
+  assert_contains "$(t_flat "$T_OUT")" 'Could not confirm that SSH is stopped and disabled.' "ssh-$mode reports failure"
+  assert_eq "$(cat "$T_DIR/record")" 'systemctl disable --now sshd' "ssh-$mode never launches setup"
+  assert_not_contains "$T_OUT" 'unbound variable' "ssh-$mode entrypoint clean refusal"
+done
+T_ENV="OMB_TEST_AFTER=$FIX/dbg-ssh-off" t_cli dbg-ssh-passwords '\n\nwrong\n' resume "$start_token"
+assert_empty_file "$T_DIR/record" 'ssh-no mutation before typed start'
+t_cli dbg-ssh-passwords "$start_input" --dry-run resume "$start_token"
+assert_rc "$T_RC" 0 'ssh-dry preview completes with current SSH active'
+assert_empty_file "$T_DIR/record" 'ssh-dry preview runs nothing'
+
+# Record the read probes too: both run after disable, including on failure.
+(
+  OMB_FIXTURE=$FIX/dbg-ssh-off OMB_DRY_RUN=0
+  run() { printf 'run %s\n' "$*" >>"$OMB_STATE_DIR/ssh-order"; }
+  eval "original_$(declare -f sys_cmd)"
+  sys_cmd() { printf 'probe %s\n' "$*" >>"$OMB_STATE_DIR/ssh-order"; original_sys_cmd "$@"; }
+  lx_ssh_stop >/dev/null
+)
+assert_eq "$(cat "$OMB_STATE_DIR/ssh-order")" 'run systemctl disable --now sshd
+probe sshd_active systemctl is-active sshd
+probe sshd_enabled systemctl is-enabled sshd' 'ssh-stop then both fresh probes'
 
 t_done test-detection

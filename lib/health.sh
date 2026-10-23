@@ -1,8 +1,34 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2317,SC2329 # a callback invoked by the baseline Doctor owner
 # Ordinary fixture-only Health. One cmd_doctor invocation owns every finding
-# and count; only its presentation sinks are replaced, in a subshell. No
-# painted Doctor text is parsed, and lib/doctor.sh is unchanged.
+# and count; only its presentation sinks are replaced, in a subshell. AI and
+# restore observations add rows after that complete baseline capture.
+
+# Both producers are read-only. AI emits doctor-shaped wire rows. Restore
+# counts are four whole numbers: verified, kept, failed, pending. Raw text
+# from a failed count read is never passed through as a finding.
+core_health_extensions() (
+  local counts verified kept failed pending extra
+  [ "$OMB_PLATFORM" = linux ] || return 0
+  core_mod_load restore || return 1
+  if declare -F agent_health_rows >/dev/null; then agent_health_rows || return 1; fi
+  if declare -F rst_status_counts >/dev/null; then
+    if counts=$(rst_status_counts); then
+      case "$counts" in *$'\n'*) counts='' ;; esac
+      IFS=' ' read -r verified kept failed pending extra <<EOF
+$counts
+EOF
+      if [ -z "$extra" ] && _uint "$verified" && _uint "$kept" && _uint "$failed" && _uint "$pending"; then
+        local status=info
+        if [ "$failed" != 0 ]; then status=warn; fi
+        rec_line row kind doctor key 0 col "$status" col Restore \
+          col "verified=$verified kept=$kept failed=$failed pending=$pending"
+        return
+      fi
+    fi
+    rec_line row kind doctor key 0 col warn col Restore col 'Restore counts could not be read.'
+  fi
+)
 
 # The one authoritative capture. doc() still decides, counts and logs each
 # finding; ui_tag receives exactly the status, label and detail it renders.
@@ -54,6 +80,18 @@ core_health_capture() {
     "$OMB_TMP/health.rows" >"$OMB_TMP/health.tally" || return 1
   IFS= read -r tally <"$OMB_TMP/health.tally" || return 1
   [ "$tally" = "$pass $warn $fail" ] || return 1
+  core_health_extensions >"$OMB_TMP/health.extra" || return 1
+  cat "$OMB_TMP/health.rows" "$OMB_TMP/health.extra" >"$OMB_TMP/health.all" || return 1
+  awk -F '\t' 'NF != 6 || $1 != "row" || $2 != "kind=doctor" || $4 !~ /^col=(pass|warn|fail|info)$/ { exit 1 }' \
+    "$OMB_TMP/health.all" || return 2
+  # Extension keys need not share a counter with Doctor. The combined
+  # dataset owns a single consecutive position and its own complete counts.
+  awk 'BEGIN { FS=OFS="\t" } { $3="key=" NR; print }' "$OMB_TMP/health.all" >"$OMB_TMP/health.rows" || return 1
+  n=$(wc -l <"$OMB_TMP/health.rows") || return 1
+  n=$((n + 0))
+  awk -F '\t' '{ c[$4]++ } END { printf "%d %d %d\n", c["col=pass"], c["col=warn"], c["col=fail"] }' \
+    "$OMB_TMP/health.rows" >"$OMB_TMP/health.tally" || return 1
+  IFS=' ' read -r pass warn fail <"$OMB_TMP/health.tally" || return 1
   CORE_HEALTH_ROWS=$n
   # Whole-dataset admission, every row and fact, precedes hashing and paging.
   core_read_prefix || return 1

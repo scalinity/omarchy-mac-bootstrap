@@ -1,0 +1,3 @@
+passwordauthentication no
+kbdinteractiveauthentication no
+permitrootlogin prohibit-password

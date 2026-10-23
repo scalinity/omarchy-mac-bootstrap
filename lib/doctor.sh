@@ -318,7 +318,8 @@ lx_doctor() {
   if [ "$LX_SETUP_FINISHING" = 1 ]; then
     doc info "Setup finishing" "the next boot removes $OMS_CONF and the setup unit (upstream's last step)"
   fi
-  # SSH access is separate facts; a running sshd is only one of them.
+  # SSH's authentication class is distinct from the service and port facts.
+  doc_ssh
   dev_ssh_facts
   if [ "$DEV_SSH_ACTIVE" = 1 ]; then
     doc pass "SSH service" "sshd running"
@@ -334,6 +335,112 @@ lx_doctor() {
   shared_doctor
   doc info "macOS" "remains available through the boot picker (hold power at startup)"
   doc_summary
+}
+
+# An effective default from sshd -T does not cover per-connection Match
+# rules. Inspect Include files as data only; unsupported quoting, paths or
+# unreadable configuration means the policy cannot be established.
+doc_ssh_config_plain() {
+  local file=$1 depth=$2 line key rest pattern path mapped found
+  local -a includes
+  [ "$depth" -lt 16 ] && [ -f "$file" ] && [ -r "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}
+    key='' rest=''
+    IFS=$' \t=' read -r key rest <<EOF
+$line
+EOF
+    key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+    case "$key" in
+      match) return 1 ;;
+      include)
+        [ -n "$rest" ] || return 1
+        # OpenSSH quoting and percent/tilde expansion are deliberately not
+        # interpreted by a shell. These forms remain cannot-tell.
+        case "$rest" in *[\"\'\\\~%\$\`]* | *..*) return 1 ;; esac
+        IFS=$' \t\n' read -r -a includes <<EOF
+$rest
+EOF
+        for pattern in "${includes[@]}"; do
+          case "$pattern" in /*) ;; *) pattern=/etc/ssh/$pattern ;; esac
+          mapped=$(sys_path "$pattern")
+          found=0
+          # Only pathname expansion, never splitting filenames on spaces.
+          local IFS=''
+          # shellcheck disable=SC2231 # Include patterns intentionally glob
+          for path in $mapped; do
+            [ -e "$path" ] || [ -L "$path" ] || continue
+            found=1
+            doc_ssh_config_plain "$path" "$((depth + 1))" || return 1
+          done
+          IFS=$' \t\n'
+          # A wildcard Include may match nothing; an exact missing path
+          # cannot establish which policy the daemon loaded.
+          if [ "$found" = 0 ]; then
+            case "$pattern" in *[\*\?\[]*) ;; *) return 1 ;; esac
+          fi
+        done
+        ;;
+    esac
+  done <"$file"
+}
+
+# DOC_SSH_CLASS is closed; neither command diagnostics nor config text is
+# ever a finding. passwd -S exposes account status, never the shadow hash.
+doc_ssh_facts() {
+  local active rc policy flags alarm name state rest
+  DOC_SSH_CLASS=cannot-tell DOC_SSH_WHY='service state could not be read'
+  DOC_ALARM_STATE=unknown
+  active=$(sys_cmd sshd_active systemctl is-active sshd)
+  rc=$?
+  if [ "$active" = inactive ] && [ "$rc" = 3 ]; then
+    DOC_SSH_CLASS=off DOC_SSH_WHY='sshd is not running'
+  elif [ "$active" = active ] && [ "$rc" = 0 ]; then
+    DOC_SSH_WHY='root is needed to read sshd -T'
+    if [ "$OMB_UID" = 0 ]; then
+      DOC_SSH_WHY='sshd -T failed or its authentication settings were incomplete'
+      if policy=$(sys_cmd sshd_policy sshd -T); then
+        flags=$(printf '%s\n' "$policy" | awk '
+          $1 == "passwordauthentication" { p++; pv=$2; if (NF != 2) bad=1 }
+          $1 == "kbdinteractiveauthentication" { k++; kv=$2; if (NF != 2) bad=1 }
+          END { if (!bad && p == 1 && k == 1) print pv " " kv }')
+        case "$flags" in
+          'no no') DOC_SSH_CLASS=key-only DOC_SSH_WHY='password and keyboard-interactive login are off' ;;
+          'yes yes' | 'yes no' | 'no yes') DOC_SSH_CLASS=passwords DOC_SSH_WHY='password or keyboard-interactive login is on' ;;
+        esac
+        if ! doc_ssh_config_plain "$(sys_path /etc/ssh/sshd_config)" 0; then
+          DOC_SSH_CLASS=cannot-tell DOC_SSH_WHY='per-connection policy could not be ruled out (Match, unreadable or unsupported configuration)'
+        fi
+      fi
+    fi
+  fi
+  if [ "$OMB_UID" = 0 ]; then
+    if alarm=$(sys_cmd alarm_status passwd -S alarm); then
+      IFS=' ' read -r name state rest <<EOF
+$alarm
+EOF
+      if [ "$name" = alarm ]; then
+        case "$state" in P | PS) DOC_ALARM_STATE=usable ;; L | LK) DOC_ALARM_STATE=locked ;; NP) DOC_ALARM_STATE=empty ;; esac
+      fi
+    fi
+  fi
+}
+
+doc_ssh() {
+  doc_ssh_facts
+  case "$DOC_SSH_CLASS" in
+    off | key-only) doc pass "SSH policy" "$DOC_SSH_CLASS: $DOC_SSH_WHY" ;;
+    passwords) doc warn "SSH policy" "$DOC_SSH_CLASS: $DOC_SSH_WHY" ;;
+    *) doc warn "SSH policy" "cannot-tell: $DOC_SSH_WHY" ;;
+  esac
+  case "$DOC_ALARM_STATE" in
+    usable)
+      doc warn "Image alarm account" "usable password; the image sets alarm / alarm. Lock it: sudo passwd -l alarm"
+      ;;
+    empty) doc warn "Image alarm account" "no password set; the image sets alarm / alarm. Lock it: sudo passwd -l alarm" ;;
+    locked) doc pass "Image alarm account" "password locked" ;;
+    *) doc info "Image alarm account" "password state cannot be read here; the image sets alarm / alarm. As root, check passwd -S alarm; lock it with sudo passwd -l alarm" ;;
+  esac
 }
 
 lx_next_action() {
