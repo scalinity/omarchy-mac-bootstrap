@@ -93,7 +93,7 @@ assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 # Lists compared against a literal are sorted in byte order (LC_ALL=C), so the
 # comparison holds under any host locale.
 run_commands() {
-  code_lines | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? [^;|&]*' | sed -E 's/^[[:space:];&|(]*run(_withheld [0-9]+)? //' | awk '{print $1}' | sort -u | tr '\n' ' '
+  code_lines | grep -oE '(^|[[:space:];&|(])run(_withheld[[:space:]]+[0-9]+)?[[:space:]]+[^;|&]*' | sed -E 's/^[[:space:];&|(]*run(_withheld[[:space:]]+[0-9]+)?[[:space:]]+//' | awk '{print $1}' | sort -u | tr '\n' ' '
 }
 # A literal position keeps withheld argv readable to every static scan.
 invalid_withheld() {
@@ -109,6 +109,18 @@ sudo_lines() {
 direct_sudos() {
   code_lines | sed -E 's/^[^:]*:[0-9]*: //; s/run_withheld[[:space:]]+[0-9]+[[:space:]]+/run /g' |
     grep -E '(^[[:space:]]*|[;&|({!][[:space:]]*|\$\([[:space:]]*|(then|do|else|if|exec|command|env|xargs)[[:space:]]+)sudo[[:space:]]'
+}
+# Setting values are the only reason for withholding argv; no such command
+# needs sudo, regardless of which sudo options precede its executable.
+withheld_sudos() {
+  code_lines | sed 's/^[^:]*:[0-9]*: //' |
+    grep -E '(^|[[:space:];&|(])run_withheld[[:space:]]+[0-9]+[[:space:]]+sudo([[:space:]]|$)'
+}
+assert_eq "$(withheld_sudos)" "" safety-withheld-sudo-forbidden
+quoted_commands() {
+  raw_lines | sed 's/^[^:]*:[0-9]*: //' |
+    grep -oE '(^|[[:space:];&|(])run(_withheld[[:space:]]+[0-9]+)?[[:space:]]+"[^"]*"[^;|&]*' |
+    sed -E 's/^[[:space:];&|(]*//; s/run_withheld[[:space:]]+[0-9]+[[:space:]]+/run /; s/^run[[:space:]]+/run /; s/[[:space:]]+$//' | sort -u
 }
 runs=$(run_commands)
 for cmd in $runs; do
@@ -134,13 +146,22 @@ assert_contains "$(run_commands)" 'restore-unlisted-command' safety-withheld-unl
 printf '%s\n' 'run_withheld 4 sudo rm -- "$HOME/.bashrc"' >"$scan_tmp/planted.sh"
 assert_contains "$(sudo_lines | grep -o 'run sudo [a-z]* [^ ]*')" 'run sudo rm --' safety-withheld-sudo-allowlist-visible
 assert_eq "$(direct_sudos)" "" safety-withheld-sudo-through-run
+assert_contains "$(withheld_sudos)" sudo safety-withheld-sudo-plain-refused
+printf '%s\n' 'run_withheld 3 sudo -n rm -- "$HOME/.bashrc"' >"$scan_tmp/planted.sh"
+assert_contains "$(withheld_sudos)" 'sudo -n' safety-withheld-sudo-options-refused
+for spacing in '  ' $'\t'; do
+  printf 'run_withheld%s5%sunlisted-cmd x\n' "$spacing" "$spacing" >"$scan_tmp/planted.sh"
+  assert_contains "$(run_commands)" unlisted-cmd safety-withheld-whitespace-command-visible
+  printf 'run_withheld%s5%s"$UNLISTED_CMD" x\n' "$spacing" "$spacing" >"$scan_tmp/planted.sh"
+  assert_contains "$(quoted_commands)" '$UNLISTED_CMD' safety-withheld-whitespace-quoted-visible
+done
 printf '%s\n' 'run_withheld "$n" git config x y' >"$scan_tmp/planted.sh"
 assert_contains "$(invalid_withheld)" run_withheld safety-withheld-variable-position-refused
 printf '%s\n' 'sudo rm -- "$HOME/.bashrc"' >"$scan_tmp/planted.sh"
 assert_contains "$(direct_sudos)" 'sudo rm' safety-direct-sudo-refused
 CODE=$saved_code
 rm -rf "$scan_tmp"
-quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/run_withheld [0-9]+ /run /; s/[[:space:]]+$//' | sort -u)
+quoted=$(quoted_commands)
 assert_eq "$quoted" 'run "$@"
 run "$AG_PATH" "$@"
 run "$OMS_SELF" --resume' "indirect commands are the observed agent handoff and omarchy-mac-setup --resume"
