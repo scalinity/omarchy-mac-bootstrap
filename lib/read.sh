@@ -4,9 +4,17 @@
 # only this isolated subshell replaces its sinks. No bootstrap text is parsed.
 # Both snapshot and detail consume this exact canonical dataset.
 
+# shellcheck source=lib/journey.sh
+. "${OMB_HOME:-${BASH_SOURCE[0]%/*}/..}/lib/journey.sh" || _omb_unloaded journey
+
 core_journey_dataset() (
   local section='' facts='' rows='' machine='' guide='' token='' blockers='' messages=''
   local n=0 b=0 line key state value raw
+  # A direct dataset reader has no request scratch owned by the outer core.
+  # Profile/restore may allocate scratch here; this subshell owns that copy.
+  if [ -z "${OMB_TMP:-}" ]; then
+    trap 'case "${OMB_TMP:-}" in */omarchy-bootstrap.*) rm -rf "$OMB_TMP" ;; esac' EXIT
+  fi
   # Stable ASCII punctuation, independent of terminal presentation preferences.
   OMB_ASCII=1 OMB_COLOR=never
   ui_init
@@ -106,7 +114,10 @@ END_BLOCKERS
   esac
   # Every value used by either projection, including notes and the token,
   # occurs in the encoding. Scope is bound even for equal-looking datasets.
-  printf 'scope\tname=journey\n%s%s' "$machine" "$facts"
+  printf 'scope\tname=journey\n'
+  journey_read >/dev/null || return 1
+  journey_records || return 1
+  printf '%s%s' "$machine" "$facts"
   # The installer's actions the fresh read offers now (core_rows_snapshot,
   # before this dataset): their gate facts, the barriers of their scopes,
   # the actions and their parameters, in the response's order.

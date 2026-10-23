@@ -1462,8 +1462,8 @@ core_check_op() {
   esac
 }
 
-# core_check_snapshot FRONTEND PROTO — the check's four facts: no stage, no
-# action, no parameter, and nothing read beyond what hello reads, so no
+# core_check_snapshot FRONTEND PROTO — the check's closed stages and four
+# facts: no action or parameter, and no read beyond hello's, so no
 # operation record is shown, reconciled or cleared. FRONTEND and PROTO are
 # the request's own values, already held to the lock and to this core.
 core_check_snapshot() {
@@ -1476,6 +1476,9 @@ core_check_snapshot() {
 }
 
 _core_check_body() {
+  # shellcheck source=/dev/null # journey is linted through the ordinary read adapter
+  . "$OMB_HOME/lib/journey.sh" || _omb_unloaded journey
+  journey_check_records || return 1
   rec_line fact scope journey key check label "Check" value "frontend startup check (frontend-check)" state info
   rec_line fact scope journey key interface label "Interface" value "frontend $1 as the lock pins, protocol $2" state ok
   rec_line fact scope journey key session label "Session" value "read-only, journey scope only, not a dry run" state info

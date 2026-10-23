@@ -54,7 +54,7 @@ core_health_doctor() (
 # Health producer status: 0 usable, 1 infrastructure failure, 2 established
 # representation invalidity. Canonical admission owns every wire/schema rule.
 core_health_capture() {
-  local st n pass warn fail extra rows tally sum v
+  local st n pass warn fail extra rows tally sum v doc_counts
   omb_tmp_init || return 1
   : >"$OMB_TMP/health.rows" || return 1
   rm -f "$OMB_TMP/health.counts" || return 1
@@ -81,6 +81,7 @@ core_health_capture() {
     "$OMB_TMP/health.rows" >"$OMB_TMP/health.tally" || return 1
   IFS= read -r tally <"$OMB_TMP/health.tally" || return 1
   [ "$tally" = "$pass $warn $fail" ] || return 1
+  doc_counts="$pass $warn $fail"
   core_health_extensions >"$OMB_TMP/health.extra" || return 1
   cat "$OMB_TMP/health.rows" "$OMB_TMP/health.extra" >"$OMB_TMP/health.all" || return 1
   awk -F '\t' 'NF != 6 || $1 != "row" || $2 != "kind=doctor" || $4 !~ /^col=(pass|warn|fail|info)$/ { exit 1 }' \
@@ -110,11 +111,19 @@ core_health_capture() {
   core_read_stage snapshot "$(printf '%064d' 0)" 0 "$OMB_TMP/health.snapshot"
   st=$?
   [ "$st" = 0 ] || return "$st"
+  # Report joins this dataset, including off-page rows. Reuse the one
+  # authoritative Doctor capture; do not invoke cmd_doctor a second time.
+  journey_read "$doc_counts" >/dev/null || return 1
+  journey_report_build || return 1
+  journey_report_records >"$OMB_TMP/health.report" || return 1
+  core_read_rows "$OMB_TMP/health.report" "$(printf '%064d' 0)"
+  st=$?
+  [ "$st" = 0 ] || return "$st"
   # The scope, the three counters and every ordered row: never just a page.
   {
     rec_line scope name health &&
       cat "$OMB_TMP/health.snapshot" &&
-      cat "$OMB_TMP/health.rows"
+      cat "$OMB_TMP/health.rows" "$OMB_TMP/health.report"
   } >"$OMB_TMP/health.identity" || return 1
   if command -v shasum >/dev/null 2>&1; then
     sum=$(shasum -a 256 "$OMB_TMP/health.identity") || return 1
@@ -155,24 +164,27 @@ core_health_publish() {
 }
 
 core_health_op() {
+  local kind=${CORE_REQ_KIND:-doctor} rows=''
   local op=$1 st status='done' code=ok text='' total=0 body
-  if [ "$op" = detail ] && [ "$CORE_REQ_KIND" != doctor ]; then
+  if [ "$op" = detail ] && [ "$kind" != doctor ] && [ "$kind" != report ]; then
     core_result refused unavailable 'This health detail kind is not available.'
     return
   fi
   core_health_capture
   st=$?
   if [ "$st" != 0 ]; then core_health_failure "$st"; return; fi
-  body=$OMB_TMP/health.snapshot
+  body=$OMB_TMP/health.snapshot rows=$OMB_TMP/health.rows
   if [ "$op" = detail ]; then
-    total=$CORE_HEALTH_ROWS body=$OMB_TMP/health.page
+    if [ "$kind" = report ]; then rows=$OMB_TMP/health.report; fi
+    total=$(wc -l <"$rows") || { core_health_failure 1; return; }
+    total=$((total + 0)) body=$OMB_TMP/health.page
     : >"$body" || { core_health_failure 1; return; }
     if [ "$CORE_REQ_GENERATION" != "$CORE_HEALTH_GEN" ]; then
       status=refused code=changed text='The health dataset changed; open this detail from a fresh snapshot.'
     elif [ "$CORE_REQ_OFFSET" -gt "$total" ]; then
       status=refused code=invalid text="The offset is beyond this projection's total."
     else
-      awk -v offset="$CORE_REQ_OFFSET" -v limit="$CORE_REQ_LIMIT" 'NR > offset && NR <= offset + limit' "$OMB_TMP/health.rows" >"$body" || { core_health_failure 1; return; }
+      awk -v offset="$CORE_REQ_OFFSET" -v limit="$CORE_REQ_LIMIT" 'NR > offset && NR <= offset + limit' "$rows" >"$body" || { core_health_failure 1; return; }
     fi
   fi
   core_read_stage "$op" "$CORE_HEALTH_GEN" "$total" "$body" "$status" "$code" "$text"

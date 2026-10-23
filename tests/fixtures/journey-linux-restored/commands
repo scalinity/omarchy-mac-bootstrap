@@ -1,0 +1,12 @@
+pacman
+nmtui
+curl
+snapper
+docker
+omarchy-pkg-add
+omarchy-install-dev-env
+omarchy-install-editor-vscode
+omarchy-setup-security-sshd
+omarchy-setup-security-sudoless-docker
+git
+gh

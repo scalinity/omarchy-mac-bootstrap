@@ -165,6 +165,7 @@ usage() {
   _help_row "install" "run the current phase end to end"
   _help_row "resume [token]" "continue after a reboot (Linux: paste the Phase 1 token)"
   _help_row "status" "where this machine is, and what comes next (read-only)"
+  _help_row "report" "fresh final check table and verdict (read-only)"
   _help_row "doctor" "read-only health checks"
   _help_row "dev" "optional developer setup (Linux, after Omarchy)"
   _help_row "shared [status]" "Shared macOS/Linux storage: where it stands (read-only)"
@@ -354,7 +355,7 @@ main() {
     operation)
       if [ -n "$op_clear" ]; then OMB_INTENT=act; else OMB_INTENT=read OMB_PERSIST=0; fi
       ;;
-    status | doctor | sources | logs | scan | debug) OMB_INTENT=read OMB_PERSIST=0 ;;
+    status | report | doctor | sources | logs | scan | debug) OMB_INTENT=read OMB_PERSIST=0 ;;
     restore)
       if [ "${rest[0]:-}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
       ;;
@@ -431,7 +432,8 @@ main() {
       return
       ;;
     doctor) cmd_doctor ; return ;;
-    status) cmd_status ; return ;;
+    status) _omb_load records core read; cmd_journey_status ; return ;;
+    report) _omb_load records core read; cmd_report ; return ;;
     shared) cmd_shared ${rest[@]+"${rest[@]}"} ; return ;;
     debug)
       _omb_load records core read debug
