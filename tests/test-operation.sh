@@ -1579,6 +1579,27 @@ printf 'omb-op 1\ntorn again' | o_raw
 wait "$oc_pid"
 assert_eq "$(oc_kept)" 'journey.omb ' 'actions-clear-changed: an entry changed since it was shown is not moved'
 assert_contains "$(cat "$T/text.out")" 'changed since it was shown' 'actions-clear-changed: and says so'
+# Over the read's bound no fingerprint is taken: an edit in place that keeps
+# the length still shows in the entry's own times, and is refused.
+rm -rf "$T/state/ops" && { printf 'omb-op 1\n' && head -c 70000 /dev/zero | tr '\0' x; } | o_raw
+TV=$(t_tmp)
+cp -R "$C_FIX" "$TV/fx"
+C_FIX=$TV/fx OC_ENV=OMB_TEST_PAUSE_AT=clear-confirmed oc 'clear\n' operation clear journey &
+oc_pid=$!
+i=0
+while [ ! -e "$TV/fx.at-clear-confirmed" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+printf 'y' | dd of="$OPS" bs=1 seek=100 conv=notrunc 2>/dev/null
+: >"$TV/fx.go"
+wait "$oc_pid"
+assert_eq "$(oc_kept)" 'journey.omb ' 'actions-clear-times: an oversized entry edited in place is not moved'
+assert_contains "$(cat "$T/text.out")" 'changed since it was shown' 'actions-clear-times: and says so'
 rm -rf "$TV"
+# A real row's record is readable in its own scope: refused, nothing moved.
+rm -rf "$T/state/ops"
+OPS=$T/state/ops/asahi.omb o_rec running 1 x "$BOOT" asahi.launch asahi
+oc 'clear\n' operation clear asahi
+assert_eq "$O_RC" 1 "actions-clear-row: a row's readable record is refused"
+assert_contains "$O_OUT" "$TX_READABLE" 'actions-clear-row: and is shown as readable'
+assert_eq "$(oc_kept)" 'asahi.omb ' 'actions-clear-row: nothing moved'
 
 t_done operation

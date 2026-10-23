@@ -221,6 +221,12 @@ _op_owns() {
     core_action_info "$a" || :
     [ "$CA_SCOPE" = "$1" ] && return 0
   done
+  # A row of the action table: its module's row names its scope, on any
+  # system and whether or not the fresh read offers it now.
+  if core_mod_for "$2" && core_mod_load "$CORE_MOD"; then
+    CA_SCOPE=""
+    if "$CORE_MOD_ROW" "$2" && [ "$CA_SCOPE" = "$1" ]; then return 0; fi
+  fi
   return 1
 }
 
@@ -780,6 +786,15 @@ cmd_operation() {
 # be read*, D54)
 # ---------------------------------------------------------------------------
 
+# _op_times — OP_TIMES: OP_PATH's own modification and change times in
+# nanoseconds where the system gives them, from one lstat that follows no
+# link; 1 when they cannot be read.
+_op_times() {
+  # shellcheck disable=SC2016 # Perl source: perl expands its own variables
+  OP_TIMES=$(LC_ALL=C perl -MTime::HiRes=lstat -e '@s = lstat($ARGV[0]) or exit 1; print "$s[9]:$s[10]\n"' -- "$OP_PATH" 2>/dev/null) || return 1
+  [ -n "$OP_TIMES" ]
+}
+
 # op_clear SCOPE — the way out of an unreadable operation record: under the
 # run lock the entrypoint took, a fresh inspection that finds the entry
 # unreadable, what the tool cannot know, the typed word clear, the entry
@@ -788,7 +803,7 @@ cmd_operation() {
 # or deleted. 0 moved, or no record; 1 every refusal (nothing moved), or a
 # kept entry that is not the one checked.
 op_clear() {
-  local scope=$1 kind id size fp kept dest
+  local scope=$1 kind id size fp times kept dest
   # 2. The inspection, shown exactly as operation SCOPE shows it.
   cmd_operation "$scope" || return 1
   printf '\n'
@@ -810,6 +825,14 @@ op_clear() {
     *) return 1 ;;
   esac
   kind=$OP_KIND id=$OP_ID size=$OP_SIZE fp=$OP_FP
+  # The entry's modification and change times, from its own status: an edit
+  # in place shows there even where no fingerprint could be taken (a file
+  # over the read's bound).
+  _op_times || {
+    ui_fail "$OP_IO_TEXT Nothing was moved."
+    return 1
+  }
+  times=$OP_TIMES
   kept="$scope.omb.unreadable-$(now_stamp)"
   dest=$OMB_STATE_DIR/ops/$kept
   if [ "$OMB_DRY_RUN" = 1 ]; then
@@ -836,6 +859,10 @@ op_clear() {
     return 1
   fi
   if [ "$kind" = file ] && { [ "$OP_SIZE" != "$size" ] || [ "$OP_FP" != "$fp" ]; }; then
+    ui_fail "The record changed since it was shown; nothing was moved."
+    return 1
+  fi
+  if ! _op_times || [ "$OP_TIMES" != "$times" ]; then
     ui_fail "The record changed since it was shown; nothing was moved."
     return 1
   fi
