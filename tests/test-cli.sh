@@ -75,6 +75,12 @@ for args in --version --help doctor; do
   assert_eq "$L_OUT|$L_RC" "|1" "a library that does not load: '$args' answers nothing and exits 1"
   assert_contains "$L_ERR" "lib/dev.sh could not be loaded; nothing was run" "'$args': the library is named"
 done
+# cli-tmp-inherited: an OMB_TMP from the environment is never this run's
+# scratch, so nothing in it is used or removed.
+kept=$(t_tmp)/omarchy-bootstrap.saved
+mkdir -p "$kept/restore/want" && printf 'precious\n' >"$kept/restore/want/f"
+T_ENV="OMB_TMP=$kept" t_cli mac-m1pro-1tb-roomy "" doctor --ascii
+assert_eq "$(cat "$kept/restore/want/f" 2>/dev/null)" precious "cli-tmp-inherited: an inherited OMB_TMP's contents survive a run"
 t_cli mac-m1pro-1tb-roomy "" frobnicate
 assert_rc "$T_RC" 2 "unknown command exits 2"
 assert_contains "$T_OUT" "Unknown command: frobnicate" "unknown command named"

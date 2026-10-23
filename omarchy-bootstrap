@@ -30,6 +30,9 @@ unset _omb_mode OMB_RESTARTED
 # The interface word (docs/PROTOCOL.md → *Executing*, step 7) is set only by
 # the core, never exported, and never taken from the environment.
 unset OMB_IFACE_WORD
+# Nor is this run's scratch: each run makes its own (omb_tmp_init, or the
+# core's below), so an inherited OMB_TMP never names a folder it may remove.
+unset OMB_TMP
 
 set -u
 # No pipefail: probes are written as `producer | grep -q`, and grep -q exits on
