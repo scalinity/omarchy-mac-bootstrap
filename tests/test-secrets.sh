@@ -131,6 +131,56 @@ assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "8080"]' "secret-a
 assert_contains "$(cat "$T/x-codex/carry")" "codex%20mcp%20svc:%20needs-secret" "secret-args: and the server needs its secrets set again"
 if grep -rq harborpassEMB "$T/x-codex"; then fail "secret-args-embedded-url: a URL inside FLAG=VALUE reached Codex's configuration"; else ok; fi
 assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "9090"]' "secret-args-embedded-url: Codex keeps the rest"
+# secret-args-control: decoded controls never reach an argument, URL or
+# filtered configuration value, even when a URL parser would remove them.
+for code in $(seq 1 31) 127; do
+  printf -v oct '%03o' "$code"
+  printf -v ctl '%b' "\\$oct"
+  _scan_arg_ok -y "--url=https:${ctl}//alice:harborpassCTRL@example.test/r"
+  assert_rc $? 1 "secret-args-control: argument control byte $code is refused"
+  _scan_url_ok "https://alice:${ctl}harborpassCTRL@example.test/r"
+  assert_rc $? 1 "secret-args-control: URL control byte $code is refused"
+  scan_value_ok "value${ctl}harborpassCTRL"
+  assert_rc $? 1 "secret-args-control: configuration control byte $code is refused"
+done
+cat >"$CX/root/Users/alex/.codex/config.toml" <<'EOF'
+model = "fixture\tcontrol"
+[mcp_servers.control]
+command = "svc"
+args = ["--url=https:\t//alice:harborpassCTRL@example.test/r", "https://alice:\nharborpassCTRL@example.test/r", "tail\n", "--port", "8080"]
+url = "https:\t//alice:harborpassCTRL@example.test/r"
+[model_providers.control]
+base_url = "https://alice:\nharborpassCTRL@example.test/r"
+EOF
+(
+  OMB_FIXTURE=$CX
+  scan_extract codex:config "$T/x-control-codex" >/dev/null 2>&1
+  omb_cleanup
+)
+src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-control-codex/carry")
+assert_contains "$(cat "$T/x-control-codex/$src")" 'args = ["--port", "8080"]' "secret-args-control: Codex keeps its ordinary arguments"
+assert_not_contains "$(cat "$T/x-control-codex/$src")" 'model =' "secret-args-control: Codex drops a configuration value with a control"
+assert_eq "$(grep -rl harborpassCTRL "$T/x-control-codex")" "" "secret-args-control: Codex carries no control-obscured URL"
+assert_contains "$(cat "$T/x-control-codex/carry")" "needs-secret" "secret-args-control: Codex reports the dropped values"
+if t_plutil "control bytes in Claude and OpenCode conversions"; then
+  cat >"$CX/root/Users/alex/.claude.json" <<'EOF'
+{"mcpServers":{"control":{"command":"svc", "args":["--url=https:\t//alice:harborpassCTRL@example.test/r", "https://alice:\nharborpassCTRL@example.test/r", "tail\n", "--port", "8080"], "url":"https:\t//alice:harborpassCTRL@example.test/r"}}}
+EOF
+  cat >"$CX/root/Users/alex/.config/opencode/opencode.json" <<'EOF'
+{"mcp":{"control":{"type":"local", "command":["svc", "--url=https:\t//alice:harborpassCTRL@example.test/r", "https://alice:\nharborpassCTRL@example.test/r", "tail\n", "--port", "8080"], "url":"https:\t//alice:harborpassCTRL@example.test/r"}}, "provider":{"control":{"options":{"baseURL":"https://alice:\nharborpassCTRL@example.test/r"}}}}
+EOF
+  for id in claude:mcp:control opencode:config; do
+    out=$T/x-control-${id%%:*}
+    (
+      OMB_FIXTURE=$CX
+      scan_extract "$id" "$out" >/dev/null 2>&1
+      omb_cleanup
+    )
+    assert_eq "$(grep -rl harborpassCTRL "$out")" "" "secret-args-control: $id carries no control-obscured credential"
+    assert_not_contains "$(cat "$out/carry" "$out"/f/* 2>/dev/null)" tail "secret-args-control: $id refuses a trailing newline"
+    assert_contains "$(cat "$out/carry")" needs-secret "secret-args-control: $id reports its dropped arguments"
+  done
+fi
 # secret-starship-fields (S9): Starship's file is rebuilt by its documented
 # field names; a field no rule names, and a custom module, stay behind.
 cat >"$CX/root/Users/alex/.config/starship.toml" <<'EOF'
@@ -214,6 +264,57 @@ assert_contains "$carry" "skip	reason=.config/dockerhop:%20a%20link%20to%20a%20l
 assert_not_contains "$carry" "file	" "secret-stow-slash: and nothing of it is carried"
 stow path:.config/stowslash "$T/x-slash"
 assert_contains "$(cat "$T/x-slash/carry")" "file	dest=.config/stowslash/conf.ini" "secret-stow-slash: one link written with a slash is followed once"
+# secret-stow-root: trimming a link target must preserve the root slash.
+for target in / ////; do
+  ln -s "$target" "$SH/.config/rootcopy"
+  stow path:.config/rootcopy "$T/x-root-${#target}"
+  carry=$(cat "$T/x-root-${#target}/carry")
+  assert_contains "$carry" "skip	reason=.config/rootcopy:" "secret-stow-root: a link to $target is refused"
+  assert_not_contains "$carry" "file	" "secret-stow-root: nothing is carried through $target"
+  assert_eq "$(find "$T/x-root-${#target}/f" -type f)" "" "secret-stow-root: no captured bytes through $target"
+  rm "$SH/.config/rootcopy"
+done
+# secret-stow-unicode: these names alias protected paths on the Mac. On a
+# case-sensitive filesystem they are separate folders; the root guard must
+# still refuse them, and the per-file guard must refuse an actual alias.
+longs=$(printf '\305\277')
+kelvin=$(printf '\342\204\252')
+mkdir -p "$SH/.${longs}sh" "$SH/.${kelvin}ube" "$SH/dotfiles/unicode"
+printf 'fixture key folder note\n' >"$SH/.${longs}sh/unicode-note"
+printf 'fixture cluster configuration\n' >"$SH/.${kelvin}ube/config"
+u=0
+for name in ".${longs}sh" ".${kelvin}ube"; do
+  u=$((u + 1))
+  ln -s "../$name" "$SH/.config/unicodecopy"
+  stow path:.config/unicodecopy "$T/x-unicode-$u"
+  carry=$(cat "$T/x-unicode-$u/carry")
+  assert_contains "$carry" "skip	reason=.config/unicodecopy:" "secret-stow-unicode: a non-ASCII resolved root is refused"
+  assert_not_contains "$carry" "file	" "secret-stow-unicode: no bytes from a non-ASCII root travel"
+  rm "$SH/.config/unicodecopy"
+done
+# A harmless name hard-linked to a hard-refused file exercises identity
+# independently of name folding, on both case-sensitive and insensitive disks.
+printf 'fixture container configuration\n' >"$SH/.docker/config.json"
+ln "$SH/.docker/config.json" "$SH/dotfiles/unicode/ordinary.json"
+ln "$SH/.${kelvin}ube/config" "$SH/dotfiles/unicode/cluster-note"
+ln "$SH/.${longs}sh/unicode-note" "$SH/dotfiles/unicode/ssh-note"
+stow path:dotfiles/unicode "$T/x-unicode-files"
+carry=$(cat "$T/x-unicode-files/carry")
+assert_not_contains "$carry" "file	dest=dotfiles/unicode/ordinary.json" "secret-stow-unicode: a protected file's identity is refused inside a chosen root"
+for pair in "cluster-note:.kube/config" "ssh-note:.ssh/unicode-note"; do
+  dest="file	dest=dotfiles/unicode/${pair%%:*}"
+  if [ "$SH/dotfiles/unicode/${pair%%:*}" -ef "$SH/${pair#*:}" ]; then
+    assert_not_contains "$carry" "$dest" "secret-stow-unicode: a Unicode alias's identity is protected (${pair%%:*})"
+  else
+    assert_contains "$carry" "$dest" "secret-stow-unicode: an independent ASCII-named file remains eligible (${pair%%:*})"
+  fi
+done
+# Unicode path components inside the tree must not hide a protected place.
+mkdir -p "$SH/dotfiles/unicode/.${kelvin}ube"
+printf 'fixture cluster configuration\n' >"$SH/dotfiles/unicode/.${kelvin}ube/config"
+stow path:dotfiles/unicode "$T/x-unicode-child"
+carry=$(cat "$T/x-unicode-child/carry")
+assert_not_contains "$carry" "file	dest=dotfiles/unicode/." "secret-stow-unicode: a protected Unicode spelling inside a chosen root is refused"
 # secret-stow-case: the Mac's file system does not tell .DOCKER from .docker,
 # Library from library, .ssh from .SSH; neither do the refusals. Written
 # through the differently cased names, so a case-sensitive system holds the
@@ -278,13 +379,26 @@ k_key() {
       case "$3" in
         real) k_u32 51 && k_str ssh-ed25519 && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY ;;
         text) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" ;;
+        type) k_u32 15 && k_str ssh-ed25519 ;;
+        tiny) k_u32 20 && k_str ssh-ed25519 && k_str F ;;
+        extra) k_u32 52 && k_str ssh-ed25519 && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY && printf F ;;
+        rsa) k_u32 21 && k_str ssh-rsa && k_str E && k_str N ;;
+        rsa-short) k_u32 16 && k_str ssh-rsa && k_str E ;;
+        dss) k_u32 31 && k_str ssh-dss && k_str P && k_str Q && k_str G && k_str Y ;;
+        ecdsa) k_u32 40 && k_str ecdsa-sha2-nistp256 && k_str nistp256 && k_str Q ;;
+        sk-ed) k_u32 81 && k_str sk-ssh-ed25519@openssh.com && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY && k_str fixture-app ;;
+        sk-ec) k_u32 70 && k_str sk-ecdsa-sha2-nistp256@openssh.com && k_str nistp256 && k_str Q && k_str fixture-app ;;
       esac
       case "$4" in
         none) ;;
         short) k_u32 400 && printf 'FIXTURE PRIVATE SECTION' ;;
         *) k_u32 "$4" && head -c "$4" /dev/zero | tr '\0' 'F' ;;
       esac
-      if [ "$5" = 1 ]; then printf 'FIXTURE TAG 0016'; fi
+      case "$5" in
+        1) printf 'FIXTURE TAG 0016' ;;
+        extra) printf 'FIXTURE EXTRA BYTE' ;;
+        tag-extra) printf 'FIXTURE TAG 0016X' ;;
+      esac
     } | base64 | tr -d '\n' | fold -w 70
     printf '\n-----END OPENSSH PRIVATE KEY-----\n'
   } >"$1"
@@ -312,6 +426,22 @@ for c in "aes256-ctr real 160 0" "aes256-gcm@openssh.com real 160 1" "chacha20-p
   k_key "$T/padded" $c
   scan_key_check "$T/padded"
   assert_rc $? 0 "secret-ssh-padded: $c, shaped as OpenSSH writes it, is an encrypted key"
+done
+# secret-ssh-envelope: parse every public-key string, and consume exactly
+# the private section and the authenticated cipher's tag, with no suffix.
+for c in "aes256-ctr type 16 0" "aes256-ctr tiny 16 0" "aes256-ctr extra 16 0" "aes256-ctr rsa-short 16 0" \
+  "aes256-ctr real 16 extra" "aes256-gcm@openssh.com real 16 tag-extra" "chacha20-poly1305@openssh.com real 16 tag-extra"; do
+  # shellcheck disable=SC2086 # four words, split on purpose
+  k_key "$T/envelope" $c
+  scan_ssh_key "$T/envelope"
+  assert_eq "$SCAN_KEY" malformed "secret-ssh-envelope: $c is malformed"
+  scan_key_check "$T/envelope"
+  assert_rc $? 1 "secret-ssh-envelope: $c is never carried"
+done
+for pub in rsa dss ecdsa sk-ed sk-ec; do
+  k_key "$T/envelope" aes256-ctr "$pub" 160 0
+  scan_key_check "$T/envelope"
+  assert_rc $? 0 "secret-ssh-envelope: a complete $pub public blob remains supported"
 done
 { cat "$S/.ssh/id_ed25519"; head -c 17000 /dev/zero | tr '\0' 'A'; } >"$T/big"
 scan_key_check "$T/big"
