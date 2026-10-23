@@ -535,6 +535,19 @@ if t_plutil "the macOS rows"; then
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
   assert_eq "$(c_result)" "refused unsupervised" "actions-asahi.launch-reconcile-layout: another partition changed while macOS kept its size: unexpected"
   [ -e "$A_DIR/state/ops/asahi.omb" ] && ok || fail "actions-asahi.launch-reconcile-layout: its record stays"
+  # actions-asahi.launch-reconcile-type: Recovery's type changed, its GUID
+  # and extent kept: not the layout recorded either.
+  VY=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's/Apple_APFS_Recovery/Microsoft Basic Data/' "$VY/cmd/diskutil_list_disk0" "$VY/cmd/diskutil_info_disk0s3" &&
+    rm -f "$VY/cmd/diskutil_list_disk0.bak" "$VY/cmd/diskutil_info_disk0s3.bak"
+  assert_eq "$(grep -c 'Microsoft Basic Data' "$VY/cmd/diskutil_list_disk0") $(grep -c 'Apple_APFS_Recovery' "$VY/cmd/diskutil_info_disk0s3")" "1 0" \
+    "actions-asahi.launch-reconcile-type: the variant changes Recovery's type alone"
+  a_use "$T/asahi-boot-type" "$VY"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state" && cp -p "$T/asahi-layout.env" "$A_DIR/state/state.env"
+  a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
+  a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
+  assert_eq "$(c_result)" "refused unsupervised" "actions-asahi.launch-reconcile-type: a partition whose type changed is unexpected"
+  [ -e "$A_DIR/state/ops/asahi.omb" ] && ok || fail "actions-asahi.launch-reconcile-type: its record stays"
   a_use "$T/asahi-boot-resized" "$FIX/mac-asahi-resized-only"
   mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
   printf 'asahi_prelaunch_macos_size=994610155520\n' >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"

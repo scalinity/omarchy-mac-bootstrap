@@ -178,10 +178,10 @@ act_mac_plannable() {
 }
 
 # act_layout_digest — the SHA-256 of the disk's layout on the last read:
-# every partition's offset, size and GUID, in disk order.
+# every partition's offset, size, GUID and type, in disk order.
 act_layout_digest() {
   local l
-  l=$(geo_canon | cut -d'|' -f1-3)
+  l=$(geo_canon)
   sha256_str "$l"
 }
 
@@ -493,8 +493,8 @@ act_asahi_judge() {
           return 0
         fi
       else
-        # After a new boot: every partition (its GUID, offset and size) is
-        # where the layout recorded before the launch had it.
+        # After a new boot: every partition (its GUID, offset, size and
+        # type) is where the layout recorded before the launch had it.
         before=$(state_get asahi_prelaunch_layout)
         if [ "$GEO_OK" = 1 ] && [ -n "$before" ] && [ "$(act_layout_digest)" = "$before" ]; then
           act_judged no-effect "Every partition is where it was before the launch: the installer changed nothing."
