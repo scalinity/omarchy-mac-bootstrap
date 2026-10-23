@@ -94,16 +94,17 @@ c_result() {
   printf '%s\n' "$C_OUT" | awk -F'\t' '$1 == "result" { s = $2; c = $3; sub(/^status=/, "", s); sub(/^code=/, "", c); print s " " c }'
 }
 
-# c_answered OP OUTCOME... — the core answered: status 0, a whole admissible
-# response to OP, and its result one of the OUTCOMEs ("status code"). A core
-# that wrote no result fails it. On failure, prints what it saw.
+# c_answered OP OUTCOME... — the core answered: status 0, nothing on
+# stderr, a whole admissible response to OP, and its result one of the
+# OUTCOMEs ("status code"). A core that wrote no result fails it. On
+# failure, prints what it saw.
 c_answered() {
   local op=$1 r a o
   shift
   r=$(c_result)
   a=$(c_admits "$op")
-  if [ "$C_RC" != 0 ] || [ "$a" != ok ]; then
-    printf 'status %s, admission %s, result [%s]' "$C_RC" "$a" "$r"
+  if [ "$C_RC" != 0 ] || [ "$a" != ok ] || [ -n "$C_ERR" ]; then
+    printf 'status %s, admission %s, result [%s], stderr [%s]' "$C_RC" "$a" "$r" "$C_ERR"
     return 1
   fi
   for o in "$@"; do
