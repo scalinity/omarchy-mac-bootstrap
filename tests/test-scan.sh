@@ -136,6 +136,27 @@ if t_plutil "the scan of a fixture home"; then
   assert_eq "$(field path:.myscripts kind "$T/inv6") $(field path:.myscripts size "$T/inv6")" "folder " "scan-discovery-unread: a folder is listed by its name, its contents unread"
   assert_eq "$(field path:.config/stowed kind "$T/inv6")" "link" "scan-discovery-unread: a Stow root is a link until it is chosen"
   rm -f "$F/root/Users/alex/.notes"
+
+  # scan-project-links: a checkout whose .git, or its config or HEAD, is a
+  # link is read through none of them: here they lead into Library, whose
+  # remote would show if anything were followed.
+  P=$(t_variant mig-mac-home)
+  PH=$P/root/Users/alex
+  mkdir -p "$PH/Library/Private/.git" "$PH/code/other/.git" "$PH/code/third/.git"
+  printf '[remote "origin"]\n\turl = https://example.test/private-remote.git\n' >"$PH/Library/Private/.git/config"
+  printf 'ref: refs/heads/private-branch\n' >"$PH/Library/Private/.git/HEAD"
+  rm -rf "$PH/code/app/.git"
+  ln -s ../../Library/Private/.git "$PH/code/app/.git"
+  ln -s ../../../Library/Private/.git/config "$PH/code/other/.git/config"
+  printf 'ref: refs/heads/main\n' >"$PH/code/other/.git/HEAD"
+  printf '[remote "origin"]\n\turl = https://example.test/third.git\n' >"$PH/code/third/.git/config"
+  ln -s ../../../Library/Private/.git/HEAD "$PH/code/third/.git/HEAD"
+  s_scan "$P" "$T/inv7"
+  for id in project:code/app project:code/other project:code/third; do
+    assert_eq "$(field "$id" kind "$T/inv7")" "" "scan-project-links: $id is not read through a link"
+  done
+  if grep -q 'private-remote\|private-branch' "$T/inv7"; then fail "scan-project-links: something behind a link reached the inventory"; else ok; fi
+  rm -rf "$P"
   # scan-skipped: nothing there is skipped, with the reason.
   s_scan "$FIX/mac-m1pro-1tb-roomy" "$T/inv5"
   assert_eq "$(adapter homebrew "$T/inv5") $(adapter ai "$T/inv5") $(adapter shell "$T/inv5")" "skipped skipped skipped" "scan-skipped: a Mac with nothing installed"

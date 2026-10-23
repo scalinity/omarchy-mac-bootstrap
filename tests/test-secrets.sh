@@ -93,12 +93,25 @@ for u in https://github.com/example/app.git 'https://example.test/search?q=docs&
   _scan_url_ok "$u"
   assert_rc $? 0 "secret-url: $u passes"
 done
+# secret-args-embedded-url: a URL is held to the rule wherever it starts in
+# an argument, the VALUE of FLAG=VALUE included.
+for a in --url=https://alice:harborpassEMB1@example.test/r 'mirror=https://bob:harborpassEMB2@example.test/x' \
+  'see:https://example.test/r?%74oken=harborpassEMB3' --endpoint=https://example.test/r#access_token=harborpassEMB4; do
+  _scan_arg_ok -y "$a"
+  assert_rc $? 1 "secret-args-embedded-url: $a never travels"
+done
+_scan_arg_ok -y --url=https://docs.example.test/mcp
+assert_rc $? 0 "secret-args-embedded-url: a URL without a credential in FLAG=VALUE travels"
 # Codex's conversion holds its arguments and URLs to the same rules.
 CX=$(t_variant mig-mac-home)
 cat >"$CX/root/Users/alex/.codex/config.toml" <<'EOF'
 [mcp_servers.svc]
 command = "svc"
 args = ["--key=harborpassKEY3", "--auth=harborpassAUTH3", "https://example.test/mcp?token=harborpassURL3", "--port", "8080"]
+
+[mcp_servers.embedded]
+command = "svc"
+args = ["--url=https://alice:harborpassEMB5@example.test/r", "--port", "9090"]
 
 [mcp_servers.remote]
 url = "https://example.test/mcp?%74oken=harborpassURL5"
@@ -116,6 +129,8 @@ assert_eq "$(grep -rl harborpass "$T/x-codex")" "" "secret-args: no credential a
 src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-codex/carry")
 assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "8080"]' "secret-args: Codex's other arguments stay"
 assert_contains "$(cat "$T/x-codex/carry")" "codex%20mcp%20svc:%20needs-secret" "secret-args: and the server needs its secrets set again"
+if grep -rq harborpassEMB "$T/x-codex"; then fail "secret-args-embedded-url: a URL inside FLAG=VALUE reached Codex's configuration"; else ok; fi
+assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "9090"]' "secret-args-embedded-url: Codex keeps the rest"
 # secret-starship-fields (S9): Starship's file is rebuilt by its documented
 # field names; a field no rule names, and a custom module, stay behind.
 cat >"$CX/root/Users/alex/.config/starship.toml" <<'EOF'
@@ -188,6 +203,41 @@ for c in homecopy:"it%20leads%20to%20the%20home%20folder%20itself" libcopy:"it%2
   assert_not_contains "$carry" "file	" "secret-stow-refused: and nothing of it is carried (${c%%:*})"
 done
 assert_eq "$(grep -rl harborpass "$T"/x-dock "$T"/x-awscopy 2>/dev/null)" "" "secret-stow-refused: no credential reached a carry"
+# secret-stow-slash: a link chain hidden behind a trailing slash is still a
+# link to a link, and is not followed; a single link with one still is.
+ln -s .docker "$SH/hop"
+ln -s ../hop/ "$SH/.config/dockerhop"
+ln -s ../dotfiles/stowed/ "$SH/.config/stowslash"
+stow path:.config/dockerhop "$T/x-hop"
+carry=$(cat "$T/x-hop/carry")
+assert_contains "$carry" "skip	reason=.config/dockerhop:%20a%20link%20to%20a%20link,%20not%20followed" "secret-stow-slash: a chain ending in a slash is refused"
+assert_not_contains "$carry" "file	" "secret-stow-slash: and nothing of it is carried"
+stow path:.config/stowslash "$T/x-slash"
+assert_contains "$(cat "$T/x-slash/carry")" "file	dest=.config/stowslash/conf.ini" "secret-stow-slash: one link written with a slash is followed once"
+# secret-stow-case: the Mac's file system does not tell .DOCKER from .docker,
+# Library from library, .ssh from .SSH; neither do the refusals. Written
+# through the differently cased names, so a case-sensitive system holds the
+# same shapes.
+mkdir -p "$SH/.DOCKER" "$SH/library/Thing" "$SH/.SSH"
+printf '{"auths":{"registry.example":{"auth":"YWxleDpoYXJib3JwYXNz"}}}\n' >"$SH/.DOCKER/config.json"
+printf 'x\n' >"$SH/library/Thing/y"
+ln -s ../.DOCKER "$SH/.config/dockercase"
+ln -s ../library "$SH/.config/libcase"
+ln -s ../.SSH "$SH/.config/sshcase"
+stow path:.config/dockercase "$T/x-dcase"
+carry=$(cat "$T/x-dcase/carry")
+assert_contains "$carry" "skip	reason=.config/dockercase/config.json:%20container%20credentials" "secret-stow-case: a differently cased .docker keeps its refusal"
+assert_not_contains "$carry" "file	dest=.config/dockercase/config.json" "secret-stow-case: its credentials are not carried"
+for c in libcase:"it%20leads%20into%20the%20Library%20folder" sshcase:"it%20leads%20into%20a%20folder%20of%20keys"; do
+  stow "path:.config/${c%%:*}" "$T/x-${c%%:*}"
+  carry=$(cat "$T/x-${c%%:*}/carry")
+  assert_contains "$carry" "skip	reason=.config/${c%%:*}:%20${c#*:}" "secret-stow-case: a differently cased root is refused (${c%%:*})"
+  assert_not_contains "$carry" "file	" "secret-stow-case: and nothing of it is carried (${c%%:*})"
+done
+for rel in .DOCKER/config.json LIBRARY .AWS/credentials ID_RSA .ENV.local library/keychains/login.keychain-db; do
+  scan_refused "$rel"
+  assert_rc $? 0 "secret-stow-case: $rel is refused in any case"
+done
 rm -rf "$SV"
 
 # --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
@@ -214,31 +264,55 @@ k_u32() {
   done
 }
 k_str() { k_u32 "${#1}" && printf '%s' "$1"; }
-k_key() { # FILE PARTS — a synthetic envelope, its key's strings cut after PARTS of: pub, private, a short private
+# k_key FILE CIPHER PUB PRIV TAG — a synthetic envelope shaped as OpenSSH
+# writes one (bcrypt, 16 rounds), its key's parts chosen: PUB real (an
+# ssh-ed25519 type and 32 key bytes), text (a placeholder string) or none;
+# PRIV the private section's length in bytes, short (a length past the end)
+# or none; TAG 1 for the 16 bytes an authenticated cipher keeps after it.
+k_key() {
   {
     printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n'
     {
       printf 'openssh-key-v1\000'
-      k_str aes256-ctr && k_str bcrypt && k_u32 24 && k_u32 16 && printf 'FIXTURESALT00000' && k_u32 16 && k_u32 1
-      case "$2" in
-        pub) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" ;;
-        whole) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" && k_str "FIXTURE PRIVATE SECTION, NOT A KEY" ;;
-        short) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" && k_u32 400 && printf 'FIXTURE PRIVATE SECTION' ;;
+      k_str "$2" && k_str bcrypt && k_u32 24 && k_u32 16 && printf 'FIXTURESALT00000' && k_u32 16 && k_u32 1
+      case "$3" in
+        real) k_u32 51 && k_str ssh-ed25519 && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY ;;
+        text) k_str "ssh-ed25519 FIXTURE PUBLIC KEY" ;;
       esac
+      case "$4" in
+        none) ;;
+        short) k_u32 400 && printf 'FIXTURE PRIVATE SECTION' ;;
+        *) k_u32 "$4" && head -c "$4" /dev/zero | tr '\0' 'F' ;;
+      esac
+      if [ "$5" = 1 ]; then printf 'FIXTURE TAG 0016'; fi
     } | base64 | tr -d '\n' | fold -w 70
     printf '\n-----END OPENSSH PRIVATE KEY-----\n'
   } >"$1"
 }
-for parts in none pub short; do
-  k_key "$T/torn-$parts" "$parts"
-  scan_ssh_key "$T/torn-$parts"
+for parts in "none none" "real none" "real short"; do
+  # shellcheck disable=SC2086 # two words, split on purpose
+  k_key "$T/torn" aes256-ctr $parts 0
+  scan_ssh_key "$T/torn"
   assert_eq "$SCAN_KEY" malformed "secret-ssh-torn: an envelope cut after its key count ($parts) is malformed"
-  scan_key_check "$T/torn-$parts"
+  scan_key_check "$T/torn"
   assert_rc $? 1 "secret-ssh-torn: and is never carried ($parts)"
 done
-k_key "$T/torn-whole" whole
-scan_key_check "$T/torn-whole"
-assert_rc $? 0 "secret-ssh-torn: the same envelope whole is an encrypted key"
+# secret-ssh-padded: the public key begins with a key type OpenSSH writes,
+# and the private section is whole cipher blocks with an authenticated
+# cipher's tag after it; anything else is malformed, never carried.
+for c in "aes256-ctr real 1 0" "aes256-ctr real 17 0" "aes256-ctr text 160 0" "aes256-gcm@openssh.com real 160 0" \
+  "chacha20-poly1305@openssh.com real 12 1" "chacha20-poly1305@openssh.com real 168 0"; do
+  # shellcheck disable=SC2086 # four words, split on purpose
+  k_key "$T/padded" $c
+  scan_ssh_key "$T/padded"
+  assert_eq "$SCAN_KEY" malformed "secret-ssh-padded: $c is malformed"
+done
+for c in "aes256-ctr real 160 0" "aes256-gcm@openssh.com real 160 1" "chacha20-poly1305@openssh.com real 168 1"; do
+  # shellcheck disable=SC2086 # four words, split on purpose
+  k_key "$T/padded" $c
+  scan_key_check "$T/padded"
+  assert_rc $? 0 "secret-ssh-padded: $c, shaped as OpenSSH writes it, is an encrypted key"
+done
 { cat "$S/.ssh/id_ed25519"; head -c 17000 /dev/zero | tr '\0' 'A'; } >"$T/big"
 scan_key_check "$T/big"
 assert_rc $? 1 "secret-ssh: a key over 16 KiB is refused"
@@ -324,16 +398,20 @@ EOF
 
   # secret-args (S3), Claude's side, and secret-url (S4), a project's remote.
   V=$(t_variant mig-mac-home)
-  printf '%s\n' '{"mcpServers":{"svc":{"command":"svc","args":["--key=harborpassKEY4","--auth=harborpassAUTH4","https://example.test/mcp?%74oken=harborpassURL6","--port","8080"]}}}' >"$V/root/Users/alex/.claude.json"
+  printf '%s\n' '{"mcpServers":{"svc":{"command":"svc","args":["--key=harborpassKEY4","--auth=harborpassAUTH4","https://example.test/mcp?%74oken=harborpassURL6","--port","8080"]},
+    "emb":{"command":"svc","args":["--url=https://alice:harborpassEMB6@example.test/r","--port","7070"]}}}' >"$V/root/Users/alex/.claude.json"
   printf '[remote "origin"]\n\turl = https://example.test/app.git?%%74oken=harborpassREMOTE1\n' >"$V/root/Users/alex/code/app/.git/config"
   (
     OMB_FIXTURE=$V
     scan_extract claude:mcp:svc "$T/x-cmcp" >/dev/null 2>&1
+    scan_extract claude:mcp:emb "$T/x-cemb" >/dev/null 2>&1
     scan_run "$T/inv-url" >/dev/null 2>&1
     omb_cleanup
   )
   assert_eq "$(grep -rl harborpass "$T/x-cmcp")" "" "secret-args: no credential argument or URL in Claude's MCP server"
   assert_contains "$(cat "$T/x-cmcp/carry")" "%22args%22:%5B%22--port%22,%228080%22%5D" "secret-args: its other arguments stay"
+  assert_eq "$(grep -rl harborpass "$T/x-cemb")" "" "secret-args-embedded-url: a URL inside FLAG=VALUE never reaches Claude's MCP server"
+  assert_contains "$(cat "$T/x-cemb/carry")" "%22args%22:%5B%22--port%22,%227070%22%5D" "secret-args-embedded-url: Claude keeps the rest"
   if grep -q harborpass "$T/inv-url"; then fail "secret-url: a remote's encoded credential reached the inventory"; else ok; fi
   assert_contains "$(grep 'id=project:code/app' "$T/inv-url")" "its%20remote%20holds%20a%20credential" "secret-url: the remote is withheld, saying why"
 
@@ -344,9 +422,11 @@ EOF
   printf '%s\n' '{"theme":"system","plugin":["opencode-x"],"corp.extra":"harborpassTOP1",
     "mcp":{"corp.mcp":{"type":"remote","url":"https://mcp.example.test","headers":{"Authorization":"Bearer harborpassHDR1"}},
            "local":{"type":"local","command":["server","--token","harborpassCMD1","--api-key=harborpassCMD2","--port","8080"],
-                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOA"}}},
+                    "environment":{"MODE":"harborpassENV1"},"oauth":{"clientSecret":"harborpassOA"}},
+           "embedded":{"type":"local","command":["server","--url=https://alice:harborpassEMB7@example.test/r","--port","6060"]}},
     "provider":{"corp.ai":{"options":{"apiKey":"harborpassPROV1"}},
-                "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"}}}}' \
+                "anthropic":{"npm":"@ai-sdk/anthropic","options":{"apiKey":"harborpassPROV2","baseURL":"https://api.example.test"},
+                             "models":{"example":{"name":"Example","options":{"apiKey":"harborpassMOD1"},"headers":{"Authorization":"Bearer harborpassMOD2"}}}}}}' \
     >"$V/root/Users/alex/.config/opencode/opencode.json"
   (
     OMB_FIXTURE=$V
@@ -363,6 +443,13 @@ EOF
   assert_contains "$oc" '"environment":{"MODE":"{env:MODE}"}' "secret-opencode-command: environment values become references"
   assert_contains "$oc" '"baseURL":"https:\/\/api.example.test"' "secret-opencode-dotted: a provider keeps its base URL"
   assert_contains "$(cat "$T/x-oc/carry")" "opencode%20mcp%20local:%20needs-secret" "secret-opencode-command: and the server needs its secrets set again"
+  if grep -rq harborpassEMB "$T/x-oc"; then fail "secret-args-embedded-url: a URL inside FLAG=VALUE reached OpenCode's command"; else ok; fi
+  # secret-opencode-provider-models: a provider carries only its baseURL; its
+  # models, with their options and headers, stay behind.
+  if grep -rq harborpassMOD "$T/x-oc"; then fail "secret-opencode-provider-models: a model's credential reached OpenCode's file"; else ok; fi
+  assert_contains "$oc" '"anthropic":{"options":{"baseURL":"https:\/\/api.example.test"}}' "secret-opencode-provider-models: the provider carries its baseURL alone"
+  assert_contains "$(cat "$T/x-oc/carry")" "opencode%20provider%20anthropic:%20models%20left%20behind" "secret-opencode-provider-models: its models are listed as left behind"
+  assert_contains "$oc" '"command":["server","--port","6060"]' "secret-args-embedded-url: OpenCode keeps the rest"
   rm -rf "$V"
 
   # --- secret-opaque and secret-carry, through the core ----------------------

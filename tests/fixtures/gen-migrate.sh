@@ -41,8 +41,11 @@ _mig_key() {
         _mig_u32 0
       fi
       _mig_u32 1
-      _mig_str "ssh-ed25519 FIXTURE PUBLIC KEY BLOB 000000000000000"
-      _mig_str "FIXTURE PRIVATE SECTION, NOT A KEY 0000000000000000000000000000"
+      # The public key as OpenSSH writes one: its type, then 32 key bytes
+      # (synthetic); then a private section of whole cipher blocks (160
+      # bytes, synthetic, encrypting nothing).
+      _mig_u32 51 && _mig_str ssh-ed25519 && _mig_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY
+      _mig_str "FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY."
     } | base64 | tr -d '\n' | fold -w 70
     printf '\n-----END OPENSSH PRIVATE KEY-----\n'
   } >"$f"

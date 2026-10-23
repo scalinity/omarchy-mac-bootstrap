@@ -160,13 +160,27 @@ function urlok(u,   a, q, n, i, parts, name) {
     if (name ~ /(token|key|secret|sig|auth|pass|credential|session)/) return 0
   }
   return 1
+}
+# urlsok(S) is 1 when S as a whole, and every URL that starts anywhere inside
+# it (the VALUE of --url=VALUE, a URL after other text), pass urlok.
+function urlsok(s,   r, at, len) {
+  if (!urlok(s)) return 0
+  r = s
+  while (match(r, /[A-Za-z][A-Za-z0-9+.-]*:\/\//)) {
+    # urlok runs match and sub of its own: the place is kept first.
+    at = RSTART; len = RLENGTH
+    if (!urlok(substr(r, at))) return 0
+    r = substr(r, at + len)
+  }
+  return 1
 }'
 
-# _scan_url_ok URL — 0 when a URL carries no credential (urlok above).
+# _scan_url_ok TEXT — 0 when TEXT, and every URL inside it, carries no
+# credential (urlsok above).
 _scan_url_ok() {
   local r
   r=$(printf '%s\n' "$1" | LC_ALL=C awk "$_SCAN_URL_FUNCS"'
-    { if (!urlok($0)) bad = 1 }
+    { if (!urlsok($0)) bad = 1 }
     END { print (bad || NR == 0) ? "bad" : "ok" }')
   [ "$r" = ok ]
 }
@@ -177,17 +191,20 @@ _scan_url_ok() {
 
 # scan_refused REL — 0 when REL (home-relative) is never carried, whatever is
 # selected (*Hard refusals*, and the credential files refused even inside an
-# opaque folder); SCAN_HIT names the kind.
+# opaque folder); SCAN_HIT names the kind. Compared in lower case: the Mac's
+# file system does not tell .DOCKER from .docker, so neither does this.
 scan_refused() {
-  local rel=$1 base=${1##*/}
+  local rel=$1 low base
   SCAN_HIT=""
-  case "/$rel/" in
-    /Library/) SCAN_HIT="the Library folder, which is never carried as a whole" ;;
+  low=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  base=${low##*/}
+  case "/$low/" in
+    /library/) SCAN_HIT="the Library folder, which is never carried as a whole" ;;
     */.aws/*) SCAN_HIT="cloud credentials (~/.aws)" ;;
     */.docker/config.json/*) SCAN_HIT="container credentials" ;;
     */.kube/config/*) SCAN_HIT="cluster credentials" ;;
     */.gnupg/private-keys-v1.d/* | */.gnupg/secring.gpg/*) SCAN_HIT="a GnuPG private key" ;;
-    */Library/Keychains/*) SCAN_HIT="the Keychain" ;;
+    */library/keychains/*) SCAN_HIT="the Keychain" ;;
   esac
   [ -n "$SCAN_HIT" ] && return 0
   case "$base" in
@@ -309,10 +326,14 @@ END {
   if (p + 4 > n) bad(); ol = u32(p); p += 4; if (p + ol > n) bad(); opts = p; p += ol
   if (p + 4 > n || u32(p) != 1) bad()
   p += 4
-  # One key: its public-key string, then the (encrypted) private section,
-  # each present in full; a torn envelope is malformed.
-  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
-  if (p + 4 > n) bad(); l = u32(p); p += 4; if (l < 1 || p + l > n) bad(); p += l
+  # One key: its public-key blob, which begins with a key type OpenSSH
+  # writes, then the (encrypted) private section, each present in full; a
+  # torn envelope is malformed.
+  if (p + 4 > n) bad(); pl = u32(p); p += 4; if (pl < 5 || p + pl > n) bad()
+  tl = u32(p); if (tl < 1 || tl > 64 || tl + 4 > pl) bad()
+  if (sstr(p + 4, tl) !~ /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh[.]com|sk-ecdsa-sha2-nistp256@openssh[.]com)$/) bad()
+  p += pl
+  if (p + 4 > n) bad(); priv = u32(p); p += 4; if (priv < 1 || p + priv > n) bad(); p += priv
   l = ol
   if (cipher !~ /^[a-z0-9@.-]+$/ || kdf !~ /^[a-z0-9@.-]+$/) bad()
   rounds = 0
@@ -323,6 +344,11 @@ END {
   }
   if (cipher == "none" && kdf == "none") { print "plain none none 0"; exit 0 }
   if ((cipher == "aes256-ctr" || cipher == "aes256-gcm@openssh.com" || cipher == "chacha20-poly1305@openssh.com") && kdf == "bcrypt" && rounds >= 16) {
+    # The private section is whole cipher blocks (16 bytes for AES, 8 for
+    # ChaCha20); an authenticated cipher keeps its 16-byte tag after it.
+    bs = (cipher == "chacha20-poly1305@openssh.com") ? 8 : 16
+    if (priv % bs != 0) bad()
+    if (cipher != "aes256-ctr" && p + 16 > n) bad()
     print "encrypted " cipher " " kdf " " rounds; exit 0
   }
   print "unsupported " cipher " " kdf " " rounds
@@ -609,8 +635,12 @@ _scan_brew_taps() {
   _scan_list "$root/Library/Taps" 2 2 d "$SCAN_TMP/taps"
   while IFS= read -r tap; do
     case "$tap" in */homebrew-*) ;; *) continue ;; esac
-    url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' \
-      "$root/Library/Taps/$tap/.git/config" 2>/dev/null)
+    url=""
+    # A remote is read only from a tap's own .git, never through a link.
+    if [ ! -L "$root/Library/Taps/$tap/.git" ] && [ ! -L "$root/Library/Taps/$tap/.git/config" ]; then
+      url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' \
+        "$root/Library/Taps/$tap/.git/config" 2>/dev/null)
+    fi
     note=""
     if [ -n "$url" ]; then
       if _scan_url_ok "$url"; then note="remote $url"; else note="its remote holds a credential: not shown"; fi
@@ -1305,6 +1335,9 @@ _scan_project() {
   # a protected folder included.
   [ ! -L "$(_scan_h "$rel")" ] || return 1
   g=$(_scan_h "$rel/.git")
+  # Nor below it: when .git, its config or its HEAD is a link, none of
+  # them is read and the folder is no project.
+  if [ -L "$g" ] || [ -L "$g/config" ] || [ -L "$g/HEAD" ]; then return 1; fi
   [ -f "$g/config" ] && [ -f "$g/HEAD" ] || return 1
   url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' "$g/config")
   head=$(head -n 1 "$g/HEAD")
@@ -1627,6 +1660,8 @@ _scan_x_path() {
       ;;
   esac
   mrel="$SCAN_HOME/$rel"
+  # A trailing slash would make a link test look through the link.
+  while [ "${p%/}" != "$p" ]; do p=${p%/}; done
   if [ -L "$p" ]; then
     if [ "$SCAN_CLASS" != opaque ]; then
       _scan_x skip reason "$SCAN_DEST: a link, never followed"
@@ -1634,6 +1669,7 @@ _scan_x_path() {
     fi
     # A Stow farm: the root is followed once, and only the root.
     t=$(readlink "$p")
+    while [ "${t%/}" != "$t" ]; do t=${t%/}; done
     case "$t" in /*) mrel=$t ;; *) mrel=${mrel%/*}/$t ;; esac
     p=$(sys_path "$mrel")
     if [ -L "$p" ]; then
@@ -1660,40 +1696,46 @@ _scan_x_path() {
 }
 
 # _scan_x_source PATH — where a chosen root really is: SCAN_SRCREL, its
-# home-relative path with every link on the way resolved. 1, SCAN_HIT saying
-# why, when that is the home itself, a folder above it or a place outside
-# it, anything in Library, .ssh or .gnupg, or a path the hard refusals name.
+# home-relative path with every link on the way resolved, the last component
+# included. 1, SCAN_HIT saying why, when the last component is itself a link,
+# or the path is the home itself, a folder above it or a place outside it,
+# anything in Library, .ssh or .gnupg, or a path the hard refusals name. The
+# comparisons are made in lower case, as the Mac's file system makes them.
 _scan_x_source() {
-  local home phys p
+  local home phys p lhome lphys lsrc
   SCAN_HIT=""
   home=$(cd -P "$(_scan_h "")" 2>/dev/null && pwd -P)
   if [ -z "$home" ]; then SCAN_HIT="the home folder cannot be resolved" && return 1; fi
-  # PATH itself is no link (a root link was followed once, and a link to a
-  # link refused): resolving its folder resolves every link on the way. A
-  # path ending in . or .. names a folder, resolved whole.
+  # The folder holding the last component is resolved through every link;
+  # the last component is refused if it is a link (it is never followed
+  # twice), and a path ending in . or .. names a folder, resolved whole.
   p=$1
   while [ "${p%/}" != "$p" ]; do p=${p%/}; done
   case "${p##*/}" in
     . | ..) phys=$(cd -P "$p" 2>/dev/null && pwd -P) ;;
     *)
+      if [ -L "$p" ]; then SCAN_HIT="it leads to another link, which is not followed" && return 1; fi
       phys=$(cd -P "${p%/*}" 2>/dev/null && pwd -P)
       [ -z "$phys" ] || phys=$phys/${p##*/}
       ;;
   esac
   if [ -z "$phys" ]; then SCAN_HIT="where it leads cannot be resolved" && return 1; fi
-  case "$phys" in
-    "$home") SCAN_HIT="it leads to the home folder itself, which is never carried" && return 1 ;;
-    "$home"/*) SCAN_SRCREL=${phys#"$home"/} ;;
+  lhome=$(printf '%s' "$home" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  lphys=$(printf '%s' "$phys" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  case "$lphys" in
+    "$lhome") SCAN_HIT="it leads to the home folder itself, which is never carried" && return 1 ;;
+    "$lhome"/*) SCAN_SRCREL=${phys:$((${#home} + 1))} ;;
     *)
-      case "$home/" in
-        "$phys"/*) SCAN_HIT="it leads to a folder that holds the home folder" ;;
+      case "$lhome/" in
+        "$lphys"/*) SCAN_HIT="it leads to a folder that holds the home folder" ;;
         *) SCAN_HIT="it leads out of the home folder" ;;
       esac
       return 1
       ;;
   esac
-  case "/$SCAN_SRCREL/" in
-    /Library/*) SCAN_HIT="it leads into the Library folder" && return 1 ;;
+  lsrc=${lphys:$((${#lhome} + 1))}
+  case "/$lsrc/" in
+    /library/*) SCAN_HIT="it leads into the Library folder" && return 1 ;;
     /.ssh/* | /.gnupg/*) SCAN_HIT="it leads into a folder of keys" && return 1 ;;
   esac
   if scan_refused "$SCAN_SRCREL"; then return 1; fi
@@ -1775,9 +1817,8 @@ _scan_arg_ok() {
   case "$2" in
     -*=*) if _scan_cred_flag "${2%%=*}"; then return 1; fi ;;
   esac
-  case "$2" in
-    *://*) if ! _scan_url_ok "$2"; then return 1; fi ;;
-  esac
+  # A URL wherever it starts in the argument, FLAG=VALUE's VALUE included.
+  if ! _scan_url_ok "$2"; then return 1; fi
   scan_value_ok "$2"
 }
 
@@ -2096,27 +2137,25 @@ _scan_oc_server() {
   SCAN_OC="{$out}"
 }
 
-# _scan_oc_provider NAME — SCAN_OC: one OpenCode provider rebuilt from its
-# allowlisted fields (npm, name, models, and options.baseURL under the URL
-# rule); its other options, the API key among them, are left behind.
+# _scan_oc_provider NAME — SCAN_OC: one OpenCode provider carrying only its
+# baseURL, under the URL rule (docs/AI-TOOLS.md → *OpenCode*); everything
+# else, its models and their options and headers, its API key, is left
+# behind and listed. 1 when there is no base URL to carry.
 _scan_oc_provider() {
-  local b="provider.$1" k v out="" sep=""
+  local b="provider.$1" k v out=""
   _scan_pl "$SCAN_OC_FILE" "$b" >"$SCAN_XO/oc.fields" 2>/dev/null || return 1
   while IFS= read -r k; do
     case "$k" in
-      npm | name | models)
-        _scan_json_of "$SCAN_OC_FILE" "$b.$k" || continue
-        out="$out$sep\"$k\":$SCAN_JV" sep=,
-        ;;
       options)
         if _scan_pl_into v "$SCAN_OC_FILE" "$b.options.baseURL" && _scan_url_ok "$v" && _scan_json_str "$v"; then
-          out="$out$sep\"options\":{\"baseURL\":$SCAN_JS}" sep=,
+          out="\"options\":{\"baseURL\":$SCAN_JS}"
         fi
         _scan_x skip reason "opencode provider $1: options other than baseURL left behind (an API key is set again on Linux)"
         ;;
       *) _scan_text "$k" && _scan_x skip reason "opencode provider $1: $SCAN_TX left behind" ;;
     esac
   done <"$SCAN_XO/oc.fields"
+  [ -n "$out" ] || return 1
   SCAN_OC="{$out}"
 }
 
@@ -2251,11 +2290,11 @@ function shaped(v) {
     if (f == "http_headers") { if (n == 4) skip("codex mcp " s ": http_headers " P[4] " dropped (set it again on Linux)"); next }
     if (f == "bearer_token") { skip("codex mcp " s ": bearer_token dropped"); next }
     if ((f == "command" || f == "cwd") && n == 3 && t == "s") { add(sec, f " = " q(homep(v))); next }
-    if (f == "url" && n == 3 && t == "s") { if (urlok(v)) add(sec, "url = " q(v)); else { skip("codex mcp " s ": its URL holds a credential, dropped"); NEEDS[s] = 1 }; next }
+    if (f == "url" && n == 3 && t == "s") { if (urlsok(v)) add(sec, "url = " q(v)); else { skip("codex mcp " s ": its URL holds a credential, dropped"); NEEDS[s] = 1 }; next }
     if (f == "args") {
       if (n == 3 && t == "a") { ARGS[s] = ARGS[s] ""; HASARGS[s] = 1; next }
       if (n == 4 && t == "s") {
-        if (credflag(PREV[s]) || credflag(v) || shaped(v) || (index(v, "=") && credflag(substr(v, 1, index(v, "=") - 1))) || (v ~ /:\/\// && !urlok(v))) { NEEDS[s] = 1; PREV[s] = v; next }
+        if (credflag(PREV[s]) || credflag(v) || shaped(v) || (index(v, "=") && credflag(substr(v, 1, index(v, "=") - 1))) || !urlsok(v)) { NEEDS[s] = 1; PREV[s] = v; next }
         PREV[s] = v
         ARGS[s] = ARGS[s] (ARGS[s] == "" ? "" : ", ") q(homep(v)); next
       }
@@ -2277,7 +2316,7 @@ function shaped(v) {
     if (n == 2) next
     f = P[3]
     if ((f == "name" || f == "env_key" || f == "wire_api") && n == 3 && t == "s") { add(sec, f " = " q(v)); next }
-    if (f == "base_url" && n == 3 && t == "s") { if (urlok(v)) add(sec, "base_url = " q(v)); else skip("codex provider " s ": its URL holds a credential, dropped"); next }
+    if (f == "base_url" && n == 3 && t == "s") { if (urlsok(v)) add(sec, "base_url = " q(v)); else skip("codex provider " s ": its URL holds a credential, dropped"); next }
     if (f == "query_params" && n == 4 && t == "s") { if (credname(P[4])) skip("codex provider " s ": query parameter " P[4] " dropped"); else add(sec, "query_params." k(P[4]) " = " q(v)); next }
     if (f == "http_headers" && n == 4) { skip("codex provider " s ": http_headers " P[4] " dropped"); next }
     if (f == "env_http_headers" && n == 4 && t == "s") { add(sec, "env_http_headers." k(P[4]) " = " q(v)); next }
