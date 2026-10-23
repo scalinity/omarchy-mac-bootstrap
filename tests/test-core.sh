@@ -149,6 +149,33 @@ before=$(grep -n '^if \[ "${1:-}" = core \]; then$' "$REPO/omarchy-bootstrap" | 
 first_lib=$(grep -n '^\. "\$OMB_HOME/lib/' "$REPO/omarchy-bootstrap" | head -1 | cut -d: -f1)
 [ "$before" -lt "$first_lib" ] && ok || fail "fd 3 is closed before the first library is sourced"
 
+# --- sup-early-signal: a cancel that arrives while the core still copies its request --------
+# The frontend cancels with SIGTERM and a closing terminal sends SIGHUP; either
+# can land before core_main's handlers exist. The test holds the request
+# pipe's write end, so the core waits at its copy with its scratch folder made;
+# the signal comes there, then the copy ends. The folder and the request's copy
+# go with the core, and nothing is said (the default action left both in TMPDIR).
+mkdir -p "$T/early/tmp"
+mkfifo "$T/early/req"
+for sig in TERM HUP; do
+  exec 8<>"$T/early/req"
+  env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$T/home" TMPDIR="$T/early/tmp" LANG=en_US.UTF-8 TERM=dumb \
+    "$T_BASH" "$REPO/omarchy-bootstrap" core hello 3<"$T/early/req" 8>&- >/dev/null 2>"$T/early/err" </dev/null &
+  early=$!
+  early_start=$(t_started "$early")
+  i=0
+  while [ "$(find "$T/early/tmp" -mindepth 1 | wc -l | tr -d ' ')" = 0 ] && [ "$i" -lt 200 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ "$i" -lt 200 ] && ok || fail "sup-early-signal: the core made its scratch and waits at the copy ($sig)"
+  t_signal "$sig" "$early" "$early_start" && ok || fail "sup-early-signal: the core was still the process started ($sig)"
+  exec 8>&-
+  wait "$early"
+  assert_eq "$(find "$T/early/tmp" -mindepth 1 | wc -l | tr -d ' ')" 0 "sup-early-signal: $sig before the handlers leaves no scratch behind"
+  assert_eq "$(cat "$T/early/err")" "" "sup-early-signal: and the core says nothing ($sig)"
+done
+
 OPS=$T/state/ops/journey.omb
 EFFECT=$T/state/test/effect-mutate
 

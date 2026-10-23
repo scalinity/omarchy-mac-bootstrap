@@ -44,6 +44,18 @@ set -u
 # before the libraries set defaults of their own.
 if [ "${1:-}" = core ]; then
   OMB_CORE_ENV_HOME=${OMB_HOME:-} OMB_CORE_ENV_DRY=${OMB_DRY_RUN-} OMB_CORE_COPY="" OMB_CORE_HEAD=1
+  # Until core_main installs its own handlers (the libraries load first), a
+  # signal would end the core by the default action and leave the scratch made
+  # below, with the request's copy in it: a cancel sent as the request starts
+  # arrives in this window. Set before the scratch exists.
+  _omb_core_early() {
+    case "${OMB_TMP:-}" in */omarchy-bootstrap.*) rm -rf "$OMB_TMP" ;; esac
+    exit "$1"
+  }
+  trap '_omb_core_early 129' HUP
+  trap '_omb_core_early 130' INT
+  trap '_omb_core_early 131' QUIT
+  trap '_omb_core_early 143' TERM
   if OMB_TMP=$(mktemp -d "${TMPDIR:-/tmp}/omarchy-bootstrap.XXXXXX" 3<&-); then
     OMB_CORE_COPY=$OMB_TMP/request
     head -c 65537 2>/dev/null <&3 >"$OMB_CORE_COPY" 3<&-

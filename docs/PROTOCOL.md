@@ -322,7 +322,10 @@ Consequences, each tested (docs/TESTING.md → `sup-*`):
 2. C writes `req-<n>.core`, loads its libraries, copies fd 3 through
    admission step 1 (bounded) and closes it. An over-long request makes
    `head` stop reading; F's write then fails with EPIPE, which F treats as a
-   refusal.
+   refusal. Handlers for SIGHUP, SIGINT, SIGQUIT and SIGTERM are installed
+   before the scratch exists and stay until `core_main` replaces them, so a
+   cancel that arrives while the libraries load ends C with its scratch
+   removed.
 3. C appends `hello`, then its records, then one `result`, removes
    `req-<n>.core`, and exits.
 4. F's reader thread follows the spool continuously — during a handoff too,
