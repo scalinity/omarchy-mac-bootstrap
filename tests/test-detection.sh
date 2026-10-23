@@ -326,6 +326,33 @@ EOF
 done
 assert_contains "$DOC_SSH_WHY" 'root is needed' 'ssh-user explains why policy cannot be read'
 
+# ssh-policy-key-case: both dump formats report the same authentication class.
+for row in 'key-only key-only' 'passwords passwords' 'key-only-mixed key-only' 'passwords-mixed passwords'; do
+  read -r fx want <<EOF
+$row
+EOF
+  OMB_FIXTURE=$FIX/dbg-ssh-$fx OMB_UID=0
+  doc_ssh_facts
+  assert_eq "$DOC_SSH_CLASS" "$want" "ssh-policy-key-case: $fx"
+done
+
+# ssh-match-token: quoted keywords are data; unsupported tokens fail closed.
+for keyword in '"Match"' "'Match'" 'mAtCh' '"mAtCh"' "'MaTcH'" '"Match' "'Match" 'M\\atch' '=Match'; do
+  OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+  OMB_UID=0
+  printf '%s User alarm\n' "$keyword" >>"$OMB_FIXTURE/root/etc/ssh/sshd_config"
+  doc_ssh_facts
+  assert_eq "$DOC_SSH_CLASS" cannot-tell "ssh-match-token: $keyword"
+done
+OMB_FIXTURE=$(t_variant dbg-ssh-key-only)
+printf '%s\n' '"Include" sshd_config.d/*.conf' >"$OMB_FIXTURE/root/etc/ssh/sshd_config"
+printf '%s\n' "'mAtCh' User alarm" >"$OMB_FIXTURE/root/etc/ssh/sshd_config.d/99-archlinux.conf"
+doc_ssh_facts
+assert_eq "$DOC_SSH_CLASS" cannot-tell 'ssh-match-token: quoted Include reaches quoted Match'
+printf '%s\n' '"PasswordAuthentication" no' "'KbdInteractiveAuthentication' no" >"$OMB_FIXTURE/root/etc/ssh/sshd_config.d/99-archlinux.conf"
+doc_ssh_facts
+assert_eq "$DOC_SSH_CLASS" key-only 'ssh-match-token: quoted global keywords'
+
 # sshd -T cannot establish the policy of every Match connection. Follow
 # nested Includes as data, and refuse syntax this reader cannot interpret.
 for mode in match nested quoted missing cycle kbd incomplete failed service; do

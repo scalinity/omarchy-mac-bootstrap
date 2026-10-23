@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # SSH observations, synthetic; none of these commands is executed.
-for dbg_class in off key-only passwords cannot-tell user; do
+for dbg_class in off key-only passwords key-only-mixed passwords-mixed cannot-tell user; do
   dbg_uid=0 dbg_user=root
   if [ "$dbg_class" = user ]; then dbg_uid=1000 dbg_user=alex; fi
   dbg_dir=dbg-ssh-$dbg_class
@@ -18,7 +18,7 @@ permitrootlogin prohibit-password"
     rm -f "$dbg_dir/cmd/sshd_active.rc"
   fi
   case "$dbg_class" in
-    passwords)
+    passwords | passwords-mixed)
       put "$dbg_dir/cmd/sshd_policy" "passwordauthentication yes
 kbdinteractiveauthentication no
 permitrootlogin prohibit-password"
@@ -26,6 +26,14 @@ permitrootlogin prohibit-password"
       ;;
     cannot-tell)
       put "$dbg_dir/cmd/sshd_policy.rc" 1
+      ;;
+  esac
+  case "$dbg_class" in
+    *-mixed)
+      sed -e 's/^passwordauthentication/PasswordAuthentication/' \
+        -e 's/^kbdinteractiveauthentication/KbdInteractiveAuthentication/' \
+        -e 's/^permitrootlogin/PermitRootLogin/' "$dbg_dir/cmd/sshd_policy" >"$dbg_dir/cmd/sshd_policy.mixed"
+      mv "$dbg_dir/cmd/sshd_policy.mixed" "$dbg_dir/cmd/sshd_policy"
       ;;
   esac
 done

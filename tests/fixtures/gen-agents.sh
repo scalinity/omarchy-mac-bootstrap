@@ -26,6 +26,9 @@ for agt_name in agt-wrappers agt-installed agt-foreign; do
 exit 97'
       chmod +x "$agt_name/root/home/alex/.local/share/mise/installs/$agt_bin/1.2.3/bin/$agt_bin"
     done
+    agt_put "$agt_name/root/home/alex/.local/share/mise/installs/codex/2.0/bin/codex" '#!/bin/sh
+exit 97'
+    chmod +x "$agt_name/root/home/alex/.local/share/mise/installs/codex/2.0/bin/codex"
     agt_put "$agt_name/root/home/alex/.claude/settings.json" '{}'
     agt_put "$agt_name/root/home/alex/.claude/.credentials.json" SYNTHETIC_AUTH_NEVER_READ
     agt_put "$agt_name/root/home/alex/.codex/config.toml" 'model = "example"'
