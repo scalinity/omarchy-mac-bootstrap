@@ -4,7 +4,7 @@
 # always read from the machine; recorded state is context, never authority.
 
 lx_detect() {
-  local f rc root_type boot_err compat="" marker=0 runtime=0 display=0
+  local f compat="" marker=0 runtime=0 display=0
 
   LX_ARCH=$(sys_cmd uname_m uname -m)
   LX_KERNEL=$(sys_cmd uname_r uname -r)
@@ -27,38 +27,10 @@ lx_detect() {
 
   LX_ROOT_SRC=$(sys_cmd findmnt_root findmnt -no SOURCE / | sed 's/\[.*\]//')
   LX_ROOT_FS=$(sys_cmd findmnt_root_fstype findmnt -no FSTYPE /)
-  # sys_cmd suppresses a real probe's stderr. Restore findmnt's stderr to
-  # fd 4 inside the seam; fd 3 keeps stdout separate. The sentinel preserves
-  # even newline-only diagnostics, which are not a clean absent mount.
-  LX_BOOT_SRC=$(
-    # shellcheck disable=SC2329 # invoked by sys_cmd in this subshell
-    findmnt() { command findmnt "$@" 2>&4; }
-    {
-      boot_err=$(sys_cmd findmnt_boot findmnt -no SOURCE /boot 4>&1 2>&1 >&3; rc=$?; printf '.'; exit "$rc")
-      rc=$?
-      if [ "$rc" = 1 ] && [ "$boot_err" != . ]; then rc=2; fi
-      printf '.'
-      exit "$rc"
-    } 3>&1
-  )
-  rc=$?
-  LX_BOOT_SRC=${LX_BOOT_SRC%.}
-  LX_BOOT_STAGE='?'
-  case "$rc:$LX_BOOT_SRC" in
-    0:?*) LX_BOOT_STAGE=1 ;;
-    1:) LX_BOOT_STAGE=0 ;;
-  esac
-  LX_BOOT_SRC=$(printf '%s' "$LX_BOOT_SRC" | sed 's/\[.*\]//')
+  LX_BOOT_SRC=$(sys_cmd findmnt_boot findmnt -no SOURCE /boot | sed 's/\[.*\]//')
   LX_BOOT_FS=$(sys_cmd findmnt_boot_fstype findmnt -no FSTYPE /boot)
   LX_ROOT_CRYPT=0
-  LX_ROOT_TYPE='?'
-  if root_type=$(sys_cmd lsblk_root_type lsblk -no TYPE "$LX_ROOT_SRC"); then
-    case "$root_type" in
-      crypt | part | disk | lvm | loop | rom | md | mpath | linear | raid0 | raid1 | raid4 | raid5 | raid6 | raid10)
-        LX_ROOT_TYPE=$root_type ;;
-    esac
-  fi
-  [ "$LX_ROOT_TYPE" = crypt ] && LX_ROOT_CRYPT=1
+  [ "$(sys_cmd lsblk_root_type lsblk -no TYPE "$LX_ROOT_SRC" | head -1)" = crypt ] && LX_ROOT_CRYPT=1
   LX_ROUTE=0
   sys_cmd ip_route ip route | grep -q '^default ' && LX_ROUTE=1
   LX_USER=$(sys_cmd id_un id -un)
@@ -68,16 +40,12 @@ lx_detect() {
   # symlink; upstream also wants the @factory subvolume, which only root's
   # btrfs tooling can see).
   [ -f "$(sys_path "$OMS_MARKER")" ] && marker=1
-  runtime=$(lx_stage_file "$OMARCHY_RUNTIME_VERSION")
+  [ -f "$(sys_path "$OMARCHY_RUNTIME_VERSION")" ] && runtime=1
   [ -L "$(sys_path "$OMARCHY_DISPLAY_MANAGER")" ] && display=1
   LX_OMARCHY_VERSION=""
-  if [ "$runtime" = 1 ]; then
-    f=$(sys_path "$OMARCHY_RUNTIME_VERSION")
-    LX_OMARCHY_VERSION=$(head -1 "$f" 2>/dev/null) || runtime='?'
-  fi
-  LX_RUNTIME_READ=$runtime
-  LX_SETUP_CONF=$(lx_stage_file "$OMS_CONF")
-  LX_MIGRATE_CONF_READ=$(lx_stage_file "$OMS_MIGRATE_CONF")
+  [ "$runtime" = 1 ] && LX_OMARCHY_VERSION=$(head -1 "$(sys_path "$OMARCHY_RUNTIME_VERSION")")
+  LX_SETUP_CONF=0
+  [ -f "$(sys_path "$OMS_CONF")" ] && LX_SETUP_CONF=1
   LX_SETUP_BIN=0
   [ -f "$(sys_path "$OMS_SELF")" ] && LX_SETUP_BIN=1
   LX_UNIT_STATE=$(sys_cmd unit_active systemctl is-active "$OMS_UNIT")
@@ -100,22 +68,6 @@ lx_detect() {
   LX_KEYMAP=$(sed -n 's/^KEYMAP=//p' "$(sys_path /etc/vconsole.conf)" 2>/dev/null | tr -d '"' | head -1)
   LX_TZ=$(sys_cmd timezone timedatectl show -p Timezone --value)
   LX_LANG=$(sed -n 's/^LANG=//p' "$(sys_path /etc/locale.conf)" 2>/dev/null | head -1)
-}
-
-# lx_stage_file PATH — present and readable (1), cleanly absent (0), or
-# unreadable (?). A false file test alone says nothing: one lstat must fail
-# with ENOENT before absence is known, including under the fixture's root.
-lx_stage_file() {
-  local f
-  f=$(sys_path "$1") || { printf '?'; return; }
-  # shellcheck disable=SC2016 # Perl source: perl expands its own variables
-  if [ -f "$f" ]; then
-    if cat "$f" >/dev/null 2>&1; then printf 1; else printf '?'; fi
-  elif perl -MErrno=ENOENT -e 'my @s = lstat($ARGV[0]); exit(@s || $! != ENOENT ? 1 : 0)' -- "$f" 2>/dev/null; then
-    printf 0
-  else
-    printf '?'
-  fi
 }
 
 # lx_detect_encryption — LX_ENC_STATE, from Omarchy Mac's own signals
