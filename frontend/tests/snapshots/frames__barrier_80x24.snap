@@ -20,8 +20,8 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Install     ││ ▍Facts                                                       │
 │  Progress    ││   Interface  the foundation: test actions over fixtures      │
 │  Restore     ││   Fixture    mac-m1pro-1tb-roomy                             │
-│              ││   Operation  ✗ test.mutate unsupervised                      │
-│              ││                                                              │
+│  Qualify     ││   Operation  ✗ test.mutate unsupervised                      │
+│  Completion  ││                                                              │
 │              ││ ▍What you can do now                                         │
 │              ││ ❯ Read the fixture (test)   read                            ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘

@@ -20,8 +20,8 @@ expression: f
 │  Install     │┌ System Overview ─────────────────────────────────────────────┐
 │  Progress    ││ Platform      macos                                          │
 │  Restore     ││ Architecture  arm64                                          │
-│              ││ Model         MacBookPro18,1                                 │
-│              ││ Chip          Apple M1 Pro                                   │
+│  Qualify     ││ Model         MacBookPro18,1                                 │
+│  Completion  ││ Chip          Apple M1 Pro                                   │
 │              ││ Memory        17179869184                                    │
 │              ││ macOS         14.6                                           │
 └──────────────┘└──────────────────────────────────────────────────────────────┘

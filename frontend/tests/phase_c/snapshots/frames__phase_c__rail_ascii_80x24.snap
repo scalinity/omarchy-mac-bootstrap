@@ -1,0 +1,28 @@
+---
+source: tests/phase_c/mod.rs
+expression: text_of(&b)
+---
+ (o) Journey ----------------------------------------------------------- v0.2.0
+ (o) O M A R C H Y  mac bootstrap
++ Screens -----++ Journey -----------------------------------------------------+
+|  Welcome     || *-----*-----*-----*-----*-----*-----x-----~----->-----.      |
+|* Journey     || survey      resolve     asahi       shared      verify       |
+|  Machine     ||       profile     plan        omarchy     restore     done   |
+|  Status      || verify: current - 9 of 10                                    |
+|  Health      ||                                                              |
+|  Logs        || |Where it stands                                             |
+|  Plan        ||   [ ] choose a station; Enter opens it; up/down choose       |
+|  Op          ||   actions.                                                   |
+|  Scan        ||   survey: done                                               |
+|  Select      ||   profile: done                                              |
+|  Items       ||   resolve: done                                              |
+|  Review      ||   plan: done                                                 |
+|  Install     ||   asahi: done - recorded by macos                            |
+|  Progress    ||   omarchy: done                                              |
+|  Restore     ||   shared: blocked - Activate Shared first                    |
+|  Qualify     ||   restore: skipped - No bundle selected                      |
+|  Completion  ||   verify: current                                            |
+|              ||   done: todo                                                 |
+|              ||   Current stage  verify                                     v|
++--------------++--------------------------------------------------------------+
+ enter select  up/down move  r refresh  L logs  ? help        may act - fixture

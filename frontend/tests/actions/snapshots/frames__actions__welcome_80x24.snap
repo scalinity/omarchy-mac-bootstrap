@@ -20,8 +20,8 @@ expression: "frame(m, w, h)"
 │  Install     ││   Read       journey generation c0dec0dec0de                 │
 │  Progress    ││                                                              │
 │  Restore     ││ ▍Where the journey stands                                    │
-│              ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
-│              ││ survey      resolve     asahi       shared      verify       │
+│  Qualify     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│  Completion  ││ survey      resolve     asahi       shared      verify       │
 │              ││       profile     plan        omarchy     restore     done   │
 │              ││ No stage is derived yet: every station is later.            ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘

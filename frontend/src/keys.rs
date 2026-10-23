@@ -47,6 +47,8 @@ pub enum Place {
     Conflicts,
     Health,
     Brief,
+    Qualification,
+    Completion,
     Gate,
     Help,
     Connecting,
@@ -81,6 +83,31 @@ const fn b(
 }
 
 pub static KEYMAP: &[Binding] = &[
+    b(Place::Qualification, "⏎", "enter", "read again", 1),
+    b(Place::Qualification, "t", "t", "test step (typed gate)", 2),
+    b(Place::Qualification, "↑↓", "up/down", "scroll", 0),
+    b(
+        Place::Qualification,
+        "PgUp PgDn",
+        "PgUp PgDn",
+        "scroll a page",
+        0,
+    ),
+    b(Place::Completion, "↑↓", "up/down", "scroll", 1),
+    b(
+        Place::Completion,
+        "PgUp PgDn",
+        "PgUp PgDn",
+        "scroll a page",
+        0,
+    ),
+    b(
+        Place::Dashboard,
+        "[ ]",
+        "[ ]",
+        "choose station; enter opens",
+        0,
+    ),
     b(Place::Dashboard, "⏎", "enter", "select", 1),
     b(Place::Dashboard, "↑↓", "up/down", "move", 2),
     b(Place::Dashboard, "k j", "k j", "move (vim)", 0),
@@ -335,6 +362,8 @@ pub fn place(screen: Screen, region: Region, logs: LogsTab) -> Place {
         Screen::Restore => Place::Restore,
         Screen::Conflicts => Place::Conflicts,
         Screen::Brief => Place::Brief,
+        Screen::Qualification => Place::Qualification,
+        Screen::Completion => Place::Completion,
         Screen::Install => Place::Install,
         Screen::Progress => Place::Progress,
         Screen::Shared => Place::Shared,
@@ -420,7 +449,7 @@ pub fn help(place: Place, unicode: bool) -> Vec<(&'static str, &'static str)> {
 mod tests {
     use super::*;
 
-    const ALL: [Place; 25] = [
+    const ALL: [Place; 27] = [
         Place::Dashboard,
         Place::Welcome,
         Place::Nav,
@@ -442,6 +471,8 @@ mod tests {
         Place::Conflicts,
         Place::Health,
         Place::Brief,
+        Place::Qualification,
+        Place::Completion,
         Place::Gate,
         Place::Help,
         Place::Connecting,

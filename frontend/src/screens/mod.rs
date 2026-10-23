@@ -6,6 +6,7 @@ mod dashboard;
 mod gate;
 mod health;
 mod install;
+mod journey;
 mod migrate;
 mod notes;
 mod plan;
@@ -130,6 +131,7 @@ fn workspace(
         Screen::Restore => restore::draw(f, work, m, t),
         Screen::Conflicts => restore::conflicts(f, work, m, t),
         Screen::Brief => brief::draw(f, work, m, t),
+        Screen::Qualification | Screen::Completion => journey::draw(f, work, m, t),
         Screen::Health
             if health::enriched(m)
                 && !m
@@ -307,6 +309,7 @@ pub fn blocks(m: &Model, s: Screen) -> usize {
         Screen::Restore => restore::items(m).len(),
         Screen::Conflicts => restore::conflict_items(m).len(),
         Screen::Brief => brief::items(m).len(),
+        Screen::Qualification | Screen::Completion => journey::items(m).len(),
         _ => 0,
     }
 }

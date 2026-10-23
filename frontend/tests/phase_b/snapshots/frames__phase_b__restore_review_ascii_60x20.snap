@@ -3,7 +3,7 @@ source: tests/phase_b/mod.rs
 expression: text
 ---
  (o) Restore --------------------------------------- v0.2.0
-< Scan  Select  Items  Review  Install  Progress *Restore
+< Scan  Select  Items  Review  Install  Progress *Restore >
 + Restore progress ----------------------------------------+
 |   - State     not-started                                |
 |   - Bundle    20261022T120000Z from M1 Pro               |

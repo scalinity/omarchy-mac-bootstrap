@@ -20,8 +20,8 @@ expression: text
 |  Install     || |SSH                                                         |
 |  Progress    ||   SSH policy - warn: cannot-tell: run doctor as root         |
 |  Restore     || |System checks                                               |
-|              ||   Disk space - pass: Enough space                            |
-|              ||                                                              |
+|  Qualify     ||   Disk space - pass: Enough space                            |
+|  Completion  ||                                                              |
 |              ||                                                              |
 |              ||                                                              |
 +--------------++--------------------------------------------------------------+

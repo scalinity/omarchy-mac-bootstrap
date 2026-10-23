@@ -262,6 +262,7 @@ fn nav_label(s: Screen, short: bool) -> &'static str {
         Screen::Operation if short => "Op",
         Screen::Selection if short => "Select",
         Screen::Inventory if short => "Items",
+        Screen::Qualification if short => "Qualify",
         s => s.title(),
     }
 }
@@ -535,8 +536,8 @@ pub fn traverse<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
         .map(|(i, name)| {
             match stages
                 .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, s)| s.as_str())
+                .find(|s| s.name == *name)
+                .map(|s| s.state.as_str())
             {
                 Some("done") => (t.g.done, Token::Ok),
                 Some("current") => {
@@ -550,8 +551,11 @@ pub fn traverse<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
             }
         })
         .collect();
-    let summary = match current {
-        Some(i) => format!("{} {} {} of 10", STATIONS[i], t.g.dot, i + 1),
+    let summary = match m.station.filter(|i| *i < stages.len()).or(current) {
+        Some(i) => {
+            let stage = &stages[i];
+            format!("{} {} {} of 10", stage.description(), t.g.dot, i + 1)
+        }
         None if stages.is_empty() => "No stage is derived yet: every station is later.".into(),
         None => format!("{} of 10 stations reported", stages.len()),
     };

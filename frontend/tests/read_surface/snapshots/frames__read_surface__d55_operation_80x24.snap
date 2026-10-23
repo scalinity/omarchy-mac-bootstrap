@@ -20,8 +20,8 @@ expression: f
 │  Install     ││                                                              │
 │  Progress    ││                                                              │
 │  Restore     ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Qualify     ││                                                              │
+│  Completion  ││                                                              │
 │              ││                                                              │
 │              ││ rows 1–4 of 4 · generation 78b203ec6845                      │
 └──────────────┘└──────────────────────────────────────────────────────────────┘

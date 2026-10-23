@@ -1433,8 +1433,17 @@ fn pty_gate2_reads_through_the_launcher() {
         "Developer setup"
     };
     p.wait_for(row);
-    p.wait_for("every station is later");
     p.idle();
+    let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+    let stages = trace.matches("ty: \"stage\"").count();
+    if stages == 0 {
+        p.wait_for("every station is later");
+    } else {
+        assert_eq!(
+            stages, 10,
+            "an integrated journey supplies the whole traverse"
+        );
+    }
     // r: drawn running before the answer, then answered.
     let before = p.raw.lock().unwrap().len();
     p.keys("r");
@@ -1631,5 +1640,155 @@ fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
                 "{line}"
             );
         }
+    }
+}
+
+// Only this journey depends on the new core producers. Rust's ignored-test
+// report names the dependency on every ordinary run; integration enables it
+// with --include-ignored (or --ignored for this test alone).
+#[test]
+#[ignore = "needs integrated Phase C core stage/qualify/report records; enable with --include-ignored"]
+fn pty_phase_c_journey_qualification_and_completion() {
+    // macOS fixtures need Apple's plutil. Linux CI takes the Linux fixture;
+    // neither branch substitutes a fake core for the launcher.
+    let mac = Path::new("/usr/bin/plutil").exists();
+    for ascii in [false, true] {
+        let mut p = Pty::start(
+            if ascii { "phase-c-ascii" } else { "phase-c" },
+            Opts {
+                rows: 40,
+                cols: 120,
+                fixture: if mac {
+                    "mac-asahi-complete"
+                } else {
+                    "linux-omarchy-installed"
+                },
+                env: vec![
+                    ("OMB_TEST_FOUNDATION", String::new()),
+                    (
+                        "TERM",
+                        if ascii { "linux" } else { "xterm-256color" }.into(),
+                    ),
+                ],
+                ..Opts::default()
+            },
+        );
+        p.wait_for("Where it stands");
+        p.idle();
+        let trace = || std::fs::read_to_string(p.dir.join("trace")).unwrap();
+        let first = trace();
+        let snapshot = first
+            .lines()
+            .find(|l| l.starts_with("outcome ") && l.contains("ty: \"stage\""))
+            .expect("the integrated core must emit stage records");
+        assert_eq!(snapshot.matches("ty: \"stage\"").count(), 10);
+        // Choose the verify station on the traverse, independent of where
+        // this fixture's current station lies. Movement starts no request.
+        let sent_before = first.lines().filter(|l| l.starts_with("send ")).count();
+        p.keys(&"[".repeat(10));
+        p.keys(&"]".repeat(8));
+        p.idle();
+        assert_eq!(
+            std::fs::read_to_string(p.dir.join("trace"))
+                .unwrap()
+                .lines()
+                .filter(|l| l.starts_with("send "))
+                .count(),
+            sent_before
+        );
+        p.send(b"\r");
+        p.wait_for("Cross-system check");
+        p.idle();
+        let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+        assert!(trace.contains("send Snapshot(Qualify)"));
+        assert!(trace.contains("kind: Step"));
+        assert!(
+            trace.contains("qualify.state")
+                && trace.contains("qualify.shared")
+                && trace.contains("qualify.due")
+        );
+        assert!(
+            trace.contains("macOS writes")
+                && trace.contains("Linux checks and writes")
+                && trace.contains("macOS checks")
+        );
+        // Enter requests exactly one fresh qualify snapshot. Same-generation
+        // steps stay held; a new generation is paged by the normal lifecycle.
+        let n = trace.matches("send Snapshot(Qualify)").count();
+        p.send(b"\r");
+        p.wait_until("one explicit qualification refresh", |p| {
+            std::fs::read_to_string(p.dir.join("trace"))
+                .unwrap()
+                .matches("send Snapshot(Qualify)")
+                .count()
+                == n + 1
+        });
+        p.idle();
+        p.send(b"\x1b");
+        p.keys("]"); // verify -> done
+        p.send(b"\r");
+        p.wait_for("Journey stages");
+        p.idle();
+        p.keys(&"j".repeat(13));
+        p.wait_for("Report:");
+        let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
+        assert!(trace.contains("send Snapshot(Health)") && trace.contains("kind: Report"));
+        let mut rows = Vec::new();
+        for session in p.sessions() {
+            for entry in std::fs::read_dir(session).unwrap() {
+                let path = entry.unwrap().path();
+                if path.extension().and_then(|s| s.to_str()) != Some("events") {
+                    continue;
+                }
+                let bytes = std::fs::read(path).unwrap();
+                if let Ok(doc) = omb_tui::record::admit(
+                    omb_tui::record::Family::Res,
+                    Some(omb_tui::record::Op::Detail),
+                    &bytes,
+                ) {
+                    rows.extend(
+                        doc.records
+                            .into_iter()
+                            .filter(|r| r.ty == "row" && r.text("kind") == Some("report")),
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            rows.len(),
+            8,
+            "the complete report, from admitted core spools"
+        );
+        let count = |status: &[u8]| {
+            rows.iter()
+                .filter(|r| r.list("col").first().copied() == Some(status))
+                .count()
+        };
+        let (pass, warn, fail, unchecked) = (
+            count(b"pass"),
+            count(b"warn"),
+            count(b"fail"),
+            count(b"not-checked"),
+        );
+        let verdict = if fail > 0 {
+            "fail"
+        } else if warn > 0 {
+            "warn"
+        } else {
+            "pass"
+        };
+        assert!(p.contents().contains(&format!("Report: {verdict}")));
+        assert!(p.contents().contains(&format!(
+            "{pass} pass - {warn} warn - {fail} fail - {unchecked} not-checked"
+        )));
+        // These fixtures have not finished the whole journey. Quit must not
+        // leave a completion receipt just because the report has a verdict.
+        p.keys("q");
+        assert_eq!(p.wait_exit(), 0);
+        assert!(!String::from_utf8_lossy(&p.raw.lock().unwrap()).contains("journey complete"));
+        assert!(p.restored());
+        assert_eq!(p.termios(), p.initial);
+        assert!(p.sessions().is_empty());
+        assert!(!trace.contains("send Execute"));
     }
 }

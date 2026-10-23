@@ -20,8 +20,8 @@ expression: text
 |  Install     ||   files                                                      |
 |  Progress    ||   starship.toml [file] - conflict - pending                  |
 |* Restore     ||   Destination: .config/starship.toml                         |
-|              ||   Codex config [file] - conflict - pending                   |
-|              ||   Destination: .codex/config.toml                            |
+|  Qualify     ||   Codex config [file] - conflict - pending                   |
+|  Completion  ||   Destination: .codex/config.toml                            |
 |              ||   AI tools                                                   |
 |              ||   Claude Code [agent] - needs-sign-in - needs-sign-in       v|
 +--------------++--------------------------------------------------------------+

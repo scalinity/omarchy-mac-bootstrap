@@ -1,7 +1,7 @@
 # The interface
 
-**Status: built for M14 (screens 1–4, 5–9 and 11 as tabs, the Migration
-Review, 12–15, 18, 19, 24); screens 20–23 and 25 come with M15 and M16.** How the frontend
+**Status: built in the unreleased 0.2.0 frontend (screens 1–4, 5–9 and 11
+as tabs, the Migration Review, 12–15 and 18–25).** How the frontend
 (docs/FRONTEND.md) looks and behaves. Everything on screen comes from the
 core's records (docs/PROTOCOL.md); this document decides how it is shown.
 The owner's reference designs (*Reference designs*; docs/DECISIONS.md → D51)
@@ -214,18 +214,32 @@ glyph per station joined by a line, with each station's name beneath it from
 that.
 
 ```text
- ●───●───◆───○───·───·───·───·───·───·     wide and standard
+ ●───●───◆───○───○───○───○───○───○───○     wide and standard
  survey  profile  resolve  plan  asahi  …
- ● ● ◆ ○ · · · · · ·   resolve · 3 of 10   narrow
- * * > . _ _ _ _ _ _   resolve 3/10        narrow, ASCII
+ ● ● ◆ ○ ○ ○ ○ ○ ○ ○   resolve · 3 of 10   narrow
+ * * > . . . . . . .   resolve 3/10        narrow, ASCII
 ```
 
 The ten stations are `survey`, `profile`, `resolve`, `plan`, `asahi`,
 `omarchy`, `shared`, `restore`, `verify`, `done` (docs/QUALIFICATION.md).
 A station that only the other system can see is drawn with its recorded
-state and the word *recorded*. A station the core sent no `stage` record for
-is drawn as *later* (`·`, muted) and never as *to do*: an absent record is
-not a state, and the frontend derives none.
+state and *recorded by macos* or *recorded by linux*. The state list below
+the strip gives every station's state and provenance, and the core's reason
+for a skipped or blocked station. `[` and `]` select a station, starting at
+the current one; Enter opens it. The strip's summary names the selected
+station. Up/down return to the dashboard's actions.
+
+A journey snapshot either supplies all ten `stage` records in canonical
+order, or supplies none. With none, the stations keep their *later*
+(`·`, muted) marks; absence never becomes *to do*. A partial or out-of-order
+set, more than one `current`, a machine stage with `by`, a recorded stage
+without its system, or a misplaced or missing reason refuses the new
+snapshot as unrepresentable. No part of that set is adopted. The last
+admitted snapshot stays with the failure beside it, or the first read opens
+the error screen.
+
+The `verify` station opens Qualification and `done` opens Completion.
+Both are also entries in the navigation rail.
 
 ## Keys
 
@@ -405,7 +419,7 @@ and *keep the rest* keeps every conflict after this one):
 
      Identity   Shared is disk0s7, GUID 8F2A…41C0, on this Mac's disk
  ──────────────────────────────────────────────────────────────────────────
- ⏎ run step 3   ? help
+ ⏎ read again   t run step 3 (type test)   ? help
 ```
 
 ### Every screen
@@ -427,9 +441,9 @@ and *keep the rest* keeps every conflict after this one):
 | 20 | Restore progress | the work grouped by layer, the current item, what is blocked, handoffs announced; the bar only from the core's counts | the current group only; core item counts remain visible | `n` `p` action, `⏎` review, `d` conflicts |
 | 21 | Conflict and diff | each conflict of the restore review as a diff of both sides: Keep by default, Replace, and *keep the rest* for every conflict after it | unified diff; side by side needs 120 columns | `k` Keep, `R` Replace, `K` keep following, `n` `p` `v` |
 | 22 | Health | doctor's checks with restore and AI rows: each tool's observed facts (docs/AI-TOOLS.md → *What is observed*); a tool's own `mcp list` on request | one tool per group | `c` |
-| 23 | Qualification | the three steps on a check table, Shared's identity, the digests, the state | digests shortened | `⏎`; `test` |
+| 23 | Qualification | the state, Shared's identity, the due step and the three core step rows with their supplied digests; an offered run opens the typed `test` gate and hands off this terminal | rows wrap; digests remain as supplied | `⏎` reads again; `t` opens the gate |
 | 24 | Logs and diagnostics | the tool's log (the entries `logs` shows) and the core's diagnostics, a tab each; filter by level | same | `/` `Tab` `f` `⏎` |
-| 25 | Completion | every stage, and the report's check table under its verdict and counts; on quit, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` | same | `q` |
+| 25 | Completion | every stage, and the report's check table under its verdict and counts; on `q`, only when the core's `done` stage is `done`, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` (ASCII: `+ journey complete - ./omarchy-bootstrap report`) | same | `q` |
 
 ## Clutter audit of this design
 
@@ -481,3 +495,26 @@ output. It displays `./omarchy-bootstrap debug > file` for saving a copy;
 `Esc` returns to the error and `r` reads again. These pages have frames at
 80×24 and 60×20 in colour and ASCII without colour; the 120×40 conflict
 frame covers side by side.
+
+### Qualification and completion
+
+Qualification reads scope `qualify`, then pages `detail kind=step` from
+that snapshot's generation. It shows `qualify.state`, `qualify.shared` and
+`qualify.due` as supplied, the blocker when present, and all three rows in
+order. It never computes a digest or chooses the due step. Enter asks for
+one fresh snapshot; unchanged rows remain current, and changed rows are
+read from the new generation. `t` offers only `qualify.run` from the current
+snapshot after the complete steps arrived. The normal typed gate collects
+`test`; the action's `terminal=handoff` gives the child this terminal. After
+it, fresh qualification and journey snapshots are read. A failed read stays
+failed until an explicit refresh.
+
+Completion lists every stage, then the health dataset's complete
+`detail kind=report` table under its verdict and counts. The verdict is
+`fail` if any row is `fail`, else `warn` if any is `warn`, else `pass`.
+`not-checked` contributes only to its own count. No verdict is shown while
+the report is incomplete, stale or failed. The moving keys scroll from the
+stages through the report at every supported size; `r` reads the journey
+and report again. The receipt follows terminal restoration, once, only on
+`q` from Completion with a completed `done` stage. A report verdict alone
+does not establish journey completion.

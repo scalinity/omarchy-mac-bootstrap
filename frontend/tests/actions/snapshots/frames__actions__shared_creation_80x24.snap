@@ -20,8 +20,8 @@ expression: "frame(m, w, h)"
 │  Install     ││   terminal is the program's until it exits.                  │
 │  Progress    ││                                                              │
 │  Restore     ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Qualify     ││                                                              │
+│  Completion  ││                                                              │
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘

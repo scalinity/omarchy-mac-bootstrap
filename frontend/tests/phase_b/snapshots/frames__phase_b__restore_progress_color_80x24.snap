@@ -20,8 +20,8 @@ expression: text
 │  Install     ││                                                              │
 │  Progress    ││ ▍Review by layer                                             │
 │▍ Restore     ││   packages                                                   │
-│              ││   ripgrep [pacman] - install - pending                       │
-│              ││   files                                                      │
+│  Qualify     ││   ripgrep [pacman] - install - pending                       │
+│  Completion  ││   files                                                      │
 │              ││   starship.toml [file] - conflict - pending                 ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
                                                      Restore the bundle  1 of 4

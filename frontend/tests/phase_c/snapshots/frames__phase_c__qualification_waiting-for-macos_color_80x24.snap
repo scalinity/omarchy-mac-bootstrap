@@ -1,0 +1,28 @@
+---
+source: tests/phase_c/mod.rs
+expression: text_of(&b)
+---
+ ◒ Qualification ─────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Qualification ───────────────────────────────────────────────┐
+│  Welcome     ││   · Qualification  waiting-for-macos                         │
+│  Journey     ││   · Due            3                                         │
+│  Machine     ││   ✓ Shared         disk0s7 GUID 8F2A41C0 on this Mac         │
+│  Status      ││   t Run step 3 - type test - terminal handoff                │
+│  Health      ││ ▍Cross-system check                                          │
+│  Logs        ││   1  macOS writes - done                                     │
+│  Plan        ││   SHA-256 5f2ec1a05f2e; file written                         │
+│  Op          ││   2  Linux checks and writes - done                          │
+│  Scan        ││   SHA-256 8acb8acb8acb; digest matches                       │
+│  Select      ││   3  macOS checks - todo                                     │
+│  Items       ││   Read Linux's file and names                                │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│  Restore     ││                                                              │
+│▍ Qualify     ││                                                              │
+│  Completion  ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ read again  t test step (typed gate)  r refresh  ? help    may act · fixture

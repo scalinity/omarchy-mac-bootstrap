@@ -27,8 +27,8 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │  Install        │                                                                                  │
 │  Progress       │   Does        Runs the fake mutating child under supervision.                    │
 │  Restore        │   Terminal    not needed: it runs with no terminal                               │
-│                 │                                                                                  │
-│                 │   Type test to continue    tes▏                                                  │
+│  Qualification  │                                                                                  │
+│  Completion     │   Type test to continue    tes▏                                                  │
 │                 └──────────────────────────────────────────────────────────────────────────────────┘
 │                      ││                                                              │
 │                      ││                                                              │

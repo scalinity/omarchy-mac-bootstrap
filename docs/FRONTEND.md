@@ -1,9 +1,10 @@
 # The frontend
 
 **Status: built for M14's Gate 1 (distribution, lifecycle, fallback, the
-startup check) and Gate 2's reads; the rest follows MILESTONES.md → *The
-finish*.** Library and platform facts: docs/UPSTREAM.md → *Ratatui and
-distribution*.
+startup check), Gate 2's reads, actions and the migration, restore,
+qualification and completion screens in the unreleased 0.2.0 candidate;
+release integration follows MILESTONES.md → *The finish*.** Library and
+platform facts: docs/UPSTREAM.md → *Ratatui and distribution*.
 
 The product's interface is a compiled Rust program built with Ratatui,
 `omb-tui`. It is the product's interface on both systems. The Bash core
@@ -652,6 +653,61 @@ sequenceDiagram
   (docs/MIGRATION.md → *On the wire*; `frontend/src/select.rs`).
 - **Steppers show places, not progress.** Screens 14, 15 and 18 mark only the
   section in view; what is done is the core's facts.
+
+## The ten-station journey, qualification and completion
+
+The journey snapshot's stage projection is atomic: exactly ten stations in
+canonical rail order, at most one current station, recorded stages naming
+`by=macos|linux`, machine stages without `by`, and reasons only for skipped
+or blocked stages. An invalid projection supplies no new snapshot. An
+older core without stage records retains the ten *later* stations. State,
+provenance and reasons travel together in the model; the frontend derives
+none of them. The dashboard's `[` and `]` select a station and Enter opens
+its view. The `verify` and `done` stations lead to screens 23 and 25; both
+screens are navigation entries too.
+
+Screen 23 reads `snapshot qualify`, then all `detail kind=step` pages bound
+to its generation. The state, Shared identity, due step, three row statuses
+and their digests are the core's strings. Enter sends one fresh snapshot;
+`t` opens the existing gate only for an offered `qualify.run`, once the
+complete current step dataset is held. The typed `test`, action basis and
+handoff flag pass through the generic execute path. The child gets the real
+terminal; after it, qualification and journey are read again. The
+frontend's scope type names `qualify`; a launcher session must include that
+scope for the core to serve it.
+
+Screen 25 lists the stages, then reads all `detail kind=report` pages from
+the health snapshot. It computes counts over the four report statuses and
+applies the shared rule: any fail gives fail, otherwise any warn gives
+warn, otherwise pass; not-checked does not change the verdict. Incomplete,
+failed or changed report pages produce no verdict. Refresh reads the
+journey and the health report again. On `q` from this screen, a `done` stage
+whose state is `done` permits one receipt after terminal restoration:
+`✓ journey complete · ./omarchy-bootstrap report`, using `+` and `-` from
+the existing glyph set in ASCII mode. Exiting another view or showing a
+passing report produces no receipt.
+
+`frontend/tests/phase_c/mod.rs` feeds contract records through protocol
+admission and the model, then checks requests and frames at 80×24 and
+60×20 in colour and ASCII. The real-launcher test
+`pty_phase_c_journey_qualification_and_completion` in `frontend/tests/pty.rs`
+is explicitly ignored until the integrated core emits stages, qualification
+and report rows. Enable that test after integration with:
+
+```bash
+# From frontend/, with the normal external CARGO_TARGET_DIR:
+OMB_TEST_BASH=/bin/bash cargo test --locked --features test-hooks --test pty \
+  pty_phase_c_journey_qualification_and_completion -- --ignored --nocapture
+```
+
+`--include-ignored` enables it alongside the rest of the PTY suite. The
+ordinary test report prints its integration dependency as the ignore
+reason. It uses macOS fixtures when Apple's `/usr/bin/plutil` is present;
+Linux CI uses the Linux fixture branch. Both Unicode and Linux VT ASCII
+terminal profiles traverse the rail, read Qualification, explicitly read
+again, open Completion, inspect report rows and quit with no receipt for an
+unfinished journey. It checks terminal settings and scratch cleanup.
+Fixture checks do not establish hardware qualification.
 
 ## The security boundary
 

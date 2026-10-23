@@ -5,24 +5,24 @@ expression: "text(&render(&m, &t, 80, 24))"
  ◒ Journey · Keys ────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Keys ────────────────────────────────────────────────────────┐
-│  Welcome     ││   ⏎           select                                         │
-│▍ Journey     ││   ↑↓          move                                           │
-│  Machine     ││   k j         move (vim)                                     │
-│  Status      ││   PgUp PgDn   scroll                                         │
-│  Health      ││   D           debugging brief                                │
-│  Logs        ││   r           refresh                                        │
-│  Plan        ││   L           logs                                           │
-│  Op          ││   ?           help                                           │
-│  Scan        ││   q           quit                                           │
-│  Select      ││   ← →         the rail or the workspace                      │
-│  Items       ││   Tab         move focus                                     │
-│  Review      ││   esc         back                                           │
-│  Install     ││   s           the sidebar, at narrow widths                  │
-│  Progress    ││   Ctrl-C      quit when idle, cancel a request that can be   │
-│  Restore     ││   Ctrl-Z      suspend (not while a request runs)             │
-│              ││                                                              │
+│  Welcome     ││   [ ]         choose station; enter opens                    │
+│▍ Journey     ││   ⏎           select                                         │
+│  Machine     ││   ↑↓          move                                           │
+│  Status      ││   k j         move (vim)                                     │
+│  Health      ││   PgUp PgDn   scroll                                         │
+│  Logs        ││   D           debugging brief                                │
+│  Plan        ││   r           refresh                                        │
+│  Op          ││   L           logs                                           │
+│  Scan        ││   ?           help                                           │
+│  Select      ││   q           quit                                           │
+│  Items       ││   ← →         the rail or the workspace                      │
+│  Review      ││   Tab         move focus                                     │
+│  Install     ││   esc         back                                           │
+│  Progress    ││   s           the sidebar, at narrow widths                  │
+│  Restore     ││   Ctrl-C      quit when idle, cancel a request that can be   │
+│  Qualify     ││   Ctrl-Z      suspend (not while a request runs)             │
+│  Completion  ││                                                              │
 │              ││   The mouse is not captured: select text as usual.           │
-│              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  esc back  ↑↓ scroll                              may act · 3 actions · fixture
