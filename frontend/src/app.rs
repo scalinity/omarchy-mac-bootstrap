@@ -1004,6 +1004,7 @@ fn wants(m: &Model) -> Vec<Kind> {
         Screen::Restore => vec![
             Kind::RestoreReview,
             Kind::Conflicts,
+            Kind::Diff,
             Kind::Bundles,
             Kind::RestoreStatus,
         ],
@@ -1179,6 +1180,8 @@ fn moved_on(m: &mut Model, scope: Scope, old: Option<String>) {
         m.rest.bundle.clear();
         m.rest.replacements.clear();
         m.rest.conflict = 0;
+        m.rest.line_scroll.set(0);
+        m.rest.side_scroll = 0;
         if m.gate.as_ref().is_some_and(|g| g.scope == scope) {
             m.gate = None;
             m.screen = Screen::Restore;
@@ -1466,6 +1469,9 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
             if kind == Kind::Items && m.whole(Kind::Items) {
                 recheck_picks(m);
             }
+            if matches!(kind, Kind::Conflicts | Kind::Diff) {
+                recheck_replacements(m);
+            }
             settle(m, Vec::new())
         }
         Req::Validate { action, args } => {
@@ -1526,6 +1532,9 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                 }
             }
             m.sent_picks.clear();
+            if action == "restore.apply" && status == "refused" && code == "changed" {
+                return restore_changed(m);
+            }
             // Every action is followed by a fresh read of its scope, and of
             // the journey after another scope's.
             m.then_journey = m.exec_scope != Scope::Journey;
@@ -1539,6 +1548,9 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
 /// check of the migration choices — which, reviewed, is asked to be saved.
 fn validated(m: &mut Model, c: Checked) -> Vec<Cmd> {
     if c.action == "restore.apply" {
+        if c.status == "refused" && c.code == "changed" {
+            return restore_changed(m);
+        }
         let ready = c.status == "done" && c.code == "ok";
         m.rest.checked = Some(c);
         if ready && m.screen == Screen::Restore {
@@ -1993,11 +2005,73 @@ fn save_go_on(m: &mut Model) -> Vec<Cmd> {
     }
 }
 
+/// A stale review returns to the conflicts before another validation or gate.
+fn restore_changed(m: &mut Model) -> Vec<Cmd> {
+    m.rest.previous.clear();
+    if m.whole(Kind::Conflicts) && m.whole(Kind::Diff) {
+        let conflicts = &m.detail(Kind::Conflicts).expect("whole").rows;
+        let diff = &m.detail(Kind::Diff).expect("whole").rows;
+        m.rest.previous = conflicts
+            .iter()
+            .filter(|r| crate::restore::replacing(&m.rest.replacements, &r.id))
+            .map(|r| {
+                let rows = crate::restore::diff_rows(diff, &r.id)
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                (r.clone(), rows)
+            })
+            .collect();
+    }
+    m.rest.checked = None;
+    m.rest.replacements.clear();
+    m.rest.bundle.clear();
+    m.rest.conflict = 0;
+    m.rest.line_scroll.set(0);
+    m.rest.side_scroll = 0;
+    m.gate = None;
+    m.ask = None;
+    for kind in Kind::ALL
+        .into_iter()
+        .filter(|k| k.scope() == Scope::Restore)
+    {
+        m.details[kind.index()] = None;
+    }
+    m.screen = Screen::Conflicts;
+    m.status = Some((
+        Level::Warn,
+        "Restore changed since you looked; review the conflicts again.".into(),
+    ));
+    m.reread(Scope::Restore)
+}
+
+/// Retain a replacement only when its newly read conflict and diff match.
+fn recheck_replacements(m: &mut Model) {
+    if !m.whole(Kind::Conflicts) || !m.whole(Kind::Diff) {
+        return;
+    }
+    let previous = std::mem::take(&mut m.rest.previous);
+    for (before, diff) in previous {
+        let unchanged = m
+            .detail(Kind::Conflicts)
+            .expect("whole")
+            .rows
+            .contains(&before)
+            && !diff.is_empty()
+            && crate::restore::diff_rows(&m.detail(Kind::Diff).expect("whole").rows, &before.id)
+                == diff.iter().collect::<Vec<_>>();
+        if unchanged {
+            crate::restore::choose(&mut m.rest.replacements, &before.id, true);
+        }
+    }
+}
+
 /// The whole current review and conflicts form one replacement document.
 fn restore_args(m: &Model) -> Option<Args> {
     if !m.whole(Kind::RestoreReview)
         || !m.whole(Kind::Conflicts)
         || !m.whole(Kind::Bundles)
+        || !m.whole(Kind::Diff)
         || m.rest.bundle.is_empty()
     {
         return None;
@@ -2006,6 +2080,13 @@ fn restore_args(m: &Model) -> Option<Args> {
     let doc = crate::restore::document(rows, &m.rest.replacements);
     let mut args = crate::restore::split(&doc)?;
     args.insert(0, ("bundle".into(), m.rest.bundle.clone()));
+    args.insert(
+        1,
+        (
+            "review".into(),
+            m.detail(Kind::Conflicts)?.generation.as_bytes().to_vec(),
+        ),
+    );
     let snap = m.snap_of(Scope::Restore)?;
     let params = snap.params_of("restore.apply");
     args.iter()
@@ -2040,6 +2121,9 @@ fn restore_reviewed_args(m: &Model) -> Option<Args> {
         c.args
             .iter()
             .map(|(name, value)| {
+                if name == "review" {
+                    return (name.clone(), value.clone());
+                }
                 c.normal_args
                     .iter()
                     .find(|(n, _)| n == name)
@@ -2123,13 +2207,17 @@ fn conflict_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             let n = m.detail(Kind::Conflicts).map_or(0, |d| d.rows.len());
             m.rest.conflict = (m.rest.conflict + 1).min(n.saturating_sub(1));
             m.page_scroll = 0;
+            m.rest.line_scroll.set(0);
+            m.rest.side_scroll = 0;
         }
         KeyCode::Char('p') => {
             m.rest.conflict = m.rest.conflict.saturating_sub(1);
             m.page_scroll = 0;
+            m.rest.line_scroll.set(0);
+            m.rest.side_scroll = 0;
         }
         KeyCode::Char('k' | 'R' | 'K') => {
-            if !m.whole(Kind::Conflicts) {
+            if !m.whole(Kind::Conflicts) || !m.whole(Kind::Diff) {
                 m.status = Some((
                     Level::Warn,
                     "Choices wait for all conflicts of the current review; r reads again.".into(),
@@ -2156,8 +2244,21 @@ fn conflict_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
             }
         }
         _ => {
-            let n = crate::screens::blocks(m, Screen::Conflicts);
-            scroll_key(&mut m.page_scroll, n, &k);
+            if m.rest.side_visible.get() {
+                let n = m
+                    .detail(Kind::Conflicts)
+                    .and_then(|d| d.rows.get(m.rest.conflict))
+                    .and_then(|r| {
+                        m.detail(Kind::Diff)
+                            .map(|d| crate::restore::diff_rows(&d.rows, &r.id).len())
+                    })
+                    .unwrap_or(0);
+                scroll_key(&mut m.rest.side_scroll, n, &k);
+            } else {
+                let mut at = m.rest.line_scroll.get();
+                scroll_key(&mut at, usize::MAX, &k);
+                m.rest.line_scroll.set(at);
+            }
         }
     }
     Vec::new()
@@ -2480,9 +2581,9 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
 fn scroll_key(at: &mut usize, n: usize, k: &KeyEvent) {
     let last = n.saturating_sub(1);
     *at = match k.code {
-        KeyCode::Down | KeyCode::Char('j') => *at + 1,
+        KeyCode::Down | KeyCode::Char('j') => at.saturating_add(1),
         KeyCode::Up | KeyCode::Char('k') => at.saturating_sub(1),
-        KeyCode::PageDown => *at + PAGE_STEP,
+        KeyCode::PageDown => at.saturating_add(PAGE_STEP),
         KeyCode::PageUp => at.saturating_sub(PAGE_STEP),
         KeyCode::Home | KeyCode::Char('g') => 0,
         KeyCode::End | KeyCode::Char('G') => last,
@@ -2515,6 +2616,13 @@ fn nav_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
 fn refresh(m: &mut Model) -> Vec<Cmd> {
     if m.pending.is_some() {
         return m.busy();
+    }
+    if matches!(m.screen, Screen::Restore | Screen::Conflicts) {
+        for kind in wants(m) {
+            if m.detail(kind).is_some_and(|d| d.fault.is_some()) {
+                m.details[kind.index()] = None;
+            }
+        }
     }
     match m.screen {
         Screen::Logs if m.logs_tab == LogsTab::Diagnostics => vec![Cmd::ReadLogs],

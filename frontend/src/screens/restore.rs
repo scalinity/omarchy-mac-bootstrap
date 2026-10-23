@@ -277,32 +277,53 @@ fn diff_rows(m: &Model) -> Vec<&crate::read::Row> {
     };
     m.detail(Kind::Diff)
         .filter(|_| m.whole(Kind::Diff))
-        .map(|d| {
-            d.rows
-                .iter()
-                .filter(|d| {
-                    d.id.iter()
-                        .rposition(|b| *b == b'#')
-                        .is_some_and(|at| d.id[..at] == r.id)
-                })
-                .collect()
-        })
+        .map(|d| crate::restore::diff_rows(&d.rows, &r.id))
         .unwrap_or_default()
 }
 
 pub fn conflicts(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     let inner = widgets::panel(f, area, "Conflict and diff", t);
     let all = conflict_items(m);
-    if !m.rest.side_by_side
-        || f.area().width < 120
-        || !m.whole(Kind::Diff)
-        || !m.whole(Kind::Conflicts)
-        || diff_rows(m).is_empty()
-    {
-        draw_items(f, inner, &all, m.page_scroll, None, m, t);
+    let side = m.rest.side_by_side
+        && f.area().width >= 120
+        && m.whole(Kind::Diff)
+        && m.whole(Kind::Conflicts)
+        && !diff_rows(m).is_empty();
+    m.rest.side_visible.set(side);
+    if !side {
+        // Scroll wrapped lines, so even one row taller than the body can
+        // be read through to its last character at the supported floor.
+        let widths = super::Widths {
+            label: 0,
+            action: 0,
+        };
+        let lines: Vec<Line> = all
+            .iter()
+            .flat_map(|i| super::item_lines(i, m, t, inner.width as usize, &widths))
+            .collect();
+        let top = m.rest.line_scroll.get().min(lines.len().saturating_sub(1));
+        m.rest.line_scroll.set(top);
+        let end = lines.len().min(top + inner.height as usize);
+        f.render_widget(Paragraph::new(lines[top..end].to_vec()), inner);
+        for (shown, y, glyph) in [
+            (top > 0, inner.y, if t.caps.unicode { "↑" } else { "^" }),
+            (
+                end < lines.len(),
+                inner.y + inner.height.saturating_sub(1),
+                if t.caps.unicode { "↓" } else { "v" },
+            ),
+        ] {
+            if shown && inner.width > 0 && inner.height > 0 {
+                widgets::line(
+                    Rect::new(inner.right() - 1, y, 1, 1),
+                    f,
+                    Line::styled(glyph, t.style(Token::Muted)),
+                );
+            }
+        }
         return;
     }
-    // Six header blocks and a blank; they scroll as in the unified view.
+    // The fixed header and the side-by-side rows have separate offsets.
     let [head, body] = Layout::vertical([Constraint::Length(7), Constraint::Min(0)]).areas(inner);
     draw_items(f, head, &all[..all.len().min(6)], 0, None, m, t);
     let [left, right] =
@@ -314,7 +335,7 @@ pub fn conflicts(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         // Keep one slot per unified row, so deletions and additions never
         // pretend to correspond to unrelated lines on the other side.
         let column_width = left.width.min(right.width).saturating_sub(2) as usize;
-        for r in rows.iter().skip(m.page_scroll) {
+        for r in rows.iter().skip(m.rest.side_scroll) {
             let value = format!("{} {}", r.col(1), r.col(2));
             let wrapped = widgets::wrap(&t.say(&value), column_width);
             let n = wrapped.len().max(1);
