@@ -143,7 +143,7 @@ on_interrupt() {
 }
 
 main() {
-  local cmd="" arg scope="" op_clear=""
+  local cmd="" arg scope="" op_clear="" bar_scopes=""
   local -a rest=()
   for arg in "$@"; do
     case "$arg" in
@@ -329,6 +329,33 @@ main() {
 
   OMB_PHASE=$OMB_PLATFORM
   log_event start "omarchy-bootstrap $OMB_VERSION cmd=$OMB_CMD intent=$OMB_INTENT os=$OMB_OS uid=$OMB_UID dry_run=$OMB_DRY_RUN${OMB_FIXTURE:+ fixture=$(basename "$OMB_FIXTURE")}"
+
+  # The text interface honours the core's operation records: a run that may
+  # change the machine starts only once the scopes its flow may change are
+  # free, an earlier boot's record there reconciled (op_text_barrier).
+  if [ "$OMB_PERSIST" = 1 ]; then
+    case "$OMB_PLATFORM:$cmd" in
+      macos: | macos:install) bar_scopes="plan asahi shared" ;;
+      macos:plan) bar_scopes=plan ;;
+      macos:shared | linux:shared) bar_scopes=shared ;;
+      macos:profile) bar_scopes=profile ;;
+      macos:export) bar_scopes="export" ;;
+      linux: | linux:install | linux:resume) bar_scopes="network omarchy shared" ;;
+      linux:dev) bar_scopes=omarchy ;;
+    esac
+  fi
+  if [ -n "$bar_scopes" ]; then
+    # shellcheck source=lib/records.sh
+    . "$OMB_HOME/lib/records.sh" || _omb_unloaded records
+    # shellcheck source=lib/core.sh
+    . "$OMB_HOME/lib/core.sh" || _omb_unloaded core
+    # shellcheck source=lib/read.sh
+    . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+    # shellcheck source=lib/operation.sh
+    . "$OMB_HOME/lib/operation.sh" || _omb_unloaded operation
+    # shellcheck disable=SC2086 # plain scope names, one word each
+    op_text_barrier $bar_scopes || return 1
+  fi
 
   case "$cmd" in
     sources) cmd_sources ${rest[@]+"${rest[@]}"} ; return ;;

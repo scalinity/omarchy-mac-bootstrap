@@ -553,7 +553,14 @@ action that changes the machine also keeps an **operation record**,
   that cannot be read*.
 - **Honoured by both interfaces.** The act entry of every command, in the
   frontend and in the text interface (`--no-tui`), checks the operation
-  records of its scopes first.
+  records of its scopes first. In text, under the run lock and before the
+  flow reads anything, `op_text_barrier` (`lib/operation.sh`) checks the
+  scopes that command's flow may change (on macOS, install: plan, asahi,
+  shared; on Linux, install and resume: network, omarchy, shared; `dev`:
+  omarchy; `plan`, `shared`, `profile`, `export`: their own). An earlier boot's
+  record is reconciled by its row's judgement, as the core does. Any other
+  record stops the command, in the core's words. A dry run changes nothing
+  and is not held.
 - **Read requests hold nothing.** A read worker that outlives its core is a
   non-mutating orphan: it can write only its bounded diagnostics into the
   scratch, and it never creates or holds a barrier.

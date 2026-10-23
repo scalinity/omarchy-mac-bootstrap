@@ -1602,4 +1602,21 @@ assert_eq "$O_RC" 1 "actions-clear-row: a row's readable record is refused"
 assert_contains "$O_OUT" "$TX_READABLE" 'actions-clear-row: and is shown as readable'
 assert_eq "$(oc_kept)" 'asahi.omb ' 'actions-clear-row: nothing moved'
 
+# === actions-text-barrier: the text interface honours the records the core keeps ===
+rm -rf "$T/state/ops"
+OPS=$T/state/ops/shared.omb o_rec failed 1 x "$BOOT" shared.create shared absent
+oc '' shared create
+assert_eq "$O_RC" 1 'actions-text-barrier: a failed shared.create in this boot stops shared create'
+assert_contains "$O_OUT" 'Nothing in this scope runs until it is reconciled' "actions-text-barrier: in the core's words"
+assert_eq "$(oc_kept)" 'shared.omb ' 'actions-text-barrier: the record stays'
+oc '' install
+assert_eq "$O_RC" 1 'actions-text-barrier: and install, whose flow may create Shared'
+rm -rf "$T/state/ops" && mkdir -p "$T/state/ops" && printf 'omb-op 1\ntorn' >"$T/state/ops/asahi.omb"
+oc '' install
+assert_eq "$O_RC" 1 'actions-text-barrier: an unreadable asahi record stops install'
+assert_contains "$O_OUT" 'operation clear asahi' 'actions-text-barrier: and names the way out'
+oc '' --dry-run install
+assert_not_contains "$O_OUT" 'cannot be read, so what it recorded' 'actions-text-barrier: a dry run changes nothing and is not held'
+rm -rf "$T/state/ops"
+
 t_done operation

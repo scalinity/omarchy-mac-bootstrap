@@ -889,3 +889,50 @@ op_clear() {
   fi
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# The text interface and the barrier (docs/PROTOCOL.md → *Operations and
+# exclusion*)
+# ---------------------------------------------------------------------------
+
+# op_text_barrier SCOPE... — the text interface honours the operation records
+# the core keeps. Under the run lock, before the command reads or changes
+# anything: each scope its flow may change holds no record, or an earlier
+# boot's record there is reconciled by its row's own judgement on a fresh
+# read; any other record stops the command, with the core's own words.
+op_text_barrier() {
+  local scope
+  core_boot_read
+  for scope in "$@"; do
+    core_barrier "$scope"
+    case "$CORE_BAR" in
+      none) ;;
+      stale)
+        if ! core_reconcile "$scope"; then
+          ui_fail "After the restart, ${CORE_BAR_ACTION:-the operation} left something unexpected: the machine shows neither its old state nor its expected effect. It needs you."
+          ui_note "./omarchy-bootstrap operation $scope shows what is recorded."
+          return 1
+        fi
+        ui_info "An earlier boot's $CO_ACTION was reconciled: $CORE_FINDING."
+        ;;
+      busy)
+        ui_fail "$CORE_BAR_ACTION is still running under a live core."
+        return 1
+        ;;
+      failed)
+        core_failed_text
+        ui_fail "$CORE_FAILED_TEXT Nothing in this scope runs until it is reconciled: restart this Mac (or this Linux system), then run the tool again."
+        return 1
+        ;;
+      unsupervised)
+        ui_fail "The outcome of ${CORE_BAR_ACTION:-an operation} is unknown and it may still be running: restart this Mac (or this Linux system), then run the tool again."
+        return 1
+        ;;
+      *)
+        ui_fail "The operation record $(tildify "$(core_op_path "$scope")") cannot be read, so what it recorded is unknown, and a restart does not change that: nothing in this scope runs while it is there."
+        ui_note "./omarchy-bootstrap operation clear $scope is the way out."
+        return 1
+        ;;
+    esac
+  done
+}
