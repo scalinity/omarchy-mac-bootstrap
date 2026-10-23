@@ -50,6 +50,7 @@ unit	macos-bash32	m2	suite:lifecycle
 unit	macos-bash32	m2	suite:operation
 unit	macos-bash32	m3	suite:agents
 unit	macos-bash32	m1	suite:restore
+unit	macos-bash32	m1	suite:qualify
 unit	macos-bash32	m4	suite:debug
 unit	macos-bash32	m3	suite:dev
 unit	macos-bash32	m3	diag:bounds
@@ -138,6 +139,7 @@ unit	linux-bash5	l1	suite:actions
 
 unit	linux-bash5	l0	suite:agents
 unit	linux-bash5	l3	suite:restore
+unit	linux-bash5	l3	suite:qualify
 unit	linux-bash5	l1	suite:debug
 
 # Linux target shell · GNU Bash 5.3.15 built from tests/bash-5.3.15.sha256's sources · aarch64

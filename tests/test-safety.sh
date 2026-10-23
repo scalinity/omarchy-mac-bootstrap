@@ -84,9 +84,11 @@ assert_eq "$(grep -c 'run sudo diskutil' $CODE | awk -F: '{s += $NF} END {print 
 assert_eq "$(printf '%s\n' "$body" | grep -c 'SHARED_PRED_ID=')" 0 "the creation never sets the device itself"
 assert_eq "$(grep -c 'SHARED_PRED_ID=\$GP_ID' "$REPO/lib/shared.sh")" 1 "the device is the partition found on the disk right before the region"
 
+# Qualification probes add df of verified Shared and the read-only kernel
+# log for exFAT dirty warnings. uname and Git commit use existing forms.
 # --- Static: every probe is read-only ----------------------------------------------
 probes=$(grep -h 'sys_cmd ' $CODE | grep -v '^[[:space:]]*#' | grep -o 'sys_cmd [^|)]*' | sed 's/^sys_cmd [^ ]* //' | sort -u)
-bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID,MAJ:MIN|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |ss -Htln|getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|pacman -Q "\$(RST_TARGET|p)" >/dev/null ;;$|pacman -Si "\$RST_TARGET" >/dev/null $|git config --file "\$f" --no-includes --get "\$name" >"\$RST_W/git.value"$|command -v "\$AG_BINARY"$|systemctl is-enabled sshd$|sshd -T$|passwd -S alarm$|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT|BNDL_DEST)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status|dscl \. -read "/Users/\$SCAN_USER" NFSHomeDirectory UserShell)')
+bad=$(printf '%s\n' "$probes" | grep -vE '^("\$@"|uname -[smr]|dmesg$|id -(u|un|Gn|g)|sysctl -n |sw_vers -productVersion|system_profiler -xml SPHardwareDataType|diskutil (info|list) -plist |diskutil apfs list -plist|diskutil apfs resizeContainer "\$1" limits -plist|fdesetup isactive|readlink /etc/localtime|defaults read |tmutil (destinationinfo|latestbackup)|git -C "\$OMB_HOME" (remote get-url origin|rev-parse --abbrev-ref HEAD|rev-parse HEAD|branch -r --contains HEAD)|git config --global user\.(name|email)|findmnt -no |lsblk -no TYPE |lsblk -nsplo NAME,TYPE |lsblk -bPno NAME,PKNAME,TYPE,START,SIZE,PARTUUID,PARTTYPE,FSTYPE,LABEL,UUID,MAJ:MIN|cryptsetup luksDump |pmset -g batt|ip route|systemctl is-active |ss -Htln|getconf PAGESIZE|timedatectl show |snapper --no-headers list-configs|pacman -(Qq|Dk)|pacman -Q "\$(RST_TARGET|p)" >/dev/null ;;$|pacman -Si "\$RST_TARGET" >/dev/null $|git config --file "\$f" --no-includes --get "\$name" >"\$RST_W/git.value"$|command -v "\$AG_BINARY"$|systemctl is-enabled sshd$|sshd -T$|passwd -S alarm$|df -Pk /|df -Pk "\$(SHARED_MOUNT|SHARED_MNT|BNDL_DEST|QFY_MOUNT)"|localectl list-locales|"\$OMS_SELF" --status|gh auth status|dscl \. -read "/Users/\$SCAN_USER" NFSHomeDirectory UserShell)')
 assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 
 # --- Static: every mutating command goes through run, and is expected -------------
@@ -95,12 +97,16 @@ assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 run_commands() {
   code_lines | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? [^;|&]*' | sed -E 's/^[[:space:];&|(]*run(_withheld [0-9]+)? //' | awk '{print $1}' | sort -u | tr '\n' ' '
 }
+# qfy_copy_exclusive exclusively creates a fixed name inside verified Shared;
+# qfy_stream exclusively opens its data file and checks the streaming pipeline.
+# rmdir removes a names directory only once its fixed test files are gone.
+# Existing rm/mkdir/mv/sync forms cover fixed cleanup, record rename and flush.
 runs=$(run_commands)
 for cmd in $runs; do
   case "$cmd" in
     sh | bash | nmtui | sudo | git | gh | ssh-keygen | npm | cp | sync | rm | \
       chmod | claude | env | ln | mkdir | mv | rst_log_write | rst_stage_write | uv | \
-      mise | timeout | systemctl | \
+      mise | timeout | systemctl | rmdir | qfy_copy_exclusive | qfy_stream | \
       omarchy-pkg-add | omarchy-install-dev-env | omarchy-install-editor-vscode | \
       omarchy-setup-security-sshd | omarchy-setup-security-sudoless-docker) ok ;;
     '""') ;; # a quoted first argument: checked exactly below
@@ -124,6 +130,18 @@ run "$AG_PATH" "$@"
 run "$OMS_SELF" --resume' "indirect commands are the observed agent handoff and omarchy-mac-setup --resume"
 assert_eq "$(grep -hE 'run systemctl ' $CODE | sed 's/^[[:space:]]*//; s/[[:space:]]*>.*$//')" \
   'run systemctl disable --now sshd' "the direct systemctl mutation only stops and disables image SSH"
+# Qualification has no recursive removal. Its exclusive writers, record
+# renames and empty-directory cleanup stay inside the verified fixed tree.
+qfy="$REPO/lib/qualify.sh"
+assert_eq "$(grep -E 'run (qfy_stream|qfy_copy_exclusive|mv|rmdir) ' "$qfy" | sed 's/^[[:space:]]*//')" \
+  'run qfy_stream "$QFY_DIR/data.$1.bin" || return 1
+if run qfy_copy_exclusive "$QFY_W/empty" "$path" 2>/dev/null; then
+if [ -z "$fixed" ]; then run rmdir "$QFY_DIR/names-$side" || return 1; fi
+run qfy_copy_exclusive "$QFY_W/record" "$QFY_DIR/$1.omb.tmp" || return 1
+run mv -f "$QFY_DIR/$1.omb.tmp" "$QFY_DIR/$1.omb" || return 1' qualify-fixed-write-forms
+assert_eq "$(grep -cE 'run rm -[^ ]*r|run sudo|run diskutil' "$qfy")" 0 qualify-no-recursive-or-partition-write
+assert_contains "$(cat "$qfy")" 'status=( "${PIPESTATUS[@]}" )' qualify-pipeline-status-boundary
+
 # Restore removes only its matched staging names, and every rename/link has
 # exact-destination semantics. Plain mv/ln must fail these restore pins.
 restore=$REPO/lib/migrate_restore.sh

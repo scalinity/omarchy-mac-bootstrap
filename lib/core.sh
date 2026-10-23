@@ -935,6 +935,7 @@ core_mod_for() {
     profile | profile.*) CORE_MOD=profile CORE_MOD_ROW=prof_row ;;
     export | export.*) CORE_MOD=export CORE_MOD_ROW=bndl_row ;;
     restore | restore.*) CORE_MOD=restore CORE_MOD_ROW=rst_row ;;
+    qualify | qualify.run) CORE_MOD=qualify CORE_MOD_ROW=qfy_row ;;
     agents.*) CORE_MOD=agents CORE_MOD_ROW=agent_row ;;
     *) return 1 ;;
   esac
@@ -953,6 +954,12 @@ core_mod_load() {
   __h=${__h%/}
   [ -n "$OMB_HOME" ] || OMB_HOME=${__h:-.}
   case "$1" in
+    qualify)
+      [ "${CORE_LOADED_qualify:-}" = 1 ] && return 0
+      # shellcheck source=/dev/null
+      . "$OMB_HOME/lib/qualify.sh" || _omb_unloaded qualify
+      CORE_LOADED_qualify=1
+      ;;
     actions)
       [ "${CORE_LOADED_actions:-}" = 1 ] && return 0
       # shellcheck source=/dev/null
@@ -1378,7 +1385,7 @@ core_read_op() {
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         dbg_core_op "$1"
       elif [ "$CORE_REQ_SCOPE" = profile ] || [ "$CORE_REQ_SCOPE" = export ] ||
-        [ "$CORE_REQ_SCOPE" = restore ]; then
+        [ "$CORE_REQ_SCOPE" = restore ] || [ "$CORE_REQ_SCOPE" = qualify ]; then
         # Each module answers its own scope's reads.
         core_mod_for "$CORE_REQ_SCOPE"
         core_mod_load "$CORE_MOD"
@@ -1388,6 +1395,7 @@ core_read_op() {
           profile) prof_core_op "$1" ;;
           export) bndl_core_op "$1" ;;
           restore) rst_core_op "$1" ;;
+          qualify) qfy_core_op "$1" ;;
         esac
       else
         core_result refused unavailable "This read dataset is not available."

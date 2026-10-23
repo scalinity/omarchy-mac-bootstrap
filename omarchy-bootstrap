@@ -144,6 +144,10 @@ _omb_load() {
         # shellcheck source=lib/migrate_restore.sh
         . "$OMB_HOME/lib/migrate_restore.sh" || _omb_unloaded migrate_restore
         ;;
+      qualify)
+        # shellcheck source=lib/qualify.sh
+        . "$OMB_HOME/lib/qualify.sh" || _omb_unloaded qualify
+        ;;
       debug)
         # shellcheck source=lib/debug.sh
         . "$OMB_HOME/lib/debug.sh" || _omb_unloaded debug
@@ -171,6 +175,7 @@ usage() {
   _help_row "shared create" "macOS: create the planned Shared partition"
   _help_row "shared activate" "Linux: mount Shared at /mnt/shared on every boot"
   _help_row "shared test" "write, read back and remove one test file"
+  _help_row "qualify [status]" "Shared cross-OS round trip; status is read-only"
   _help_row "sources [--check]" "upstream URLs and versions; --check compares live (read-only)"
   _help_row "logs" "log location and recent entries (read-only)"
   _help_row "operation SCOPE" "what a scope's operation record shows and what stays unknown (read-only)"
@@ -333,6 +338,9 @@ main() {
         esac
       fi
       ;;
+    qualify)
+      case "${rest[*]:-}" in '' | status) ;; *) _usage_error "qualify takes only status"; return 2 ;; esac
+      ;;
     *) [ "${#rest[@]}" = 0 ] || { _usage_error "unexpected argument: ${rest[0]}" ; return 2; } ;;
   esac
 
@@ -364,6 +372,9 @@ main() {
     shared)
       if [ "${rest[0]:-status}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
       ;;
+    qualify)
+      if [ "${rest[0]:-}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
+      ;;
     plan) OMB_INTENT=plan ;;
     *) OMB_INTENT=act ;;
   esac
@@ -379,7 +390,13 @@ main() {
   # request takes the run lock itself.
   if [ -z "${OMB_NO_TUI:-}" ] && [ -t 0 ] && [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
     _omb_load records core frontend
-    if fe_session_for "$cmd" "${rest[*]:-}" && { [ -n "${OMB_FIXTURE:-}" ] || fe_releases_actions; }; then
+    # Qualification's interactive route carries only journey and qualify.
+    if [ "$cmd" = qualify ] && [ "${#rest[@]}" = 0 ]; then
+      FE_SCOPES=journey,qualify FE_INTENT=act
+      arg=1
+    elif fe_session_for "$cmd" "${rest[*]:-}"; then arg=1
+    else arg=0; fi
+    if [ "$arg" = 1 ] && { [ -n "${OMB_FIXTURE:-}" ] || fe_releases_actions; }; then
       # The per-run scratch goes when the session ends; the text interface,
       # if the frontend falls back, sets its own exit handling below.
       trap omb_cleanup EXIT
@@ -412,6 +429,7 @@ main() {
       macos:profile) bar_scopes=profile ;;
       macos:export) bar_scopes="export" ;;
       linux:restore) bar_scopes=restore ;;
+      macos:qualify | linux:qualify) bar_scopes=qualify ;;
       linux: | linux:install | linux:resume) bar_scopes="network omarchy shared" ;;
       linux:dev) bar_scopes=omarchy ;;
     esac
@@ -433,6 +451,11 @@ main() {
     doctor) cmd_doctor ; return ;;
     status) cmd_status ; return ;;
     shared) cmd_shared ${rest[@]+"${rest[@]}"} ; return ;;
+    qualify)
+      _omb_load records qualify
+      qfy_cmd ${rest[@]+"${rest[@]}"}
+      return
+      ;;
     debug)
       _omb_load records core read debug
       dbg_cmd
