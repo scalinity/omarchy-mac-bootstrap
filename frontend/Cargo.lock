@@ -199,6 +199,7 @@ dependencies = [
  "crossterm_winapi",
  "derive_more",
  "document-features",
+ "filedescriptor",
  "mio",
  "parking_lot",
  "rustix",
@@ -777,6 +778,7 @@ dependencies = [
 name = "omb-tui"
 version = "0.2.0"
 dependencies = [
+ "crossterm",
  "insta",
  "portable-pty",
  "ratatui",

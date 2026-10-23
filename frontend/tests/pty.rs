@@ -876,13 +876,7 @@ fn pty_ctrlc_during_a_handoff_goes_to_the_child() {
 
 #[test]
 fn pty_sigterm_and_sighup_idle() {
-    for sig in ["TERM", "HUP"] {
-        let mut p = Pty::start(&format!("sig-{sig}"), Opts::default());
-        p.dashboard();
-        kill(p.frontend_pid(), sig);
-        assert_eq!(p.wait_exit(), 0, "SIG{sig}");
-        assert!(p.restored(), "SIG{sig}: the terminal restored");
-    }
+    pty_hangup::signals_end_the_idle_session();
 }
 
 #[test]
@@ -912,27 +906,7 @@ fn pty_sigterm_and_sighup_to_the_launcher_reach_the_frontend() {
 
 #[test]
 fn pty_hangup_ends_the_session() {
-    let p = Pty::start("hangup", Opts::default());
-    p.dashboard();
-    p.idle();
-    let f = p.frontend_pid();
-    let tmp = p.dir.join("tmp");
-    let mut launcher = p.hang_up(false);
-    let t0 = Instant::now();
-    while launcher.try_wait().unwrap().is_none() {
-        assert!(
-            t0.elapsed() < Duration::from_secs(30),
-            "the launcher is still running 30 s after its terminal closed"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    assert!(!alive(f), "the frontend ended with its terminal");
-    let left: Vec<_> = std::fs::read_dir(&tmp)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("omb-session."))
-        .collect();
-    assert!(left.is_empty(), "the session scratch was removed");
+    pty_hangup::hangup_ends_the_session();
 }
 
 #[test]
@@ -1809,3 +1783,6 @@ fn pty_phase_c_journey_qualification_and_completion() {
 }
 
 mod pty_ux;
+
+#[path = "pty_hangup/mod.rs"]
+mod pty_hangup;

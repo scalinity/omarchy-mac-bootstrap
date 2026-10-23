@@ -425,6 +425,14 @@ title is pushed and restored on exit, panic and termination, and before a
 terminal handoff. Re-entry pushes it again and restores the current title.
 The Linux console and non-terminal output receive no title sequences.
 
+A closed terminal ends input and drawing, restores what can be restored,
+and records the reason in the frontend trace. EOF, terminal I/O errors,
+and repeated readiness without input use the same shutdown as SIGTERM or
+SIGHUP: a cancellable request is cancelled; a non-cancellable request is
+followed to its core-recorded outcome before exit. Polls have a bounded
+timeout and check the terminate flag before and after reading. The launcher
+remains responsible for reporting and cleaning up the ended session.
+
 Action rows show their label and the core's explanation in muted text.
 Intent and scope identifiers are not appended to the label. Moving to
 another screen clears the previous page's transient status. Journey facts
