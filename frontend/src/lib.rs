@@ -185,6 +185,11 @@ pub fn run(args: &[String]) -> i32 {
                 Cmd::Quit(code, why) => {
                     term.restore();
                     trace.line(&format!("exit {code}"));
+                    if code == 0
+                        && let Some(receipt) = model.completion_receipt(&theme)
+                    {
+                        println!("{receipt}");
+                    }
                     if !why.is_empty() {
                         eprintln!("omb-tui: {why}");
                     }

@@ -20,8 +20,8 @@ expression: "frame(m, w, h)"
 │▍ Install     ││   New OS size         you type 244140MiB                     │
 │  Progress    ││                                                              │
 │  Restore     ││ ▍After the installer                                         │
-│              ││   After the shutdown, hold the power button and choose       │
-│              ││   Linux.                                                     │
+│  Qualify     ││   After the shutdown, hold the power button and choose       │
+│  Completion  ││   Linux.                                                     │
 │              ││                                                              │
 │              ││ ▍Resume token                                               ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘

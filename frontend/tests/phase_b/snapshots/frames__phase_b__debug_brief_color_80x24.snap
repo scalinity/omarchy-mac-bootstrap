@@ -20,8 +20,8 @@ expression: text
 │  Install     ││   Core brief line 8                                          │
 │  Progress    ││   Core brief line 9                                          │
 │  Restore     ││   Core brief line 10                                         │
-│              ││   Core brief line 11                                         │
-│              ││   Core brief line 12                                         │
+│  Qualify     ││   Core brief line 11                                         │
+│  Completion  ││   Core brief line 12                                         │
 │              ││   Core brief line 13                                         │
 │              ││   Core brief line 14                                        ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘

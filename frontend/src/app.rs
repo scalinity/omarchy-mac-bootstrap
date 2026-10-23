@@ -75,6 +75,63 @@ pub struct Param {
     pub choices: Vec<String>,
 }
 
+/// A station's state and provenance, supplied by the core.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stage {
+    pub name: String,
+    pub state: String,
+    pub basis: String,
+    pub by: String,
+    pub detail: String,
+}
+
+impl Stage {
+    pub fn description(&self) -> String {
+        let mut s = format!("{}: {}", self.name, self.state);
+        if self.basis == "recorded" {
+            s.push_str(&format!(" - recorded by {}", self.by));
+        }
+        if !self.detail.is_empty() {
+            s.push_str(&format!(" - {}", self.detail));
+        }
+        s
+    }
+}
+
+/// Stage records are an all-or-nothing projection. An older core may omit
+/// them; a partial or contradictory traverse supplies no journey dataset.
+fn stages_ok(records: &[Record]) -> bool {
+    let stages: Vec<_> = records.iter().filter(|r| r.ty == "stage").collect();
+    stages.is_empty()
+        || (stages.len() == crate::widgets::STATIONS.len()
+            && stages
+                .iter()
+                .filter(|r| r.text("state") == Some("current"))
+                .count()
+                <= 1
+            && stages
+                .iter()
+                .zip(crate::widgets::STATIONS)
+                .all(|(r, name)| {
+                    let detail = r.text("detail").unwrap_or("");
+                    r.text("name") == Some(name)
+                        && matches!(
+                            r.text("state"),
+                            Some("done" | "current" | "todo" | "skipped" | "blocked")
+                        )
+                        && match r.text("basis") {
+                            Some("machine") => r.text("by").unwrap_or("").is_empty(),
+                            Some("recorded") => matches!(r.text("by"), Some("macos" | "linux")),
+                            _ => false,
+                        }
+                        && if matches!(r.text("state"), Some("skipped" | "blocked")) {
+                            !detail.is_empty()
+                        } else {
+                            detail.is_empty()
+                        }
+                }))
+}
+
 /// A snapshot of one scope, as the model keeps it to draw from.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
@@ -86,7 +143,7 @@ pub struct Snapshot {
     pub regions: Vec<crate::read::DiskRegion>,
     /// The installer's questions and what to type (prompt, value).
     pub answers: Vec<(String, String)>,
-    pub stages: Vec<(String, String)>,
+    pub stages: Vec<Stage>,
     /// The data set this snapshot read: compared for equality, nothing else.
     pub generation: String,
     /// The core's guide: the next step, in its own words.
@@ -211,6 +268,8 @@ pub enum Screen {
     Conflicts,
     /// The read-only agent brief opened from an error.
     Brief,
+    Qualification,
+    Completion,
     Gate,
     Help,
     /// The core could not be reached or answered with an error.
@@ -218,7 +277,7 @@ pub enum Screen {
 }
 
 /// The navigation rail's screens, in order.
-pub const NAV: [Screen; 15] = [
+pub const NAV: [Screen; 17] = [
     Screen::Welcome,
     Screen::Dashboard,
     Screen::Machine,
@@ -234,6 +293,8 @@ pub const NAV: [Screen; 15] = [
     Screen::Install,
     Screen::Progress,
     Screen::Restore,
+    Screen::Qualification,
+    Screen::Completion,
 ];
 
 impl Screen {
@@ -260,6 +321,8 @@ impl Screen {
             Screen::Restore => "Restore",
             Screen::Conflicts => "Conflict and diff",
             Screen::Brief => "Debugging brief",
+            Screen::Qualification => "Qualification",
+            Screen::Completion => "Completion",
             Screen::Gate => "Gate",
             Screen::Help => "Keys",
             Screen::Fatal => "No answer",
@@ -279,6 +342,8 @@ impl Screen {
             Screen::Restore => Some(Kind::RestoreReview),
             Screen::Conflicts => Some(Kind::Conflicts),
             Screen::Brief => Some(Kind::Brief),
+            Screen::Qualification => Some(Kind::Step),
+            Screen::Completion => Some(Kind::Report),
             _ => None,
         }
     }
@@ -502,7 +567,7 @@ pub struct Model {
     /// The sidebar's panels shown in place of the workspace (narrow widths).
     pub side: bool,
     /// The details opened, by kind.
-    pub details: [Option<Detail>; 15],
+    pub details: [Option<Detail>; 17],
     /// An action invalidated Operation; only an admitted Journey read clears it.
     pub operation_stale: bool,
     pub health: ScopeRead,
@@ -510,6 +575,10 @@ pub struct Model {
     pub profile: ScopeRead,
     pub restore: ScopeRead,
     pub debug: ScopeRead,
+    pub qualify: ScopeRead,
+    /// Station selected with [ and ]; None leaves Enter on the actions.
+    pub station: Option<usize>,
+    pub receipt: bool,
     pub rest: crate::restore::Restore,
     pub brief_back: Screen,
     pub logs_tab: LogsTab,
@@ -620,6 +689,9 @@ impl Default for Model {
             profile: ScopeRead::default(),
             restore: ScopeRead::default(),
             debug: ScopeRead::default(),
+            qualify: ScopeRead::default(),
+            station: None,
+            receipt: false,
             rest: crate::restore::Restore::default(),
             brief_back: Screen::Dashboard,
             logs_tab: LogsTab::Tool,
@@ -650,6 +722,21 @@ impl Default for Model {
 }
 
 impl Model {
+    pub fn completion_receipt(&self, t: &crate::theme::Theme) -> Option<String> {
+        (self.receipt
+            && self.snap.as_ref().is_some_and(|s| {
+                s.stages
+                    .iter()
+                    .any(|s| s.name == "done" && s.state == "done")
+            }))
+        .then(|| {
+            format!(
+                "{} journey complete {} ./omarchy-bootstrap report",
+                t.g.ok, t.g.dot
+            )
+        })
+    }
+
     /// The start: the handshake.
     pub fn start(&mut self) -> Vec<Cmd> {
         self.send(Req::Hello, false, "connecting")
@@ -674,6 +761,7 @@ impl Model {
             Scope::Profile => &self.profile,
             Scope::Restore => &self.restore,
             Scope::Debug => &self.debug,
+            Scope::Qualify => &self.qualify,
             _ => &self.health,
         }
     }
@@ -684,6 +772,7 @@ impl Model {
             Scope::Profile => &mut self.profile,
             Scope::Restore => &mut self.restore,
             Scope::Debug => &mut self.debug,
+            Scope::Qualify => &mut self.qualify,
             _ => &mut self.health,
         }
     }
@@ -800,6 +889,7 @@ impl Model {
             Scope::Profile => "reading the profile",
             Scope::Restore => "reading restore",
             Scope::Debug => "reading debugging facts",
+            Scope::Qualify => "reading qualification",
             _ => "reading health",
         };
         self.send(Req::Snapshot(s), true, label)
@@ -863,7 +953,13 @@ pub fn snapshot_of(records: &[Record]) -> Snapshot {
             "message" => s
                 .messages
                 .push((level_of(r.text("level").unwrap_or("")), text(r, "text"))),
-            "stage" => s.stages.push((text(r, "name"), text(r, "state"))),
+            "stage" => s.stages.push(Stage {
+                name: text(r, "name"),
+                state: text(r, "state"),
+                basis: text(r, "basis"),
+                by: text(r, "by"),
+                detail: text(r, "detail"),
+            }),
             "action" => s.actions.push(Action {
                 id: text(r, "id"),
                 scope: text(r, "scope"),
@@ -1087,6 +1183,8 @@ fn read_whole(kind: Kind) -> bool {
             | Kind::Diff
             | Kind::RestoreStatus
             | Kind::Brief
+            | Kind::Step
+            | Kind::Report
     )
 }
 
@@ -1148,7 +1246,12 @@ fn regenerated(m: &mut Model, scope: Scope, id: &str) -> Vec<Cmd> {
                 offset: 0,
                 limit: detail_limit(k, limit),
             });
-        } else if moved && matches!(scope, Scope::Profile | Scope::Restore | Scope::Debug) {
+        } else if moved
+            && matches!(
+                scope,
+                Scope::Profile | Scope::Restore | Scope::Debug | Scope::Qualify
+            )
+        {
             // The person's choices are made over these rows: they are read
             // again from the new generation, never shown under it.
             m.details[k.index()] = None;
@@ -1280,6 +1383,13 @@ fn done(m: &mut Model, req: Req, outcome: Outcome) -> Vec<Cmd> {
                 });
             }
             if status == "done" {
+                if !stages_ok(&records) {
+                    return unknown(
+                        m,
+                        Req::Snapshot(Scope::Journey),
+                        "The required journey response cannot be represented in Protocol 1.".into(),
+                    );
+                }
                 let s = snapshot_of(&records);
                 if m.operation_stale && code == "ok" && !s.generation.is_empty() {
                     // This response is a new read even when its generation is
@@ -2405,6 +2515,7 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
         m.asked_quit = false;
         if matches!(k.code, KeyCode::Char('y') | KeyCode::Char('q')) {
             m.quit_after = true;
+            m.receipt = m.screen == Screen::Completion;
             m.status = Some((
                 Level::Info,
                 "Quitting when the running request ends.".into(),
@@ -2429,6 +2540,7 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
         }
         KeyCode::Char('q') => {
             if m.pending.is_none() {
+                m.receipt = m.screen == Screen::Completion;
                 return vec![Cmd::Quit(0, String::new())];
             }
             m.asked_quit = true;
@@ -2520,6 +2632,25 @@ fn main_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
                 Screen::Scan => page_key(m, k, Scope::Profile, &["profile.scan"]),
                 Screen::Progress => page_key(m, k, Scope::Journey, &[]),
                 Screen::Restore => restore_key(m, k),
+                Screen::Qualification => match k.code {
+                    KeyCode::Enter => refresh(m),
+                    KeyCode::Char('t') if m.whole(Kind::Step) && m.qualify.fault.is_none() => {
+                        match m.offered(Scope::Qualify, "qualify.run") {
+                            Some(a) => choose(m, a, Scope::Qualify),
+                            None => Vec::new(),
+                        }
+                    }
+                    _ => {
+                        let n = crate::screens::blocks(m, m.screen);
+                        scroll_key(&mut m.page_scroll, n, &k);
+                        Vec::new()
+                    }
+                },
+                Screen::Completion => {
+                    let n = crate::screens::blocks(m, m.screen);
+                    scroll_key(&mut m.page_scroll, n, &k);
+                    Vec::new()
+                }
                 Screen::Conflicts => conflict_key(m, k),
                 Screen::Brief => {
                     let n = crate::screens::blocks(m, Screen::Brief);
@@ -2587,6 +2718,11 @@ fn refresh(m: &mut Model) -> Vec<Cmd> {
         }
     }
     match m.screen {
+        Screen::Completion => {
+            m.health.asked = false;
+            m.details[Kind::Report.index()] = None;
+            m.refresh()
+        }
         Screen::Logs if m.logs_tab == LogsTab::Diagnostics => vec![Cmd::ReadLogs],
         Screen::Plan | Screen::Form => {
             let f = if m.screen == Screen::Plan {
@@ -2871,11 +3007,48 @@ fn table_key(m: &mut Model, kind: Kind, k: KeyEvent) -> Vec<Cmd> {
 fn dashboard_key(m: &mut Model, k: KeyEvent) -> Vec<Cmd> {
     let n = m.snap.as_ref().map_or(0, |s| s.actions.len());
     match k.code {
+        KeyCode::Char('[') | KeyCode::Char(']')
+            if m.snap.as_ref().is_some_and(|s| !s.stages.is_empty()) =>
+        {
+            let i = m.station.unwrap_or_else(|| {
+                m.snap
+                    .as_ref()
+                    .unwrap()
+                    .stages
+                    .iter()
+                    .position(|s| s.state == "current")
+                    .unwrap_or(0)
+            });
+            m.dash_scroll = 0;
+            m.station = Some(if k.code == KeyCode::Char(']') {
+                (i + 1).min(9)
+            } else {
+                i.saturating_sub(1)
+            });
+            Vec::new()
+        }
+        KeyCode::Enter if m.station.is_some() => {
+            let screens = [
+                Screen::Machine,
+                Screen::Selection,
+                Screen::Review,
+                Screen::Plan,
+                Screen::Install,
+                Screen::Progress,
+                Screen::Shared,
+                Screen::Restore,
+                Screen::Qualification,
+                Screen::Completion,
+            ];
+            open(m, screens[m.station.unwrap()])
+        }
         KeyCode::Down | KeyCode::Char('j') if n > 0 => {
+            m.station = None;
             m.focus = (m.focus + 1).min(n - 1);
             Vec::new()
         }
         KeyCode::Up | KeyCode::Char('k') if n > 0 => {
+            m.station = None;
             m.focus = m.focus.saturating_sub(1);
             Vec::new()
         }

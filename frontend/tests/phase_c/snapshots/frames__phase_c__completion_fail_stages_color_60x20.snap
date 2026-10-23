@@ -1,0 +1,24 @@
+---
+source: tests/phase_c/mod.rs
+expression: text_of(&b)
+---
+ ◒ Completion ────────────────────────────────────── v0.2.0
+‹ Review  Install  Progress  Restore  Qualify ▍Completion
+┌ Completion ──────────────────────────────────────────────┐
+│ ▍Journey stages                                          │
+│   survey: done                                           │
+│   profile: done                                          │
+│   resolve: done                                          │
+│   plan: done                                             │
+│   asahi: done - recorded by macos                        │
+│   omarchy: done                                          │
+│   shared: done                                           │
+│   restore: skipped - No bundle selected                  │
+│   verify: done                                           │
+│   done: done                                             │
+│                                                          │
+│ ▍Report                                                  │
+│ ✗ Report: fail                                           │
+│   5 pass - 1 warn - 1 fail - 1 not-checked              ↓│
+└──────────────────────────────────────────────────────────┘
+ ↑↓ scroll  r refresh  L logs  ? help     may act · fixture

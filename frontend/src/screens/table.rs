@@ -206,7 +206,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
                     | Kind::Conflicts
                     | Kind::Diff
                     | Kind::RestoreStatus
-                    | Kind::Brief => "The core sent no rows.",
+                    | Kind::Brief
+                    | Kind::Step
+                    | Kind::Report => "The core sent no rows.",
                     Kind::Log => {
                         let said = facts.is_some_and(|s| !s.messages.is_empty());
                         if said {
@@ -476,7 +478,9 @@ fn cells_of(
         | Kind::Conflicts
         | Kind::Diff
         | Kind::RestoreStatus
-        | Kind::Brief => {
+        | Kind::Brief
+        | Kind::Step
+        | Kind::Report => {
             vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)]
         }
         Kind::Operation => vec![

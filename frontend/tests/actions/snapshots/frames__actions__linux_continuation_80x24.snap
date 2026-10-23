@@ -20,8 +20,8 @@ expression: "frame(m, w, h)"
 │▍ Install     ││   The text flow's own omarchy.start.                         │
 │  Progress    ││   ✓ Omarchy Mac  malik-na/omarchy-mac at 3f1c, read just now │
 │  Restore     ││                                                              │
-│              ││ ▍Start                                                       │
-│              ││   ⏎ opens the gate: type start to run Start Omarchy Mac;     │
+│  Qualify     ││ ▍Start                                                       │
+│  Completion  ││   ⏎ opens the gate: type start to run Start Omarchy Mac;     │
 │              ││   this terminal is the program's until it exits.             │
 │              ││   Omarchy Mac's setup writes to tty1 (Ctrl+Alt+F1).          │
 └──────────────┘└──────────────────────────────────────────────────────────────┘

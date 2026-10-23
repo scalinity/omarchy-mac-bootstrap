@@ -29,11 +29,23 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
         ));
         return v;
     };
+    if !s.stages.is_empty() {
+        v.push(Item::Text(
+            "[ ] choose a station; Enter opens it; up/down choose actions.".into(),
+            Token::Muted,
+        ));
+        v.extend(s.stages.iter().map(|s| {
+            Item::Text(
+                s.description(),
+                crate::screens::journey::stage_token(&s.state),
+            )
+        }));
+    }
     // The station the core says is current, in its words.
-    for (name, _) in s.stages.iter().filter(|(_, st)| st == "current") {
+    for stage in s.stages.iter().filter(|s| s.state == "current") {
         v.push(Item::Pair {
             label: "Current stage".into(),
-            value: name.clone(),
+            value: stage.name.clone(),
             token: Token::Accent,
             state: "info",
             recorded: false,
@@ -122,7 +134,7 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     };
     let inner = widgets::panel(f, main, &title, t);
     let items = items(m);
-    let focus = (m.region == Region::Work && m.focused().is_some())
+    let focus = (m.region == Region::Work && m.station.is_none() && m.focused().is_some())
         .then(|| {
             items
                 .iter()

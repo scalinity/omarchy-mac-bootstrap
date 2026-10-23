@@ -1,0 +1,28 @@
+---
+source: tests/phase_c/mod.rs
+expression: text_of(&b)
+---
+ (o) Qualification ----------------------------------------------------- v0.2.0
+ (o) O M A R C H Y  mac bootstrap
++ Screens -----++ Qualification -----------------------------------------------+
+|  Welcome     ||   - Qualification  waiting-for-linux                         |
+|  Journey     ||   - Due            2                                         |
+|  Machine     ||   + Shared         disk0s7 GUID 8F2A41C0 on this Mac         |
+|  Status      || |Cross-system check                                          |
+|  Health      ||   1  macOS writes - done                                     |
+|  Logs        ||   SHA-256 5f2ec1a05f2e; file written                         |
+|  Plan        ||   2  Linux checks and writes - todo                          |
+|  Op          ||   SHA-256 8acb8acb8acb; digest matches                       |
+|  Scan        ||   3  macOS checks - todo                                     |
+|  Select      ||   Read Linux's file and names                                |
+|  Items       ||                                                              |
+|  Review      ||                                                              |
+|  Install     ||                                                              |
+|  Progress    ||                                                              |
+|  Restore     ||                                                              |
+|* Qualify     ||                                                              |
+|  Completion  ||                                                              |
+|              ||                                                              |
+|              ||                                                              |
++--------------++--------------------------------------------------------------+
+ enter read again  t test step (typed gate)  ? help           may act - fixture

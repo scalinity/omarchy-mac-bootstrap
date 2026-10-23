@@ -20,8 +20,8 @@ expression: f
 │  Install     ││   Plan            not yet · recorded                                             │
 │  Progress    ││                                                                                  │
 │  Restore     ││ ▍What you can do now                                                             │
-│              ││   Nothing is available now.                                                      │
-│              ││                                                                                  │
+│  Qualify     ││   Nothing is available now.                                                      │
+│  Completion  ││                                                                                  │
 │              │└──────────────────────────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────────────────────────┐
 │              ││ Platform      macos                                                              │

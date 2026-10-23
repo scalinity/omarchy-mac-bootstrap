@@ -1,0 +1,24 @@
+---
+source: tests/phase_c/mod.rs
+expression: text_of(&b)
+---
+ (o) Qualification --------------------------------- v0.2.0
+< Items  Review  Install  Progress  Restore *Qualify >
++ Qualification -------------------------------------------+
+|   ! Qualification  blocked                               |
+|   - Due            none                                  |
+|   + Shared         disk0s7 GUID 8F2A41C0 on this Mac     |
+|   x blocked  Shared identity unavailable                 |
+|              Activate Shared                             |
+| |Cross-system check                                      |
+|   1  macOS writes - done                                 |
+|   SHA-256 5f2ec1a05f2e; file written                     |
+|   2  Linux checks and writes - done                      |
+|   SHA-256 8acb8acb8acb; digest matches                   |
+|   3  macOS checks - blocked                              |
+|   Read Linux's file and names                            |
+|                                                          |
+|                                                          |
+|                                                          |
++----------------------------------------------------------+
+ enter read again  ? help                 may act - fixture

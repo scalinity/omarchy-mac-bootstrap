@@ -18,6 +18,7 @@ pub enum Scope {
     Profile,
     Restore,
     Debug,
+    Qualify,
 }
 
 impl Scope {
@@ -29,6 +30,7 @@ impl Scope {
             Scope::Profile => "profile",
             Scope::Restore => "restore",
             Scope::Debug => "debug",
+            Scope::Qualify => "qualify",
         }
     }
 }
@@ -56,10 +58,12 @@ pub enum Kind {
     Diff,
     RestoreStatus,
     Brief,
+    Step,
+    Report,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 15] = [
+    pub const ALL: [Kind; 17] = [
         Kind::Machine,
         Kind::Status,
         Kind::Doctor,
@@ -75,12 +79,15 @@ impl Kind {
         Kind::Diff,
         Kind::RestoreStatus,
         Kind::Brief,
+        Kind::Step,
+        Kind::Report,
     ];
 
     pub fn scope(self) -> Scope {
         match self {
             Kind::Machine | Kind::Status | Kind::Operation => Scope::Journey,
-            Kind::Doctor => Scope::Health,
+            Kind::Doctor | Kind::Report => Scope::Health,
+            Kind::Step => Scope::Qualify,
             Kind::Bundles
             | Kind::RestoreReview
             | Kind::Conflicts
@@ -109,6 +116,8 @@ impl Kind {
             Kind::Diff => "diff",
             Kind::RestoreStatus => "status",
             Kind::Brief => "brief",
+            Kind::Step => "step",
+            Kind::Report => "report",
         }
     }
 
@@ -144,6 +153,8 @@ impl Kind {
             Kind::Diff => "reading the conflict diffs",
             Kind::RestoreStatus => "reading restore status",
             Kind::Brief => "reading the debugging brief",
+            Kind::Step => "reading qualification steps",
+            Kind::Report => "reading the journey report",
         }
     }
 }

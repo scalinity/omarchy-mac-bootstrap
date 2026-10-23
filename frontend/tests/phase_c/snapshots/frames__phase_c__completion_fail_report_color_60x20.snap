@@ -1,0 +1,24 @@
+---
+source: tests/phase_c/mod.rs
+expression: text_of(&b)
+---
+ ◒ Completion ────────────────────────────────────── v0.2.0
+‹ Review  Install  Progress  Restore  Qualify ▍Completion
+┌ Completion ──────────────────────────────────────────────┐
+│ ✗ Report: fail                                          ↑│
+│   5 pass - 1 warn - 1 fail - 1 not-checked               │
+│   mac - pass: Observed by the core                       │
+│   disk - warn: Observed by the core                      │
+│   shared - fail: Observed by the core                    │
+│   linux - pass: Observed by the core                     │
+│   qualification - pass: Observed by the core             │
+│   restore - pass: Observed by the core                   │
+│   doctor - pass: Observed by the core                    │
+│   recovery - not-checked: Observed by the core           │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ scroll  r refresh  L logs  ? help     may act · fixture

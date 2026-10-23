@@ -20,8 +20,8 @@ expression: "frame(m, w, h)"
 │  Install     ││   Evidence   observed                                        │
 │  Progress    ││   Requested  unknown                                         │
 │  Restore     ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Qualify     ││                                                              │
+│  Completion  ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
  · mas never travels: only means something on macOS
