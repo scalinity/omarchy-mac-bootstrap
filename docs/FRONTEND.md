@@ -42,7 +42,9 @@ The launcher opens the frontend for an interactive command on a terminal
 run, `install` and `resume` with every scope; `plan` with the journey and
 plan scopes at intent `plan`; `profile` with journey, profile and resolve;
 `export` with journey and export; `shared create` and `shared activate`
-with journey and shared. Over a fixture it always does; on a real machine
+with journey and shared. A command given an argument (`resume TOKEN`,
+`export DIR`, `shared create CODE`) stays in text, where the argument is
+read and checked. Over a fixture it always does; on a real machine
 only once `release/frontend.lock` pins a release at least 0.2.0, the first
 whose frontend runs the core's actions (`FE_ACTIONS_VERSION`), so no
 command opens a frontend that cannot finish it. An unreleased build runs

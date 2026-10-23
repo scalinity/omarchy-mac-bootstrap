@@ -88,12 +88,14 @@ FE_ACTIONS_VERSION=0.2.0
 # scope is always there: the dashboard every session opens on.
 fe_session_for() {
   FE_SCOPES="" FE_INTENT=act
+  # A command that carries an argument (resume TOKEN, export DIR, shared
+  # create CODE) stays in text: the session has no route for it to the core.
   case "$1:$2" in
-    : | install: | resume:*) FE_SCOPES=$FE_ALL_SCOPES ;;
+    : | install: | resume:) FE_SCOPES=$FE_ALL_SCOPES ;;
     plan:) FE_SCOPES=journey,plan FE_INTENT=plan ;;
     profile:) FE_SCOPES=journey,profile,resolve ;;
-    export:*) FE_SCOPES=journey,export ;;
-    shared:create* | shared:activate*) FE_SCOPES=journey,shared ;;
+    export:) FE_SCOPES=journey,export ;;
+    shared:create | shared:activate) FE_SCOPES=journey,shared ;;
     *) return 1 ;;
   esac
 }

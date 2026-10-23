@@ -726,5 +726,16 @@ mkdir -p "$T/cwd-report"
 assert_eq "$(ls -A "$T/cwd-report")" "" "fe-report-buffer: nothing is made in the working folder"
 assert_contains "$(cat "$T"/state-report/logs/*.log 2>/dev/null)" "frontend state=crashed the interface stopped (status 137)" "fe-report-buffer: the log line is whole"
 
+# fe-session-args: a command given an argument stays in text, where the
+# argument is read; its bare form opens the frontend.
+for c in resume: export: shared:create shared:activate; do
+  r=$(fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
+  assert_eq "${r%%|*}" 0 "fe-session-args: ${c%%:*} ${c#*:} opens the frontend"
+done
+for c in resume:ombdone1abc export:/tmp/out "shared:create ombshare1x" "shared:activate ombshare1x"; do
+  r=$(fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
+  assert_eq "${r%%|*}" 1 "fe-session-args: ${c%%:*} ${c#*:} stays in text"
+done
+
 t_decoys_survive test-frontend
 t_done test-frontend
