@@ -120,6 +120,16 @@ refuse 1 "an integer outside 64 bits" 'n = 9223372036854775808'
 refuse 1 "an inline table over several lines" 't = { a = 1,
   b = 2 }'
 refuse 1 "a trailing comma in an inline table" 't = { a = 1, }'
+# toml-inline-nested (S13): a value inside an inline table may not carry it
+# onto another line either.
+refuse 2 "an inline table over several lines" 'x = 1
+a = { b = [
+1,
+2] }'
+refuse 1 "an inline table over several lines" 'a = { b = """one
+two""" }'
+refuse 1 "an inline table over several lines" 'a = { b = { c = [1,
+2] } }'
 refuse 2 "a key defined twice" 'a = 1
 a = 2'
 refuse 2 "a table defined twice" '[t]
