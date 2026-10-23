@@ -119,20 +119,56 @@ _scan_text() {
   SCAN_TX=${1//[![:print:]]/?}
 }
 
-# _scan_url_ok URL — 0 when a URL carries no credential: no user information
-# and no query parameter named like one (docs/MIGRATION.md → *Secret channels*).
+# The URL rule (docs/MIGRATION.md → *Secret channels*), as awk functions
+# both the shell check and Codex's conversion use. urlok(U) is 1 when U holds
+# no user information and no query or fragment parameter whose name, once
+# percent-decoded, is named like a credential or a signature (token, key,
+# secret, sig, auth, password, credential, session: X-Amz-Signature and
+# X-Amz-Credential among them).
+# shellcheck disable=SC2016 # awk source
+_SCAN_URL_FUNCS='
+function uhex(c) { return index("0123456789abcdef", tolower(c)) - 1 }
+function udec(s,   o, i, n, c, h1, h2) {
+  o = ""
+  n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "%" && i + 2 <= n) {
+      h1 = uhex(substr(s, i + 1, 1)); h2 = uhex(substr(s, i + 2, 1))
+      if (h1 >= 0 && h2 >= 0) { o = o sprintf("%c", h1 * 16 + h2); i += 2; continue }
+    }
+    if (c == "+") c = " "
+    o = o c
+  }
+  return o
+}
+function urlok(u,   a, q, n, i, parts, name) {
+  # User information in a URL with a scheme (https://token@host/ included);
+  # an scp-like Git remote (git@host:path) names an account, not a secret.
+  if (sub(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "", u)) {
+    a = u
+    sub(/[\/?#].*/, "", a)
+    if (index(udec(a), "@")) return 0
+  }
+  if (!match(u, /[?#]/)) return 1
+  q = substr(u, RSTART + 1)
+  n = split(q, parts, /[&;?#]/)
+  for (i = 1; i <= n; i++) {
+    name = parts[i]
+    sub(/=.*/, "", name)
+    name = tolower(udec(name))
+    if (name ~ /(token|key|secret|sig|auth|pass|credential|session)/) return 0
+  }
+  return 1
+}'
+
+# _scan_url_ok URL — 0 when a URL carries no credential (urlok above).
 _scan_url_ok() {
-  local LC_ALL=C u=$1 q
-  case "$u" in
-    *://*@*) u=${u#*://} && case "${u%%/*}" in *@*) return 1 ;; esac ;;
-  esac
-  case "$u" in *\?*) ;; *) return 0 ;; esac
-  q=$(printf '%s' "${u#*\?}" | tr '[:upper:]' '[:lower:]')
-  case "&$q" in
-    *'&token'* | *'&key'* | *'&secret'* | *'&sig'* | *'&auth'* | *'&password'* | *'&api_key'* | *'&apikey'* | *'&access_token'*) return 1 ;;
-    *[_-]token=* | *[_-]key=* | *[_-]secret=*) return 1 ;;
-  esac
-  return 0
+  local r
+  r=$(printf '%s\n' "$1" | LC_ALL=C awk "$_SCAN_URL_FUNCS"'
+    { if (!urlok($0)) bad = 1 }
+    END { print (bad || NR == 0) ? "bad" : "ok" }')
+  [ "$r" = ok ]
 }
 
 # ---------------------------------------------------------------------------
@@ -1693,11 +1729,17 @@ _scan_cred_flag() {
 }
 
 # _scan_arg_ok PREV ARG — 0 when a command argument may travel: neither a
-# credential-named flag nor the argument after one, nor credential-shaped
+# credential-named flag, written alone or as FLAG=VALUE, nor the argument
+# after one, nor a URL that fails the URL rule, nor credential-shaped
 # (*Secret channels*).
 _scan_arg_ok() {
   if _scan_cred_flag "$1" || _scan_cred_flag "$2"; then return 1; fi
-  case "$2" in --token=* | --api-key=* | --apikey=* | --password=* | --secret=* | --access-token=*) return 1 ;; esac
+  case "$2" in
+    -*=*) if _scan_cred_flag "${2%%=*}"; then return 1; fi ;;
+  esac
+  case "$2" in
+    *://*) if ! _scan_url_ok "$2"; then return 1; fi ;;
+  esac
   scan_value_ok "$2"
 }
 
@@ -2029,13 +2071,6 @@ function homep(v) {
   if (index(v, "/Volumes/Shared/") == 1) return "/mnt/shared/" substr(v, 17)
   return v
 }
-function urlok(u,   a, l) {
-  l = tolower(u)
-  a = l; sub(/^[a-z]+:\/\//, "", a); sub(/\/.*/, "", a)
-  if (index(a, "@")) return 0
-  if (l ~ /[?&](token|key|secret|sig|auth|password|api_key|apikey|access_token)[^=&]*=/) return 0
-  return 1
-}
 function credname(n,   l) { l = tolower(n); return l ~ /(token|key|secret|sig|auth|password)/ }
 function credflag(a) { return tolower(a) ~ /^--(token|api-key|apikey|password|secret|key|auth|access-token)$/ }
 function shaped(v) {
@@ -2077,7 +2112,7 @@ BEGIN {
     if (f == "args") {
       if (n == 3 && t == "a") { ARGS[s] = ARGS[s] ""; HASARGS[s] = 1; next }
       if (n == 4 && t == "s") {
-        if (credflag(PREV[s]) || credflag(v) || shaped(v) || v ~ /^--(token|api-key|apikey|password|secret|access-token)=/) { NEEDS[s] = 1; PREV[s] = v; next }
+        if (credflag(PREV[s]) || credflag(v) || shaped(v) || (index(v, "=") && credflag(substr(v, 1, index(v, "=") - 1))) || (v ~ /:\/\// && !urlok(v))) { NEEDS[s] = 1; PREV[s] = v; next }
         PREV[s] = v
         ARGS[s] = ARGS[s] (ARGS[s] == "" ? "" : ", ") q(homep(v)); next
       }
@@ -2151,7 +2186,7 @@ _scan_x_codex() {
     return 0
   fi
   : >"$SCAN_XO/skips"
-  LC_ALL=C awk -v home="$SCAN_HOME" -v target="$SCAN_TARGET_HOME" -v skips="$SCAN_XO/skips" "$_SCAN_CODEX_AWK" "$SCAN_XO/codex.rec" >"$SCAN_XO/gen"
+  LC_ALL=C awk -v home="$SCAN_HOME" -v target="$SCAN_TARGET_HOME" -v skips="$SCAN_XO/skips" "$_SCAN_URL_FUNCS$_SCAN_CODEX_AWK" "$SCAN_XO/codex.rec" >"$SCAN_XO/gen"
   while IFS= read -r f; do
     _scan_text "$f"
     _scan_x skip reason "$SCAN_TX"

@@ -73,6 +73,51 @@ for rel in .env-production .envrc.local .myscripts/.envfile .env_prod; do
   assert_eq "$? $SCAN_HIT" "0 an environment file (.env)" "secret-refused-env: $rel is refused by its path"
 done
 
+# --- secret-args (S3) and secret-url (S4): command arguments and URLs (no plutil)
+for a in --key=harborpassKEY1 --auth=harborpassAUTH1 --API-KEY=harborpassKEY2 --access-token=harborpassTOK1 \
+  'https://example.test/mcp?token=harborpassURL1'; do
+  _scan_arg_ok -y "$a"
+  assert_rc $? 1 "secret-args: $a never travels"
+done
+_scan_arg_ok --root /Users/alex/code
+assert_rc $? 0 "secret-args: an ordinary argument travels"
+_scan_arg_ok -y https://docs.example.test/mcp
+assert_rc $? 0 "secret-args: a URL without a credential travels"
+for u in 'https://example.test/repo?%74oken=harborpass' 'https://example.test/repo?%54OKEN=harborpass' \
+  'https://bucket.example.test/f?X-Amz-Signature=0a1b2charborpass' 'https://bucket.example.test/f?X-Amz-Credential=AKIDharborpass' \
+  'https://example.test/cb#access_token=harborpass' 'https://alex:harborpass@example.test/repo.git' 'https://example.test/r?a=1&Sig=harborpass'; do
+  _scan_url_ok "$u"
+  assert_rc $? 1 "secret-url: $u is refused"
+done
+for u in https://github.com/example/app.git 'https://example.test/search?q=docs&page=2' git@github.com:example/app.git; do
+  _scan_url_ok "$u"
+  assert_rc $? 0 "secret-url: $u passes"
+done
+# Codex's conversion holds its arguments and URLs to the same rules.
+CX=$(t_variant mig-mac-home)
+cat >"$CX/root/Users/alex/.codex/config.toml" <<'EOF'
+[mcp_servers.svc]
+command = "svc"
+args = ["--key=harborpassKEY3", "--auth=harborpassAUTH3", "https://example.test/mcp?token=harborpassURL3", "--port", "8080"]
+
+[mcp_servers.remote]
+url = "https://example.test/mcp?%74oken=harborpassURL5"
+
+[model_providers.corp]
+name = "Corp"
+base_url = "https://api.example.test/v1?X-Amz-Signature=harborpassSIG1"
+EOF
+(
+  OMB_FIXTURE=$CX
+  scan_extract codex:config "$T/x-codex" >/dev/null 2>&1
+  omb_cleanup
+)
+assert_eq "$(grep -rl harborpass "$T/x-codex")" "" "secret-args: no credential argument or URL in Codex's carried configuration"
+src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-codex/carry")
+assert_contains "$(cat "$T/x-codex/$src")" 'args = ["--port", "8080"]' "secret-args: Codex's other arguments stay"
+assert_contains "$(cat "$T/x-codex/carry")" "codex%20mcp%20svc:%20needs-secret" "secret-args: and the server needs its secrets set again"
+rm -rf "$CX"
+
 # --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
 for k in id_ed25519:encrypted id_plain:plain id_weak:unsupported id_legacy:pem; do
   scan_ssh_key "$S/.ssh/${k%%:*}"
@@ -204,6 +249,22 @@ EOF
   if grep -qi usekeychain "$T/x-ssh/$src"; then fail "secret-usekeychain: a UseKeychain line travelled"; else ok; fi
   assert_contains "$(cat "$T/x-ssh/$src")" "IdentityFile ~/.ssh/id_ed25519" "secret-usekeychain: the rest of the configuration stays"
   assert_contains "$(cat "$T/x-ssh/carry")" "dest=.ssh/config	src=f/1	mode=0644	whole=0" "secret-usekeychain: as a regenerated file"
+
+  # secret-args (S3), Claude's side, and secret-url (S4), a project's remote.
+  V=$(t_variant mig-mac-home)
+  printf '%s\n' '{"mcpServers":{"svc":{"command":"svc","args":["--key=harborpassKEY4","--auth=harborpassAUTH4","https://example.test/mcp?%74oken=harborpassURL6","--port","8080"]}}}' >"$V/root/Users/alex/.claude.json"
+  printf '[remote "origin"]\n\turl = https://example.test/app.git?%%74oken=harborpassREMOTE1\n' >"$V/root/Users/alex/code/app/.git/config"
+  (
+    OMB_FIXTURE=$V
+    scan_extract claude:mcp:svc "$T/x-cmcp" >/dev/null 2>&1
+    scan_run "$T/inv-url" >/dev/null 2>&1
+    omb_cleanup
+  )
+  assert_eq "$(grep -rl harborpass "$T/x-cmcp")" "" "secret-args: no credential argument or URL in Claude's MCP server"
+  assert_contains "$(cat "$T/x-cmcp/carry")" "%22args%22:%5B%22--port%22,%228080%22%5D" "secret-args: its other arguments stay"
+  if grep -q harborpass "$T/inv-url"; then fail "secret-url: a remote's encoded credential reached the inventory"; else ok; fi
+  assert_contains "$(grep 'id=project:code/app' "$T/inv-url")" "its%20remote%20holds%20a%20credential" "secret-url: the remote is withheld, saying why"
+  rm -rf "$V"
 
   # --- secret-opaque and secret-carry, through the core ----------------------
   # shellcheck source=tests/core-harness.sh
