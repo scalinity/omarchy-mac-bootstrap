@@ -7,18 +7,18 @@ expression: "frame(m, w, h)"
 ┌ Screens ─────┐┌ Inventory ───────────────────────────────────────────────────┐
 │  Welcome     ││ ▍Software   Apps   Folders                                   │
 │  Journey     ││ ▍tailscale                                                   │
-│  Machine     ││   Source     cask                                            │
-│  Status      ││   Version    1.88                                            │
-│  Health      ││   Becomes    choose                                          │
-│  Logs        ││   State      decide                                          │
-│  Plan        ││   Class      config                                          │
-│  Op          ││   Why        two ways to bring it                            │
-│  Scan        ││   Size       52 MB                                           │
-│  Select      ││   Evidence   observed                                        │
-│▍ Items       ││   Requested  unknown                                         │
-│  Review      ││                                                              │
-│  Install     ││   ○ Flatpak com.tailscale (a guess)                          │
-│  Progress    ││ ❯ ◉ Leave it on macOS                                        │
+│  Machine     ││   ○ Flatpak com.tailscale (a guess)                          │
+│  Status      ││ ❯ ◉ Leave it on macOS                                        │
+│  Health      ││                                                              │
+│  Logs        ││   Source     cask                                            │
+│  Plan        ││   Version    1.88                                            │
+│  Op          ││   Becomes    choose                                          │
+│  Scan        ││   State      decide                                          │
+│  Select      ││   Class      config                                          │
+│▍ Items       ││   Why        two ways to bring it                            │
+│  Review      ││   Size       52 MB                                           │
+│  Install     ││   Evidence   observed                                        │
+│  Progress    ││   Requested  unknown                                         │
 │              ││                                                              │
 │              ││                                                              │
 │              ││                                                              │

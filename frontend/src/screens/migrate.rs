@@ -337,7 +337,8 @@ pub fn inventory(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         }
     }
     if m.inv.open && side.is_none() {
-        lines.extend(item_lines(m, t, width));
+        let room = (inner.height as usize).saturating_sub(lines.len());
+        lines.extend(item_view(m, t, width, room));
         f.render_widget(Paragraph::new(lines), inner);
         return;
     }
@@ -357,7 +358,7 @@ pub fn inventory(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     if let Some(side) = side {
         let inner = widgets::panel(f, side, "Item", t);
         f.render_widget(
-            Paragraph::new(item_lines(m, t, inner.width as usize)),
+            Paragraph::new(item_view(m, t, inner.width as usize, inner.height as usize)),
             inner,
         );
     }
@@ -473,12 +474,21 @@ fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
-/// The focused item's fields as the core sent them, and its choices, the one
-/// picked here marked.
-fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
+/// The item view in HEIGHT lines: the focused choice always among them.
+fn item_view<'a>(m: &Model, t: &Theme, width: usize, height: usize) -> Vec<Line<'a>> {
+    let (lines, at) = item_lines(m, t, width);
+    let skip = at.map_or(0, |at| (at + 1).saturating_sub(height));
+    lines.into_iter().skip(skip).collect()
+}
+
+/// The focused item: its name, its choices (the one picked here marked,
+/// read whole before "none" is said), then its fields as the core sent them.
+/// Returns the lines and the place of the focused choice among them.
+fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> (Vec<Line<'a>>, Option<usize>) {
     let mut out = Vec::new();
+    let mut at = None;
     let Some(r) = m.item() else {
-        return out;
+        return (out, at);
     };
     out.push(Line::from(vec![
         Span::styled(format!(" {}", t.g.bar), t.style(Token::Accent)),
@@ -492,6 +502,7 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
     } else {
         format!("{state} {} {who}", t.g.dot)
     };
+    let mut fields = vec![Line::raw("")];
     for (label, value) in [
         ("Source", r.col(2).to_string()),
         ("Version", r.col(3).to_string()),
@@ -506,7 +517,7 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
         if value.is_empty() {
             continue;
         }
-        out.extend(widgets::pair(
+        fields.extend(widgets::pair(
             t,
             label,
             &t.say(&value),
@@ -515,7 +526,6 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
             t.style(Token::Text),
         ));
     }
-    out.push(Line::raw(""));
     let picked = m
         .picks
         .iter()
@@ -523,6 +533,12 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
         .and_then(|p| p.decision.as_ref())
         .map(|(c, _)| c.clone());
     match m.detail(Kind::Choices) {
+        Some(d) if d.loaded && !m.whole(Kind::Choices) && d.fault.is_none() => {
+            out.push(Line::styled(
+                format!("   Reading the choices ({} of {}).", d.rows.len(), d.total),
+                t.style(Token::Muted),
+            ));
+        }
         Some(d) if d.loaded => {
             let choices = m.item_choices();
             if choices.is_empty() {
@@ -533,6 +549,9 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
             }
             for (i, c) in choices.iter().enumerate() {
                 let here = i == m.inv.choice;
+                if here {
+                    at = Some(out.len());
+                }
                 let on = picked.as_deref() == Some(c.col(0));
                 let g = match (on, t.caps.unicode) {
                     (true, true) => "◉",
@@ -577,7 +596,8 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
             t.style(Token::Muted),
         )),
     }
-    out
+    out.extend(fields);
+    (out, at)
 }
 
 /// The Migration Review: what is selected by category with its size and
@@ -674,6 +694,13 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         }
         for (_, txt) in &c.messages {
             said(txt);
+        }
+        // The core's warnings, each with its fix, before any question.
+        for (_, txt, fix) in &c.warnings {
+            said(&format!("{} {txt}", t.g.warn));
+            if !fix.is_empty() {
+                said(fix);
+            }
         }
     }
     lines.push(Line::raw(""));

@@ -78,7 +78,12 @@ pub fn document(rows: &[Row], picks: &[Pick]) -> String {
     let mut out = String::from("omb-select 1\n");
     let mut seen: Vec<&[u8]> = Vec::new();
     for r in rows {
-        if r.col(COL_BY) == "person" && !picks.iter().any(|p| p.id == r.id && p.state.is_some()) {
+        // A `select` record carries include or exclude, nothing else the
+        // core may show for a row (decide, never).
+        if r.col(COL_BY) == "person"
+            && matches!(r.col(COL_STATE), "include" | "exclude")
+            && !picks.iter().any(|p| p.id == r.id && p.state.is_some())
+        {
             out.push_str(&record::line(
                 "select",
                 &[("id", &r.id), ("state", r.col(COL_STATE).as_bytes())],

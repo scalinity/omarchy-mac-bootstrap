@@ -7,6 +7,9 @@ expression: "frame(m, w, h)"
 ┌ Inventory ───────────────────────────────────────────────┐
 │ ▍Software   Apps   Folders                               │
 │ ▍tailscale                                               │
+│   ○ Flatpak com.tailscale (a guess)                      │
+│ ❯ ◉ Leave it on macOS                                    │
+│                                                          │
 │   Source     cask                                        │
 │   Version    1.88                                        │
 │   Becomes    choose                                      │
@@ -16,9 +19,6 @@ expression: "frame(m, w, h)"
 │   Size       52 MB                                       │
 │   Evidence   observed                                    │
 │   Requested  unknown                                     │
-│                                                          │
-│   ○ Flatpak com.tailscale (a guess)                      │
-│ ❯ ◉ Leave it on macOS                                    │
 └──────────────────────────────────────────────────────────┘
  · mas never travels: only means something on macOS
  ↑↓ choose  ⏎ pick  esc close  ? help     may act · fixture

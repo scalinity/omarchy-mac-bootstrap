@@ -106,7 +106,14 @@ pub fn enc(s: &str) -> String {
     omb_tui::record::encode(s.as_bytes())
 }
 
-fn action(id: &str, scope: &str, label: &str, gate: &str, handoff: bool, basis: &str) -> String {
+pub fn action(
+    id: &str,
+    scope: &str,
+    label: &str,
+    gate: &str,
+    handoff: bool,
+    basis: &str,
+) -> String {
     format!(
         "action\tid={id}\tscope={scope}\tlabel={}\tintent={}\tgate={gate}\tterminal={}\tcancel=0\tbasis={basis}\texplain={}\n",
         enc(label),
@@ -116,7 +123,7 @@ fn action(id: &str, scope: &str, label: &str, gate: &str, handoff: bool, basis: 
     )
 }
 
-fn fact(key: &str, label: &str, value: &str, state: &str) -> String {
+pub fn fact(key: &str, label: &str, value: &str, state: &str) -> String {
     format!(
         "fact\tscope=journey\tkey={key}\tlabel={}\tvalue={}\tstate={state}\n",
         enc(label),
@@ -247,7 +254,7 @@ pub fn plan_review() -> String {
     s
 }
 
-fn theme(name: &str) -> Theme {
+pub fn theme(name: &str) -> Theme {
     let (depth, unicode, console) = match name {
         "color" => (Depth::Full, true, false),
         "nocolor" => (Depth::None, true, false),
@@ -572,6 +579,12 @@ fn the_linux_continuation_and_omarchys_progress() {
         "malik-na/omarchy-mac at 3f1c, read just now",
         "ok",
     ));
+    body.push_str(&fact(
+        "omarchy.console",
+        "Console",
+        "tty1 (Ctrl+Alt+F1)",
+        "info",
+    ));
     body.push_str(&fact("omarchy.marker", "Setup marker", "absent", "info"));
     body.push_str(&fact("omarchy.unit", "Setup unit", "activating", "warn"));
     body.push_str(&action(
@@ -605,7 +618,12 @@ fn the_linux_continuation_and_omarchys_progress() {
         assert!(f.contains(want), "{want:?}:\n{f}");
     }
     sizes(&m, "linux_continuation");
-    let req = sent(&press(&mut m, KeyCode::Char('n')));
+    assert_eq!(
+        requests(&press(&mut m, KeyCode::Char('n'))),
+        0,
+        "asked first"
+    );
+    let req = sent(&press(&mut m, KeyCode::Char('y')));
     assert!(
         matches!(&req, Req::Execute { action, word, handoff: true, .. } if action == "network.connect" && word.is_empty()),
         "{req:?}"
