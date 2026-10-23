@@ -84,7 +84,7 @@ what the core reports changes.
   terminal's own background. State is always a word and a glyph
   (`✓ verified`, `! needs you`, `✗ failed`), with colour only reinforcing it.
 - **Human first, raw on demand.** A value is shown as a person reads it
-  (`482 GB free`, `MacBookPro18,2`); its exact form — bytes, full
+  (`482 GB free`, `MacBookPro18,1`); its exact form — bytes, full
   identifiers, hashes, URLs — is one Enter away in a detail view. A long
   value truncates inside its panel and never crosses the border.
 - **Provenance is visible.** What the machine showed this run and what was
@@ -341,7 +341,7 @@ them (title rule, banner, navigation rail, sidebar, footer) is the one in
 **Journey dashboard** (standard):
 
 ```text
- ◒ omarchy mac bootstrap                           macOS · MacBookPro18,2
+ ◒ omarchy mac bootstrap                           macOS · MacBookPro18,1
  ● ● ◆ ○ ○ ○ ○ ○ ○ ○   resolve · 3 of 10
  ──────────────────────────────────────────────────────────────────────────
  ▍Resolve what comes to Linux

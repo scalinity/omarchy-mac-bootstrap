@@ -341,7 +341,7 @@ verify stage says so; Doctor's offline machine checks alone gate `verify`, once 
 ## Real-hardware qualification (M17)
 
 M17 is the owner's one run of the finished tool on the target Mac (2021
-16-inch MacBook Pro, M1 Pro, 16 GB, 1 TB; `MacBookPro18,2`), from its macOS
+16-inch MacBook Pro, M1 Pro, 16 GB, 1 TB; `MacBookPro18,1`), from its macOS
 restored from Time Machine to `done`. It is not a separate procedure: the
 journey is the run, and `report` on each system ends it.
 
