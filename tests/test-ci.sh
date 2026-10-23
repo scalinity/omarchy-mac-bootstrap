@@ -232,12 +232,14 @@ skips "$v/macos-bash32-m2.tsv" suite:core "$CORE1" "$PL"
 guard "$v"
 assert_rc "$rc" 1 "ci-guard-skip: a skip the macOS lane does not allow"
 assert_contains "$out" "undeclared skip: macos-bash32 · m2 · suite:core: macOS plist checks in test-core.sh (no plutil)" "ci-guard-skip: is named"
+# The frontend's macOS lane allows no skip (the macOS bash lane allows one
+# named reason: test-restore's real GNU primitives).
 v=$(variant skip-hidden)
-skips "$v/macos-bash32-m2.tsv" suite:core "$CORE1"
+skips "$v/frontend-macos-arm64-x1.tsv" suite:core "$CORE1"
 guard "$v"
 assert_rc "$rc" 1 "ci-guard-skip-hidden: 1 skipped on a lane that allows none, and no skip row (R2-A)"
-assert_contains "$out" "integrity · skipped where no skip is allowed: macos-bash32 · m2 · suite:core reports 1 skipped" "ci-guard-skip-hidden: is named"
-assert_contains "$out" "integrity · skip count: macos-bash32 · m2 · suite:core reports 1 skipped and gives 0 skip reasons" "ci-guard-skip-hidden: with the reasons it did not give"
+assert_contains "$out" "integrity · skipped where no skip is allowed: frontend-macos-arm64 · x1 · suite:core reports 1 skipped" "ci-guard-skip-hidden: is named"
+assert_contains "$out" "integrity · skip count: frontend-macos-arm64 · x1 · suite:core reports 1 skipped and gives 0 skip reasons" "ci-guard-skip-hidden: with the reasons it did not give"
 v=$(variant skip-unreasoned)
 skips "$v/linux-bash5-l3.tsv" suite:core "$CORE1"
 guard "$v"
