@@ -110,7 +110,9 @@ for id in $cited; do
   [ -n "$row" ] || continue
   n=$((n + 1))
   case "$row" in *'planned: Phase '*) continue ;; esac
-  named=$(grep -rlF -- "${id%\*}" tests frontend/tests 2>/dev/null | grep -v '^tests/test-docs\.sh$')
+  # Not the suites' scratch (tests/.tmp): a FIFO a run left there blocks a
+  # recursive grep, and its files are not tests.
+  named=$(grep -rlF -D skip --exclude-dir=.tmp -- "${id%\*}" tests frontend/tests 2>/dev/null | grep -v '^tests/test-docs\.sh$')
   [ -n "$named" ] || fail "docs-test-ids: SECURITY.md cites $id, which no test in tests/ or frontend/tests/ names"
 done
 [ "$n" -ge 20 ] && ok || fail "docs-test-ids: only $n cited ids read; the reader is broken"
