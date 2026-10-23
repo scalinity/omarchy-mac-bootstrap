@@ -1531,7 +1531,7 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
             "status" if c.platform == "macos" => 9,
             "status" => 5,
             "doctor" if c.platform == "macos" => 14,
-            "doctor" => 16,
+            "doctor" => 22,
             "log" => 40,
             _ => return bad("unknown projection"),
         };

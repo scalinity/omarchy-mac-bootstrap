@@ -1462,12 +1462,13 @@ fn pty_gate2_reads_through_the_launcher() {
     p.wait_for("Supported model");
     p.idle();
     let f = p.contents();
+    // Linux Health groups its findings; the macOS table shows its row range.
     for want in [
         "Passed ",
         "Warnings ",
         "Failures ",
         "Apple Silicon",
-        "rows 1–",
+        if mac { "rows 1–" } else { "System checks" },
     ] {
         assert!(f.contains(want), "{want:?} on Health:\n{f}");
     }
