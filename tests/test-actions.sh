@@ -34,190 +34,180 @@ c_session
 # The tool under test.
 A_TOOL=$REPO
 
-# actions-omarchy.resume-sound: the reader, offer, pre-write check and judge
-# without supervised children (the sandbox cannot read the process table).
-# The same saved observation is judged for a run and after a new boot.
+# actions-omarchy.resume-claims: run and new-boot judgement without
+# supervised children (the sandbox cannot read the process table). The real
+# classifier and judge read fixtures; only the flow and state writes are
+# replaced, so no installer or host command runs.
 # shellcheck disable=SC2329 # mocks are invoked by the sourced functions
 a_resume_observe() (
-  local before_fixture=$1 after_fixture=$2 fault=$3 baseline seen offered why run_rc saved=0 run_finding
+  local before_fixture=$1 after_fixture=$2 status=$3 fault=$4 save_fail=${5:-0}
+  local saved_rc=127 saves=0 ran=0 cleared=0 offered run_rc run_finding run_text prior_enc migrate_lookups=0
   t_load >/dev/null 2>&1
   OMB_HOME=$REPO
   # shellcheck source=lib/actions.sh
   . "$REPO/lib/actions.sh"
   OMB_UID=0 OMB_DRY_RUN=0 OMB_FIXTURE=$before_fixture
-  # A false -f on a file that still exists models a failed metadata lookup;
-  # lstat must distinguish that from ENOENT. The other injections fail reads.
+  eval "$(declare -f sys_cmd | sed '1s/sys_cmd/a_resume_sys_cmd/')"
+  eval "$(declare -f lx_detect | sed '1s/lx_detect/a_resume_detect/')"
+  sys_cmd() {
+    case "$fault:$1" in
+      luks:luks_dump | boot-fstype:findmnt_boot_fstype) return 1 ;;
+    esac
+    a_resume_sys_cmd "$@"
+  }
   function [ {
     if builtin test "$#" = 3 && builtin test "$1" = -f; then
       case "$fault:$2" in
-        runtime-lookup:*/usr/share/omarchy/version | setup-lookup:*/etc/omarchy-mac-setup.conf | migrate-lookup:*/etc/omarchy-btrfs-migrate.conf) return 1 ;;
+        migrate-second:*/etc/omarchy-btrfs-migrate.conf)
+          migrate_lookups=$((migrate_lookups + 1))
+          if builtin test "$migrate_lookups" = 2; then return 1; fi ;;
       esac
     fi
     builtin [ "$@"
   }
   cat() {
-    case "$fault:$*" in
-      setup-read:*/etc/omarchy-mac-setup.conf | migrate-read:*/etc/omarchy-btrfs-migrate.conf) return 1 ;;
-    esac
+    case "$fault:$*" in setup-read:*/etc/omarchy-mac-setup.conf) return 1 ;; esac
     command cat "$@"
   }
-  head() {
-    case "$fault:$*" in runtime-read:*'/usr/share/omarchy/version') printf 'partial\n'; return 1 ;; esac
-    command head "$@"
+  lx_detect() {
+    migrate_lookups=0
+    if [ "$fault" = migrate-second ]; then
+      # Model the reviewer's successful first observation, followed by a
+      # failed lookup inside lx_detect_encryption. That failure recovers
+      # after the command without the machine having changed.
+      [ -f "$(sys_path "$OMS_MIGRATE_CONF")" ] || return 1
+    fi
+    a_resume_detect
   }
-  state_get() { [ "$1" != omarchy_resume_seen ] || printf '%s' "$baseline"; }
-  act_lx_read() { :; }
-  lx_detect
-  baseline=$(act_resume_seen)
-  if act_resume_offer; then offered=0; else offered=$?; fi
-  why=${CA_WHY:-}
-  # A stage that becomes unreadable between offer and run must not be saved.
+  state_get() { [ "$1" != omarchy_resume_rc ] || printf '%s' "$saved_rc"; }
+  state_must_set() {
+    saves=$((saves + 1))
+    [ "$saves" != "$save_fail" ] || return 1
+    [ "$1" = omarchy_resume_rc ] || return 1
+    saved_rc=$2
+  }
+  act_lx_read() { lx_detect; }
   lx_begin() { lx_detect; }
-  state_must_set() { saved=1; }
-  lx_in_progress() { :; }
+  lx_in_progress() {
+    ran=$((ran + 1))
+    [ -n "$saved_rc" ] || cleared=1
+    prior_enc=$LX_ENC_STATE
+    return "$status"
+  }
+  if act_resume_offer; then offered=0; else offered=$?; fi
   if act_resume_run >/dev/null 2>&1; then run_rc=0; else run_rc=$?; fi
   OMB_FIXTURE=$after_fixture
-  fault=''
-  act_resume_judge 1
-  run_finding=$CORE_FINDING
-  seen=$(act_resume_seen)
+  [ "$fault" != migrate-second ] || fault=''
+  act_resume_judge "$run_rc"
+  run_finding=$CORE_FINDING run_text=$CORE_JUDGE_TEXT
+  # Deliberately leave a stale installed value: reconciliation must read now.
+  ACT_READ=linux LX_OMARCHY_STATE=installed
   act_resume_judge reconcile
-  printf '%s|%s|%s|%s|%s|%s|%s|%s' "${baseline%% *}" "${seen%% *}" "$run_finding" "$CORE_FINDING" "$offered" "$run_rc" "$saved" "$why"
+  printf '%s\n' "offer=$offered" "status=$run_rc" "saved=$saved_rc" "ran=$ran" "cleared=$cleared" \
+    "run=$run_finding" "reconcile=$CORE_FINDING" "before-encryption=${prior_enc:-}" "after-encryption=$LX_ENC_STATE" \
+    "text=$run_text"
+  # A later boot may finish upstream's automatic resume. The same record
+  # must then judge completed, without a saved progress stage.
+  OMB_FIXTURE=$FIX/linux-omarchy-finishing
+  act_resume_judge reconcile
+  printf '%s\n' "later=$CORE_FINDING"
 )
 
-# Exercise the real sys_cmd stderr suppression through an owned findmnt
-# shim, and the fixture-equivalent return path, without probing this host.
-# shellcheck disable=SC2329 # the sourced detector invokes this sys_cmd mock
-a_resume_boot_probe() (
-  local mode=$1 shims=$2
-  t_load >/dev/null 2>&1
-  eval "$(declare -f sys_cmd | sed '1s/sys_cmd/a_resume_sys_cmd/')"
-  sys_cmd() {
-    if [ "$1" = findmnt_boot ]; then
-      if [ "$mode" = fixture ]; then
-        printf '%b' "$A_BOOT_OUT"
-        printf '%b' "$A_BOOT_ERR" >&2
-        return "$A_BOOT_RC"
-      fi
-      local OMB_FIXTURE=''
-    fi
-    a_resume_sys_cmd "$@"
-  }
-  OMB_FIXTURE=$FIX/linux-setup-in-progress OMB_UID=0
-  PATH=$shims:$PATH
-  lx_detect
-  printf '%s' "$LX_BOOT_STAGE"
-)
-
-a_resume_sound() {
-  local root root_output root_multiple installed_unreadable boot_absent boot_unknown boot_unknown_after final_before runtime moved row label prior after fault stages want got b n run recon offer rc saved why shims mode out err probe_rc path
-  root=$(t_variant linux-encrypt-reencrypting)
-  : >"$root/cmd/lsblk_root_type"
-  printf '1\n' >"$root/cmd/lsblk_root_type.rc"
-  root_output=$(t_variant linux-encrypt-reencrypting)
-  printf '1\n' >"$root_output/cmd/lsblk_root_type.rc"
-  root_multiple=$(t_variant linux-encrypt-reencrypting)
-  printf 'crypt\npart\n' >"$root_multiple/cmd/lsblk_root_type"
-  installed_unreadable=$(t_variant linux-omarchy-finishing)
-  rm -f "$installed_unreadable/root/usr/share/omarchy/version"
-  mkdir "$installed_unreadable/root/usr/share/omarchy/version"
-  boot_absent=$(t_variant linux-setup-in-progress)
-  : >"$boot_absent/cmd/findmnt_boot"
-  printf '1\n' >"$boot_absent/cmd/findmnt_boot.rc"
-  boot_unknown=$(t_variant linux-setup-in-progress)
-  : >"$boot_unknown/cmd/findmnt_boot"
-  printf '2\n' >"$boot_unknown/cmd/findmnt_boot.rc"
-  : >"$boot_unknown/cmd/findmnt_boot_fstype"
-  printf '1\n' >"$boot_unknown/cmd/findmnt_boot_fstype.rc"
-  boot_unknown_after=$(t_tmp)
-  cp -R "$boot_unknown/." "$boot_unknown_after/"
-  # The mount changed behind failed source and filesystem probes; neither
-  # observation can prove that the identical classifier digest means no effect.
-  printf '/dev/nvme0n1p5 /boot vfat defaults 0 2\n' >"$boot_unknown_after/root/etc/fstab"
-  final_before=$(t_variant linux-omarchy-finishing)
-  rm -f "$final_before/root/var/lib/omarchy-mac-setup/installed" "$final_before/root/etc/systemd/system/display-manager.service"
+a_resume_claims() {
+  local present missing nonexec fallback runtime staged_luks row label prior after status fault want got p=$T_PASS f=$T_FAIL
+  present=$(t_variant linux-setup-in-progress)
+  chmod +x "$present/root/usr/local/bin/omarchy-mac-setup"
+  missing=$(t_variant linux-setup-in-progress)
+  rm -f "$missing/root/usr/local/bin/omarchy-mac-setup"
+  nonexec=$(t_variant linux-setup-in-progress)
+  chmod -x "$nonexec/root/usr/local/bin/omarchy-mac-setup"
+  fallback=$(t_variant linux-omarchy-finishing)
+  rm -f "$fallback/root/var/lib/omarchy-mac-setup/installed"
   runtime=$(t_variant linux-setup-in-progress)
   mkdir -p "$runtime/root/usr/share/omarchy"
   printf '3.0.0\n' >"$runtime/root/usr/share/omarchy/version"
-  moved=$(t_variant linux-setup-in-progress)
-  printf '/dev/mapper/changed\n' >"$moved/cmd/findmnt_root"
+  chmod +x "$runtime/root/usr/local/bin/omarchy-mac-setup"
+  staged_luks=$(t_variant linux-encrypt-reencrypting)
+  printf 'ENCRYPT=1\n' >"$staged_luks/root/etc/omarchy-btrfs-migrate.conf"
+  chmod +x "$staged_luks/root/usr/local/bin/omarchy-mac-setup"
   for row in \
-    "root-type|$root|$FIX/linux-encrypt-reencrypting||1?0:120|unexpected" \
-    "root-type-failed-output|$root_output|$FIX/linux-encrypt-reencrypting||1?0:120|unexpected" \
-    "root-type-multiple|$root_multiple|$FIX/linux-encrypt-reencrypting||1?0:120|unexpected" \
-    "runtime-lookup|$runtime|$runtime|runtime-lookup|13?:131|unexpected" \
-    "setup-lookup|$runtime|$runtime|setup-lookup|13?:131|unexpected" \
-    "migrate-lookup|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-staged|migrate-lookup|1?0:110|unexpected" \
-    "runtime-read|$runtime|$runtime|runtime-read|13?:131|unexpected" \
-    "setup-read|$runtime|$runtime|setup-read|13?:131|unexpected" \
-    "migrate-read|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-staged|migrate-read|1?0:110|unexpected" \
-    "hidden-boot-change|$boot_unknown|$boot_unknown_after||?30:?30|unexpected" \
-    "final-digits|$final_before|$FIX/linux-omarchy-finishing||131:131|completed" \
-    "boot-forward|$boot_absent|$FIX/linux-setup-in-progress||030:130|completed" \
-    "runtime-forward|$FIX/linux-setup-in-progress|$runtime||130:131|completed" \
-    "installed-fresh-unreadable|$runtime|$installed_unreadable||131:13?|unexpected" \
-    "fresh-unreadable|$FIX/linux-setup-in-progress|$boot_unknown||130:?30|unexpected" \
-    "installed-old-unreadable|$boot_unknown|$FIX/linux-omarchy-finishing||?30:131|unexpected" \
-    "same|$FIX/linux-setup-in-progress|$FIX/linux-setup-in-progress||130:130|no-effect" \
-    "backward|$FIX/linux-setup-in-progress|$boot_absent||130:030|unexpected" \
-    "digest-changed|$FIX/linux-setup-in-progress|$moved||130:130|unexpected"; do
-    IFS='|' read -r label prior after fault stages want <<EOF
+    "installed-marker|$present|$FIX/linux-omarchy-finishing|0||completed" \
+    "installed-runtime-display|$present|$fallback|1||completed" \
+    "missing-127|$present|$missing|127||no-effect" \
+    "missing-126|$present|$missing|126||no-effect" \
+    "nonexec-126|$present|$nonexec|126||no-effect" \
+    "nonexec-127|$present|$nonexec|127||no-effect" \
+    "present-127|$present|$present|127||unexpected" \
+    "present-126|$present|$present|126||unexpected" \
+    "missing-0|$present|$missing|0||unexpected" \
+    "missing-1|$present|$missing|1||unexpected" \
+    "still-in-progress|$present|$present|0||unexpected" \
+    "encryption-advanced|$FIX/linux-encrypt-staged|$staged_luks|0||unexpected" \
+    "runtime-only|$present|$runtime|0||unexpected" \
+    "migration-second-lookup|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-staged|1|migrate-second|unexpected" \
+    "luks-failed-staged-conf|$staged_luks|$staged_luks|0|luks|unexpected" \
+    "boot-fstype-failed|$present|$present|0|boot-fstype|unexpected" \
+    "setup-conf-unreadable|$present|$present|0|setup-read|unexpected" \
+    "setup-conf-unreadable-127|$present|$present|127|setup-read|unexpected"; do
+    IFS='|' read -r label prior after status fault want <<EOF
 $row
 EOF
-    got=$(a_resume_observe "$prior" "$after" "$fault")
-    IFS='|' read -r b n run recon offer rc saved why <<EOF
-$got
-EOF
-    assert_eq "$b:$n" "$stages" "actions-omarchy.resume-sound: $label: tri-state reads"
-    assert_eq "$run" "$want" "actions-omarchy.resume-sound: $label: run"
-    assert_eq "$recon" "$want" "actions-omarchy.resume-sound: $label: new-boot reconcile"
-    case "$b" in
-      *'?'*)
-        assert_eq "$offer:$rc:$saved" "1:1:0" "actions-omarchy.resume-sound: $label: neither offered nor saved"
-        assert_contains "$why" "state could not be read in full" "actions-omarchy.resume-sound: $label: explains the wait" ;;
-      *) assert_eq "$offer:$rc:$saved" "0:0:1" "actions-omarchy.resume-sound: $label: readable baseline admitted" ;;
-    esac
+    got=$(a_resume_observe "$prior" "$after" "$status" "$fault")
+    assert_contains "$got" "offer=0" "actions-omarchy.resume-claims: $label: classifier offers in-progress"
+    assert_contains "$got" "status=$status" "actions-omarchy.resume-claims: $label: run preserves status"
+    assert_contains "$got" "saved=$status" "actions-omarchy.resume-claims: $label: status saved for a new boot"
+    assert_contains "$got" "cleared=1" "actions-omarchy.resume-claims: $label: old status cleared before running"
+    assert_contains "$got" "run=$want" "actions-omarchy.resume-claims: $label: run"
+    assert_contains "$got" "reconcile=$want" "actions-omarchy.resume-claims: $label: new-boot reconcile reads again"
+    assert_contains "$got" "later=completed" "actions-omarchy.resume-claims: $label: upstream finishes after a restart"
+    if [ "$want" = unexpected ]; then
+      assert_contains "$got" "resume ended" "actions-omarchy.resume-claims: $label: the command ended"
+      assert_contains "$got" "not yet installed" "actions-omarchy.resume-claims: $label: no completion claim"
+      assert_contains "$got" "by itself on the console after a restart" "actions-omarchy.resume-claims: $label: automatic resume"
+      assert_contains "$got" "this tool's resume is held until then" "actions-omarchy.resume-claims: $label: barrier explained"
+      assert_contains "$got" "sudo /usr/local/bin/omarchy-mac-setup --resume" "actions-omarchy.resume-claims: $label: upstream command"
+    fi
+    if [ "$label" = migration-second-lookup ]; then
+      assert_contains "$got" "before-encryption=none" "actions-omarchy.resume-claims: second migration lookup failed"
+      assert_contains "$got" "after-encryption=migrating" "actions-omarchy.resume-claims: recovery alone changed the classification"
+    fi
   done
-  shims=$(t_tmp)
-  cat >"$shims/findmnt" <<'EOF'
-#!/bin/sh
-printf '%b' "$A_BOOT_OUT"
-printf '%b' "$A_BOOT_ERR" >&2
-exit "$A_BOOT_RC"
-EOF
-  chmod +x "$shims/findmnt"
-  for row in 'value|/dev/nvme0n1p5||0|1' 'absent|||1|0' 'empty-success|||0|?' \
-    'error||I/O error|1|?' 'newline-error||\n|1|?' 'failed-output|/dev/nvme0n1p5||1|?' \
-    'newline-output|\n||1|?' 'other-status|||2|?' 'missing|||127|?'; do
-    IFS='|' read -r label out err probe_rc want <<EOF
-$row
-EOF
-    for mode in real fixture; do
-      got=$(A_BOOT_OUT=$out A_BOOT_ERR=$err A_BOOT_RC=$probe_rc a_resume_boot_probe "$mode" "$shims")
-      assert_eq "$got" "$want" "actions-omarchy.resume-sound: boot $label ($mode seam)"
-    done
+  # Both status-write failures stay safe: failure to clear stops the command;
+  # failure to save leaves no old status for reconciliation to reuse.
+  for status in 1 2; do
+    got=$(a_resume_observe "$present" "$missing" 127 '' "$status")
+    assert_contains "$got" "status=1" "actions-omarchy.resume-claims: write $status fails the run"
+    assert_contains "$got" "run=unexpected" "actions-omarchy.resume-claims: write $status never proves no effect"
+    if [ "$status" = 1 ]; then
+      assert_contains "$got" "ran=0" "actions-omarchy.resume-claims: failed clear stops before upstream"
+    else
+      assert_contains "$got" "saved=" "actions-omarchy.resume-claims: failed save leaves the cleared status"
+      assert_contains "$got" "reconcile=unexpected" "actions-omarchy.resume-claims: failed save cannot clear the barrier"
+    fi
   done
-  # ENOTDIR, an existing non-file, and a dangling link are not ENOENT.
-  path=$(t_tmp)
-  : >"$path/file"
-  ln -s missing "$path/link"
-  for row in "absent|$path/missing|0" "present|$path/file|1" "not-a-directory|$path/file/child|?" \
-    "directory|$path|?" "dangling-link|$path/link|?"; do
-    IFS='|' read -r label path want <<EOF
-$row
-EOF
-    got=$(
-      t_load >/dev/null 2>&1
-      OMB_FIXTURE=''
-      lx_stage_file "$path"
-    )
-    assert_eq "$got" "$want" "actions-omarchy.resume-sound: file $label"
-  done
-
+  # A root-only conf's unreadable content must not erase its presence. This
+  # is fd481b4's finishing-boot behaviour, also used by Shared's caller.
+  # shellcheck disable=SC2329 # called by the sourced functions
+  got=$(
+    t_load >/dev/null 2>&1
+    OMB_FIXTURE=$FIX/linux-omarchy-finishing OMB_UID=501
+    cat() {
+      case "$*" in (*/etc/omarchy-mac-setup.conf) return 1 ;; esac
+      command cat "$@"
+    }
+    if cat "$(sys_path "$OMS_CONF")" >/dev/null 2>&1; then printf 'readable\n'; else printf 'unreadable\n'; fi
+    lx_detect
+    printf '%s\n' "conf=$LX_SETUP_CONF" "finishing=$LX_SETUP_FINISHING"
+    if lx_setup_complete; then printf 'complete\n'; else printf 'refused: %s\n' "$LX_INCOMPLETE_WHY"; fi
+  )
+  assert_contains "$got" "unreadable" "actions-omarchy.resume-claims: setup conf read fails"
+  assert_contains "$got" "conf=1" "actions-omarchy.resume-claims: unreadable setup conf remains present"
+  assert_contains "$got" "finishing=1" "actions-omarchy.resume-claims: unreadable setup conf still means finishing"
+  assert_contains "$got" "refused: omarchy-mac-setup is finishing; one more boot" "actions-omarchy.resume-claims: lx_setup_complete refuses as at fd481b4"
+  printf 'actions-omarchy.resume-claims: %d passed, %d failed\n' "$((T_PASS - p))" "$((T_FAIL - f))"
 }
 
-# End of the focused resume checks.
-a_resume_sound
+a_resume_claims
 
 # a_shims DIR — the forbidden commands (t_shims), one fixed clock (values
 # made from a time must agree between runs) and a sed that notes the umask
@@ -973,67 +963,42 @@ assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.console	label=Console	v
 a_common omarchy.resume resume
 a_barriers omarchy.resume omarchy resume
 A_ENV="OMB_TEST_AFTER=$FIX/linux-omarchy-finishing" a_exec_tty '\004\004\004' omarchy.resume resume
-assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-success: resumed, and the machine shows it advanced ($(a_text))"
+assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-success: resumed, and the machine shows Omarchy installed ($(a_text))"
 assert_eq "$(cat "$A_DIR/record")" "/usr/local/bin/omarchy-mac-setup --resume" "actions-omarchy.resume-success: upstream's resume runs"
 assert_contains "$(a_state)" "omarchy_resumed_at=" "actions-omarchy.resume-success: recorded first"
 a_umask actions-omarchy.resume-umask
-# actions-omarchy.resume-not-run: the setup could not be run (exit 127), or
-# its executable is gone: never completed, whatever was stamped.
-a_use "$T/resume-127" "$FIX/linux-setup-in-progress"
-A_ENV="OMB_TEST_RC=127" a_exec_tty '\004\004\004' omarchy.resume resume
-assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: exit 127 is not completed"
-assert_contains "$(a_state)" "omarchy_resumed_at=" "actions-omarchy.resume-not-run: though the resume was stamped"
+# actions-omarchy.resume-claims: the command's status alone never proves no
+# effect. Even real progress remains unexpected until installed is observed.
+VP=$(t_variant linux-setup-in-progress)
+chmod +x "$VP/root/usr/local/bin/omarchy-mac-setup"
 VR=$(t_variant linux-setup-in-progress)
 rm -f "$VR/root/usr/local/bin/omarchy-mac-setup"
-a_use "$T/resume-gone" "$VR"
-a_exec_tty '\004\004\004' omarchy.resume resume
-assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: no executable is not completed"
-# Ran, and nothing the classifier reads moved: no effect.
-a_use "$T/resume-same" "$FIX/linux-setup-in-progress"
-a_exec_tty '\004\004\004' omarchy.resume resume
-assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: nothing advanced is not completed"
-# actions-omarchy.resume-stage: completed only when the classifier's stage
-# moved forward (encryption staged, then re-encrypting). The setup service
-# turned failed, or a status read that failed after a resume that exited 1,
-# is no step further.
 VF=$(t_variant linux-setup-in-progress)
 printf 'failed\n' >"$VF/cmd/unit_active"
 VS=$(t_variant linux-setup-in-progress)
 : >"$VS/cmd/setup_status"
 printf '1\n' >"$VS/cmd/setup_status.rc"
-for case in "forward|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-reencrypting|0" "failed|$FIX/linux-setup-in-progress|$VF|0" \
-  "unread|$FIX/linux-setup-in-progress|$VS|1"; do
-  a_use "$T/resume-${case%%|*}" "$(printf '%s' "$case" | cut -d'|' -f2)"
-  A_ENV="OMB_TEST_AFTER=$(printf '%s' "$case" | cut -d'|' -f3) OMB_TEST_RC=${case##*|}" a_exec_tty '\004\004\004' omarchy.resume resume
-  if [ "${case%%|*}" = forward ]; then
-    assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-stage: a step further is completed ($(a_text))"
-  else
-    assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-stage: ${case%%|*} is no step further"
-    assert_eq "$(a_ops)" "" "actions-omarchy.resume-stage: ${case%%|*}: no record bars the scope"
-  fi
-done
-# actions-omarchy.resume-unread-boot: status 1 with no output or stderr is
-# the fixtures' clean absence. It can move forward, stay, or move backward;
-# a failed read with output is unreadable, so the row is not offered.
 VB=$(t_variant linux-setup-in-progress)
 : >"$VB/cmd/findmnt_boot"
 printf '1\n' >"$VB/cmd/findmnt_boot.rc"
-VO=$(t_variant linux-setup-in-progress)
-printf '1\n' >"$VO/cmd/findmnt_boot.rc"
-for case in "before|$VB|$FIX/linux-setup-in-progress|done ok" \
-  "after|$FIX/linux-setup-in-progress|$VB|failed postcondition" \
-  "same|$VB|$VB|failed no-effect" \
-  "installed|$VB|$FIX/linux-omarchy-finishing|done ok"; do
-  a_use "$T/resume-boot-${case%%|*}" "$(printf '%s' "$case" | cut -d'|' -f2)"
-  A_ENV="OMB_TEST_AFTER=$(printf '%s' "$case" | cut -d'|' -f3) OMB_TEST_RC=1" a_exec_tty '\004\004\004' omarchy.resume resume
-  assert_eq "$(c_result)" "${case##*|}" "actions-omarchy.resume-unread-boot: ${case%%|*} ($(a_text))"
+for case in "present-127|$VP|$VP|127|failed postcondition" \
+  "missing-127|$VP|$VR|127|failed no-effect" \
+  "missing-0|$VP|$VR|0|failed postcondition" \
+  "same|$VP|$VP|0|failed postcondition" \
+  "advanced|$FIX/linux-encrypt-staged|$FIX/linux-encrypt-reencrypting|0|failed postcondition" \
+  "failed-service|$VP|$VF|0|failed postcondition" \
+  "unread-status|$VP|$VS|1|failed postcondition" \
+  "boot-absent|$VB|$VB|0|failed postcondition" \
+  "boot-absent-installed|$VB|$FIX/linux-omarchy-finishing|1|done ok"; do
+  a_use "$T/resume-${case%%|*}" "$(printf '%s' "$case" | cut -d'|' -f2)"
+  A_ENV="OMB_TEST_AFTER=$(printf '%s' "$case" | cut -d'|' -f3) OMB_TEST_RC=$(printf '%s' "$case" | cut -d'|' -f4)" a_exec_tty '\004\004\004' omarchy.resume resume
+  assert_eq "$(c_result)" "${case##*|}" "actions-omarchy.resume-claims: ${case%%|*} ($(a_text))"
   if [ "${case##*|}" = "failed postcondition" ]; then
-    assert_contains "$(a_ops)" "omarchy.omb" "actions-omarchy.resume-unread-boot: ${case%%|*} keeps the operation barrier"
+    assert_contains "$(a_ops)" "omarchy.omb" "actions-omarchy.resume-claims: ${case%%|*} keeps the operation barrier"
   else
-    assert_eq "$(a_ops)" "" "actions-omarchy.resume-unread-boot: ${case%%|*} leaves no operation barrier"
+    assert_eq "$(a_ops)" "" "actions-omarchy.resume-claims: ${case%%|*} leaves no operation barrier"
   fi
 done
-a_unavailable omarchy.resume resume "$VO"
 a_unavailable omarchy.resume resume "$FIX/linux-setup-active"
 a_unavailable omarchy.resume resume "$FIX/linux-alarm-fresh"
 
@@ -1143,10 +1108,11 @@ a_unavailable dev "" "$FIX/linux-setup-in-progress"
 #     is the run's narration, never state a decision reads.
 #   - ops/: the core's operation records live there and each is removed when
 #     its action ends; the folder stays, empty.
-#   - asahi_prelaunch_layout, asahi_prelaunch_resized and omarchy_resume_seen
-#     in state.env: what the launch and the resume began from, recorded
-#     before either runs, so a reconciliation after a new boot can prove what
-#     changed.
+#   - asahi_prelaunch_layout and asahi_prelaunch_resized in state.env: what
+#     the launch began from, recorded before it runs, so a reconciliation
+#     after a new boot can prove what changed.
+#   - omarchy_resume_rc in state.env: the resume command's exit status, so
+#     reconciliation can corroborate a failure to execute after a new boot.
 # ---------------------------------------------------------------------------
 mkdir -p "$T/base"
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
@@ -1206,7 +1172,7 @@ e_norm() {
     -e 's/(omarchy-bootstrap|\.state\.env|downloads\/[a-z-]+\.sh-STAMP|shared-[a-z-]+\.env)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(-STAMP)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g' \
-    -e '/^asahi_prelaunch_layout=/d' -e '/^asahi_prelaunch_resized=/d' -e '/^omarchy_resume_seen=/d'
+    -e '/^asahi_prelaunch_layout=/d' -e '/^asahi_prelaunch_resized=/d' -e '/^omarchy_resume_rc=/d'
 }
 
 # e_agree ID — the baseline's side and the core's side left the same.
@@ -1313,9 +1279,9 @@ A_ENV="OMB_TEST_AFTER=$FIX/linux-setup-in-progress" a_exec_tty '\nalex\n\n\n\n\0
 e_agree equiv-omarchy.start
 # omarchy.resume.
 e_case
-e_base "$EB" "$FIX/linux-setup-in-progress" 'resume\n'
+E_ENV="OMB_TEST_AFTER=$FIX/linux-omarchy-finishing" e_base "$EB" "$FIX/linux-setup-in-progress" 'resume\n'
 e_core "$FIX/linux-setup-in-progress"
-a_exec_tty '\004\004\004' omarchy.resume resume
+A_ENV="OMB_TEST_AFTER=$FIX/linux-omarchy-finishing" a_exec_tty '\004\004\004' omarchy.resume resume
 e_agree equiv-omarchy.resume
 # shared.code on Linux: macOS's code into shared activate, which then stops
 # at its gate.
