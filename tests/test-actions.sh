@@ -38,7 +38,7 @@ A_TOOL=$REPO
 # supervised children (the sandbox cannot read the process table). The real
 # classifier and judge read fixtures; only the flow and state writes are
 # replaced, so no installer or host command runs.
-# shellcheck disable=SC2329 # mocks are invoked by the sourced functions
+# shellcheck disable=SC2317,SC2329 # mocks are invoked by the sourced functions (0.9.0 says SC2317)
 a_resume_observe() (
   local before_fixture=$1 after_fixture=$2 status=$3 fault=$4
   local ran=0 offered run_rc run_finding run_text prior_enc migrate_lookups=0
@@ -181,7 +181,7 @@ EOF
   done
   # A root-only conf's unreadable content must not erase its presence. This
   # is fd481b4's finishing-boot behaviour, also used by Shared's caller.
-  # shellcheck disable=SC2329 # called by the sourced functions
+  # shellcheck disable=SC2317,SC2329 # called by the sourced functions (0.9.0 says SC2317)
   got=$(
     t_load >/dev/null 2>&1
     OMB_FIXTURE=$FIX/linux-omarchy-finishing OMB_UID=501
