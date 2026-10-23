@@ -479,6 +479,10 @@ fn the_read_surface_against_the_real_core() {
     if mac {
         let c = go(&mut m, 6);
         assert!(c.is_empty(), "opening the form reads nothing");
+        // A read session lists no plan.save: the plan check's two sizes,
+        // Linux's first.
+        let names: Vec<&str> = m.plan.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["linux_size", "shared_size"]);
         typed(&mut m, "250GB");
         key(&mut m, KeyCode::Tab);
         typed(&mut m, "100GB");
@@ -497,9 +501,22 @@ fn the_read_surface_against_the_real_core() {
         for (_, value, _) in &ch.answers {
             assert!(f.contains(value.as_str()), "{value}:\n{f}");
         }
-        assert!(f.contains("nothing was saved"), "{f}");
-        let b = ch.basis.as_ref().unwrap();
+        // The answer's basis and that nothing was saved: pages down, never
+        // cut away.
+        let b = ch.basis.clone().unwrap();
+        let mut f = String::new();
+        for _ in 0..4 {
+            assert!(
+                key(&mut m, KeyCode::PageDown).is_empty(),
+                "scrolling is local"
+            );
+            f = frame(&m, 120, 40);
+            if f.contains(&b[..40]) {
+                break;
+            }
+        }
         assert!(f.contains(&b[..40]), "the basis, whole:\n{f}");
+        assert!(f.contains("nothing was saved"), "{f}");
         key(&mut m, KeyCode::BackTab);
         assert!(ctrl(&mut m, 'u').is_empty(), "Ctrl-U clears the field");
         typed(&mut m, "05GB");
@@ -709,7 +726,13 @@ fn the_generic_requests_reach_the_real_core() {
         },
     );
     assert!(status == "done" || status == "refused", "{status} {code}");
-    // Executes with arguments, against a basis no review gave: refused.
+    // The reads wrote nothing.
+    assert_eq!(listing(&w.state(name)), before, "no read wrote anything");
+    // Executes with arguments, against a basis no review gave: refused. An
+    // execute is act intent: the core takes the run lock and writes the
+    // scope's operation record before it reads for its decision, and removes
+    // the record when it refuses (docs/PROTOCOL.md → *Operations and
+    // exclusion*), so no operation record remains.
     for (action, args) in [("plan.save", plan), ("profile.save", select)] {
         let (status, code, recs) = answered(
             &mut s,
@@ -723,8 +746,15 @@ fn the_generic_requests_reach_the_real_core() {
             },
         );
         assert_eq!(status, "refused", "{action} {code}: {recs:?}");
+        let records: Vec<_> = listing(&w.state(name).join("ops"))
+            .into_iter()
+            .filter(|(p, _)| p.extension().is_some_and(|e| e == "omb"))
+            .collect();
+        assert!(
+            records.is_empty(),
+            "{action}: no operation record remains: {records:?}"
+        );
     }
-    assert_eq!(listing(&w.state(name)), before, "nothing was written");
     let _ = std::fs::remove_dir_all(&t);
 }
 
