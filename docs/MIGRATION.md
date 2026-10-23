@@ -129,6 +129,13 @@ opaque again.
 
 ### Hard refusals
 
+Every carried path is printable ASCII (bytes 0x20 through 0x7E), including
+paths inside adapter-owned and opaque trees and every name the filesystem
+identity check reports for an inode. A name outside that range is refused
+because Unicode spellings can hide a credential filename on the Mac. The
+item names this reason. The encrypted SSH-key exception does not override
+the path rule.
+
 Never carried, whatever is selected: SSH private keys (except below), the
 tools' sign-in and token files, `.env` files, cloud and container
 credentials (`~/.aws`, `~/.docker/config.json`, `~/.kube/config`), `.netrc`,
@@ -156,11 +163,29 @@ An OpenSSH private key may travel only if its envelope is parsed and shows
 encryption with a supported policy, and the person types `carry` for that
 key:
 
-- the file is at most 16 KiB, in the `openssh-key-v1` format; its cipher is
-  `aes256-ctr`, `aes256-gcm@openssh.com` or `chacha20-poly1305@openssh.com`;
-  its KDF is `bcrypt` with at least 16 rounds; anything else — an older PEM
-  format, an unencrypted key, an unknown cipher, a malformed envelope — is
-  refused;
+- the file is at most 16 KiB and is canonical OpenSSH armor: exactly
+  `-----BEGIN OPENSSH PRIVATE KEY-----` and LF, nonempty standard-alphabet
+  Base64 lines of at most 76 characters with LF endings, then exactly
+  `-----END OPENSSH PRIVATE KEY-----` and one final LF. Padding (`=`) is
+  allowed only at the end of the body, with its unused bits zero. No text,
+  comments, blank lines, CR bytes or second Base64 run may appear;
+- the body decodes in full to one `openssh-key-v1` envelope, consumed
+  exactly, including its KDF options. Its cipher is `aes256-ctr`,
+  `aes256-gcm@openssh.com` or `chacha20-poly1305@openssh.com`; its KDF is
+  `bcrypt` with a salt of at least 16 bytes and at least 16 rounds;
+- its single public blob is complete: `ssh-ed25519` has a 32-byte key;
+  `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384` and `ecdsa-sha2-nistp521`
+  name their own curve and have an uncompressed point beginning with 0x04
+  of exactly 65, 97 or 133 bytes respectively; `ssh-rsa` has two canonical
+  positive mpints, e and n, with n at least 2048 bits. Security-key (`sk-`)
+  and DSA types are refused;
+- the private section is at least the minimum encoding for its public type:
+  two check integers, its type and required key strings or mpints, a comment
+  string, and padding. Ed25519 needs at least 132 bytes before rounding up
+  to a whole cipher block. The section is block-aligned (16 bytes for AES,
+  8 for ChaCha20); either authenticated cipher has exactly its 16-byte tag
+  after it. An older PEM format, an unencrypted key, an unknown cipher or
+  any malformed file or envelope is refused;
 - the passphrase is never asked for, and its strength is not checked: the
   screen says that an encrypted key is still valuable to anyone who copies
   it, because a weak passphrase can be guessed offline, and that making a new

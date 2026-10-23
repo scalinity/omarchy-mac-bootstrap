@@ -200,8 +200,11 @@ _scan_url_ok() {
 # opaque folder); SCAN_HIT names the kind. Compared in lower case: the Mac's
 # file system does not tell .DOCKER from .docker, so neither does this.
 scan_refused() {
-  local rel=$1 low base
+  local rel=$1 low base LC_ALL=C
   SCAN_HIT=""
+  case "$rel" in
+    *[![:print:]]*) SCAN_HIT="a path with a byte outside printable ASCII, which can hide a credential filename" && return 0 ;;
+  esac
   low=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   base=${low##*/}
   case "/$low/" in
@@ -300,31 +303,55 @@ scan_value_ok() {
 _SCAN_KEY_AWK='
 function u32(i) { return ((B[i] * 256 + B[i + 1]) * 256 + B[i + 2]) * 256 + B[i + 3] }
 function sstr(i, n,   s, j) { s = ""; for (j = 0; j < n; j++) s = s sprintf("%c", B[i + j]); return s }
-function bad(w) { print "malformed - - 0"; exit 0 }
+function bad() { done = 1; print "malformed - - 0"; exit 0 }
+# A positive mpint has no redundant sign byte. Keep its encoded size for
+# the private section, and its bit length for the RSA modulus policy.
+function mpint(end,   l, start, top) {
+  if (p + 4 > end) bad(); l = u32(p); p += 4
+  if (l < 1 || p + l > end || B[p] >= 128) bad()
+  start = p
+  if (B[p] == 0) {
+    if (l < 2 || B[p + 1] < 128) bad()
+    start++
+  }
+  mpbytes = l; mpbits = (p + l - start - 1) * 8
+  for (top = B[start]; top > 0; top = int(top / 2)) mpbits++
+  p += l
+}
 BEGIN {
   A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
   for (i = 1; i <= 64; i++) V[substr(A, i, 1)] = i - 1
 }
+{ filebytes += length($0) + 1 }
 NR == 1 {
   if ($0 == "-----BEGIN OPENSSH PRIVATE KEY-----") { inkey = 1; next }
   if ($0 ~ /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----$/) { print "pem - - 0"; done = 1; exit 0 }
   bad()
 }
 inkey && $0 == "-----END OPENSSH PRIVATE KEY-----" { ended = 1; inkey = 0; next }
-inkey { body = body $0; next }
-ended && $0 != "" { bad() }
+inkey {
+  if (length($0) < 1 || length($0) > 76 || $0 ~ /[^A-Za-z0-9+\/=]/) bad()
+  body = body $0; next
+}
+ended { bad() }
 END {
   if (done) exit 0
-  if (!ended) bad()
+  # Counting one LF per record against the byte size also refuses a
+  # missing final LF; no CR, blank line or text outside the armor passes.
+  if (!ended || filebytes != size) bad()
   n = 0; acc = 0; bits = 0
   m = length(body)
-  for (i = 1; i <= m; i++) {
+  if (m == 0 || m % 4 != 0) bad()
+  pad = 0
+  if (substr(body, m, 1) == "=") pad = 1
+  if (substr(body, m - 1, 2) == "==") pad = 2
+  for (i = 1; i <= m - pad; i++) {
     c = substr(body, i, 1)
-    if (c == "=") break
     if (!(c in V)) bad()
     acc = acc * 64 + V[c]; bits += 6
     if (bits >= 8) { bits -= 8; B[n++] = int(acc / (2 ^ bits)); acc = acc % (2 ^ bits) }
   }
+  if (bits != pad * 2 || acc != 0) bad()
   if (n < 32 || sstr(0, 14) != "openssh-key-v1" || B[14] != 0) bad()
   # Every length is read only where four bytes remain, and every string it
   # names must lie whole inside the envelope.
@@ -340,22 +367,35 @@ END {
   if (p + 4 > n) bad(); pl = u32(p); p += 4; if (pl < 5 || p + pl > n) bad()
   tl = u32(p); if (tl < 1 || tl > 64 || tl + 4 > pl) bad()
   type = sstr(p + 4, tl)
-  if (type !~ /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh[.]com|sk-ecdsa-sha2-nistp256@openssh[.]com)$/) bad()
+  # Security-key and DSA types are outside this policy.
+  if (type !~ /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))$/) bad()
   endpub = p + pl; p += 4 + tl
-  # Ed25519 has one 32-byte key; RSA two mpints, DSA four,
-  # ECDSA a curve and point. Security-key variants append an application.
-  fields = 2
-  if (type == "ssh-ed25519") fields = 1
-  else if (type == "ssh-dss") fields = 4
-  else if (type == "sk-ecdsa-sha2-nistp256@openssh.com") fields = 3
-  for (j = 1; j <= fields; j++) {
+  # The minimum private encoding includes two check integers, the type,
+  # every required key string/mpint, an empty comment and one padding byte.
+  minpriv = 8 + 4 + tl + 4 + 1
+  if (type == "ssh-ed25519") {
+    if (p + 4 > endpub || u32(p) != 32 || p + 36 > endpub) bad()
+    p += 36
+    minpriv += 4 + 32 + 4 + 64
+  } else if (type == "ssh-rsa") {
+    mpint(endpub); el = mpbytes
+    mpint(endpub); nl = mpbytes
+    if (mpbits < 2048) bad()
+    # n, e, d, iqmp, p and q: the four private positive mpints need at
+    # least one byte apiece, even with an empty comment.
+    minpriv += 4 + nl + 4 + el + 4 * (4 + 1)
+  } else {
+    curve = substr(type, 12)
     if (p + 4 > endpub) bad(); l = u32(p); p += 4
-    if (l < 1 || p + l > endpub) bad()
-    if ((type == "ssh-ed25519" || type == "sk-ssh-ed25519@openssh.com") && j == 1 && l != 32) bad()
+    if (l != length(curve) || p + l > endpub || sstr(p, l) != curve) bad()
     p += l
+    point = (curve == "nistp256") ? 65 : ((curve == "nistp384") ? 97 : 133)
+    if (p + 4 > endpub || u32(p) != point || p + 4 + point > endpub || B[p + 4] != 4) bad()
+    p += 4 + point
+    minpriv += 4 + l + 4 + point + 4 + 1
   }
   if (p != endpub) bad()
-  if (p + 4 > n) bad(); priv = u32(p); p += 4; if (priv < 1 || p + priv > n) bad(); p += priv
+  if (p + 4 > n) bad(); priv = u32(p); p += 4; if (priv < minpriv || p + priv > n) bad(); p += priv
   l = ol
   if (cipher !~ /^[a-z0-9@.-]+$/ || kdf !~ /^[a-z0-9@.-]+$/) bad()
   tag = (cipher == "aes256-gcm@openssh.com" || cipher == "chacha20-poly1305@openssh.com") ? 16 : 0
@@ -363,9 +403,10 @@ END {
   rounds = 0
   if (kdf == "bcrypt") {
     if (l < 8) bad()
-    sl = u32(opts); if (sl > l - 8) bad()
+    sl = u32(opts); if (sl < 16 || sl + 8 != l) bad()
     rounds = u32(opts + 4 + sl)
   }
+  if (kdf == "none" && ol != 0) bad()
   if (cipher == "none" && kdf == "none") { print "plain none none 0"; exit 0 }
   if ((cipher == "aes256-ctr" || cipher == "aes256-gcm@openssh.com" || cipher == "chacha20-poly1305@openssh.com") && kdf == "bcrypt" && rounds >= 16) {
     # The private section is whole cipher blocks (16 bytes for AES, 8 for
@@ -382,7 +423,7 @@ scan_ssh_key() {
   [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || return 1
   _scan_size "$1" || return 1
   [ "$SCAN_SIZE" -le "$SCAN_KEY_MAX" ] || return 1
-  r=$(LC_ALL=C tr -d '\015' <"$1" | LC_ALL=C awk "$_SCAN_KEY_AWK")
+  r=$(LC_ALL=C awk -v size="$SCAN_SIZE" "$_SCAN_KEY_AWK" "$1")
   # shellcheck disable=SC2086 # four words, split on purpose
   set -- $r
   case "${1:-}" in encrypted | plain | unsupported | pem | malformed) SCAN_KEY=$1 ;; *) return 1 ;; esac
@@ -1154,6 +1195,15 @@ _scan_ad_git() {
     rel=.ssh/$name
     if [ -L "$f/$name" ] || [ -d "$f/$name" ]; then continue; fi
     [ -f "$f/$name" ] || continue
+    if scan_refused "$rel"; then
+      case "$rel:$SCAN_HIT" in
+        .ssh/*:an\ SSH\ private\ key | .ssh/*:a\ key\ or\ certificate\ file) ;;
+        *)
+          _scan_item "path:$rel" key git-ssh "$name" "" "" yes observed secret "$rel" "" "never carried: $SCAN_HIT"
+          continue
+          ;;
+      esac
+    fi
     case "$name" in
       config)
         _scan_size "$f/$name"
@@ -1568,13 +1618,13 @@ _scan_x_tree() {
   LC_ALL=C awk -F '\t' '$1 == "l" { print $4 }' "$SCAN_XO/walk" >"$SCAN_XO/links"
   while IFS='	' read -r t s m path link; do
     path=$(rec_dec "$path")
+    if scan_refused "$rel/$path" || scan_refused "$srcrel/$path"; then
+      _scan_x skip reason "$dest/$path: $SCAN_HIT"
+      continue
+    fi
     case "$t" in
       d) _scan_x dir dest "$dest/$path" mode "$dmode" ;;
       f)
-        if scan_refused "$rel/$path" || scan_refused "$srcrel/$path"; then
-          _scan_x skip reason "$dest/$path: $SCAN_HIT"
-          continue
-        fi
         if [ "$class" = opaque ] && ! _scan_x_source "$(sys_path "$root/$path")"; then
           _scan_x skip reason "$dest/$path: $SCAN_HIT"
           continue
@@ -1602,6 +1652,7 @@ _scan_x_tree() {
 _scan_x_link_ok() {
   local path=$1 tgt=$2 dir out="" c IFS
   SCAN_LINK_OK=0 SCAN_LINK_WHY=""
+  if scan_refused "$tgt"; then SCAN_LINK_WHY="whose target is $SCAN_HIT" && return 0; fi
   case "$tgt" in
     '') SCAN_LINK_WHY="with no target" && return 0 ;;
     /*) SCAN_LINK_WHY="with an absolute target" && return 0 ;;
@@ -1659,8 +1710,8 @@ _scan_x_path() {
   _scan_class_of "$rel"
   _scan_dest "$rel"
   if scan_refused "$rel"; then
-    case "$rel" in
-      .ssh/*)
+    case "$rel:$SCAN_HIT" in
+      .ssh/*:an\ SSH\ private\ key | .ssh/*:a\ key\ or\ certificate\ file)
         if scan_ssh_key "$p" && _scan_x_put "$p"; then
           # The bytes captured are the bytes whose envelope is checked.
           if scan_ssh_key "$SCAN_XO/$SCAN_OBJ"; then
@@ -2375,7 +2426,10 @@ function shaped(v) {
   top = P[1]
   if (v ~ /[[:cntrl:]]/) {
     skip("codex: a configuration value holds a control byte, dropped")
-    if (top == "mcp_servers" && n >= 2) NEEDS[P[2]] = 1
+    if (top == "mcp_servers" && n >= 2) {
+      NEEDS[P[2]] = 1
+      if (n == 4 && P[3] == "args" && t == "s") PREV[P[2]] = v
+    }
     next
   }
   if (n == 1) {

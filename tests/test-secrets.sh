@@ -181,6 +181,22 @@ EOF
     assert_contains "$(cat "$out/carry")" needs-secret "secret-args-control: $id reports its dropped arguments"
   done
 fi
+# secret-args-control-sequence: dropping a credential value with a control
+# advances the previous argument, so the next ordinary switch stays.
+cat >"$CX/root/Users/alex/.codex/config.toml" <<'EOF'
+[mcp_servers.control]
+command = "svc"
+args = ["--token", "shortpass\n", "--port", "8080"]
+EOF
+(
+  OMB_FIXTURE=$CX
+  scan_extract codex:config "$T/x-control-sequence" >/dev/null 2>&1
+  omb_cleanup
+)
+src=$(awk -F '\t' '$1 == "file" { sub(/^src=/, "", $3); print $3 }' "$T/x-control-sequence/carry")
+assert_contains "$(cat "$T/x-control-sequence/$src")" 'args = ["--port", "8080"]' "secret-args-control-sequence: the next switch and its value stay together"
+assert_not_contains "$(cat "$T/x-control-sequence/$src")" shortpass "secret-args-control-sequence: the token value is dropped"
+assert_contains "$(cat "$T/x-control-sequence/carry")" needs-secret "secret-args-control-sequence: the item needs its secret set again"
 # secret-starship-fields (S9): Starship's file is rebuilt by its documented
 # field names; a field no rule names, and a custom module, stay behind.
 cat >"$CX/root/Users/alex/.config/starship.toml" <<'EOF'
@@ -303,11 +319,7 @@ carry=$(cat "$T/x-unicode-files/carry")
 assert_not_contains "$carry" "file	dest=dotfiles/unicode/ordinary.json" "secret-stow-unicode: a protected file's identity is refused inside a chosen root"
 for pair in "cluster-note:.kube/config" "ssh-note:.ssh/unicode-note"; do
   dest="file	dest=dotfiles/unicode/${pair%%:*}"
-  if [ "$SH/dotfiles/unicode/${pair%%:*}" -ef "$SH/${pair#*:}" ]; then
-    assert_not_contains "$carry" "$dest" "secret-stow-unicode: a Unicode alias's identity is protected (${pair%%:*})"
-  else
-    assert_contains "$carry" "$dest" "secret-stow-unicode: an independent ASCII-named file remains eligible (${pair%%:*})"
-  fi
+  assert_not_contains "$carry" "$dest" "secret-stow-unicode: an inode with a non-ASCII alias is refused (${pair%%:*})"
 done
 # Unicode path components inside the tree must not hide a protected place.
 mkdir -p "$SH/dotfiles/unicode/.${kelvin}ube"
@@ -315,6 +327,47 @@ printf 'fixture cluster configuration\n' >"$SH/dotfiles/unicode/.${kelvin}ube/co
 stow path:dotfiles/unicode "$T/x-unicode-child"
 carry=$(cat "$T/x-unicode-child/carry")
 assert_not_contains "$carry" "file	dest=dotfiles/unicode/." "secret-stow-unicode: a protected Unicode spelling inside a chosen root is refused"
+# secret-path-ascii: every name is printable ASCII, including adapter
+# trees, opaque trees and an inode's other names on case-sensitive disks.
+mkdir -p "$SH/dotfiles/ascii" "$SH/.config/nvim/dir${longs}"
+ln -s init.lua "$SH/.config/nvim/link${longs}"
+ln -s "credential${longs}" "$SH/.config/nvim/alias"
+printf 'shortpassASCIIadapter\n' >"$SH/.config/nvim/credential${longs}"
+printf 'shortpassASCIIopaque\n' >"$SH/dotfiles/ascii/credential${longs}"
+ln "$SH/dotfiles/ascii/credential${longs}" "$SH/dotfiles/ascii/ordinary.txt"
+cp "$S/.ssh/id_ed25519" "$SH/.ssh/id_${longs}"
+for rel in ".config/nvim/credential${longs}" "dotfiles/ascii/credential${longs}" ".ssh/id_${longs}"; do
+  scan_refused "$rel"
+  assert_eq "$? $SCAN_HIT" "0 a path with a byte outside printable ASCII, which can hide a credential filename" "secret-path-ascii: a non-ASCII path is refused with its reason"
+done
+u=0
+for id in nvim:config path:dotfiles/ascii "path:.ssh/id_${longs}"; do
+  u=$((u + 1))
+  out=$T/x-ascii-$u
+  stow "$id" "$out"
+  carry=$(cat "$out/carry")
+  assert_contains "$carry" 'outside%20printable%20ASCII' "secret-path-ascii: $id reports its path refusal"
+  assert_not_contains "$carry" 'file	dest=dotfiles/ascii/ordinary.txt' "secret-path-ascii: an ASCII hard link to a non-ASCII name is refused"
+  assert_not_contains "$carry" 'file	dest=.config/nvim/credential' "secret-path-ascii: no adapter-owned non-ASCII file is carried"
+  assert_not_contains "$carry" 'file	dest=.ssh/id_' "secret-path-ascii: the encrypted-key exception cannot override the path rule"
+  assert_not_contains "$carry" 'dir	dest=.config/nvim/dir' "secret-path-ascii: a non-ASCII directory name is refused"
+  assert_not_contains "$carry" 'link	dest=.config/nvim/link' "secret-path-ascii: a non-ASCII link name is refused"
+  assert_not_contains "$carry" 'link	dest=.config/nvim/alias' "secret-path-ascii: a non-ASCII link target is refused"
+  assert_eq "$(grep -rl shortpassASCII "$out/f")" "" "secret-path-ascii: none of the refused bytes is captured"
+done
+if t_plutil "non-ASCII path inventory"; then
+  (
+    OMB_FIXTURE=$SV
+    scan_run "$T/inv-ascii" >/dev/null 2>&1
+    omb_cleanup
+  )
+  for id in nvim:config "path:.ssh/id_${longs}"; do
+    rec_enc_v "$id"
+    line=$(awk -F '\t' -v id="id=$REC_ENC" '$1 == "item" && $2 == id' "$T/inv-ascii")
+    assert_contains "$line" 'outside%20printable%20ASCII' "secret-path-ascii: $id explains the refusal in the inventory"
+    assert_not_contains "$line" 'kind=key-encrypted' "secret-path-ascii: a non-ASCII filename is never an eligible encrypted-key item"
+  done
+fi
 # secret-stow-case: the Mac's file system does not tell .DOCKER from .docker,
 # Library from library, .ssh from .SSH; neither do the refusals. Written
 # through the differently cased names, so a case-sensitive system holds the
@@ -371,6 +424,7 @@ k_str() { k_u32 "${#1}" && printf '%s' "$1"; }
 # PRIV the private section's length in bytes, short (a length past the end)
 # or none; TAG 1 for the 16 bytes an authenticated cipher keeps after it.
 k_key() {
+  local type curve point
   {
     printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n'
     {
@@ -382,10 +436,26 @@ k_key() {
         type) k_u32 15 && k_str ssh-ed25519 ;;
         tiny) k_u32 20 && k_str ssh-ed25519 && k_str F ;;
         extra) k_u32 52 && k_str ssh-ed25519 && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY && printf F ;;
-        rsa) k_u32 21 && k_str ssh-rsa && k_str E && k_str N ;;
+        rsa)
+          k_u32 279 && k_str ssh-rsa && k_u32 3 && printf '\001\000\001'
+          k_u32 257 && printf '\000\200' && head -c 255 /dev/zero | tr '\0' F
+          ;;
+        rsa-small) k_u32 21 && k_str ssh-rsa && k_str E && k_str N ;;
         rsa-short) k_u32 16 && k_str ssh-rsa && k_str E ;;
         dss) k_u32 31 && k_str ssh-dss && k_str P && k_str Q && k_str G && k_str Y ;;
-        ecdsa) k_u32 40 && k_str ecdsa-sha2-nistp256 && k_str nistp256 && k_str Q ;;
+        ecdsa | ecdsa384 | ecdsa521 | ecdsa-short | ecdsa-curve | ecdsa-prefix)
+          curve=nistp256 point=65
+          case "$3" in
+            ecdsa384) curve=nistp384 point=97 ;;
+            ecdsa521) curve=nistp521 point=133 ;;
+            ecdsa-short) point=1 ;;
+          esac
+          type=ecdsa-sha2-$curve
+          [ "$3" != ecdsa-curve ] || curve=nistp521
+          k_u32 $((4 + ${#type} + 4 + ${#curve} + 4 + point)) && k_str "$type" && k_str "$curve" && k_u32 "$point"
+          if [ "$3" = ecdsa-short ] || [ "$3" = ecdsa-prefix ]; then printf Q; else printf '\004'; fi
+          if [ "$point" -gt 1 ]; then head -c "$((point - 1))" /dev/zero | tr '\0' F; fi
+          ;;
         sk-ed) k_u32 81 && k_str sk-ssh-ed25519@openssh.com && k_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY && k_str fixture-app ;;
         sk-ec) k_u32 70 && k_str sk-ecdsa-sha2-nistp256@openssh.com && k_str nistp256 && k_str Q && k_str fixture-app ;;
       esac
@@ -438,10 +508,51 @@ for c in "aes256-ctr type 16 0" "aes256-ctr tiny 16 0" "aes256-ctr extra 16 0" "
   scan_key_check "$T/envelope"
   assert_rc $? 1 "secret-ssh-envelope: $c is never carried"
 done
-for pub in rsa dss ecdsa sk-ed sk-ec; do
-  k_key "$T/envelope" aes256-ctr "$pub" 160 0
-  scan_key_check "$T/envelope"
-  assert_rc $? 0 "secret-ssh-envelope: a complete $pub public blob remains supported"
+# secret-ssh-canonical: only one complete, canonical armor and envelope;
+# each supported type has its exact public fields and enough private bytes.
+for c in aes256-ctr aes256-gcm@openssh.com chacha20-poly1305@openssh.com; do
+  tag=1
+  [ "$c" != aes256-ctr ] || tag=0
+  for parts in "real 144" "rsa 320" "ecdsa 128" "ecdsa384 160" "ecdsa521 192"; do
+    # shellcheck disable=SC2086 # public shape and private length, split on purpose
+    k_key "$T/canonical" "$c" $parts "$tag"
+    scan_key_check "$T/canonical"
+    assert_rc $? 0 "secret-ssh-canonical: a complete $c $parts envelope is supported"
+  done
+done
+for parts in "real 16" "ecdsa-short 160" "ecdsa-curve 160" "ecdsa-prefix 160" "ecdsa384 144" "ecdsa521 176" "rsa-small 320" "rsa 304" "dss 160" "sk-ed 160" "sk-ec 160"; do
+  # shellcheck disable=SC2086 # public shape and private length, split on purpose
+  k_key "$T/canonical" aes256-ctr $parts 0
+  scan_ssh_key "$T/canonical"
+  assert_eq "$SCAN_KEY" malformed "secret-ssh-canonical: malformed or unsupported public/private fields ($parts) are refused"
+done
+# This size has Base64 padding, so suffix text and a second run exercise the
+# precise boundary at which the old decoder stopped reading.
+k_key "$T/canonical" aes256-ctr real 160 0
+assert_contains "$(cat "$T/canonical")" '=' "secret-ssh-canonical: the armor fixture reaches Base64 padding"
+for form in text second-run comment crlf no-final-lf trailing-blank prefix blank-body wide padding-bits; do
+  case "$form" in
+    text) sed '/^-----END/i\
+api_key = sk-FIXTUREcleartextsecret0000000000
+' "$T/canonical" >"$T/armor" ;;
+    second-run) sed '/^-----END/i\
+RklYVFVSRSBTRUNPTkQgUlVO
+' "$T/canonical" >"$T/armor" ;;
+    comment) sed '2i\
+# synthetic fixture comment
+' "$T/canonical" >"$T/armor" ;;
+    crlf) awk '{ printf "%s\r\n", $0 }' "$T/canonical" >"$T/armor" ;;
+    no-final-lf) head -c "$(($(wc -c <"$T/canonical") - 1))" "$T/canonical" >"$T/armor" ;;
+    trailing-blank) { cat "$T/canonical"; printf '\n'; } >"$T/armor" ;;
+    prefix) { printf 'fixture text\n'; cat "$T/canonical"; } >"$T/armor" ;;
+    blank-body) sed '2i\
+
+' "$T/canonical" >"$T/armor" ;;
+    wide) awk '/^-----/ { if (body != "") { print body; body = "" }; print; next } { body = body $0 }' "$T/canonical" >"$T/armor" ;;
+    padding-bits) sed 's/Y=$/Z=/' "$T/canonical" >"$T/armor" ;;
+  esac
+  scan_ssh_key "$T/armor"
+  assert_eq "$SCAN_KEY" malformed "secret-ssh-canonical: $form armor is refused"
 done
 { cat "$S/.ssh/id_ed25519"; head -c 17000 /dev/zero | tr '\0' 'A'; } >"$T/big"
 scan_key_check "$T/big"

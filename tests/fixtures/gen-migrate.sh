@@ -42,10 +42,10 @@ _mig_key() {
       fi
       _mig_u32 1
       # The public key as OpenSSH writes one: its type, then 32 key bytes
-      # (synthetic); then a private section of whole cipher blocks (160
-      # bytes, synthetic, encrypting nothing).
+      # (synthetic); then 144 private bytes: at least the 132-byte minimum
+      # encoding, rounded to a whole AES block, encrypting nothing.
       _mig_u32 51 && _mig_str ssh-ed25519 && _mig_str FIXTUREPUBLICKEYFIXTUREPUBLICKEY
-      _mig_str "FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY.FIXTURE PRIVATE SECTION NOT KEY."
+      _mig_u32 144 && head -c 144 /dev/zero | tr '\0' F
     } | base64 | tr -d '\n' | fold -w 70
     printf '\n-----END OPENSSH PRIVATE KEY-----\n'
   } >"$f"
