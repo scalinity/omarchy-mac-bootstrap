@@ -694,6 +694,22 @@ asks only for `hello`, the journey snapshot and `execute`, so it never meets
 `health` or `logs`; an older core refuses them, with no fallback, retry
 under `journey`, alias or substitution.
 
+The `qualify` scope routes `snapshot` and `detail` to `qfy_core_op` in
+`lib/qualify.sh`, after the session's scope check. Its snapshot carries
+`qualify.state` (`not-started`, `waiting-for-linux`, `waiting-for-macos`,
+`passed`, `failed` or `blocked`), `qualify.due` (`1`, `2`, `3` or `none`),
+and `qualify.shared` (the verified identity or the reason it is unavailable).
+The state tones are respectively `info`, `info`, `info`, `ok`, `fail`,
+`warn`; Shared's tone is `ok` when identified and `warn` otherwise. A
+blocked run adds `blocker id=qualify.blocked` with its reason. Only a step
+that can run on this system offers `qualify.run`, labelled `Run step N`,
+with intent `act`, gate `test`, terminal `handoff` and cancel `0`.
+`detail kind=step` pages exactly three `row kind=step` rows, keys `1`–`3`,
+with columns state (`done`, `todo`, `failed`, `blocked`), label (`macOS
+writes`, `Linux checks and writes`, `macOS checks`) and detail (digest
+prefixes of 12 hex digits and the reason). The whole dataset, including
+its actions and step rows, supplies the generation.
+
 The `restore` scope's `snapshot`, `detail` and validation of `restore.*`
 selects route to `rst_core_op OP` in `lib/migrate_restore.sh`. The `debug`
 scope's `snapshot` and `detail` route to `dbg_core_op OP` in `lib/debug.sh`.
@@ -1580,6 +1596,7 @@ once; loading agents alone sources `lib/agents.sh` once. Both use the
 | `profile.carry` | `profile` | macOS | managed | `carry` | `key`: an encrypted SSH key's item id |
 | `export.write` | `export` | macOS | managed | — | `dir`: a folder, or empty for verified Shared |
 | `restore.apply` | `restore` | Linux | handoff | `restore` | `bundle`: required bytes; `replace.1` … `replace.14`: optional `omb-replace` parts |
+| `qualify.run` | `qualify` | both | handoff | `test` | — |
 | `restore.undo` | `restore` | Linux | handoff | `undo` | — |
 | `agents.mcp` | `health` | Linux | handoff | — | `tool`: required choice of `claude-code`, `codex`, `opencode` |
 
@@ -1597,6 +1614,12 @@ records and interleaved `agent<TAB>tool=ID<TAB>ran=1<LF>` receipts are admitted
 separately; a torn last line is ignored. `restore.agent` is the receipt's
 append-and-flush save boundary. Other restore save boundaries cover journal,
 stage, backup, placement and undo; records feed fresh filesystem checks.
+
+An interactive qualification session admits `journey,qualify`. The core
+routes `qualify.run` to `qfy_row` in `lib/qualify.sh`, using the same
+handoff, typed-word, exclusion, basis and judgement path as `restore.apply`.
+Only a session containing `qualify` can run it. Its offer re-reads Shared
+identity, record admission and binding, step order and available space.
 
 An interactive restore session admits `journey,restore,health,debug`.
 Plan, profile, export and Shared creation/activation sessions also admit

@@ -140,8 +140,9 @@ is in.
 | `restore status` (M15) | read | — | Per-item state from the machine |
 | `restore undo` (M15) | act | — | Typed `undo`: puts back each file, folder and link that is still exactly as the restore left it |
 | `debug` (M15) | read | The fixed agent brief and the status and doctor facts; never a log line, command output or file content | Same |
-| `qualify` (M16) | act | The step due on this system; typed `test` | Same (docs/QUALIFICATION.md) |
-| `qualify status`, `report` (M16) | read | The check's state; the report, every check pass, warn, fail or not checked | Same |
+| `qualify` | act | The step due on this system; typed `test` | Same (docs/QUALIFICATION.md) |
+| `qualify status` | read | The Shared qualification state; writes nothing | Same |
+| `report` (M16) | read | The report, every check pass, warn, fail or not checked | Same |
 | `frontend-check` (M14) | read, frontend cache | Opens the published frontend to check that it can be acquired, started, reach its core, show its foundation dashboard and exit; installs, plans and changes nothing on the machine (docs/FRONTEND.md → *The startup check*) | Same |
 | `core OP` (M14) | per operation | The frontend's protocol entry (docs/PROTOCOL.md); not for people | Same |
 
