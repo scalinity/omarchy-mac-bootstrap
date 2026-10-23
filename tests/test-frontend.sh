@@ -131,6 +131,14 @@ fe_call() {
       . "$1/lib/common.sh"; . "$1/lib/ui.sh"; . "$1/lib/state.sh"; . "$1/lib/records.sh"; . "$1/lib/core.sh"; . "$1/lib/frontend.sh"
       OMB_HOME=$1; shift
       OMB_COLOR=never; ui_init; platform_init; state_init
+      fe_restore_test() {
+        fe_session_for restore "$1" || return 1
+        if [ "${2:-}" = run ]; then
+          fe_run "$FE_INTENT" "$FE_SCOPES"
+        else
+          printf "%s|%s|%s\n" "$FE_INTENT" "$FE_SCOPES" "${OMB_RESTORE_DIR:-}"
+        fi
+      }
       "$@" >"$TMPDIR/fe-out" 2>&1
       rc=$?
       printf "%s|%s|%s|%s\n" "$rc" "${FE_STATE:-}" "${FE_BIN:-}" "${FE_WHY:-}"
@@ -726,8 +734,8 @@ mkdir -p "$T/cwd-report"
 assert_eq "$(ls -A "$T/cwd-report")" "" "fe-report-buffer: nothing is made in the working folder"
 assert_contains "$(cat "$T"/state-report/logs/*.log 2>/dev/null)" "frontend state=crashed the interface stopped (status 137)" "fe-report-buffer: the log line is whole"
 
-# fe-session-args: a command given an argument stays in text, where the
-# argument is read; its bare form opens the frontend.
+# fe-session-args: restore carries a checked folder through its session;
+# other commands given an argument stay in text, where it is read.
 for c in resume: export: shared:create shared:activate; do
   r=$(fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
   assert_eq "${r%%|*}" 0 "fe-session-args: ${c%%:*} ${c#*:} opens the frontend"
@@ -736,6 +744,28 @@ for c in resume:ombdone1abc export:/tmp/out "shared:create ombshare1x" "shared:a
   r=$(fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
   assert_eq "${r%%|*}" 1 "fe-session-args: ${c%%:*} ${c#*:} stays in text"
 done
+restore_dir=$T/'restore folders'
+mkdir -p "$restore_dir"
+for arg in '' "$restore_dir"; do
+  r=$(FE_FIX="$FIX/linux-omarchy-installed" fe_call '' fe_restore_test "$arg")
+  assert_eq "${r%%|*}" 0 "fe-session-restore: restore $arg opens the frontend"
+  assert_contains "$(cat "$T/tmp/fe-out")" "act|journey,restore|$arg" 'restore session has its scopes and exact folder'
+done
+for c in restore:status restore:undo debug: restore:relative "restore:$restore_dir/missing"; do
+  r=$(FE_FIX="$FIX/linux-omarchy-installed" fe_call '' fe_session_for "${c%%:*}" "${c#*:}")
+  assert_eq "${r%%|*}" 1 "fe-session-restore: ${c%%:*} ${c#*:} stays in text"
+done
+r=$(fe_call '' fe_session_for restore '')
+assert_eq "${r%%|*}" 1 'fe-session-restore: restore on macOS stays in text'
+printf '0' >"$T/fake-behaviour"
+r=$(FE_FIX="$FIX/linux-omarchy-installed" FE_ENV="OMB_FRONTEND_DEV=$FAKE" fe_call '' fe_restore_test "$restore_dir" run)
+assert_eq "${r%%|*}" 0 'fe-session-restore: a restore session finishes'
+e=$(cat "$T/fake-env")
+assert_contains "$e" "OMB_RESTORE_DIR=$restore_dir" 'restore folder reaches the frontend environment byte for byte'
+assert_contains "$e" 'OMB_SESSION_SCOPES=journey,restore' 'restore scopes reach the frontend environment'
+r=$(FE_FIX="$FIX/linux-omarchy-installed" FE_ENV="OMB_FRONTEND_DEV=$FAKE OMB_RESTORE_DIR=/inherited" fe_call '' fe_restore_test '' run)
+assert_eq "${r%%|*}" 0 'fe-session-restore: bare restore finishes'
+assert_eq "$(grep -c '^OMB_RESTORE_DIR=' "$T/fake-env")" 0 'bare restore clears an inherited restore folder'
 
 t_decoys_survive test-frontend
 t_done test-frontend

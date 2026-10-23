@@ -22,6 +22,10 @@ resume \[token\]|continue after a reboot
 status|where this machine is, and what comes next
 doctor|read-only health checks
 dev|optional developer setup
+restore \[DIR\]|Linux: restore the environment from Shared or DIR
+restore status|Linux: restore progress
+restore undo|Linux: undo restored files that have not changed
+debug|read-only debugging brief and machine facts
 sources \[--check\]|upstream URLs and versions
 logs|log location and recent entries
 --dry-run|show every step; change nothing, keep nothing

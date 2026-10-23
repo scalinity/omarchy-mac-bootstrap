@@ -934,6 +934,8 @@ core_mod_for() {
     plan.save | asahi.* | shared.* | network.* | omarchy.* | dev | dev.*) CORE_MOD=actions CORE_MOD_ROW=act_row ;;
     profile | profile.*) CORE_MOD=profile CORE_MOD_ROW=prof_row ;;
     export | export.*) CORE_MOD=export CORE_MOD_ROW=bndl_row ;;
+    restore | restore.*) CORE_MOD=restore CORE_MOD_ROW=rst_row ;;
+    agents.*) CORE_MOD=agents CORE_MOD_ROW=agent_row ;;
     *) return 1 ;;
   esac
 }
@@ -957,8 +959,8 @@ core_mod_load() {
       . "$OMB_HOME/lib/actions.sh" || _omb_unloaded actions
       CORE_LOADED_actions=1
       ;;
-    profile | export)
-      [ "${CORE_LOADED_migrate:-}" = 1 ] || {
+    profile | export | restore)
+      if [ "$1" != restore ] && [ "${CORE_LOADED_migrate:-}" != 1 ]; then
         # shellcheck source=/dev/null
         . "$OMB_HOME/lib/toml.sh" || _omb_unloaded toml
         # shellcheck source=/dev/null
@@ -968,12 +970,32 @@ core_mod_load() {
         # shellcheck source=/dev/null
         . "$OMB_HOME/lib/migrate_profile.sh" || _omb_unloaded migrate_profile
         CORE_LOADED_migrate=1
-      }
-      if [ "$1" = export ] && [ "${CORE_LOADED_export:-}" != 1 ]; then
+      fi
+      if [ "$1" != profile ] && [ "${CORE_LOADED_export:-}" != 1 ]; then
         # shellcheck source=/dev/null
         . "$OMB_HOME/lib/migrate_bundle.sh" || _omb_unloaded migrate_bundle
         CORE_LOADED_export=1
       fi
+      if [ "$1" = restore ]; then
+        core_mod_load agents || return 1
+        if [ "${CORE_LOADED_restore:-}" != 1 ]; then
+          # shellcheck source=/dev/null
+          . "$OMB_HOME/lib/migrate_restore.sh" || _omb_unloaded migrate_restore
+          CORE_LOADED_restore=1
+        fi
+      fi
+      ;;
+    agents)
+      [ "${CORE_LOADED_agents:-}" = 1 ] && return 0
+      # shellcheck source=/dev/null
+      . "$OMB_HOME/lib/agents.sh" || _omb_unloaded agents
+      CORE_LOADED_agents=1
+      ;;
+    debug)
+      [ "${CORE_LOADED_debug:-}" = 1 ] && return 0
+      # shellcheck source=/dev/null
+      . "$OMB_HOME/lib/debug.sh" || _omb_unloaded debug
+      CORE_LOADED_debug=1
       ;;
     *) return 1 ;;
   esac
@@ -1350,9 +1372,14 @@ core_read_op() {
         # shellcheck source=lib/health.sh
         . "$OMB_HOME/lib/health.sh" || _omb_unloaded health
         core_health_op "$1"
-      elif [ "$CORE_REQ_SCOPE" = profile ] || [ "$CORE_REQ_SCOPE" = export ]; then
-        # The migration's scopes, answered by their own modules
-        # (docs/MIGRATION.md → *On the wire*).
+      elif [ "$CORE_REQ_SCOPE" = debug ]; then
+        core_mod_load debug
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        dbg_core_op "$1"
+      elif [ "$CORE_REQ_SCOPE" = profile ] || [ "$CORE_REQ_SCOPE" = export ] ||
+        [ "$CORE_REQ_SCOPE" = restore ]; then
+        # Each module answers its own scope's reads.
         core_mod_for "$CORE_REQ_SCOPE"
         core_mod_load "$CORE_MOD"
         # shellcheck source=lib/read.sh
@@ -1360,6 +1387,7 @@ core_read_op() {
         case "$CORE_REQ_SCOPE" in
           profile) prof_core_op "$1" ;;
           export) bndl_core_op "$1" ;;
+          restore) rst_core_op "$1" ;;
         esac
       else
         core_result refused unavailable "This read dataset is not available."
@@ -1381,6 +1409,11 @@ core_read_op() {
         # shellcheck source=lib/read.sh
         . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
         bndl_core_op validate
+      elif [ "${CORE_REQ_SELECT%%.*}" = restore ] && core_in_scopes restore; then
+        core_mod_load restore
+        # shellcheck source=lib/read.sh
+        . "$OMB_HOME/lib/read.sh" || _omb_unloaded read
+        rst_core_op validate
       elif [ "$CORE_REQ_SELECT" != plan.save ] && core_mod_for "$CORE_REQ_SELECT" &&
         core_action_info "$CORE_REQ_SELECT" && [ -n "$CA_PARAMS" ] &&
         declare -F "${CA_FN}_validate" >/dev/null; then

@@ -252,6 +252,10 @@ failure makes the run exit non-zero and is not recorded as done.
 | `shared activate` | Linux: mount Shared at `/mnt/shared` on every boot |
 | `shared test` | write, read back and remove one test file on Shared |
 | `dev` | developer setup (Linux, after Omarchy) |
+| `restore [DIR]` | Linux: restore the environment from Shared or an absolute path to an existing folder |
+| `restore status` | Linux: restore progress (read-only) |
+| `restore undo` | Linux: undo restored files that have not changed |
+| `debug` | debugging brief and machine facts (read-only) |
 | `sources [--check]` | targeted upstream; `--check` compares with upstream live (read-only) |
 | `logs` | where the log is, and its recent lines (read-only) |
 

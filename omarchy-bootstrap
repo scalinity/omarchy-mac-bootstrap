@@ -133,6 +133,18 @@ _omb_load() {
         # shellcheck source=lib/migrate_bundle.sh
         . "$OMB_HOME/lib/migrate_bundle.sh" || _omb_unloaded migrate_bundle
         ;;
+      agents)
+        # shellcheck source=lib/agents.sh
+        . "$OMB_HOME/lib/agents.sh" || _omb_unloaded agents
+        ;;
+      migrate_restore)
+        # shellcheck source=lib/migrate_restore.sh
+        . "$OMB_HOME/lib/migrate_restore.sh" || _omb_unloaded migrate_restore
+        ;;
+      debug)
+        # shellcheck source=lib/debug.sh
+        . "$OMB_HOME/lib/debug.sh" || _omb_unloaded debug
+        ;;
       *) _omb_unloaded "$__m" ;;
     esac
   done
@@ -163,6 +175,10 @@ usage() {
   _help_row "scan" "macOS: what this Mac holds that could come to Linux (read-only)"
   _help_row "profile [show]" "macOS: choose what comes to Linux and save it; show prints it (read-only)"
   _help_row "export [DIR]" "macOS: write the chosen environment to Shared or DIR"
+  _help_row "restore [DIR]" "Linux: restore the environment from Shared or DIR"
+  _help_row "restore status" "Linux: restore progress (read-only)"
+  _help_row "restore undo" "Linux: undo restored files that have not changed"
+  _help_row "debug" "read-only debugging brief and machine facts"
   _help_row "frontend-check" "check that the interface starts: downloads it once, changes nothing else"
   ui_section "Flags"
   _help_row "--dry-run" "show every step; change nothing, keep nothing"
@@ -304,6 +320,16 @@ main() {
       esac
       ;;
     export) [ "${#rest[@]}" -le 1 ] || { _usage_error "export takes at most one folder" ; return 2; } ;;
+    restore)
+      [ "${#rest[@]}" -le 1 ] || { _usage_error "restore takes at most one folder, status, or undo" ; return 2; }
+      if [ "${#rest[@]}" = 1 ]; then
+        case "${rest[0]}" in
+          status | undo) ;;
+          /*) [ -d "${rest[0]}" ] || { _usage_error "restore DIR must be an absolute path to an existing folder" ; return 2; } ;;
+          *) _usage_error "restore DIR must be an absolute path to an existing folder" ; return 2 ;;
+        esac
+      fi
+      ;;
     *) [ "${#rest[@]}" = 0 ] || { _usage_error "unexpected argument: ${rest[0]}" ; return 2; } ;;
   esac
 
@@ -325,7 +351,10 @@ main() {
     operation)
       if [ -n "$op_clear" ]; then OMB_INTENT=act; else OMB_INTENT=read OMB_PERSIST=0; fi
       ;;
-    status | doctor | sources | logs | scan) OMB_INTENT=read OMB_PERSIST=0 ;;
+    status | doctor | sources | logs | scan | debug) OMB_INTENT=read OMB_PERSIST=0 ;;
+    restore)
+      if [ "${rest[0]:-}" = status ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
+      ;;
     profile)
       if [ "${rest[0]:-}" = show ]; then OMB_INTENT=read OMB_PERSIST=0; else OMB_INTENT=act; fi
       ;;
@@ -379,6 +408,7 @@ main() {
       macos:shared | linux:shared) bar_scopes=shared ;;
       macos:profile) bar_scopes=profile ;;
       macos:export) bar_scopes="export" ;;
+      linux:restore) bar_scopes=restore ;;
       linux: | linux:install | linux:resume) bar_scopes="network omarchy shared" ;;
       linux:dev) bar_scopes=omarchy ;;
     esac
@@ -400,6 +430,20 @@ main() {
     doctor) cmd_doctor ; return ;;
     status) cmd_status ; return ;;
     shared) cmd_shared ${rest[@]+"${rest[@]}"} ; return ;;
+    debug)
+      _omb_load records core read debug
+      dbg_cmd
+      return
+      ;;
+    restore)
+      if [ "$OMB_PLATFORM" != linux ]; then
+        ui_fail "restore runs on the Linux system, after Omarchy is installed."
+        return 1
+      fi
+      _omb_load records core read migrate_bundle agents migrate_restore
+      rst_cmd ${rest[@]+"${rest[@]}"}
+      return
+      ;;
     scan | profile | export)
       # The migration's commands (docs/MIGRATION.md), macOS only; their
       # modules load for them alone.

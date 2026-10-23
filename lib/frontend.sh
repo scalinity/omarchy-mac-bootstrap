@@ -84,17 +84,28 @@ fe_lock_read() {
 FE_ACTIONS_VERSION=0.2.0
 
 # fe_session_for COMMAND ARGS — FE_SCOPES and FE_INTENT for an interactive
-# command the frontend runs; 1 for a command that stays in text. The journey
-# scope is always there: the dashboard every session opens on.
+# command the frontend runs; OMB_RESTORE_DIR carries a checked restore folder,
+# when given. 1 for a command that stays in text. The journey scope is always
+# there: the dashboard every session opens on.
 fe_session_for() {
   FE_SCOPES="" FE_INTENT=act
-  # A command that carries an argument (resume TOKEN, export DIR, shared
-  # create CODE) stays in text: the session has no route for it to the core.
+  unset OMB_RESTORE_DIR
+  # Except restore DIR, a command that carries an argument (resume TOKEN,
+  # export DIR, shared create CODE) stays in text: the session has no route
+  # for it to the core.
   case "$1:$2" in
     : | install: | resume:) FE_SCOPES=$FE_ALL_SCOPES ;;
     plan:) FE_SCOPES=journey,plan FE_INTENT=plan ;;
     profile:) FE_SCOPES=journey,profile,resolve ;;
     export:) FE_SCOPES=journey,export ;;
+    restore: | restore:/*)
+      [ "$OMB_PLATFORM" = linux ] || return 1
+      if [ -n "$2" ]; then
+        [ -d "$2" ] || return 1
+        OMB_RESTORE_DIR=$2
+      fi
+      FE_SCOPES=journey,restore
+      ;;
     shared:create | shared:activate) FE_SCOPES=journey,shared ;;
     *) return 1 ;;
   esac
@@ -582,6 +593,7 @@ fe_run() {
   OMB_SESSION_INTENT=$intent OMB_DRY_RUN=0
   [ "$intent" = dry-run ] && OMB_SESSION_INTENT=act OMB_DRY_RUN=1
   export OMB_SESSION_INTENT OMB_DRY_RUN
+  if [ -n "${OMB_RESTORE_DIR:-}" ]; then export OMB_RESTORE_DIR; fi
   unset OMB_SESSION_PURPOSE
   if [ "$intent" != act ] && [ -n "${OMB_TUI_LOG:-}" ]; then
     [ "$intent" = plan ] && ui_note "OMB_TUI_LOG is ignored outside an act session."

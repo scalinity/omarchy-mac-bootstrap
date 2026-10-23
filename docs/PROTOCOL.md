@@ -651,6 +651,12 @@ a plain file inside `OMB_SESSION_DIR`. The session variables are protected by
 the frontend's pinned digest and by a static check that its source never
 sets them; they are not a boundary against a program running as the person.
 
+`OMB_RESTORE_DIR` is optional input: for `restore DIR`, L checks that DIR is
+an absolute path to an existing folder and exports that exact path to F,
+which passes it unchanged to C. It is the only session value carrying that
+argument. Bare `restore` leaves it unset. The restore module checks it again
+before using it; it grants no authority over a destination.
+
 **The session purpose.** `OMB_SESSION_PURPOSE` selects a session
 contract. It is not a secret and authenticates nothing. L sets it for
 `frontend-check` only, to exactly `frontend-check`, and removes it from the
@@ -687,6 +693,14 @@ persistence authority comes from a scope's admission. The released 0.1.0
 asks only for `hello`, the journey snapshot and `execute`, so it never meets
 `health` or `logs`; an older core refuses them, with no fallback, retry
 under `journey`, alias or substitution.
+
+The `restore` scope's `snapshot`, `detail` and validation of `restore.*`
+selects route to `rst_core_op OP` in `lib/migrate_restore.sh`. The `debug`
+scope's `snapshot` and `detail` route to `dbg_core_op OP` in `lib/debug.sh`.
+The session's scope check precedes each read's producer. These modules are
+stand-ins: restore answers `refused unavailable` with "Restore is not built
+yet."; debug answers it with "Debugging help is not built yet." No dataset,
+generation or action is exposed by either stand-in.
 
 ### Operations
 
@@ -1524,7 +1538,12 @@ Each row is one action. `lib/core.sh` holds the order above; the rows live
 in the modules that own their text flows, loaded only for the requests that
 name them: the installer's in `lib/actions.sh` (`act_row`, `ACT_IDS`), the
 profile's in `lib/migrate_profile.sh` (`prof_row`), export's in
-`lib/migrate_bundle.sh` (`bndl_row`).
+`lib/migrate_bundle.sh` (`bndl_row`). The core routes `restore.*` to
+`rst_row ID` and `agents.*` to `agent_row ID`. Loading restore sources
+`lib/migrate_bundle.sh`, `lib/agents.sh` and `lib/migrate_restore.sh`, each
+once; loading agents alone sources `lib/agents.sh` once. Their stand-in row
+functions return 1 for every ID and expose no actions. They use the same
+`CA_*` and hook contract below when their units supply rows.
 
 | Action | Scope | System | Mode | Word | Parameters |
 | --- | --- | --- | --- | --- | --- |

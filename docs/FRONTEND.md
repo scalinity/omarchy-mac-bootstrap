@@ -33,7 +33,7 @@ descriptors and supervision are defined once, in docs/PROTOCOL.md → §3.
 | --- | --- |
 | an interactive command whose flow is exposed through the protocol, on a terminal | the frontend |
 | `frontend-check` on a terminal (M14 gate 1) | the frontend: its whole flow is the startup check (*The startup check*) |
-| a one-shot command (`status`, `doctor`, `shared`, `logs`, `sources`, `operation`, `scan`, `profile show`, `restore status`, `qualify status`, `debug`, `report`, `--help`, `--version`) | text on stdout: a contract for scripts and agents |
+| a one-shot command (`status`, `doctor`, `shared`, `logs`, `sources`, `operation`, `scan`, `profile show`, `restore status`, `restore undo`, `qualify status`, `debug`, `report`, `--help`, `--version`) | text on stdout: a contract for scripts and agents |
 | `--no-tui`, stdin or stdout not a terminal, `TERM` unset or `dumb` | text; for `frontend-check`, a report that the check was not performed |
 | the frontend cannot be verified, cannot start, or refuses the handshake | the text recovery surface, saying why; for `frontend-check`, the check's own report that it was not completed, never another command's flow |
 
@@ -41,11 +41,17 @@ The launcher opens the frontend for an interactive command on a terminal
 (`fe_session_for` in `lib/frontend.sh` gives each its session): the default
 run, `install` and `resume` with every scope; `plan` with the journey and
 plan scopes at intent `plan`; `profile` with journey, profile and resolve;
-`export` with journey and export; `shared create` and `shared activate`
-with journey and shared. A command given an argument (`resume TOKEN`,
-`export DIR`, `shared create CODE`) stays in text, where the argument is
-read and checked. Over a fixture it always does; on a real machine
-only once `release/frontend.lock` pins a release at least 0.2.0, the first
+`export` with journey and export; `restore` and `restore DIR` on Linux with
+journey and restore; `shared create` and `shared activate` with journey and
+shared. For `restore DIR`, the launcher checks an absolute path to an
+existing folder and exports it as `OMB_RESTORE_DIR`; the frontend passes it
+to the core unchanged, and the restore module checks it again. Bare
+`restore` leaves it unset. `restore status`, `restore undo` and `debug` stay
+in text; status and debug are read-only, undo has act intent. Other commands
+given an argument (`resume TOKEN`, `export DIR`, `shared create CODE`) stay
+in text, where the argument is read and checked. The frontend routes are
+active over fixtures; on a real machine they open only once
+`release/frontend.lock` pins a release at least 0.2.0, the first
 whose frontend runs the core's actions (`FE_ACTIONS_VERSION`), so no
 command opens a frontend that cannot finish it. An unreleased build runs
 only against fixtures (docs/DECISIONS.md, D16).
