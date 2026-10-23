@@ -2,7 +2,7 @@
 
 **Status: built in Gate 4 (scanner, profile: `lib/migrate_scan.sh`,
 `lib/toml.sh`, `lib/migrate_profile.sh`) and Gate 5 (bundle:
-`lib/migrate_bundle.sh`).** Resolution: docs/RESOLVER.md; restoring: docs/RESTORE.md; the AI
+`lib/migrate_bundle.sh`) and Linux restore (`lib/migrate_restore.sh`).** Resolution: docs/RESOLVER.md; restoring: docs/RESTORE.md; the AI
 tools: docs/AI-TOOLS.md; the screens: docs/UX.md; the record format:
 docs/PROTOCOL.md.
 
@@ -394,7 +394,8 @@ history.
 
 `restore [DIR]` (docs/RESTORE.md) lists the bundles on verified Shared or
 in the folder given, each with the Mac it came from and its time, and
-checks the one the person picks before anything else, refusing it whole at
+selects the newest finished bundle that passes the check, refusing a bundle
+whole at
 the first failure: `bundle.omb` admitted (docs/PROTOCOL.md → §2) and its
 seal checked; every `dest` against the grammar, then all of them together
 (*The bundle*); every object against its digest, and again as it is
@@ -402,3 +403,22 @@ staged. It reads only the names `bundle.omb` lists; the `._name` and
 `.DS_Store` files macOS leaves on exFAT are ignored. Nothing else is asked:
 nobody but this Mac's two systems writes Shared, the seal and the digests
 catch corruption, and the typed `restore` after the review is the consent.
+
+
+Restore reviews destinations and keeps conflicts by default. After typed
+`restore`, it stages beside each destination, rechecks parents and bytes,
+moves an original whole into a private backup and places with no-clobber
+GNU `ln -T` or `mv -T --update=none-fail` forms. The manifest's full SHA-256
+names `restore/runs/<sha>.log` and `restore/backups/<sha>/` under the state
+directory. Every append is flushed; complete records are admitted and torn
+tails ignored. Successful AI version invocations add the complete
+`agent<TAB>tool=ID<TAB>ran=1<LF>` receipt at `restore.agent`.
+
+A rerun reads the filesystem again and resumes an interrupted placement.
+`restore undo` restores only unchanged placed destinations; both originals
+and the displaced restored bytes remain in backups. Packages and external
+installer changes require manual reversal. `rst_status_counts` supplies
+Health with verified (`placed` or `in-place`), kept, failed and pending
+counts, in that order. Pending includes items waiting on a person; an
+unreadable count is a fixed warning. The exact placement, recovery and undo
+rules are in docs/RESTORE.md.

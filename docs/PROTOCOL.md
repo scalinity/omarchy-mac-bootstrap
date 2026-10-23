@@ -697,10 +697,21 @@ under `journey`, alias or substitution.
 The `restore` scope's `snapshot`, `detail` and validation of `restore.*`
 selects route to `rst_core_op OP` in `lib/migrate_restore.sh`. The `debug`
 scope's `snapshot` and `detail` route to `dbg_core_op OP` in `lib/debug.sh`.
-The session's scope check precedes each read's producer. These modules are
-stand-ins: restore answers `refused unavailable` with "Restore is not built
-yet."; debug answers it with "Debugging help is not built yet." No dataset,
-generation or action is exposed by either stand-in.
+The session's scope check precedes each read's producer. Restore publishes `bundles`, `review`, `conflicts`, `diff` and `status`
+detail kinds. Its snapshot reports state, selected bundle, item counts and
+backup bytes, plus currently offered actions. The dataset generation binds
+all projections and reviewed destination fingerprints. `restore.apply`
+validation binds the bundle and explicit replacement document; undo reads
+the selected run and current destinations again.
+
+Debug publishes the fixed brief and closed observations through detail kind
+`brief`, with consecutive one-based line keys and section/text columns.
+Sections are `instructions`, `observed`, `session`, `status` and `doctor`.
+It stages and admits the complete ordered report before hashing or paging;
+raw upstream status, free-form Doctor details, saved values, logs, journal
+contents and diagnostic stderr are excluded. The root instruction appears
+only at UID 0. Unsupported kinds, stale generations and out-of-range pages
+are refused; representation and I/O failures publish fixed safe failures.
 
 ### Operations
 
@@ -943,9 +954,11 @@ same-capture, whole-dataset preflight and exact admitted-byte publication
 requirements of journey, under its own scope.
 
 **Health.** One authoritative invocation of `cmd_doctor`, dispatching to
-`mac_doctor` or `lx_doctor`, supplies counts and ordered rows. Its snapshot
-has `generation total=0`, exactly three `fact scope=health` records, then
-`result done ok`:
+`mac_doctor` or `lx_doctor`, supplies its ordered findings. Linux appends
+`agent_health_rows` and `rst_status_counts` observations, then renumbers and
+counts the complete dataset. Its snapshot has `generation total=0`, these
+three count facts, the `agents.mcp` row machinery's gate facts, blockers,
+action and parameters when applicable, then `result done ok`:
 
 | Key | Label | Value | State |
 | --- | --- | --- | --- |
@@ -953,9 +966,14 @@ has `generation total=0`, exactly three `fact scope=health` records, then
 | `doctor.warn` | Warnings | warning count | `info` |
 | `doctor.fail` | Failures | failure count | `info` |
 
-Detail kind `doctor` uses one-based row positions with columns: baseline
-`pass|warn|fail|info`, label, detail. There is no action, token, stage or
-repair encoded as an action. Completed failed health checks are still a
+Detail kind `doctor` uses one-based row positions with columns:
+`pass|warn|fail|info`, label, detail. Restore counts are verified
+(`placed`/`in-place`), kept, failed and pending (all other items). An
+unreadable count produces the fixed warning `Restore counts could not be
+read.` AI observations remain separate facts inside each tool's row.
+`agents.mcp` is a foreground handoff; it shows output without asserting
+server health. The entire action offer and every row participate in the
+Health generation. Completed failed health checks are still a
 successful READ delivery.
 
 `Gate2-health-representation-failure`: required unrepresentable health
@@ -976,9 +994,9 @@ otherwise, and both are a completed report. Any other status, a status
 outside the four, a finding count that disagrees with the rows captured, or
 `pass`/`warn`/`fail` rows that disagree with `DOC_PASS`/`DOC_WARN`/`DOC_FAIL`
 means no dataset was established: `error io`. `info` rows count toward no
-fact. Every row and the three facts are canonically admitted before the
-generation, the SHA-256 of `scope name=health`, the facts and every ordered
-row, is computed. The chosen fixed I/O-error text is
+fact. Every row, the three facts and the action offer are canonically
+admitted before the generation, the SHA-256 of `scope name=health`, the
+snapshot records and every ordered row, is computed. The chosen fixed I/O-error text is
 `The health response could not be prepared.`, with empty next and
 SHA256(empty bytes) generation with total 0. Publication, the safe-response
 preflight and an incomplete transport follow Logs exactly. The Doctor
@@ -1541,9 +1559,8 @@ profile's in `lib/migrate_profile.sh` (`prof_row`), export's in
 `lib/migrate_bundle.sh` (`bndl_row`). The core routes `restore.*` to
 `rst_row ID` and `agents.*` to `agent_row ID`. Loading restore sources
 `lib/migrate_bundle.sh`, `lib/agents.sh` and `lib/migrate_restore.sh`, each
-once; loading agents alone sources `lib/agents.sh` once. Their stand-in row
-functions return 1 for every ID and expose no actions. They use the same
-`CA_*` and hook contract below when their units supply rows.
+once; loading agents alone sources `lib/agents.sh` once. Both use the
+`CA_*` and hook contract below.
 
 | Action | Scope | System | Mode | Word | Parameters |
 | --- | --- | --- | --- | --- | --- |
@@ -1562,6 +1579,29 @@ functions return 1 for every ID and expose no actions. They use the same
 | `profile.opaque` | `profile` | macOS | managed | `opaque` | — |
 | `profile.carry` | `profile` | macOS | managed | `carry` | `key`: an encrypted SSH key's item id |
 | `export.write` | `export` | macOS | managed | — | `dir`: a folder, or empty for verified Shared |
+| `restore.apply` | `restore` | Linux | handoff | `restore` | `bundle`: required bytes; `replace.1` … `replace.14`: optional `omb-replace` parts |
+| `restore.undo` | `restore` | Linux | handoff | `undo` | — |
+| `agents.mcp` | `health` | Linux | handoff | — | `tool`: required choice of `claude-code`, `codex`, `opencode` |
+
+`omb-replace 1` is an unsealed document of at most 61,440 bytes, with zero
+or more `replace` records, each with one unique `dest:bytes`. Parts are
+joined byte for byte in contiguous order starting at `replace.1`; a gap
+before a later part is invalid. An absent document means no replacements.
+Every destination must name a conflict in the current review. The apply
+basis binds the exact document bytes, checked bundle and destination
+fingerprints. Keep remains the default.
+
+Restore's append-only journal is `restore/runs/<manifest-sha>.log` and its
+private originals are `restore/backups/<manifest-sha>/`. Complete event
+records and interleaved `agent<TAB>tool=ID<TAB>ran=1<LF>` receipts are admitted
+separately; a torn last line is ignored. `restore.agent` is the receipt's
+append-and-flush save boundary. Other restore save boundaries cover journal,
+stage, backup, placement and undo; records feed fresh filesystem checks.
+
+An interactive restore session admits `journey,restore,health,debug`.
+Plan, profile, export and Shared creation/activation sessions also admit
+`debug`; the startup-check session admits only `journey`.
+
 
 A row is the function `<module>_row ID`, which answers 1 for an id it does
 not have and otherwise sets `CA_SCOPE`, `CA_INTENT` (`plan` or `act`),

@@ -140,7 +140,16 @@ flowchart LR
 | # | Threat | Mechanism | Not covered | Tests |
 | --- | --- | --- | --- | --- |
 | 39 | secrets in the debug report | `debug` holds the fixed agent brief and the status and doctor facts: never a log line, journal line, command output or file content; a root line only when run as root | what the person adds beside it | `debug-*` |
-| 40 | password SSH left listening | before Omarchy Mac's setup, `start` runs `systemctl disable --now sshd`, checks `is-active` and `is-enabled`, and reports a failure; `doctor` classifies SSH from `sshd -T` as root (off, key-only, accepts passwords, cannot tell), names the `alarm` password and prints `sudo passwd -l alarm` | firewalls are neither assumed nor changed; SSH turned on later through `dev` is the person's choice | `ssh-*` |
+| 40 | password SSH left listening | before Omarchy Mac's setup, `start` runs `systemctl disable --now sshd`, checks `is-active` is `inactive` with status 3 and `is-enabled` is `disabled` or `masked` with status 1, and stops before setup on failure; `doctor` classifies SSH from `sshd -T` as root (`off`, `key-only`, `passwords`, `cannot-tell`), names the `alarm` password and prints `sudo passwd -l alarm` | firewalls are neither assumed nor changed; SSH turned on later through `dev` is the person's choice | `ssh-*` |
+
+Doctor reads `sshd -T` only as root and reads configuration Include files
+as data. Match rules, unreadable files, cycles or unsupported path expansion
+leave the policy `cannot-tell`. `passwd -S alarm` supplies account status
+without reading a password or hash. `SSH policy` and `Image alarm account`
+are separate findings; Doctor displays the lock command and never runs it.
+The text `debug` command prints fixed repository instructions followed by
+closed status values and fixed Doctor labels, creates no files, and can be
+saved with shell redirection. It never reads journal contents.
 
 ### Qualification
 

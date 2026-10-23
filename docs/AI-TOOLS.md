@@ -1,8 +1,8 @@
 # AI tools
 
-**Status:** not built. Gate 4 builds the macOS side (scan, capture and the
-TOML subset reader), Gate 5 the export, and M15-B the Linux side. Tool
-facts: docs/UPSTREAM.md → *AI coding tools* and *Omarchy's agent wrappers*.
+`lib/agents.sh` supplies the shared Linux provider table, observation,
+installation and foreground handoffs. Tool facts are recorded in
+docs/UPSTREAM.md → *AI coding tools* and *Omarchy's agent wrappers*.
 
 This Mac is meant to be an AI development machine, so the AI tools' setup is
 a first-class part of the migration: settings, instructions, MCP servers,
@@ -13,7 +13,15 @@ no session or history travels in v1; each tool is signed in once on Linux.
 
 `lib/agents.sh` holds one table, a row per tool — **Claude Code, Codex and
 OpenCode** — naming its command, configuration files, sign-in file and
-sign-in command, with the functions that read it. `dev` and `restore` share
+sign-in command, with the functions that read it.
+
+| Tool ID | Mise package | Binary | Sign-in arguments |
+| --- | --- | --- | --- |
+| `claude-code` | `claude` | `claude` | none |
+| `codex` | `codex` | `codex` | `login --device-auth` |
+| `opencode` | `opencode` | `opencode` | `auth login` |
+
+`dev` and `restore` share
 it (D30 in docs/DECISIONS.md): each tool has one installer and one way of
 being observed, and `dev`'s AI module keeps its place for a machine without
 a bundle (MILESTONES.md → *M15-B — Packages and AI providers*). Gemini CLI,
@@ -29,13 +37,15 @@ is missing, rewrites mise's global configuration and resets a pinned version
 to `latest`; once the tool is installed, mise's shims come first on `PATH`.
 So `command -v` succeeding means nothing. The wrapper is recognised by
 reading it, never by running it: a regular file, not a link, of at most
-1 024 bytes, with a line starting `mise use -g `.
+1 024 bytes, whose entire bounded contents match the table's generated wrapper bytes,
+including the final newline. Modified or NUL-containing files do not match.
 
 | Fact | Read from | Means |
 | --- | --- | --- |
-| `installed` | a version folder under `~/.local/share/mise/installs/<tool>/` (not a link, not `latest`) holding the tool's executable, or a foreign binary: a `~/.local/bin/<tool>` that is not Omarchy's wrapper | the tool's files exist |
+| `installed` | a version folder under `~/.local/share/mise/installs/<tool>/` (not a link, not `latest`) holding the tool's executable, or another observed executable path (including `~/.local/bin/<tool>`)
+that is not Omarchy's wrapper | the tool's files exist |
 | `ran-at-restore` | `mise x <package> -- <tool> --version` answered within its time limit right after this tool installed it; the run that installed it keeps the answer | it started on this kernel once |
-| `configured` | the tool's configuration files, present and read by the table's reader | the restored settings are in place |
+| `configured` | the tool's configuration files are present (contents are not read) | the restored settings are in place |
 | `signed-in-file` | the tool's sign-in file is present; it is never read | a sign-in happened; only a live check shows whether it still works |
 
 Each fact is shown on its own: Omarchy's wrapper alone is never `installed`,
@@ -45,11 +55,13 @@ tools: it asks the table, never `PATH`.
 
 **Installing** runs, as a managed act step, what the wrapper would run on
 first use — `mise use -g --quiet <package>` with
-`MISE_MINIMUM_RELEASE_AGE=0`, the package read from the wrapper (for Claude
+`MISE_MINIMUM_RELEASE_AGE=0`, the package from the provider table (for Claude
 Code, `claude`) — so there is one copy of each tool, where Omarchy's
 launcher expects it. Right after it, and only then, `mise x <package> --
-<tool> --version` runs with a time limit; no other check runs a wrapper,
-shim, mise or agent. No version is kept: the wrapper writes `latest` each
+<tool> --version` runs through `timeout 30`; no observation runs a wrapper,
+shim, mise or agent. Existing installations are left in place and reruns execute nothing. After
+success or failure, installed files are read again; a failed version check
+is distinct from absent files. No version is pinned: the wrapper writes `latest` each
 time it runs, and the review says so. A foreign `~/.local/bin/<tool>` is
 left alone and never written over.
 
@@ -213,21 +225,24 @@ tool honours them in that mode.
 
 ## Health, as shown
 
-The Health screen (22, docs/UX.md → *Every screen*) is a read-only check
-list. Restore adds a row for itself and one per AI tool, each fact on its
-own:
+The Health screen (22, docs/UX.md → *Every screen*) contains Doctor's
+ordered findings, three AI rows and one Restore row. Each AI row reports
+installed source and file-derived version, ran-at-restore, configuration-file
+presence, sign-in-file presence and wrapper presence separately. Installed
+files without a sign-in file are a warning; other AI observations are
+informational. `ran-at-restore` requires a complete receipt in
+`restore/runs/*.log`; presence alone never means a working sign-in.
 
-```text
-✓ Restore        complete · 412 placed · 9 kept · 2 wait on you
-✓ Claude Code    installed 2.1.283 (mise) · ran at restore · configured · sign-in file
-! Codex          installed 0.157.1 (mise) · configured · needs GITHUB_TOKEN for github
-· OpenCode       not installed
-```
-
-A live check — the tool's own `mcp list`, shown as it prints it — runs only
-after the person answers yes, one tool at a time, with a time limit.
-"Ready" is said only after a check; a copied folder is never reported as
-working, and the static list never says a tool runs.
+`agents.mcp` is an explicit act-intent handoff in scope `health`, for the
+everyday Linux user. Its required `tool` choice is `claude-code`, `codex` or
+`opencode`; it has no typed word. The snapshot offers it only when the
+user, installed-tool and timeout checks pass. Its gate fact, parameter and
+action are admitted and hashed with the Health counts and rows, so changing
+the offer changes the generation. The basis binds the selected tool and
+its observed executable. The foreground handoff bypasses lazy wrappers,
+uses `timeout 30`, and shows the tool's `mcp list` output unparsed. A
+finished listing certifies neither healthy servers nor a working sign-in.
+Sign-in handoffs also bypass wrappers and leave credentials to the tool.
 
 ## Things that execute, and never do so during a scan or a status
 

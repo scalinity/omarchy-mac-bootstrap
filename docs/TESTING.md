@@ -78,10 +78,10 @@ phase that writes them. `docs-test-ids` reads this table.
 | `resolve-*` | resolution in fixed layers | `tests/test-resolve.sh` | planned: Phase A |
 | `profile-*` | selection and the sealed profile | `tests/test-profile.sh` | planned: Phase A |
 | `bundle-*` | export and the bundle check | `tests/test-bundle.sh` | planned: Phase A |
-| `restore-*` | restore and its run log | `tests/test-restore.sh`; frames for screens 20 and 21 | planned: Phase B |
-| `agents-*` | the AI tool table that `dev` and `restore` share | `tests/test-agents.sh`, `tests/test-dev.sh`; screen 22's new rows | planned: Phase B |
-| `debug-*` | the `debug` report | `tests/test-debug.sh`; the error state's `D` key | planned: Phase B |
-| `ssh-*` | SSH's classification, and `start` turning off the image's password SSH | `tests/test-detection.sh` | planned: Phase B |
+| `restore-*` | restore and its run log | `tests/test-restore.sh`; frames for screens 20 and 21 | built: Phase B |
+| `agents-*` | the AI tool table that `dev` and `restore` share | `tests/test-agents.sh`, `tests/test-dev.sh`; screen 22's new rows | built: Phase B |
+| `debug-*` | the `debug` report | `tests/test-debug.sh`; the error state's `D` key | built: Phase B |
+| `ssh-*` | SSH's classification, and `start` turning off the image's password SSH | `tests/test-detection.sh` | built: Phase B |
 | `journey-*` | the ten stages, the journey simulation, `report` | `tests/test-journey.sh`, the PTY journey in `frontend/tests/pty.rs`; screen 25 | planned: Phase C |
 | `qualify-*` | the three qualification steps | `tests/test-qualify.sh`; screen 23 | planned: Phase C |
 
@@ -331,13 +331,18 @@ loses *planned* when its last test is written.
   Keep by default; originals moved whole into backups and compared;
   no-clobber placement, read back; a link on the path stops its item; a stop
   resumes and a rerun changes nothing; `restore undo` refused where the
-  destination changed; packages judged by `pacman -Q`.
+  destination changed; packages judged by `pacman -Q`; interleaved AI
+  receipts, `restore.agent` stop/write failures and the numeric Health count
+  contract. `suite:restore` runs on macos-bash32 m1 and linux-bash5 l3.
 - `tests/test-agents.sh`, `tests/test-dev.sh` (M15-B): observation from
   files only, nothing running a wrapper, shim, mise or agent; `mise use -g`,
-  one copy each; lazy wrappers never counted as installed tools.
+  one copy each; lazy wrappers never counted as installed tools. Exact
+  wrapper bytes, failed version checks, handoffs and fixture immutability
+  are covered. `suite:agents` runs on macos-bash32 m3 and linux-bash5 l0.
 - `tests/test-debug.sh` (M15-A): the brief and the status and doctor facts,
   no planted log line, journal line, command output or file content; the
-  root line only as root; nothing written.
+  root line only as root; nothing written; brief paging and whole-response
+  admission. `suite:debug` runs on macos-bash32 m4 and linux-bash5 l1.
 - `tests/test-detection.sh` (M15-C): SSH from `sshd -T` as `off`,
   `key-only`, `passwords` or `cannot-tell`; `start` disabling `sshd` and
   checking it inactive and disabled before Omarchy Mac's setup.
@@ -368,9 +373,14 @@ paths could agree with each other and share a regression.
   and `mktemp` suffixes; the decisions, the argv and its order, and the
   resulting state must be equal byte for byte.
 - A difference fails unless the test's short list names it, with its reason
-  (among them M15-B's: `dev` does not count Omarchy's lazy wrappers as
-  installed tools, where the baseline does). Operation records are removed
-  when their action ends, so the final state directory is compared whole.
+  (`agents-lazy-wrapper`, `agents-mise-install`, `agents-opencode`:
+  wrapper-only installations are absent, mise replaces Claude download and
+  Codex npm flows including the Claude provenance record, and OpenCode is
+  selectable; `start-disable-ssh`: one exact disable command and its active
+  and enablement reads; `doctor-ssh-findings`: SSH policy and image-account
+  findings; `debug-implemented`: the fixed brief is a read command).
+  Operation records are removed when their action ends, so the final state
+  directory is compared whole.
 
 ## Documentation checks
 

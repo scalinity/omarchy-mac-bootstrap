@@ -424,8 +424,8 @@ and *keep the rest* keeps every conflict after this one):
 | 15 | Linux continuation | the stepper of 14, for the token decoded, the network and Omarchy Mac's provenance and start | same | `n` network (nmtui); `start` |
 | 18 | Omarchy progress | the stepper, with upstream's signals as a check list; Omarchy Mac runs on tty1, and the screen says so | same | `r` |
 | 19 | Shared creation | the region on the strip, the checks, two gates | strip hidden below 70 | `yes`, `create` |
-| 20 | Restore progress | the work grouped by layer, the current item, what is blocked, handoffs announced; the bar only from the core's counts | the current group only | Ctrl-C between items |
-| 21 | Conflict and diff | each conflict of the restore review as a diff of both sides: Keep by default, Replace, and *keep the rest* for every conflict after it | unified only | `k` `R` `K` `n` `p` `v` |
+| 20 | Restore progress | the work grouped by layer, the current item, what is blocked, handoffs announced; the bar only from the core's counts | the current group only; core item counts remain visible | `n` `p` action, `⏎` review, `d` conflicts |
+| 21 | Conflict and diff | each conflict of the restore review as a diff of both sides: Keep by default, Replace, and *keep the rest* for every conflict after it | unified diff; side by side needs 120 columns | `k` Keep, `R` Replace, `K` keep following, `n` `p` `v` |
 | 22 | Health | doctor's checks with restore and AI rows: each tool's observed facts (docs/AI-TOOLS.md → *What is observed*); a tool's own `mcp list` on request | one tool per group | `c` |
 | 23 | Qualification | the three steps on a check table, Shared's identity, the digests, the state | digests shortened | `⏎`; `test` |
 | 24 | Logs and diagnostics | the tool's log (the entries `logs` shows) and the core's diagnostics, a tab each; filter by level | same | `/` `Tab` `f` `⏎` |
@@ -456,3 +456,28 @@ and *keep the rest* keeps every conflict after this one):
   which carry the same facts as the screens (docs/FRONTEND.md → *Without
   the frontend*).
 - Nothing blinks, nothing moves while idle, nothing requires the mouse.
+
+
+### Restore, Health and the brief
+
+Restore waits for the complete review and conflict list of one generation
+before enabling choices. Keep is the default. Replacement destinations are
+encoded as one `omb-replace` document, split only at byte boundaries that
+fit the declared parts, then validated by the core. A changed generation
+clears the review; `r` reads again. The progress view uses only core item
+counts, announces handoffs and offers no cancellation during an action.
+Unified conflict diffs fit 60 columns; `v` selects side by side when 120
+columns are available.
+
+Health groups AI tools, Restore, SSH and system checks. Each tool's facts
+remain separate, and `c` offers only the `agents.mcp` action admitted in the
+current snapshot. Its confirmation explains that it may start servers; a
+successful listing makes no sign-in or server-health claim.
+
+`D` opens the scrollable Debugging brief from an error. It reads scope
+`debug`, snapshot then detail kind `brief`, and waits for complete current
+lines. Sections come from the core; the page adds no raw logs or upstream
+output. It displays `./omarchy-bootstrap debug > file` for saving a copy;
+`Esc` returns to the error and `r` reads again. These pages have frames at
+80×24 and 60×20 in colour and ASCII without colour; the 120×40 conflict
+frame covers side by side.
