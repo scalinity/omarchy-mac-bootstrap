@@ -1301,6 +1301,9 @@ SCAN_CONFIG_OWNED=" nvim ghostty kitty wezterm alacritty tmux starship.toml atui
 # and branch, read from .git, never copied.
 _scan_project() {
   local rel=$1 g url head note
+  # A link is never followed while discovering: it may lead anywhere,
+  # a protected folder included.
+  [ ! -L "$(_scan_h "$rel")" ] || return 1
   g=$(_scan_h "$rel/.git")
   [ -f "$g/config" ] && [ -f "$g/HEAD" ] || return 1
   url=$(LC_ALL=C awk '/^\[remote "origin"\]/ { o = 1; next } /^\[/ { o = 0 } o && $1 == "url" { sub(/^[^=]*=[ \t]*/, ""); print; exit }' "$g/config")
@@ -1318,10 +1321,12 @@ _scan_project() {
 }
 
 # _scan_chosen REL — one entry offered as a chosen folder: opaque (no adapter
-# understands it), refused by path when it is a known credential file; a
-# link at its root (a Stow farm) followed once.
+# understands it), refused by path when it is a known credential file.
+# Discovery reads no folder's contents before it is chosen: a folder is
+# listed by its name alone, and a link by its name and its text, never
+# followed (a Stow root is followed once, at export, if it is chosen).
 _scan_chosen() {
-  local rel=$1 p t note="" ev=observed size="" kind=folder
+  local rel=$1 p t
   p=$(_scan_h "$rel")
   if scan_refused "$rel"; then
     _scan_item "path:$rel" file secrets "$rel" "" "" yes observed secret "$rel" "" "never carried: $SCAN_HIT"
@@ -1329,37 +1334,17 @@ _scan_chosen() {
   fi
   if [ -L "$p" ]; then
     t=$(readlink "$p")
-    case "$t" in /*) t=$(sys_path "$t") ;; *) t=${p%/*}/$t ;; esac
-    if [ -d "$t" ]; then
-      note="a link to $(readlink "$p"), followed once; "
-      p=$t
-    elif [ -f "$t" ]; then
-      kind=file note="a link to $(readlink "$p"), followed once; "
-      p=$t
-    else
-      _scan_item "path:$rel" link folders "$rel" "" "" yes unknown opaque "$rel" "" "a link whose target is missing"
-      return 0
-    fi
+    _scan_item "path:$rel" link folders "$rel" "" "" yes observed opaque "$rel" "" \
+      "a link to $t: followed once, and only if it is chosen; opaque: its contents are not checked field by field"
   elif [ -f "$p" ]; then
-    kind="file"
-  elif [ ! -d "$p" ]; then
-    _scan_item "path:$rel" special folders "$rel" "" "" yes observed mac-only "$rel" "" "not a file or folder: never carried"
-    return 0
-  fi
-  if [ "$kind" = folder ]; then
-    sys_walk "${p#"${OMB_FIXTURE:+$OMB_FIXTURE/root}"}" "$SCAN_MAX" >"$SCAN_TMP/tree"
-    case $? in
-      0) ;;
-      3) ev=unknown note="${note}partial: more than $SCAN_MAX entries; " ;;
-      4) ev=unknown note="${note}denied: some entries could not be read; " ;;
-      *) ev=unknown note="${note}could not be listed; " ;;
-    esac
-    size=$(LC_ALL=C awk -F '\t' '$1 == "f" { b += $2 } END { printf "%d", b }' "$SCAN_TMP/tree")
+    _scan_size "$p"
+    _scan_item "path:$rel" file folders "$rel" "" "" yes observed opaque "$rel" "$SCAN_SIZE" "opaque: its contents are not checked field by field"
+  elif [ -d "$p" ]; then
+    _scan_item "path:$rel" folder folders "$rel" "" "" yes observed opaque "$rel" "" \
+      "opaque: read only if it is chosen, and its contents are not checked field by field"
   else
-    _scan_size "$p" && size=$SCAN_SIZE
+    _scan_item "path:$rel" special folders "$rel" "" "" yes observed mac-only "$rel" "" "not a file or folder: never carried"
   fi
-  _scan_item "path:$rel" "$kind" folders "$rel" "" "" yes "$ev" opaque "$rel" "$size" \
-    "${note}opaque: its contents are not checked field by field"
 }
 
 _scan_ad_folders() {
@@ -1509,12 +1494,13 @@ _scan_x_file() {
   _scan_x_macpaths "$SCAN_XO/$SCAN_OBJ" "$dest"
 }
 
-# _scan_x_tree MACHINE-ROOT REL DEST CLASS — a folder carried whole: its
-# folders, its files (each refused by path or by the scan on its own), and
+# _scan_x_tree MACHINE-ROOT REL DEST CLASS SRCREL — a folder carried whole:
+# its folders, its files (each refused by path, under the name it was chosen
+# by, REL, and where it really is, SRCREL, or by the scan on its own), and
 # the links whose target, resolved from the link's own folder, stays inside
 # the item and passes through no other link.
 _scan_x_tree() {
-  local root=$1 rel=$2 dest=$3 class=$4 dmode=0755 t s m path link
+  local root=$1 rel=$2 dest=$3 class=$4 srcrel=$5 dmode=0755 t s m path link
   [ "$class" = config ] || dmode=0700
   _scan_x dir dest "$dest" mode "$dmode"
   sys_walk "$root" "$SCAN_MAX" >"$SCAN_XO/walk"
@@ -1529,7 +1515,7 @@ _scan_x_tree() {
     case "$t" in
       d) _scan_x dir dest "$dest/$path" mode "$dmode" ;;
       f)
-        if scan_refused "$rel/$path"; then
+        if scan_refused "$rel/$path" || scan_refused "$srcrel/$path"; then
           _scan_x skip reason "$dest/$path: $SCAN_HIT"
           continue
         fi
@@ -1655,13 +1641,63 @@ _scan_x_path() {
       return 0
     fi
   fi
+  if [ ! -f "$p" ] && [ ! -d "$p" ]; then
+    _scan_x skip reason "$SCAN_DEST: not a file or folder"
+    return 0
+  fi
+  # A chosen root is held to the refusals where it really is, not only
+  # under the name it was chosen by.
+  SCAN_SRCREL=$rel
+  if [ "$SCAN_CLASS" = opaque ] && ! _scan_x_source "$p"; then
+    _scan_x skip reason "$SCAN_DEST: $SCAN_HIT"
+    return 0
+  fi
   if [ -f "$p" ]; then
     _scan_x_file "$p" "$SCAN_DEST" "$SCAN_CLASS"
-  elif [ -d "$p" ]; then
-    _scan_x_tree "$mrel" "$rel" "$SCAN_DEST" "$SCAN_CLASS"
   else
-    _scan_x skip reason "$SCAN_DEST: not a file or folder"
+    _scan_x_tree "$mrel" "$rel" "$SCAN_DEST" "$SCAN_CLASS" "$SCAN_SRCREL"
   fi
+}
+
+# _scan_x_source PATH — where a chosen root really is: SCAN_SRCREL, its
+# home-relative path with every link on the way resolved. 1, SCAN_HIT saying
+# why, when that is the home itself, a folder above it or a place outside
+# it, anything in Library, .ssh or .gnupg, or a path the hard refusals name.
+_scan_x_source() {
+  local home phys p
+  SCAN_HIT=""
+  home=$(cd -P "$(_scan_h "")" 2>/dev/null && pwd -P)
+  if [ -z "$home" ]; then SCAN_HIT="the home folder cannot be resolved" && return 1; fi
+  # PATH itself is no link (a root link was followed once, and a link to a
+  # link refused): resolving its folder resolves every link on the way. A
+  # path ending in . or .. names a folder, resolved whole.
+  p=$1
+  while [ "${p%/}" != "$p" ]; do p=${p%/}; done
+  case "${p##*/}" in
+    . | ..) phys=$(cd -P "$p" 2>/dev/null && pwd -P) ;;
+    *)
+      phys=$(cd -P "${p%/*}" 2>/dev/null && pwd -P)
+      [ -z "$phys" ] || phys=$phys/${p##*/}
+      ;;
+  esac
+  if [ -z "$phys" ]; then SCAN_HIT="where it leads cannot be resolved" && return 1; fi
+  case "$phys" in
+    "$home") SCAN_HIT="it leads to the home folder itself, which is never carried" && return 1 ;;
+    "$home"/*) SCAN_SRCREL=${phys#"$home"/} ;;
+    *)
+      case "$home/" in
+        "$phys"/*) SCAN_HIT="it leads to a folder that holds the home folder" ;;
+        *) SCAN_HIT="it leads out of the home folder" ;;
+      esac
+      return 1
+      ;;
+  esac
+  case "/$SCAN_SRCREL/" in
+    /Library/*) SCAN_HIT="it leads into the Library folder" && return 1 ;;
+    /.ssh/* | /.gnupg/*) SCAN_HIT="it leads into a folder of keys" && return 1 ;;
+  esac
+  if scan_refused "$SCAN_SRCREL"; then return 1; fi
+  return 0
 }
 
 # _scan_x_gen DEST — the generated file $SCAN_XO/gen as the next object, its

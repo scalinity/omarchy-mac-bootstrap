@@ -109,17 +109,33 @@ if t_plutil "the scan of a fixture home"; then
   # scan-partial: a budget that runs out is partial, never a short complete list.
   s_scan "$F" "$T/inv3" SCAN_LIST_MAX=2
   assert_eq "$(adapter homebrew "$T/inv3")" partial "scan-partial: the formulae past the budget make Homebrew partial"
-  # scan-denied: a folder macOS will not let us read is denied.
+  # scan-denied: a folder macOS will not let us read is denied; a chosen
+  # folder is read only when it is carried, and says so then.
   chmod 000 "$F/root/opt/homebrew/Cellar" "$F/root/Users/alex/.myscripts"
   s_scan "$F" "$T/inv4"
+  s_extract "$F" path:.myscripts "$T/x-denied"
   chmod 755 "$F/root/opt/homebrew/Cellar" "$F/root/Users/alex/.myscripts"
   if [ "$(id -u)" = 0 ]; then
     skip "scan-denied: root reads a folder of mode 000"
   else
     assert_eq "$(adapter homebrew "$T/inv4")" denied "scan-denied: an unreadable Cellar makes Homebrew denied"
-    assert_eq "$(field path:.myscripts evidence "$T/inv4")" unknown "scan-denied: an unreadable chosen folder is unknown"
-    assert_contains "$(field path:.myscripts note "$T/inv4")" "denied" "scan-denied: and says it was denied"
+    assert_contains "$(cat "$T/x-denied/carry")" "some%20entries%20could%20not%20be%20read%20%28denied%29" "scan-denied: an unreadable chosen folder says so when it is carried"
   fi
+
+  # scan-discovery-unread (S7): discovery reads no chosen folder before it is
+  # chosen, and reports a link by its text without following it, a link into
+  # a protected folder included (here also unreadable: following it would
+  # show as denied).
+  ln -s Documents "$F/root/Users/alex/.notes"
+  chmod 000 "$F/root/Users/alex/Documents"
+  s_scan "$F" "$T/inv6"
+  chmod 755 "$F/root/Users/alex/Documents"
+  assert_eq "$(field path:.notes kind "$T/inv6") $(field path:.notes size "$T/inv6") $(field path:.notes evidence "$T/inv6")" "link  observed" \
+    "scan-discovery-unread: a link is reported as a link, never followed"
+  assert_contains "$(field path:.notes note "$T/inv6")" "a%20link%20to%20Documents:%20followed%20once,%20and%20only%20if%20it%20is%20chosen" "scan-discovery-unread: with its target"
+  assert_eq "$(field path:.myscripts kind "$T/inv6") $(field path:.myscripts size "$T/inv6")" "folder " "scan-discovery-unread: a folder is listed by its name, its contents unread"
+  assert_eq "$(field path:.config/stowed kind "$T/inv6")" "link" "scan-discovery-unread: a Stow root is a link until it is chosen"
+  rm -f "$F/root/Users/alex/.notes"
   # scan-skipped: nothing there is skipped, with the reason.
   s_scan "$FIX/mac-m1pro-1tb-roomy" "$T/inv5"
   assert_eq "$(adapter homebrew "$T/inv5") $(adapter ai "$T/inv5") $(adapter shell "$T/inv5")" "skipped skipped skipped" "scan-skipped: a Mac with nothing installed"

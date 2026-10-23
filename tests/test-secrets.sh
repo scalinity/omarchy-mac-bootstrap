@@ -154,6 +154,42 @@ assert_contains "$(cat "$T/x-star/carry")" "starship%20character.api_key:%20left
 assert_contains "$(cat "$T/x-star/carry")" "whole=0" "secret-starship-fields: as a rebuilt file, not one carried whole"
 rm -rf "$CX"
 
+# --- secret-stow-refused (S6): a chosen root is refused where it really is ---
+SV=$(t_variant mig-mac-home)
+SH=$SV/root/Users/alex
+mkdir -p "$SH/.docker" "$SH/.aws" "$SH/Library/Thing" "$SV/root/opt/elsewhere"
+printf '{"auths":{"registry.example":{"auth":"YWxleDpoYXJib3JwYXNz"}}}\n' >"$SH/.docker/config.json"
+printf 'a note (fixture)\n' >"$SH/.docker/notes.txt"
+printf '[default]\naws_secret_access_key = harborpassAWS01\n' >"$SH/.aws/credentials"
+printf 'x\n' >"$SH/Library/Thing/x" && printf 'x\n' >"$SV/root/opt/elsewhere/x"
+ln -s ../.docker "$SH/.config/dockercopy"
+ln -s .. "$SH/.config/homecopy"
+ln -s ../Library "$SH/.config/libcopy"
+ln -s ../.aws "$SH/.config/awscopy"
+ln -s ../.ssh "$SH/.config/sshcopy"
+ln -s /opt/elsewhere "$SH/.config/outside"
+stow() { # ID DIR
+  (
+    OMB_FIXTURE=$SV
+    scan_extract "$1" "$2" >/dev/null 2>&1
+    omb_cleanup
+  )
+}
+stow path:.config/dockercopy "$T/x-dock"
+carry=$(cat "$T/x-dock/carry")
+assert_contains "$carry" "skip	reason=.config/dockercopy/config.json:%20container%20credentials" "secret-stow-refused: a file refused where it really is stays, under any name"
+assert_not_contains "$carry" "file	dest=.config/dockercopy/config.json" "secret-stow-refused: the Docker credentials are not carried"
+assert_contains "$carry" "file	dest=.config/dockercopy/notes.txt" "secret-stow-refused: the rest of the folder is"
+for c in homecopy:"it%20leads%20to%20the%20home%20folder%20itself" libcopy:"it%20leads%20into%20the%20Library%20folder" \
+  awscopy:"cloud%20credentials" sshcopy:"it%20leads%20into%20a%20folder%20of%20keys" outside:"it%20leads%20out%20of%20the%20home%20folder"; do
+  stow "path:.config/${c%%:*}" "$T/x-${c%%:*}"
+  carry=$(cat "$T/x-${c%%:*}/carry")
+  assert_contains "$carry" "skip	reason=.config/${c%%:*}:%20${c#*:}" "secret-stow-refused: a root that resolves to a refused place is refused (${c%%:*})"
+  assert_not_contains "$carry" "file	" "secret-stow-refused: and nothing of it is carried (${c%%:*})"
+done
+assert_eq "$(grep -rl harborpass "$T"/x-dock "$T"/x-awscopy 2>/dev/null)" "" "secret-stow-refused: no credential reached a carry"
+rm -rf "$SV"
+
 # --- secret-ssh: the one exception, by the key's envelope (no plutil) ---------
 for k in id_ed25519:encrypted id_plain:plain id_weak:unsupported id_legacy:pem; do
   scan_ssh_key "$S/.ssh/${k%%:*}"
