@@ -755,7 +755,8 @@ act_create_run() { shared_create ""; }
 # The Shared state on a fresh read: the partition the creation was allowed
 # to make (by its record or on the disk) and its result recorded (the saved
 # shared_uuid is that partition's) is completed; the partition with its
-# result unrecorded keeps the barrier; the region still free with no
+# result unrecorded keeps the barrier, until a reconciliation after a new
+# boot records what the creation record proves; the region still free with no
 # creation record left (nothing was created) is no effect; anything else
 # stops.
 act_create_judge() {
@@ -764,6 +765,12 @@ act_create_judge() {
   shared_mac_state
   case "$SHARED_STATE" in
     created)
+      # After a new boot, a creation record that holds the partition on this
+      # fresh read: its result recorded now, as the text flow records a
+      # partition already there (nothing is created again).
+      if [ "$1" = reconcile ] && [ "$TXN_RESULT" = "done" ]; then
+        shared_mac_reconcile
+      fi
       if [ "$(state_get shared_uuid)" = "$SHARED_UUID" ]; then
         act_judged completed "Shared storage is on the disk and recorded: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT."
       else

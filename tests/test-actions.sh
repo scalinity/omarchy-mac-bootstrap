@@ -679,6 +679,37 @@ EOF
   assert_not_contains "$(a_state)" "shared_uuid=" "actions-shared.create-unrecorded: the result write failed"
   assert_contains "$(cat "$A_DIR/state/ops/shared.omb" 2>/dev/null)" "	state=failed	finding=unexpected	" "actions-shared.create-unrecorded: the barrier stays"
   [ -f "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-unrecorded: the creation record says what happened"
+  # actions-shared.create-reconcile-record: after a new boot, the creation
+  # record holds the partition on a fresh read, and its result is recorded
+  # then; a reconciliation that cannot record it keeps the barrier.
+  : >"$A_DIR/record"
+  for case in unwritable writable; do
+    if [ "$case" = unwritable ]; then
+      cat >"$A_SHIMS/mv" <<EOF
+#!/bin/sh
+last='' prev=''
+for a in "\$@"; do prev=\$last; last=\$a; done
+case "\$last" in */state.env) if grep -q '^shared_uuid=' "\$prev" 2>/dev/null; then exit 1; fi ;; esac
+exec $REAL_MV "\$@"
+EOF
+      chmod +x "$A_SHIMS/mv"
+    fi
+    a_plant shared shared.create running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000CC"
+    A_FIX=$FIX/mac-shared-created a_run execute "exec	action=shared.create	basis=$ZERO	confirm=yes"
+    rm -f "$A_SHIMS/mv"
+    if [ "$case" = unwritable ]; then
+      assert_eq "$(c_result)" "refused unsupervised" "actions-shared.create-reconcile-record: a result that cannot be recorded is not completed"
+      assert_not_contains "$(a_state)" "shared_uuid=" "actions-shared.create-reconcile-record: nothing recorded"
+      [ -e "$A_DIR/state/ops/shared.omb" ] && ok || fail "actions-shared.create-reconcile-record: the barrier stays"
+      [ -f "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-reconcile-record: and the creation record"
+    else
+      assert_contains "$C_OUT" "reconciled:%20completed" "actions-shared.create-reconcile-record: the proven partition is recorded and completed"
+      assert_contains "$(a_state)" "shared_uuid=4A7B1C2D-0007-4E5F-8A9B-000000000007" "actions-shared.create-reconcile-record: its result is recorded"
+      [ ! -e "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-reconcile-record: the creation record is removed"
+      assert_eq "$(a_ops)" "" "actions-shared.create-reconcile-record: the barrier goes"
+      assert_empty_file "$A_DIR/record" "actions-shared.create-reconcile-record: nothing is created again"
+    fi
+  done
   # A partition on the disk whose record was lost: recorded, with no word.
   a_shared_state "$T/create-lost"
   printf 'shared_linux_done=%s\n' "$CODE" >>"$A_DIR/state/state.env"
