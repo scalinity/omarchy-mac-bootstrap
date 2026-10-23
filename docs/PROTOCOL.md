@@ -834,7 +834,8 @@ result	status=done	code=ok	text=	next=
 
 The read half of the ordinary contract: `snapshot`, `detail` and
 `validate`, with the session purpose unset. The startup-check session stays
-as *The startup-check session* defines it, byte for byte (D50).
+as *The startup-check session* defines it; M16-stage-records adds its ten
+closed blocked stages and binds them in the generation (D50, Q1).
 
 **Where it answers, and what it may do.** These reads answer only in
 fixture mode (D16); outside one, `snapshot`, `detail` and `validate` are
@@ -964,10 +965,13 @@ and the frontend uses a prefix to place and style a fact and never to decide
 what it means. The exact keys are written with each producer's golden.
 The ordinary journey snapshot emits exactly ten `stage` records in rail
 order: `survey profile resolve plan asahi omarchy shared restore verify done`.
-Each uses the machine-derived state or a typed code, with `basis=recorded`
-and `by=macos|linux` only for code-derived progress. `detail` explains a
-`skipped` or `blocked` stage and is empty otherwise. At most one stage is
-`current`. The derivation is in docs/QUALIFICATION.md → *The journey*.
+Each uses the machine-derived state, a checked typed code or a checked bundle,
+with `basis=recorded` and `by=macos|linux` for remote progress. `detail` explains
+a skipped or blocked stage; Linux's profile and resolve stages without a checked
+bundle are todo with `chosen on macOS`. Other done/current/todo details are
+empty. The first unfinished stage due on this system owns current; a blocked
+predecessor prevents a later local stage becoming current. At most one stage
+is current. The derivation is in docs/QUALIFICATION.md → *The journey*.
 The startup check emits the closed, blocked stage table defined above.
 
 **Plan validation** is *Future plan validation contract*. The frontend

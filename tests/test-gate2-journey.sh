@@ -39,7 +39,8 @@ for fixture in "$T/base/tests/fixtures/"*; do
   assert_eq "$(cat "$T/surface")" "$(cat "$T/base.out")" "$name typed status and token equal baseline"
   machine=$(awk -F '\t' '$1 == "row" && $2 == "kind=machine"' "$T/dataset.out")
   assert_eq "$machine" "$(cat "$T/base.probes.machine")" "$name identity equals baseline detector values"
-  assert_eq "$(cat "$T/dataset.probes")" "$(cat "$T/base.probes")" "$name dataset uses exactly baseline status probes"
+  assert_eq "$(cat "$T/dataset.probes.status")" "$(cat "$T/base.probes")" "$name M16-stage-records: status uses exactly baseline probes"
+  assert_eq "$(awk -F '\t' '$1=="stage" {n++} END {print n+0}' "$T/dataset.out")" 10 "$name M16-stage-records: ten stage records"
   assert_eq "$(t_snapshot "$fixture")" "$before" "$name fixture unchanged"
   assert_eq "$(t_snapshot "$T/state")" '(absent)' "$name no state/log/plan/profile/operation"
   assert_empty_file "$T/record" "$name no action recorded"
@@ -115,7 +116,8 @@ for C_FIX in "$FIX/linux-alarm-fresh" "$FIX/linux-omarchy-installed"; do
   assert_eq "$(c_result) $C_RC" 'done ok 0' 'ordinary journey snapshot succeeds'
   assert_eq "$(c_admits snapshot)" ok 'snapshot schema valid'
   assert_eq "$C_ERR" '' 'snapshot stderr empty'
-  assert_eq "$(printf '%s\n' "$C_OUT" | grep -Ec '^(stage|action|param)	')" 0 'no stage or action authority'
+  assert_eq "$(printf '%s\n' "$C_OUT" | grep -Ec '^(action|param)	')" 0 'M16-stage-records: stages grant no action authority'
+  assert_eq "$(printf '%s\n' "$C_OUT" | grep -c '^stage	')" 10 'M16-stage-records: snapshot carries ten stages'
   assert_contains "$C_OUT" 'key=machine.arch' 'typed machine identity exists'
 done
 t_done test-gate2-journey

@@ -5,7 +5,7 @@
 #              status and counters in $G2_PROBES.summary; its probes only.
 #   render   — typed rows (file $3) and counters ($4..$6) through the tree's
 #              own ui_tag and doc_summary, exiting with doc_summary's status.
-# shellcheck disable=SC1090,SC2034,SC2329
+# shellcheck disable=SC1090,SC2031,SC2034,SC2317,SC2329
 set -u
 TREE=$1 MODE=$2
 for module in common ui state sources storage macos asahi linux shared doctor dev; do
@@ -44,8 +44,18 @@ case "$MODE" in
       core_health_extensions >&3 || exit 1
       OMB_SESSION_SCOPES=health OMB_SESSION_INTENT=act
       core_rows_snapshot 'agents.mcp' >/dev/null || exit 1
+      # M16-report-reads: keep the Doctor/extension probes intact. Independently
+      # capture the report's additional observations and all eight report rows.
+      G2_PROBES=$G2_PROBES.report
+      : >"$G2_PROBES"
+      # Doctor's production capture is a subshell; its identity cache does
+      # not reach the report. Match that boundary in this independent owner.
+      SH_UID='' SH_GID=''
+      journey_read "$DOC_PASS $DOC_WARN $DOC_FAIL" >/dev/null || exit 1
+      journey_report_build || exit 1
+      journey_report_records >"$G2_PROBES.rows" || exit 1
     fi
-    printf '%s\n' "$owner_summary" >"$G2_PROBES.summary"
+    printf '%s\n' "$owner_summary" >"${G2_PROBES%.report}.summary"
     ;;
   render)
     while IFS=$'\t' read -r _ _ _ s l d; do

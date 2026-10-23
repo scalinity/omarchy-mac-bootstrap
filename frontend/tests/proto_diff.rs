@@ -257,7 +257,8 @@ fn cp1_compatibility_against_actual_frozen_admission() {
     let cases = corpus();
     // Two named deltas since the frozen corpus (phase A): the bundle
     // approval case is gone with its action (D39), and the resume token
-    // carries no prof field (D20). Everything else is unchanged.
+    // carries no prof field (D20). M16-stage-records adds only the fixed
+    // startup stages and their generation. Everything else is unchanged.
     let removed = ["proto-golden-approve.req"];
     let old_cases: Vec<Case> = corpus_at(&old)
         .into_iter()
@@ -280,9 +281,32 @@ fn cp1_compatibility_against_actual_frozen_admission() {
     };
     for c in &old_cases {
         let current = cases.iter().find(|n| n.name == c.name).unwrap();
+        let mut expected = without_prof(&c.doc);
+        if c.name == "frontend-check-snapshot" {
+            let old = String::from_utf8(expected).unwrap();
+            let stages = fs::read_to_string(repo().join("tests/cp1/startup-check.stages")).unwrap();
+            assert_eq!(stages.lines().count(), 10, "M16-stage-records");
+            let facts: Vec<_> = old.lines().filter(|l| l.starts_with("fact\t")).collect();
+            assert_eq!(facts.len(), 4, "M16-stage-records retains four facts");
+            let generation = record::sha256_hex(format!("{stages}{}", facts.join("\n")).as_bytes());
+            let mut body = String::new();
+            let mut added = 0;
+            for line in old.lines() {
+                if line.starts_with("generation\t") {
+                    assert!(line.ends_with("\ttotal=0"));
+                    body.push_str(&format!("generation\tid={generation}\ttotal=0\n{stages}"));
+                    added += 1;
+                } else {
+                    body.push_str(line);
+                    body.push('\n');
+                }
+            }
+            assert_eq!(added, 1, "M16-stage-records adds one closed stage table");
+            expected = body.into_bytes();
+        }
         assert_eq!(
             (&current.doc, current.family, current.op, &current.want),
-            (&without_prof(&c.doc), c.family, c.op, &c.want),
+            (&expected, c.family, c.op, &c.want),
             "old corpus changed: {}",
             c.name
         );
@@ -333,7 +357,7 @@ fn cp1_compatibility_against_actual_frozen_admission() {
         }
     }
     eprintln!(
-        "CP1: {} historical corpus documents byte/verdict/reason/line preserved; 50 scope cases executed by C Bash, CP1 Bash, C Rust, CP1 Rust and actual released S Rust",
+        "CP1: {} historical corpus documents preserved under the named deltas, including M16-stage-records; 50 scope cases executed by C Bash, CP1 Bash, C Rust, CP1 Rust and actual released S Rust",
         old_cases.len()
     );
     let responses = dir.join("responses");

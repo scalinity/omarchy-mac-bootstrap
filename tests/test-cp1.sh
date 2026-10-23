@@ -13,6 +13,29 @@ zero=$(printf '%064d' 0)
 mkdir "$T/tool" "$T/closeout"
 cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$T/tool/"
 git -C "$REPO" archive deaa62c62348ecd4274b74b6b3a00f506c9f243d | tar -x -C "$T/closeout" || exit 1
+# M16-stage-records: the frozen closeout oracle gains ONLY the ten fixed
+# stage lines. Its own dataset hasher binds those lines; every prior payload,
+# projection, refusal and CP1-PLIST-M01 negative control remains unchanged.
+# Use frozen bodies, never stages copied from the candidate response.
+cp -R "$TESTS_DIR/cp1" "$T/closeout/tests/"
+cat >>"$T/closeout/lib/read.sh" <<'M16'
+eval "$(declare -f core_journey_dataset | sed '1s/core_journey_dataset/cp1_pre_m16_dataset/')"
+core_journey_dataset() (
+  cp1_pre_m16_dataset | while IFS= read -r line; do
+    printf '%s\n' "$line"
+    if [ "$line" = $'scope\tname=journey' ]; then
+      cat "$OMB_HOME/tests/cp1/${OMB_FIXTURE##*/}.stages" || exit 1
+    fi
+  done
+)
+M16
+cat >>"$T/closeout/lib/core.sh" <<'M16'
+eval "$(declare -f _core_check_body | sed '1s/_core_check_body/cp1_pre_m16_check_body/')"
+_core_check_body() {
+  cat "$OMB_HOME/tests/cp1/startup-check.stages" || return 1
+  cp1_pre_m16_check_body "$@"
+}
+M16
 printf '\n. %q\n' "$TESTS_DIR/gate2-probe-taps.sh" >>"$T/tool/lib/common.sh"
 cat >>"$T/tool/lib/core.sh" <<'TAPS'
 eval "$(declare -f core_action_info | sed '1s/core_action_info/cp1_original_action_info/')"

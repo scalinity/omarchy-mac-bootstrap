@@ -13,6 +13,10 @@ mkdir -p "$T/base" "$T/home" "$T/tmp" "$T/tool"
 git -C "$REPO" archive "$BASELINE" | tar -x -C "$T/base" || exit 1
 cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$T/tool/"
 printf '\n. %q\n' "$TESTS_DIR/gate2-probe-taps.sh" >>"$T/tool/lib/common.sh"
+cat >>"$T/tool/lib/doctor.sh" <<'DOCTOR'
+eval "$(declare -f cmd_doctor | sed '1s/cmd_doctor/p_actual_doctor/')"
+cmd_doctor() { printf 'doctor\n' >>"$G2_PROBES.doctor"; p_actual_doctor; }
+DOCTOR
 shims=$(t_shims "$T")
 P_PATH="$shims:/usr/bin:/bin:/usr/sbin:/sbin"
 mac=0
@@ -103,25 +107,40 @@ EOF_COUNTS
     : >"$T/hello.probes"
     C_ENV="OMB_SESSION_SCOPES=health G2_PROBES=$T/hello.probes SHIM_LOG=$T/shims.log" c_run hello
     assert_eq "$(c_result) $C_RC" 'done ok 0' "$name hello"
-    cat "$T/hello.probes" "$T/complete.probes" >"$T/want.probes"
-    : >"$T/typed.probes"
+    cat "$T/hello.probes" "$T/complete.probes" >"$T/doctor.probes"
+    cat "$T/doctor.probes" "$T/complete.probes.report" >"$T/want.probes"
+    # M16-report-reads: these observations belong to the report, separately
+    # from the BASE-equivalent Doctor reads checked above.
+    assert_eq "$(awk -F '\t' '$1=="row" {sub(/^key=/,"",$3); printf "%s%s",sep,$3; sep=" "}' "$T/complete.probes.report.rows")" \
+      'mac disk shared linux qualification restore doctor recovery' "$name M16-report-reads: eight report observations"
+    : >"$T/typed.probes.doctor"
+    : >"$T/typed.probes"; : >"$T/typed.probes.doctor"
     C_ENV="OMB_SESSION_SCOPES=health G2_PROBES=$T/typed.probes SHIM_LOG=$T/shims.log" c_run snapshot "scope	name=health"
     assert_eq "$(c_result) $C_RC $(c_admits snapshot)" 'done ok 0 ok' "$name typed snapshot done, even with $bfail failure(s)"
-    if cmp -s "$T/typed.probes" "$T/want.probes"; then ok; else fail "$name snapshot probes are hello's then one Doctor's and the named extensions'"; fi
+    if cmp -s "$T/typed.probes" "$T/want.probes"; then ok; else fail "$name M16-report-reads: snapshot probes are hello, one Doctor, extensions, report"; fi
+    assert_eq "$(cat "$T/typed.probes.doctor")" doctor "$name M16-report-reads: exactly one Doctor invocation"
     tpass=$(p_fact pass) twarn=$(p_fact warn) tfail=$(p_fact fail)
     assert_eq "$tpass $twarn $tfail" "$bpass $bwarn $bfail" "$name snapshot facts equal BASE counters"
     assert_eq "$(printf '%s\n' "$C_ERR" | sed "s|$T/tool|TREE|g")" "$(p_norm "$T/base.err" "$T/base")" "$name typed diagnostics are BASE Doctor's alone"
     gen=$(p_gen)
-    : >"$T/typed.probes"
+    : >"$T/typed.probes"; : >"$T/typed.probes.doctor"
     C_ENV="OMB_SESSION_SCOPES=health G2_PROBES=$T/typed.probes SHIM_LOG=$T/shims.log" c_run detail "page	scope=health	kind=doctor	generation=$gen	offset=0	limit=500"
     assert_eq "$(c_result) $C_RC $(c_admits detail) $(p_gen)" "done ok 0 ok $gen" "$name typed detail shares the generation"
-    if cmp -s "$T/typed.probes" "$T/want.probes"; then ok; else fail "$name detail probes are hello's then one Doctor's and the named extensions'"; fi
+    if cmp -s "$T/typed.probes" "$T/want.probes"; then ok; else fail "$name M16-report-reads: Doctor detail has the same complete dataset reads"; fi
+    assert_eq "$(cat "$T/typed.probes.doctor")" doctor "$name M16-report-reads: Doctor detail invokes Doctor once"
     grep '^row	' "$C_EV" >"$T/typed.rows"
     if cmp -s "$T/typed.rows" "$T/expected.rows"; then ok; else fail "$name typed rows equal the complete owner capture and named extensions: count, order, status, label, detail"; fi
     sed '1,2d' "$C_EV" >"$T/typed.body"
     C_HOME=$REPO C_ENV=OMB_SESSION_SCOPES=health c_run detail "page	scope=health	kind=doctor	generation=$gen	offset=0	limit=500"
     sed '1,2d' "$C_EV" >"$T/actual.body"
     if cmp -s "$T/typed.body" "$T/actual.body"; then ok; else fail "$name the untapped core answers the same bytes"; fi
+    : >"$T/typed.probes"; : >"$T/typed.probes.doctor"
+    C_HOME=$T/tool C_ENV="OMB_SESSION_SCOPES=health G2_PROBES=$T/typed.probes SHIM_LOG=$T/shims.log" \
+      c_run detail "$(printf 'page\tscope=health\tkind=report\tgeneration=%s\toffset=0\tlimit=500' "$gen")"
+    assert_eq "$(c_result) $C_RC $(c_admits detail) $(p_gen)" "done ok 0 ok $gen" "$name M16-report-reads: report shares the generation"
+    if cmp -s "$T/typed.probes" "$T/want.probes"; then ok; else fail "$name M16-report-reads: report detail has the same complete dataset reads"; fi
+    assert_eq "$(cat "$T/typed.probes.doctor")" doctor "$name M16-report-reads: report invokes Doctor once"
+    assert_eq "$(grep '^row' "$C_EV")" "$(cat "$T/complete.probes.report.rows")" "$name M16-report-reads: all report rows equal separate observations"
     # Supplementary: typed rows and counts through BASE's own presentation
     # reproduce BASE's doctor lines, summary and exit status.
     if [ "$(cat "$fixture/cmd/uname_s")" = Linux ]; then
@@ -343,6 +362,9 @@ order() {
       label) cmd_doctor() { doc pass Renamed one; doc info Second two; doc_summary; } ;;
     esac
     core_health_extensions() { :; }
+    # M16-report-reads: isolate the synthetic Doctor's two rows from report
+    # observations, which require a real platform and fixture.
+    core_health_report() { : >"$OMB_TMP/health.report"; }
     core_rows_snapshot() { for f in facts blockers actions params; do : >"$OMB_TMP/rows.$f"; done; }
     core_health_capture || exit 1
     printf '%s %s\n' "$CORE_HEALTH_ROWS" "$CORE_HEALTH_GEN"

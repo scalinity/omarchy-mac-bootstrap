@@ -1,0 +1,10 @@
+stage	name=survey	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=profile	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=resolve	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=plan	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=asahi	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=omarchy	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=shared	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=restore	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=verify	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
+stage	name=done	state=blocked	basis=machine	by=	at=	detail=not%20checked:%20startup%20check%20reads%20identity%20only
