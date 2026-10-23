@@ -1266,8 +1266,9 @@ act_dev_run() {
 
 # The developer outcomes, as dev_main records them: every chosen part
 # succeeded; nothing chosen; or a failure recorded. After a new boot only a
-# success recorded later than this operation began counts: an earlier
-# run's success says nothing about the run that was interrupted.
+# success recorded at or after the moment this operation began (CO_AT, the
+# record's first write; both to the second) counts: an earlier run's
+# success says nothing about the run that was interrupted.
 act_dev_judge() {
   local LC_ALL=C last
   last=$(state_get dev_last_run_at)
@@ -1275,23 +1276,13 @@ act_dev_judge() {
     act_judged unexpected "Developer setup parts failed: $(state_get dev_failed)."
   elif [ "$1" != reconcile ] && [ "$last" = "${ACT_PRE:-}" ]; then
     act_judged no-effect "Nothing was chosen; nothing changed."
-  elif [ "$1" = reconcile ] && { ! act_op_at "$ACT_DEV_SCOPE" || [ -z "$last" ] || [[ ! $last > $ACT_OP_AT ]]; }; then
-    act_judged unexpected "No developer setup outcome is recorded after this run began${last:+ (the last success, at $last, belongs to an earlier run)}."
+  elif [ "$1" = reconcile ] && { [ -z "${CO_AT:-}" ] || [ -z "$last" ] || [[ $last < $CO_AT ]]; }; then
+    act_judged unexpected "No developer setup outcome is recorded since this run began${last:+ (the last success, at $last, belongs to an earlier run)}."
   elif [ -n "$last" ]; then
     act_judged completed "The developer setup finished: $(state_get dev_modules)."
   else
     act_judged unexpected "The developer setup recorded no outcome."
   fi
-}
-
-# act_op_at SCOPE — ACT_OP_AT: when the scope's operation record was
-# written: its operation's start, for a record left running. 1 when it
-# cannot be read.
-act_op_at() {
-  ACT_OP_AT=""
-  rec_admit_file op - "$(core_op_path "$1")" || return 1
-  rec_get_into ACT_OP_AT 0 at
-  [ -n "$ACT_OP_AT" ]
 }
 
 # ---------------------------------------------------------------------------
