@@ -178,10 +178,19 @@ act_mac_plannable() {
 }
 
 # act_layout_digest — the SHA-256 of the disk's layout on the last read:
-# every partition's offset, size and GUID, in disk order.
+# every partition's offset, size, GUID and type, in disk order.
 act_layout_digest() {
   local l
-  l=$(geo_canon | cut -d'|' -f1-3)
+  l=$(geo_canon)
+  sha256_str "$l"
+}
+
+# act_resized_digest — the same digest with the macOS container's size left
+# out: what a resize, and only a resize, leaves as it was (every other
+# partition, and so the free space after the container).
+act_resized_digest() {
+  local l
+  l=$(geo_canon | awk -F'|' -v u="$MAC_STORE_UUID" 'BEGIN { OFS = "|" } $3 == u { $2 = "" } { print }')
   sha256_str "$l"
 }
 
@@ -458,16 +467,20 @@ act_asahi_run() {
   [ "$rc" = 0 ] || return 1
   # The whole layout the launch begins from (mac_handoff holds the disk to
   # it before running the installer), recorded before anything changes, so
-  # a reconciliation after a new boot can prove the disk is as it was.
+  # a reconciliation after a new boot can prove the disk is as it was, or
+  # changed only by a resize.
   layout=$(act_layout_digest)
   state_must_set asahi_prelaunch_layout "$layout" || return 1
+  layout=$(act_resized_digest)
+  state_must_set asahi_prelaunch_resized "$layout" || return 1
   mac_save_plan || return 1
   mac_backup_gate || return 1
   mac_handoff
 }
 
 # Asahi's install classification on a fresh read: its partitions in place,
-# or macOS resized and nothing installed yet (a state the next launch
+# or macOS resized with every other partition as the layout recorded before
+# the launch had it and nothing installed yet (a state the next launch
 # continues from), are completed; a disk proven untouched (the installer
 # quit at its first question, or never ran) is no effect; anything else
 # needs the person.
@@ -483,7 +496,16 @@ act_asahi_judge() {
     resized-only)
       # A state the text flow continues from (asahi_guidance, then planning):
       # the freed space stays free, and the next launch installs into it.
-      act_judged completed "The installer resized macOS and stopped before installing ($ASAHI_WHY). The next launch continues from there: it installs into the freed space, with no second resize."
+      # Only a resize: every other partition is as the layout recorded
+      # before the launch had it.
+      before=$(state_get asahi_prelaunch_resized)
+      if [ -z "$before" ]; then
+        act_judged unexpected "macOS is smaller than before the launch ($ASAHI_WHY), but the layout before the launch is not recorded, so a resize alone cannot be told."
+      elif [ "$(act_resized_digest)" != "$before" ]; then
+        act_judged unexpected "macOS is smaller than before the launch ($ASAHI_WHY), and another partition changed too: not what the Asahi installer leaves."
+      else
+        act_judged completed "The installer resized macOS and stopped before installing ($ASAHI_WHY). The next launch continues from there: it installs into the freed space, with no second resize."
+      fi
       return 0
       ;;
     none)
@@ -493,8 +515,8 @@ act_asahi_judge() {
           return 0
         fi
       else
-        # After a new boot: every partition (its GUID, offset and size) is
-        # where the layout recorded before the launch had it.
+        # After a new boot: every partition (its GUID, offset, size and
+        # type) is where the layout recorded before the launch had it.
         before=$(state_get asahi_prelaunch_layout)
         if [ "$GEO_OK" = 1 ] && [ -n "$before" ] && [ "$(act_layout_digest)" = "$before" ]; then
           act_judged no-effect "Every partition is where it was before the launch: the installer changed nothing."
@@ -733,7 +755,8 @@ act_create_run() { shared_create ""; }
 # The Shared state on a fresh read: the partition the creation was allowed
 # to make (by its record or on the disk) and its result recorded (the saved
 # shared_uuid is that partition's) is completed; the partition with its
-# result unrecorded keeps the barrier; the region still free with no
+# result unrecorded keeps the barrier, until a reconciliation after a new
+# boot records what the creation record proves; the region still free with no
 # creation record left (nothing was created) is no effect; anything else
 # stops.
 act_create_judge() {
@@ -742,6 +765,12 @@ act_create_judge() {
   shared_mac_state
   case "$SHARED_STATE" in
     created)
+      # After a new boot, a creation record that holds the partition on this
+      # fresh read: its result recorded now, as the text flow records a
+      # partition already there (nothing is created again).
+      if [ "$1" = reconcile ] && [ "$TXN_RESULT" = "done" ]; then
+        shared_mac_reconcile
+      fi
       if [ "$(state_get shared_uuid)" = "$SHARED_UUID" ]; then
         act_judged completed "Shared storage is on the disk and recorded: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT."
       else
@@ -992,20 +1021,57 @@ act_resume_run() {
   lx_in_progress
 }
 
-# act_resume_seen — the SHA-256 of what shows the setup's progress: the
-# classifier's signals, its service, and upstream's own status (as root).
+# act_resume_seen — where the setup stands (act_resume_stage), then the
+# SHA-256 of all the classifier reads (act_lx_seen). The service's state
+# and upstream's status text are in neither: a service that failed, or a
+# status that could not be read, is no step of the setup.
 act_resume_seen() {
-  local seen status=""
+  local stage seen
+  stage=$(act_resume_stage)
   seen=$(act_lx_seen)
-  if [ "$LX_SETUP_BIN" = 1 ] && [ "$OMB_UID" = 0 ]; then status=$(lx_upstream_status_text); fi
-  sha256_str "$seen|${LX_UNIT_STATE:-}
-$status"
+  seen=$(sha256_str "$seen")
+  printf '%s %s' "$stage" "$seen"
+}
+
+# act_resume_stage — the classifier's stage of the setup, one rank per step
+# in the order it takes them (docs/UPSTREAM.md → What the setup does):
+# /boot on its own partition (0, 1); the root's encryption (0 none, 1
+# staged, 2 re-encrypting, 3 complete; ? when it cannot be read); Omarchy's
+# runtime (0, 1).
+act_resume_stage() {
+  local boot=0 enc='?' omarchy=0
+  [ -n "$LX_BOOT_SRC" ] && boot=1
+  case "$LX_ENC_STATE" in
+    none) enc=0 ;;
+    migrating) if [ "$LX_ROOT_CRYPT" = 1 ]; then enc=2; else enc=1; fi ;;
+    complete) enc=3 ;;
+  esac
+  [ -n "$LX_OMARCHY_VERSION" ] && omarchy=1
+  printf '%s%s%s' "$boot" "$enc" "$omarchy"
+}
+
+# act_stage_move BEFORE NOW — ACT_MOVE: forward (a step further and none
+# back), same, or other (a step back, or a stage that could not be read).
+act_stage_move() {
+  local i
+  ACT_MOVE=other
+  case "$1" in [01][0-3][01]) ;; *) return 0 ;; esac
+  case "$2" in [01][0-3][01]) ;; *) return 0 ;; esac
+  if [ "$1" = "$2" ]; then
+    ACT_MOVE=same
+    return 0
+  fi
+  for i in 0 1 2; do
+    if [ "${2:i:1}" -lt "${1:i:1}" ]; then return 0; fi
+  done
+  ACT_MOVE=forward
 }
 
 # Omarchy's classification on a fresh read. Installed is completed; still
-# under way is completed only when the machine shows the setup advanced
-# since the resume began. A setup that could not be run (exit 126 or 127,
-# or its executable gone) is never completed: no effect when nothing reads
+# under way is completed only when the classifier's stage moved forward
+# since the resume began; a service that failed or a status that could not
+# be read never is. A setup that could not be run (exit 126 or 127, or its
+# executable gone) is never completed: no effect when nothing reads
 # otherwise than before, else unexpected; so is a resume never run.
 act_resume_judge() {
   local before seen
@@ -1013,6 +1079,7 @@ act_resume_judge() {
   lx_detect
   before=$(state_get omarchy_resume_seen)
   seen=$(act_resume_seen)
+  act_stage_move "${before%% *}" "${seen%% *}"
   case "$1" in
     126 | 127)
       if [ -n "$before" ] && [ "$seen" = "$before" ]; then
@@ -1044,10 +1111,12 @@ act_resume_judge() {
     else
       act_judged unexpected "$OMS_SELF is not there, and the machine does not read as it did before."
     fi
-  elif [ "$seen" != "$before" ]; then
-    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, further than before."
-  else
+  elif [ "$ACT_MOVE" = forward ]; then
+    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, a step further than before."
+  elif [ "$seen" = "$before" ]; then
     act_judged no-effect "omarchy-mac-setup ran, and nothing it changes reads otherwise than before."
+  else
+    act_judged unexpected "omarchy-mac-setup ran and got no step further, and the machine does not read as it did before."
   fi
 }
 
@@ -1197,8 +1266,9 @@ act_dev_run() {
 
 # The developer outcomes, as dev_main records them: every chosen part
 # succeeded; nothing chosen; or a failure recorded. After a new boot only a
-# success recorded later than this operation began counts: an earlier
-# run's success says nothing about the run that was interrupted.
+# success recorded at or after the moment this operation began (CO_AT, the
+# record's first write; both to the second) counts: an earlier run's
+# success says nothing about the run that was interrupted.
 act_dev_judge() {
   local LC_ALL=C last
   last=$(state_get dev_last_run_at)
@@ -1206,23 +1276,13 @@ act_dev_judge() {
     act_judged unexpected "Developer setup parts failed: $(state_get dev_failed)."
   elif [ "$1" != reconcile ] && [ "$last" = "${ACT_PRE:-}" ]; then
     act_judged no-effect "Nothing was chosen; nothing changed."
-  elif [ "$1" = reconcile ] && { ! act_op_at "$ACT_DEV_SCOPE" || [ -z "$last" ] || [[ ! $last > $ACT_OP_AT ]]; }; then
-    act_judged unexpected "No developer setup outcome is recorded after this run began${last:+ (the last success, at $last, belongs to an earlier run)}."
+  elif [ "$1" = reconcile ] && { [ -z "${CO_AT:-}" ] || [ -z "$last" ] || [[ $last < $CO_AT ]]; }; then
+    act_judged unexpected "No developer setup outcome is recorded since this run began${last:+ (the last success, at $last, belongs to an earlier run)}."
   elif [ -n "$last" ]; then
     act_judged completed "The developer setup finished: $(state_get dev_modules)."
   else
     act_judged unexpected "The developer setup recorded no outcome."
   fi
-}
-
-# act_op_at SCOPE — ACT_OP_AT: when the scope's operation record was
-# written: its operation's start, for a record left running. 1 when it
-# cannot be read.
-act_op_at() {
-  ACT_OP_AT=""
-  rec_admit_file op - "$(core_op_path "$1")" || return 1
-  rec_get_into ACT_OP_AT 0 at
-  [ -n "$ACT_OP_AT" ]
 }
 
 # ---------------------------------------------------------------------------
