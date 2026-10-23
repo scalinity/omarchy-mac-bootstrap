@@ -1159,10 +1159,7 @@ impl Admitter {
             return seal;
         }
         for (i, l) in lines.iter().enumerate().take(lines.len() - 1).skip(1) {
-            match self.schema.record(i + 1, l) {
-                Ok(r) => self.records.push(r),
-                Err(f) => return Err(f),
-            }
+            self.records.push(self.schema.record(i + 1, l)?);
         }
         self.schema.end()?;
         Ok(Document {

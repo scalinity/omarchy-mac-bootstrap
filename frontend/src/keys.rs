@@ -157,7 +157,7 @@ pub static KEYMAP: &[Binding] = &[
     b(Place::Value, "g G", "g G", "start, end (vim)", 0),
     b(Place::Diagnostics, "↑↓", "up/down", "scroll", 1),
     b(Place::Diagnostics, "Tab", "Tab", "the tool's log", 2),
-    b(Place::Plan, "⏎", "enter", "check", 1),
+    b(Place::Plan, "⏎", "enter", "review", 1),
     b(
         Place::Plan,
         "⏎ again",
@@ -165,13 +165,22 @@ pub static KEYMAP: &[Binding] = &[
         "save a review the core answered, where it offers plan.save",
         0,
     ),
+    b(
+        Place::Plan,
+        "←→",
+        "left/right",
+        "preset or selected unit",
+        0,
+    ),
+    b(Place::Plan, "↑↓", "up/down", "field, then scroll", 0),
+    b(Place::Plan, "Home End", "Home End", "top, bottom", 0),
     b(Place::Plan, "Tab", "Tab", "next field", 2),
     b(Place::Plan, "esc", "esc", "back", 3),
     b(
         Place::Plan,
         "the size",
         "the size",
-        "type it, as 250GB, 1.5TB or 30%",
+        "Custom: type a number; Tab selects GB, TB or %",
         0,
     ),
     b(

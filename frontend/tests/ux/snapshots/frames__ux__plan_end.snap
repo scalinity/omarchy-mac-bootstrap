@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Plan ──────────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status  Health  Logs ▍Plan ›
+┌ Storage planner ─────────────────────────────────────────┐
+│ ❯ Developer tools ○ off  ◉ on                           ↑│
+│   a field left empty is not sent: the core answers its   │
+│   default                                                │
+│                                                          │
+│   Sent: Shared size 150GB · Linux size 250GB · Encrypt   │
+│   Linux 1 · User name alex · Host name omarchy ·         │
+│   Keyboard layout us · Time zone America/New_York ·      │
+│   Locale en_US.UTF-8 · SSH server 0 · GitHub user        │
+│   octocat · Developer tools 1                            │
+│ ✓ checked                                                │
+│                                                          │
+│ ▍Review ready                                            │
+│   a check only: nothing was saved                        │
+│   ⏎ Save the plan: asked first, then the core checks     │
+│   this basis again.                                      │
+└──────────────────────────────────────────────────────────┘
+ ⏎ review               can make changes · recorded machine

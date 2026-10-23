@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Selection ─────────────────────────────────────── v0.2.0
+‹ Machine  Status  Health  Logs  Plan  Op  Scan ▍Select ›
+┌ Migration selection ─────────────────────────────────────┐
+│   Category 18    1 item                                 ↑│
+│   Category 19    1 item                                  │
+│   Category 20    1 item                                  │
+│   Category 21    1 item                                  │
+│   Category 22    1 item                                  │
+│   Category 23    1 item                                  │
+│   Category 24    1 item                                  │
+│   Category 25    1 item                                  │
+│   Category 26    1 item                                  │
+│   Category 27    1 item                                  │
+│   Category 28    1 item                                  │
+│ ❯ Category 29    1 item                                  │
+│                                                          │
+│   ⏎ opens a category's items; space puts all of them in  │
+│   or out.                                                │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ move  ? help        can make changes · recorded machine

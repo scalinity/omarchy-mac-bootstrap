@@ -13,26 +13,26 @@ expression: text(&b)
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
 │  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ This session's snapshot      │
-│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ holds no machine facts.      │
-│  Machine             ││       profile     plan        omarchy     restore     done   │└──────────────────────────────┘
+│▍ Journey             ││ Survey      Review      Asahi       Shared      Verify       ││ holds no machine facts.      │
+│  Machine             ││       Choices     Plan        Omarchy     Restore     Done   │└──────────────────────────────┘
 │  Status              ││ No stage is derived yet: every station is later.             │
 │  Health              ││                                                              │
 │  Logs                ││ ▍Where it stands                                             │
 │  Plan                ││   The core gave no next step for this session.               │
 │  Operation           ││                                                              │
-│  Scan                ││ ▍Facts                                                       │
-│  Selection           ││   Interface  the foundation: test actions over fixtures      │
-│  Inventory           ││   Fixture    mac-m1pro-1tb-roomy                             │
-│  Review              ││   Operation  ✓ none                                          │
-│  Install             ││                                                              │
-│  Progress            ││ ▍What you can do now                                         │
-│  Restore             ││ ❯ Read the fixture (test)         read                       │
-│  Qualification       ││   Change the fixture (test)       act · type test            │
-│  Completion          ││   Hand over the terminal (test)   act · handoff · type test  │
-│                      ││   Runs the fake read child: its output is shown, its         │
-│                      ││   diagnostics kept within their limits.                      │
-│                      ││                                                              │
-│                      ││                                                              │
+│  Scan                ││ ▍What you can do now                                         │
+│  Selection           ││ ❯ Read the fixture (test)                                    │
+│  Inventory           ││   Runs the fake read child: its output is shown, its         │
+│  Review              ││   diagnostics kept within their limits.                      │
+│  Install             ││   Change the fixture (test)                                  │
+│  Progress            ││   Runs the fake mutating child under supervision.            │
+│  Restore             ││   Hand over the terminal (test)                              │
+│  Qualification       ││   Runs the fake handoff child on the real terminal.          │
+│  Completion          ││                                                              │
+│                      ││ ▍Facts                                                       │
+│                      ││   Interface  the foundation: test actions over fixtures      │
+│                      ││   Fixture    mac-m1pro-1tb-roomy                             │
+│                      ││   Operation  ✓ none                                          │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │
@@ -41,4 +41,4 @@ expression: text(&b)
 │                      ││                                                              │
 │                      ││                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                                     may act · 3 actions · fixture
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit             can make changes · 3 steps offered · recorded machine

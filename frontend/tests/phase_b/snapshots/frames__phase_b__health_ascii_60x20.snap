@@ -21,4 +21,4 @@ expression: text
 | |SSH                                                     |
 |   SSH policy - warn: cannot-tell: run doctor as root    v|
 +----------------------------------------------------------+
- c MCP list (asks first)  ? help          may act - fixture
+ ? help                 can make changes - recorded machine

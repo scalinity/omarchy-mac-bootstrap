@@ -15,6 +15,7 @@ pub mod screens;
 pub mod select;
 pub mod terminal;
 pub mod theme;
+pub mod viewport;
 pub mod widgets;
 
 use app::{Cmd, Model, Msg, Outcome, Req, update};
@@ -111,7 +112,6 @@ pub fn run(args: &[String]) -> i32 {
         Ok(t) => t,
         Err(e) => return fallback(&format!("the terminal could not be prepared ({e})")),
     };
-    terminal::watch_reads();
     let mut trace = Trace::open();
     let mut model = Model {
         // Read, never set: the launcher's startup check serves hello and journey only.
@@ -121,6 +121,7 @@ pub fn run(args: &[String]) -> i32 {
     let mut cmds = model.start();
     let mut running: Option<(core::Running, Req, Instant)> = None;
     let mut dirty = true;
+    let mut terminal_gone = false;
     // A request was just started: its running state is drawn before anything
     // of its answer is read (docs/UX.md → *States every screen has*).
     let mut started = false;
@@ -169,7 +170,7 @@ pub fn run(args: &[String]) -> i32 {
                     // Everything in the group stops together; this returns
                     // after SIGCONT.
                     core::stop_group();
-                    let _ = term.reenter();
+                    let _ = term.reenter(&sig.stop);
                     // This re-entry answers the SIGCONT that woke us.
                     sig.cont.store(false, Ordering::SeqCst);
                     // The machine may have changed meanwhile.
@@ -204,18 +205,24 @@ pub fn run(args: &[String]) -> i32 {
             continue;
         }
         if sig.stop.swap(false, Ordering::SeqCst) {
+            trace.line("terminate signal");
             cmds.extend(update(&mut model, Msg::Terminate));
             dirty = true;
         }
-        if sig.cont.swap(false, Ordering::SeqCst) {
+        if sig.cont.swap(false, Ordering::SeqCst) && !terminal_gone {
             // Continued from outside (the shell's fg): take the terminal back.
-            let _ = term.reenter();
+            let _ = term.reenter(&sig.stop);
             dirty = true;
         }
-        if std::mem::take(&mut started) && dirty {
+        if std::mem::take(&mut started) && dirty && !terminal_gone {
             if !paint(&mut term, &model, &theme) {
-                term.restore();
-                return 1;
+                cmds.extend(lost_terminal(
+                    &mut term,
+                    &mut model,
+                    &mut trace,
+                    &mut terminal_gone,
+                    "terminal output failed",
+                ));
             }
             dirty = false;
         }
@@ -238,10 +245,16 @@ pub fn run(args: &[String]) -> i32 {
         if !cmds.is_empty() {
             continue;
         }
-        if dirty {
+        if dirty && !terminal_gone {
             if !paint(&mut term, &model, &theme) {
-                term.restore();
-                return 1;
+                cmds.extend(lost_terminal(
+                    &mut term,
+                    &mut model,
+                    &mut trace,
+                    &mut terminal_gone,
+                    "terminal output failed",
+                ));
+                continue;
             }
             dirty = false;
             // A test hook (never in a release): a panic once the dashboard
@@ -253,40 +266,61 @@ pub fn run(args: &[String]) -> i32 {
                 panic!("test hook: an injected panic");
             }
         }
-        // One thread reads the terminal: this one, and never during a handoff.
-        let got = terminal::reading(
-            || match event::poll(Duration::from_millis(TICK_MS as u64)) {
-                Ok(true) => event::read().map(Some),
-                Ok(false) => Ok(None),
-                Err(e) => Err(e),
-            },
-        );
-        match got {
-            Ok(Some(Event::Key(k))) => {
+        if terminal_gone {
+            // Follow the request to its outcome without touching the dead terminal.
+            std::thread::sleep(Duration::from_millis(TICK_MS as u64));
+            continue;
+        }
+        // One thread reads the terminal, and never during a handoff.
+        match term.poll(&sig.stop, Duration::from_millis(TICK_MS as u64)) {
+            terminal::Input::Event(Event::Key(k)) => {
                 cmds.extend(update(&mut model, Msg::Key(k)));
                 dirty = true;
             }
-            Ok(Some(Event::Resize(_, _))) => dirty = true,
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                // Motion only while something is happening.
+            terminal::Input::Event(Event::Resize(_, _)) => dirty = true,
+            terminal::Input::Event(_) => {}
+            terminal::Input::Idle => {
                 if model.pending.is_some() {
                     cmds.extend(update(&mut model, Msg::Tick));
                     dirty = true;
                 }
             }
-            // A signal interrupting the read: retried on the next pass.
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(_) => {
-                term.restore();
-                return 1;
+            terminal::Input::Terminate => {
+                sig.stop.store(false, Ordering::SeqCst);
+                trace.line("terminate signal in terminal poll");
+                cmds.extend(update(&mut model, Msg::Terminate));
+                dirty = true;
+            }
+            terminal::Input::Gone(why) => {
+                cmds.extend(lost_terminal(
+                    &mut term,
+                    &mut model,
+                    &mut trace,
+                    &mut terminal_gone,
+                    &why,
+                ));
             }
         }
     }
 }
 
+/// A lost terminal follows the same request shutdown as a termination signal.
+fn lost_terminal(
+    term: &mut terminal::Term,
+    model: &mut Model,
+    trace: &mut Trace,
+    gone: &mut bool,
+    why: &str,
+) -> Vec<Cmd> {
+    *gone = true;
+    trace.line(&format!("terminal gone: {why}; terminating"));
+    term.restore();
+    update(model, Msg::Terminate)
+}
+
 /// Draw the whole frame; false when the terminal could not be written.
 fn paint(term: &mut terminal::Term, model: &Model, theme: &theme::Theme) -> bool {
+    term.update_title(model);
     term.terminal
         .draw(|f| screens::draw(f, model, theme, TICK_MS))
         .is_ok()
@@ -335,7 +369,7 @@ fn handoff(
     let mut running = match session.start(req) {
         Ok(r) => r,
         Err(e) => {
-            let _ = term.reenter();
+            let _ = term.reenter(&sig.stop);
             return Outcome::NotSent(e.to_string());
         }
     };
@@ -384,7 +418,7 @@ fn handoff(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = term.reenter();
+    let _ = term.reenter(&sig.stop);
     outcome
 }
 

@@ -15,7 +15,7 @@ Images/` at the repository root, not tracked by Git. They set the look every
 screen shares: the pixel OMARCHY wordmark with its MAC BOOTSTRAP tagline and
 the laptop-and-mountains art, the ten-station journey rail, the navigation
 on the left, the System Overview and a context panel on the right, steppers,
-check lists, the footer's key hints, and the dark navy backdrop.
+check lists, the footer's key hints, and the midnight backdrop.
 
 Their content is mock-up: every word, number and state in them is a
 placeholder, and so are the rail's station names, the navigation's entries
@@ -56,6 +56,12 @@ takes for the report.
 
 Every screen holds at 80×24 and at the 60×20 floor, in ASCII and with no
 colour.
+
+The first journey answer after Connecting opens Welcome, with Welcome
+selected in Screens; Enter goes on to Journey. A startup-check session
+(`frontend-check`, which serves the journey only) opens on Journey, never on
+Welcome. A retry from the error screen opens Journey. A reread and the return
+from a handoff keep the screen they are on.
 
 ## Direction: a panelled instrument
 
@@ -115,12 +121,12 @@ terminal theme), and a plain-attribute form.
 | --- | --- | --- | --- | --- |
 | `text` | body text | 253 | default | default |
 | `muted` | labels, metadata | 245 | bright black | default |
-| `rule` | dividers inside a panel, the rail's line | 239 | bright black | default |
+| `rule` | dividers inside a panel, the rail's line | 241 | bright black | default |
 | `accent` | the mark, the current station, the primary control | 78 | green | underline |
 | `focus` | the focused row, field or control | reverse + 78 | reverse | reverse |
 | `frame` | panel outlines and the title rule | 44 | cyan | the outline's own glyphs |
 | `heading` | panel titles and section headings | 39 | blue | underline |
-| `backdrop` | the page behind everything, a dark navy | 17 (`#00005f`), at 256 colours and above only | the terminal's own | the terminal's own |
+| `backdrop` | the page behind everything, a midnight blue field | RGB 11,31,58 on truecolor terminals; index 17 (`#00005f`) on 256-colour terminals | the terminal's own | the terminal's own |
 | `selected` | an included item | 115 glyph | green glyph | the glyph alone (◉ / `[x]`) |
 | `ok` | verified, passed | 115 | green | the word and ✓ / `+` |
 | `info` | a note | 110 | cyan | the word |
@@ -128,22 +134,25 @@ terminal theme), and a plain-attribute form.
 | `danger` | failed, destructive | 204 | red | the word and ✗ / `x` |
 | `blocked` | cannot go on | 204 | red | the word, reversed |
 | `pending` | not yet | 245 | bright black | ○ / `.` |
-| `gate` | a typed-word field | 209 underline | underline | underline |
-| `macos`, `linux`, `boot`, `shared`, `free` | disk regions and badges | 110, 209, 141, 114, 239 | blue, bright red, magenta, green, bright black | the strip's letters (`M`, `L`, `b`, `s`, `.`) |
+| `gate` | a typed-word field | 253 underline | underline | underline |
+| `macos`, `linux`, `boot`, `shared`, `free` | disk regions and badges | 110, 209, 141, 114, 241 | blue, bright red, magenta, green, bright black | the strip's letters (`M`, `L`, `b`, `s`, `.`) |
 
 - **Emphasis is reverse or underline, never bold with a colour**: the Linux
   console cancels bold when a normal-intensity colour follows it. Hierarchy
   comes from the token, capitals and position, not from weight.
 - **Sixteen named colours only** on the Linux console and whenever the
   terminal reports fewer than 256; true colour is never assumed.
-- **The backdrop is never needed to read state.** It is painted only when
-  the terminal reports 256 colours or more; the Linux console, sixteen
-  colours, `NO_COLOR` and ASCII use the terminal's own background, and every
-  state keeps its word and glyph.
-- **The backdrop is a blue, never a grey.** Index 17 is the darkest blue the
-  256-colour palette has. The reference's own background is a near-black navy
-  (about `#050d18`); the palette has no closer entry that keeps a blue hue,
-  and the greys (232–255) keep none.
+- **The backdrop is midnight blue.** Truecolor terminals (`COLORTERM=truecolor`
+  or `24bit`) use `#0B1F3A` (RGB 11,31,58). A 256-colour terminal uses
+  index 17 (`#00005f`), the nearest blue; the nearer greys would lose the hue. Sixteen-colour terminals, the Linux console and
+  `NO_COLOR` use the terminal's own background. Panels and spans have no
+  background of their own; the page supplies one continuous field.
+- **Contrast carries the palette.** Full-depth muted and pending text use
+  245, headings 39, danger and blocked 204, and boot regions 141. Rule and
+  free-space graphics use 241. Linux's 209 is a disk-graphic colour; text
+  legends use the Text token. Editing fields use neutral Text with an
+  underline, and become a warning or error colour only after a core answer.
+
 - **`NO_COLOR` is the theme's job.** Crossterm 0.29.0 honours `NO_COLOR` by
   emitting a reset that also clears bold and reverse, which would erase the
   focus highlight; the frontend applies its own no-colour mapping (reset
@@ -223,11 +232,11 @@ that.
 The ten stations are `survey`, `profile`, `resolve`, `plan`, `asahi`,
 `omarchy`, `shared`, `restore`, `verify`, `done` (docs/QUALIFICATION.md).
 A station that only the other system can see is drawn with its recorded
-state and *recorded by macos* or *recorded by linux*. The state list below
-the strip gives every station's state and provenance, and the core's reason
-for a skipped or blocked station. `[` and `]` select a station, starting at
-the current one; Enter opens it. The strip's summary names the selected
-station. Up/down return to the dashboard's actions.
+state and *recorded by macos* or *recorded by linux*. The list of stations at
+the foot of the page gives every station's state and provenance, and the
+core's reason for a skipped or blocked station. `[` and `]` select a station,
+starting at the current one; Enter opens it. The strip's summary names the
+selected station. Up/down return to the dashboard's actions.
 
 A journey snapshot either supplies all ten `stage` records in canonical
 order, or supplies none. With none, the stations keep their *later*
@@ -258,8 +267,30 @@ copied.
 | conflicts | `k` keep (the default) · `R` replace (capital, deliberately) · `K` keep the rest · `n`/`p` next and previous · `v` side by side or unified |
 | codes and tokens | `y` copies the focused one (OSC 52 where the terminal allows it; on macOS through the core's clipboard action) |
 
+Every overflowing workspace scrolls by its rendered lines, including wrapped
+text. Up/down select the next focusable row in that direction; past the
+first or last row they scroll the content. Page Up/Down move a visible page,
+Home/End reach the top/bottom. A screen opens at its top, with its first
+focusable row selected. The window follows that row only once the person has
+moved the focus or pressed a key that acts on it, and then keeps it visible.
+A page whose first row lies below the fold therefore still opens at its
+heading, and Enter acts on the selected row all the same: on Journey it takes
+the offered step before any focus movement. Help, the brief, the gate and a
+parameter form give back the page they covered as it was left, not as a page
+opened anew. When a page contains only prose, the panel has the keys. An edge
+arrow appears only while more lines can be reached in that direction. Text
+fields keep the letter keys for typing; the vim aliases apply outside fields.
+
 The vim letters are aliases, never the only way. Help (`?`) lists every
 binding of the current screen, generated from the same keymap as the hints.
+
+Journey reads, top to bottom: the rail; Where it stands, with the current
+stage and the next step; What you can do now, with the actions the snapshot
+lists, followed by the blockers, warnings and notices; Facts; Codes; and last
+the list of all ten stations. The rail, the current stage and the offered step
+are in view together on opening at 80×24 and at 120×40. At the standard width
+the System Overview panel sits under Journey only while Journey keeps 18 rows;
+below that, Welcome and Machine hold those facts.
 
 ## Confirmation
 
@@ -277,8 +308,8 @@ Which form an action takes follows from what the core lists for it
 (`choose` in `frontend/src/app.rs`): `profile.save` opens the selection's
 save; an action with parameters opens its form (the planner for
 `plan.save`, a generic form otherwise), whose review the core answers for
-exactly what is typed before `y` sends the core's `normal` values with the
-review's basis; `asahi.launch` opens screen 14 and `shared.create` screen
+exactly what is typed before `y` sends the validated size strings and the other core `normal` values with
+the review's basis; `asahi.launch` opens screen 14 and `shared.create` screen
 19; any other action with a word opens the gate; the rest is sent at once.
 
 **The gate screen** says what will happen, on what, what it does not touch,
@@ -364,6 +395,71 @@ narrower the detail opens on Enter):
  ⏎ review   tab next   ? help
 ```
 
+The planner opens with one validation of its displayed sizes and the
+choices already entered. Size validation stops at the first missing size,
+before the core returns choice defaults, so the frontend supplies its
+starting presets in this one request. The reply never triggers a second
+validation. When saving, Linux and Shared keep exactly the size strings
+that were validated (`200GB`, for example); byte-count `normal` records
+are display values, while other choices use their returned normals. The
+core returns the defaults of omitted choices as `normal` records; these fill the fields. Without saved sizes in the
+snapshot, Balanced 250 GB and Shared 150 GB start selected when the
+snapshot's safe maximum allows them. A preset above that maximum is muted
+and says why it is unavailable. Every accepted preset change sends exactly
+one validation; its response never triggers another request.
+
+Left/right select a preset in the focused Linux or Shared row. Custom
+opens a number field, followed by GB, TB and %; GB starts selected. Tab
+moves from the number to its unit selector, left/right change the unit,
+and Tab moves on to the next field. `200` with GB selected is sent as
+`200GB`. Typing stays neutral. Once the core answers, its invalid text
+appears directly under that field, or its normalized size is shown there.
+The scale bar and installer answers come from the current core response.
+
+The remaining fields are Encrypt Linux, User name, Host name, Keyboard
+layout, Time zone, Locale, SSH server, GitHub user and Developer tools.
+Booleans are on/off toggles operated with Space; the other choices are
+text fields. Enter reviews the inputs; Enter on a current valid review
+asks whether to save. A changed input needs a new core check.
+
+Status uses non-selectable section headings: Read from this Mac now
+(or Read from Linux now) and Saved progress. Model IDs and the saved file's
+home-shortened path appear below the heading. Values and notes wrap; a
+supported note uses the ok style. Expansions show additional context and
+source rather than repeating the row's columns. A row without additional
+context has no expansion. Footers show a row range only while content is
+outside the panel; generation hashes and value-line counters stay internal.
+
+System Overview shows the marketing model name when the snapshot supplies
+it, with a muted Model ID below. Without that name, an Apple identifier is
+labelled Model ID; a full model name read from Linux is labelled Model. Protocol system values display as macOS and Linux.
+An instruction to run this interface again is replaced by its offered
+step; reboot, other-system and token-command instructions stay intact.
+The Screens list follows its focus, marks scrollable ends, and dims screens
+without current content while keeping them reachable.
+
+The terminal title starts as `Omarchy Installation`, follows the core's
+current station as `Omarchy Installation | Step N`, and becomes
+`Omarchy Installation | Done` when the final station is done. The original
+title is pushed and restored on exit, panic and termination, and before a
+terminal handoff. Re-entry pushes it again and restores the current title.
+The Linux console and non-terminal output receive no title sequences.
+
+A closed terminal ends input and drawing, restores what can be restored,
+and records the reason in the frontend trace. EOF, terminal I/O errors,
+and repeated readiness without input use the same shutdown as SIGTERM or
+SIGHUP: a cancellable request is cancelled; a non-cancellable request is
+followed to its core-recorded outcome before exit. Polls have a bounded
+timeout and check the terminate flag before and after reading. The launcher
+remains responsible for reporting and cleaning up the ended session.
+
+Action rows show their label and the core's explanation in muted text.
+Intent and scope identifiers are not appended to the label. Moving to
+another screen clears the previous page's transient status. Journey facts
+from saved state show `(saved record)` after the value; machine facts and
+byte-valued sizes are shown in readable units, with exact source values
+retained in the model and open details.
+
 **A gate:**
 
 ```text
@@ -427,7 +523,7 @@ and *keep the rest* keeps every conflict after this one):
 | # | Screen | Pattern | At 60 columns | Main keys |
 | --- | --- | --- | --- | --- |
 | 1 | Welcome and machine identity | one page of facts: this machine, the tool and the core, the frontend's verified release (target, SHA-256), where the journey stands; facts read from a record are named *recorded* | labels shorten; the sidebar is a panel of its own (`s`) | `⏎` `?` `q` |
-| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the blockers, the next step, and the views of status, doctor and details; only the actions the snapshot lists | one-line rail, the card only | `⏎`, the stage's own keys |
+| 2 | Journey dashboard | the traverse (a station the core has not derived is drawn as *later*), the next step, the actions the snapshot lists (and only those), then the blockers, the views of status, doctor and details, and the list of stations | one-line rail, the card only | `⏎`, the stage's own keys |
 | 3 | Environment scan | adapters with live counts and states (`done`, `partial`, `denied`) | same | Ctrl-C cancels (safe) |
 | 4 | Migration selection | the categories, each with its count, whether it is included and its estimated size; defaults marked by who chose; a category opens its list | sizes drop | `Space` `⏎` |
 | 5–9, 11 | Inventory by category | one list and detail, a tab per category (secrets among them), decisions first; the detail pane holds an item's choices, a folder's contents and an AI tool's components | the detail on Enter | `f` `Space` `/` `⏎` |
@@ -441,7 +537,7 @@ and *keep the rest* keeps every conflict after this one):
 | 20 | Restore progress | the work grouped by layer, the current item, what is blocked, handoffs announced; the bar only from the core's counts | the current group only; core item counts remain visible | `n` `p` action, `⏎` review, `d` conflicts |
 | 21 | Conflict and diff | each conflict of the restore review as a diff of both sides: Keep by default, Replace, and *keep the rest* for every conflict after it | unified diff; side by side needs 120 columns | `k` Keep, `R` Replace, `K` keep following, `n` `p` `v` |
 | 22 | Health | doctor's checks with restore and AI rows: each tool's observed facts (docs/AI-TOOLS.md → *What is observed*); a tool's own `mcp list` on request | one tool per group | `c` |
-| 23 | Qualification | the state, Shared's identity, the due step and the three core step rows with their supplied digests; an offered run opens the typed `test` gate and hands off this terminal | rows wrap; digests remain as supplied | `⏎` reads again; `t` opens the gate |
+| 23 | Qualification | the state, Shared's identity, the due step and the three core step rows with their observed results; an offered run opens the typed `test` gate and hands off this terminal | rows wrap; recorded checksums are described in words | `⏎` reads again; `t` opens the gate |
 | 24 | Logs and diagnostics | the tool's log (the entries `logs` shows) and the core's diagnostics, a tab each; filter by level | same | `/` `Tab` `f` `⏎` |
 | 25 | Completion | every stage, and the report's check table under its verdict and counts; on `q`, only when the core's `done` stage is `done`, one receipt line stays in the scrollback: `✓ journey complete · ./omarchy-bootstrap report` (ASCII: `+ journey complete - ./omarchy-bootstrap report`) | same | `q` |
 

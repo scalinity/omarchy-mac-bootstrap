@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Shared ────────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status  Health  Logs  Plan ›
+┌ Shared creation ─────────────────────────────────────────┐
+│   ✓ Check 18  observed                                  ↑│
+│   ✓ Check 19  observed                                   │
+│   ✓ Check 20  observed                                   │
+│   ✓ Check 21  observed                                   │
+│   ✓ Check 22  observed                                   │
+│   ✓ Check 23  observed                                   │
+│   ✓ Check 24  observed                                   │
+│   ✓ Check 25  observed                                   │
+│   ✓ Check 26  observed                                   │
+│   ✓ Check 27  observed                                   │
+│   ✓ Check 28  observed                                   │
+│   ✓ Check 29  observed                                   │
+│                                                          │
+│   ⏎ opens the gate: type yes to run Create Shared;       │
+│   this terminal is the program's until it exits.         │
+└──────────────────────────────────────────────────────────┘
+ ⏎ continue  ? help     can make changes · recorded machine

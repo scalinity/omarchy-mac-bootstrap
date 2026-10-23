@@ -6,23 +6,23 @@ expression: text_of(&b)
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Completion ──────────────────────────────────────────────────┐
 │  Welcome     ││ ▍Journey stages                                              │
-│  Journey     ││   survey: done                                               │
-│  Machine     ││   profile: done                                              │
-│  Status      ││   resolve: done                                              │
-│  Health      ││   plan: done                                                 │
-│  Logs        ││   asahi: done - recorded by macos                            │
-│  Plan        ││   omarchy: done                                              │
-│  Op          ││   shared: done                                               │
-│  Scan        ││   restore: skipped - No bundle selected                      │
-│  Select      ││   verify: done                                               │
-│  Items       ││   done: done                                                 │
+│  Journey     ││   Survey: done                                               │
+│  Machine     ││   Choose what to bring: done                                 │
+│  Status      ││   Review choices: done                                       │
+│  Health      ││   Plan storage: done                                         │
+│  Logs        ││   Install Asahi: done - recorded by macOS                    │
+│  Plan        ││   Install Omarchy: done                                      │
+│  Op          ││   Shared storage: done                                       │
+│  Scan        ││   Restore: skipped - No bundle selected                      │
+│  Select      ││   Verify: done                                               │
+│  Items       ││   Complete: done                                             │
 │  Review      ││                                                              │
 │  Install     ││ ▍Report                                                      │
 │  Progress    ││ ✗ Report: fail                                               │
-│  Restore     ││   5 pass - 1 warn - 1 fail - 1 not-checked                   │
-│  Qualify     ││   mac - pass: Observed by the core                           │
-│▍ Completion  ││   disk - warn: Observed by the core                          │
-│              ││   shared - fail: Observed by the core                        │
-│              ││   linux - pass: Observed by the core                        ↓│
+│  Restore     ││   5 pass - 1 warn - 1 fail - 1 not checked                   │
+│  Qualify     ││   macOS - pass: Observed by the core                         │
+│▍ Completion  ││   Disk - warn: Observed by the core                          │
+│              ││   Shared storage - fail: Observed by the core                │
+│              ││   Linux - pass: Observed by the core                        ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ↑↓ scroll  r refresh  L logs  ? help  q quit                 may act · fixture
+ ↑↓ scroll  r refresh  L logs  ? help       can make changes · recorded machine

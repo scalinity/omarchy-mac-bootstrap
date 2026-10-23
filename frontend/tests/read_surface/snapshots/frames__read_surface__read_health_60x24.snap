@@ -7,10 +7,15 @@ expression: f
   Welcome  Journey  Machine  Status ▍Health  Logs  Plan ›
 ┌ Health ──────────────────────────────────────────────────┐
 │   Passed 10    Warnings 1    Failures 0                  │
-│ ❯ ✓ pass   Apple Silicon     arm64                       │
-│   ✓ pass   Supported model   MacBook Pro (16-inch, M1 …  │
-│   · info   FileVault         on — the installer asks f…  │
-│   ! warn   Backup confirmed  not yet; asked before the…  │
+│ ❯ Apple Silicon: arm64                                   │
+│     ✓ pass                                               │
+│   Supported model: MacBook Pro (16-inch, M1 Pro, 2021)   │
+│     ✓ pass                                               │
+│   FileVault: on — the installer asks for your password   │
+│     · info                                               │
+│   Backup confirmed: not yet; asked before the installer  │
+│                     runs                                 │
+│     ! warn                                               │
 │                                                          │
 │                                                          │
 │                                                          │
@@ -19,10 +24,5 @@ expression: f
 │                                                          │
 │                                                          │
 │                                                          │
-│                                                          │
-│                                                          │
-│                                                          │
-│                                                          │
-│ rows 1–4 of 4 · generation 2620e0230283                  │
 └──────────────────────────────────────────────────────────┘
- c MCP list (asks first)  ? help        read-only · fixture
+ ? help     read-only, no system changes · recorded machine

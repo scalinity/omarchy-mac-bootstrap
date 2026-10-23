@@ -25,4 +25,4 @@ expression: "text(&render(&m, &t, 80, 24))"
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ↑↓ scroll  Tab the tool's log  ? help            may act · 3 actions · fixture
+ ↑↓ scroll  ? help        can make changes · 3 steps offered · recorded machine

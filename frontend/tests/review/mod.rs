@@ -315,11 +315,9 @@ fn m1_newer_choices_are_never_lost() {
 #[test]
 fn m2_execute_replaces_typed_inputs_by_declared_normals() {
     let mut m = ready_on("macos", &mac_journey());
-    go(&mut m, Screen::Plan);
-    typed(&mut m, "100GB");
-    for _ in 0..3 {
-        press(&mut m, KeyCode::Tab);
-    }
+    let req = sent(&go(&mut m, Screen::Plan));
+    answer(&mut m, req, DONE);
+    m.plan.field = m.plan.fields.iter().position(|f| f.name == "user").unwrap();
     typed(&mut m, "alex");
     let req = sent(&press(&mut m, KeyCode::Enter));
     answer(
@@ -341,8 +339,8 @@ fn m2_execute_replaces_typed_inputs_by_declared_normals() {
     assert_eq!(
         got,
         vec![
-            ("shared_size", b"100000000000".as_slice()),
-            ("linux_size", b"250000000000".as_slice()),
+            ("shared_size", b"150GB".as_slice()),
+            ("linux_size", b"250GB".as_slice()),
             ("user", b"alex".as_slice()),
         ]
     );
@@ -694,10 +692,13 @@ fn l1_a_form_takes_the_cores_newer_definitions() {
 #[test]
 fn l2_a_long_value_is_kept_and_a_cut_is_said() {
     let mut m = ready_on("macos", &mac_journey());
-    go(&mut m, Screen::Plan);
+    let req = sent(&go(&mut m, Screen::Plan));
+    answer(&mut m, req, &plan_review());
+    m.plan.field = m.plan.fields.iter().position(|f| f.name == "host").unwrap();
+    m.plan.fields[m.plan.field].value.clear();
     let long = "x".repeat(300);
     typed(&mut m, &long);
-    assert_eq!(m.plan.fields[0].value.len(), 300);
+    assert_eq!(m.plan.fields[m.plan.field].value.len(), 300);
 }
 
 /// L5 and L6: choices pass through the ASCII rewrite; only the two sizes are
@@ -711,7 +712,7 @@ fn l5_l6_choices_in_ascii_and_names_as_declared() {
     let mut m = ready_on("macos", &body);
     go(&mut m, Screen::Plan);
     let f = text_of(&render(&m, &theme("ascii"), 80, 24));
-    assert!(f.contains("enc") && !f.contains("Encryption"), "{f}");
+    assert!(f.contains("Encrypt Linux") && !f.contains(" enc "), "{f}");
 }
 
 /// L7: the Progress page's Enter says it offers no action.
@@ -731,9 +732,7 @@ fn l7_progress_offers_no_action() {
 #[test]
 fn a_check_says_it_saved_nothing() {
     let mut m = ready_on("macos", &mac_journey());
-    go(&mut m, Screen::Plan);
-    typed(&mut m, "100GB");
-    let req = sent(&press(&mut m, KeyCode::Enter));
+    let req = sent(&go(&mut m, Screen::Plan));
     answer(&mut m, req, &plan_review());
     assert!(frame(&m, 120, 70).contains("nothing was saved"));
 }

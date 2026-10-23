@@ -340,7 +340,14 @@ impl Pty {
         });
     }
 
-    fn dashboard(&self) {
+    fn dashboard(&mut self) {
+        self.wait_until("Welcome or Journey", |p| {
+            let f = p.contents();
+            f.contains("Welcome to Omarchy Mac Bootstrap") || f.contains("Read the fixture (test)")
+        });
+        if self.contents().contains("Welcome to Omarchy Mac Bootstrap") {
+            self.send(b"\r");
+        }
         self.wait_for("Read the fixture (test)");
     }
 
@@ -447,6 +454,9 @@ fn pty_panic_restores() {
             ..Opts::default()
         },
     );
+    // The hook fires once the Journey is drawn, which Welcome's Enter opens.
+    p.wait_for("Welcome to Omarchy Mac Bootstrap");
+    p.send(b"\r");
     let code = p.wait_exit();
     assert_ne!(code, 0, "a crash is a failure the launcher reports");
     assert!(
@@ -651,7 +661,7 @@ fn pty_resize_follows_and_says_too_small() {
     resize(&mut p, 18, 54);
     p.wait_for("terminal too small — needs 60x20, this is 54x18");
     resize(&mut p, 24, 80);
-    p.wait_for("L logs");
+    p.wait_for("⏎ select  ? help");
     p.idle();
     p.keys("q");
     assert_eq!(p.wait_exit(), 0);
@@ -876,13 +886,7 @@ fn pty_ctrlc_during_a_handoff_goes_to_the_child() {
 
 #[test]
 fn pty_sigterm_and_sighup_idle() {
-    for sig in ["TERM", "HUP"] {
-        let mut p = Pty::start(&format!("sig-{sig}"), Opts::default());
-        p.dashboard();
-        kill(p.frontend_pid(), sig);
-        assert_eq!(p.wait_exit(), 0, "SIG{sig}");
-        assert!(p.restored(), "SIG{sig}: the terminal restored");
-    }
+    pty_hangup::signals_end_the_idle_session();
 }
 
 #[test]
@@ -912,27 +916,7 @@ fn pty_sigterm_and_sighup_to_the_launcher_reach_the_frontend() {
 
 #[test]
 fn pty_hangup_ends_the_session() {
-    let p = Pty::start("hangup", Opts::default());
-    p.dashboard();
-    p.idle();
-    let f = p.frontend_pid();
-    let tmp = p.dir.join("tmp");
-    let mut launcher = p.hang_up(false);
-    let t0 = Instant::now();
-    while launcher.try_wait().unwrap().is_none() {
-        assert!(
-            t0.elapsed() < Duration::from_secs(30),
-            "the launcher is still running 30 s after its terminal closed"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    assert!(!alive(f), "the frontend ended with its terminal");
-    let left: Vec<_> = std::fs::read_dir(&tmp)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("omb-session."))
-        .collect();
-    assert!(left.is_empty(), "the session scratch was removed");
+    pty_hangup::hangup_ends_the_session();
 }
 
 #[test]
@@ -1432,6 +1416,8 @@ fn pty_gate2_reads_through_the_launcher() {
     } else {
         "Developer setup"
     };
+    p.wait_for("Welcome to Omarchy Mac Bootstrap");
+    p.send(b"\r");
     p.wait_for(row);
     p.idle();
     let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
@@ -1458,7 +1444,7 @@ fn pty_gate2_reads_through_the_launcher() {
     }
     p.send(b"\x1b[B\x1b[B");
     p.send(b"\r");
-    p.wait_for("rows 1–");
+    p.wait_for("Platform:");
     p.wait_for("Architecture");
     p.idle();
     // Health, from the rail: the doctor's counts, then its findings.
@@ -1471,13 +1457,17 @@ fn pty_gate2_reads_through_the_launcher() {
     p.wait_for("Supported model");
     p.idle();
     let f = p.contents();
-    // Linux Health groups its findings; the macOS table shows its row range.
+    // Linux Health groups its findings; macOS shows the checks as a table.
     for want in [
         "Passed ",
         "Warnings ",
         "Failures ",
         "Apple Silicon",
-        if mac { "rows 1–" } else { "System checks" },
+        if mac {
+            "Supported model"
+        } else {
+            "System checks"
+        },
     ] {
         assert!(f.contains(want), "{want:?} on Health:\n{f}");
     }
@@ -1497,7 +1487,6 @@ fn pty_gate2_reads_through_the_launcher() {
     for want in [
         "omarchy-bootstrap-29991231.log",
         "PTY_LOG_FIRST reading the disk",
-        "rows 1–2 of 2",
     ] {
         assert!(f.contains(want), "{want:?} on Logs:\n{f}");
     }
@@ -1512,22 +1501,21 @@ fn pty_gate2_reads_through_the_launcher() {
     }
     p.send(b"\r");
     p.wait_for("Linux size");
+    p.idle(); // the planner's own first check, before a key is taken
     // Linux 250 GB beside 100 GB of Shared: on macOS the fields are what
     // plan.save declares, Shared's size first; on Linux, where no plan.save
     // is listed, the plan check's two sizes, Linux's first.
     if mac {
-        p.keys("100GB");
+        // The planner opens on Linux 250 GB (Balanced) and Shared 150 GB;
+        // Tab to Shared and Left to its 100 GB preset sends one check.
         p.send(b"\t");
-        p.keys("250GB");
+        p.send(b"\x1b[D");
+        p.wait_for("614730MiB");
     } else {
         p.keys("250GB");
         p.send(b"\t");
         p.keys("100GB");
-    }
-    p.send(b"\r");
-    if mac {
-        p.wait_for("you type 614730MiB");
-    } else {
+        p.send(b"\r");
         p.wait_for("refused · unavailable");
     }
     p.idle();
@@ -1581,7 +1569,7 @@ fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
             p.send(b"\x1b[B");
         }
         p.send(b"\r");
-        p.wait_for("rows 1–");
+        p.wait_for("Scope: journey");
         p.wait_for("State");
         p.idle();
         assert!(p.contents().contains("none"), "{}", p.contents());
@@ -1599,9 +1587,14 @@ fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
         assert!(!p.contents().contains("HOSTILE_OPERATOR_CLEAR"));
         p.keys("/Worker");
         p.send(b"\r");
-        p.wait_for("filter");
+        // Filtered to the one row, with the filter line closed.
+        p.wait_until("the filter applied", |p| {
+            let f = p.contents();
+            f.contains("Workers: unknown") && !f.contains("Still unknown") && !f.contains("Worker_")
+        });
+        // Enter opens the row's values under it.
         p.send(b"\r");
-        p.wait_for("value lines");
+        p.wait_for("read from the current operation check");
         assert!(p.contents().contains("unknown"), "{}", p.contents());
         p.master
             .resize(PtySize {
@@ -1620,7 +1613,7 @@ fn pty_d55_operation_navigation_refresh_degradation_and_restoration() {
                 pixel_height: 0,
             })
             .unwrap();
-        p.wait_for("value lines");
+        p.wait_for("read from the current operation check");
         p.send(b"\x1b");
         p.keys("q");
         assert_eq!(p.wait_exit(), 0);
@@ -1670,6 +1663,8 @@ fn pty_phase_c_journey_qualification_and_completion() {
                 ..Opts::default()
             },
         );
+        p.wait_for("Welcome to Omarchy Mac Bootstrap");
+        p.send(b"\r");
         p.wait_for("Where it stands");
         p.idle();
         let trace = || std::fs::read_to_string(p.dir.join("trace")).unwrap();
@@ -1754,14 +1749,14 @@ fn pty_phase_c_journey_qualification_and_completion() {
         });
         p.idle();
         p.send(b"\x1b");
-        // A lone Esc must be read alone: ESC followed by ] begins an OSC
-        // sequence, and the terminal parser would take the keys after it.
+        // A lone Esc must be read alone: ESC followed by [ or ] begins an
+        // escape sequence, and the terminal parser would take the keys after
+        // it. The Journey, opened anew, is the sign that the Esc was read.
+        p.wait_for("Where it stands");
         p.idle();
-        p.keys("]"); // verify -> done
+        p.keys(&"[".repeat(10));
+        p.keys(&"]".repeat(9)); // select done from the newly opened Journey
         p.send(b"\r");
-        p.wait_for("Journey stages");
-        p.idle();
-        p.keys(&"j".repeat(13));
         p.wait_for("Report:");
         let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
         assert!(trace.contains("send Snapshot(Health)") && trace.contains("kind: Report"));
@@ -1794,7 +1789,7 @@ fn pty_phase_c_journey_qualification_and_completion() {
         };
         assert!(p.contents().contains(&format!("Report: {verdict}")));
         assert!(p.contents().contains(&format!(
-            "{pass} pass - {warn} warn - {fail} fail - {unchecked} not-checked"
+            "{pass} pass - {warn} warn - {fail} fail - {unchecked} not checked"
         )));
         // These fixtures have not finished the whole journey. Quit must not
         // leave a completion receipt just because the report has a verdict.
@@ -1807,3 +1802,8 @@ fn pty_phase_c_journey_qualification_and_completion() {
         assert!(!trace.contains("send Execute"));
     }
 }
+
+mod pty_ux;
+
+#[path = "pty_hangup/mod.rs"]
+mod pty_hangup;

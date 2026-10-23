@@ -19,6 +19,6 @@ expression: "frame(m, w, h)"
 │                                                          │
 │                                                          │
 │                                                          │
+│                                                          │
 └──────────────────────────────────────────────────────────┘
- ✓ network.connect: done
- ↑↓ scroll  r refresh  L logs  ? help     may act · fixture
+ ↑↓ scroll  ? help      can make changes · recorded machine

@@ -184,6 +184,16 @@ pub struct Row {
 }
 
 impl Row {
+    pub fn focusable(&self, kind: Kind) -> bool {
+        match kind {
+            Kind::Status => !self.col(1).is_empty() || !self.col(2).is_empty(),
+            Kind::Doctor => !self.col(1).is_empty() || !self.col(2).is_empty(),
+            Kind::Log => !self.col(3).is_empty(),
+            Kind::Items => !self.col(1).is_empty(),
+            _ => self.cols.iter().any(|c| !c.is_empty()),
+        }
+    }
+
     pub fn col(&self, i: usize) -> &str {
         self.cols.get(i).map_or("", String::as_str)
     }
@@ -310,6 +320,7 @@ impl Detail {
         let rows: Vec<_> = self
             .rows
             .iter()
+            .filter(|r| self.kind == Kind::Status || r.focusable(self.kind))
             .filter(|r| {
                 self.level
                     .as_ref()

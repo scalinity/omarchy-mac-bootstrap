@@ -12,13 +12,13 @@ expression: f
 │   Run ./omarchy-bootstrap to survey this Mac and plan    │
 │   storage.                                               │
 │                                                          │
+│ ▍What you can do now                                     │
+│   Nothing is available now.                              │
+│                                                          │
 │ ▍Facts                                                   │
 │   Machine         MacBook Pro (16-inch, M1 Pro, 2021)    │
 │   Asahi install   none                                   │
 │   Safe Linux max  654 GB                                 │
-│   Surveyed        not yet · recorded                     │
-│   Plan            not yet · recorded                     │
-│                                                          │
-│ ▍What you can do now                                    ↓│
+│   Surveyed        not yet (saved record)                ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help   read-only · fixture
+ ? help     read-only, no system changes · recorded machine

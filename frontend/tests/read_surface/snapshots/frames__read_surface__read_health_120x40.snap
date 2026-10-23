@@ -12,20 +12,20 @@ expression: f
 │                                     M A C   B O O T S T R A P                /______________\                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Health ──────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
-│  Welcome             ││   Passed 10    Warnings 1    Failures 0                      ││ Platform      macos          │
-│  Journey             ││ ❯ ✓ pass   Apple Silicon     arm64                           ││ Architecture  arm64          │
-│  Machine             ││   ✓ pass   Supported model   MacBook Pro (16-inch, M1 Pro,…  ││ Model         MacBookPro18,1 │
-│  Status              ││   · info   FileVault         on — the installer asks for y…  ││ Chip          Apple M1 Pro   │
-│▍ Health              ││   ! warn   Backup confirmed  not yet; asked before the ins…  ││ Memory        17179869184    │
-│  Logs                ││                                                              ││ macOS         14.6           │
-│  Plan                ││                                                              │└──────────────────────────────┘
-│  Operation           ││                                                              │┌ Next steps ──────────────────┐
-│  Scan                ││                                                              ││ Run ./omarchy-bootstrap to   │
-│  Selection           ││                                                              ││ survey this Mac and plan     │
-│  Inventory           ││                                                              ││ storage.                     │
-│  Review              ││                                                              ││                              │
-│  Install             ││                                                              ││                              │
-│  Progress            ││                                                              ││                              │
+│  Welcome             ││   Passed 10    Warnings 1    Failures 0                      ││   Platform      macOS        │
+│  Journey             ││ ❯ Apple Silicon: arm64                                       ││   Architecture  arm64        │
+│  Machine             ││     ✓ pass                                                   ││   Model         MacBook Pro  │
+│  Status              ││   Supported model: MacBook Pro (16-inch, M1 Pro, 2021)       ││                 (16-inch, M1 │
+│▍ Health              ││     ✓ pass                                                   ││                 Pro, 2021)   │
+│  Logs                ││   FileVault: on — the installer asks for your password       ││ Model ID MacBookPro18,1      │
+│  Plan                ││     · info                                                   ││   Chip          Apple M1 Pro │
+│  Operation           ││   Backup confirmed: not yet; asked before the installer runs ││   Memory        16 GB        │
+│  Scan                ││     ! warn                                                   ││   macOS         14.6         │
+│  Selection           ││                                                              │└──────────────────────────────┘
+│  Inventory           ││                                                              │┌ Next steps ──────────────────┐
+│  Review              ││                                                              ││ Run ./omarchy-bootstrap to   │
+│  Install             ││                                                              ││ survey this Mac and plan     │
+│  Progress            ││                                                              ││ storage.                     │
 │  Restore             ││                                                              ││                              │
 │  Qualification       ││                                                              ││                              │
 │  Completion          ││                                                              ││                              │
@@ -39,6 +39,6 @@ expression: f
 │                      ││                                                              ││                              │
 │                      ││                                                              ││                              │
 │                      ││                                                              ││                              │
-│                      ││ rows 1–4 of 4 · generation 2620e0230283                      ││                              │
+│                      ││                                                              ││                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
- c MCP list (asks first)  up/down choose row (and j k)  r refresh  ? help       read-only · no system changes · fixture
+ c MCP list (asks first)  up/down choose row (and j k)  ? help          read-only, no system changes · recorded machine

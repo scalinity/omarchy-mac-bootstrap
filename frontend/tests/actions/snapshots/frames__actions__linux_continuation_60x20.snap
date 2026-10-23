@@ -9,7 +9,7 @@ expression: "frame(m, w, h)"
 │ 1 Token        2 Network      3 Omarchy Mac  4 Start     │
 │                                                          │
 │ ▍The plan this system was given                          │
-│   Username     alex · recorded                           │
+│   Username     alex (saved record)                       │
 │                                                          │
 │ ▍Network                                                 │
 │   The text flow's own network.connect.                   │
@@ -21,4 +21,4 @@ expression: "frame(m, w, h)"
 │   ✓ Omarchy Mac  malik-na/omarchy-mac at 3f1c, read just │
 │                  now                                    ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ continue  ? help                       may act · fixture
+ ⏎ continue  ? help     can make changes · recorded machine

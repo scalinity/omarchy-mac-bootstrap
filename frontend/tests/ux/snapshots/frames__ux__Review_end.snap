@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Review ────────────────────────────────────────── v0.2.0
+‹ Health  Logs  Plan  Op  Scan  Select  Items ▍Review ›
+┌ Migration review ────────────────────────────────────────┐
+│   Line 19   Value 19                                    ↑│
+│   Line 20   Value 20                                     │
+│   Line 21   Value 21                                     │
+│   Line 22   Value 22                                     │
+│   Line 23   Value 23                                     │
+│   Line 24   Value 24                                     │
+│   Line 25   Value 25                                     │
+│   Line 26   Value 26                                     │
+│   Line 27   Value 27                                     │
+│   Line 28   Value 28                                     │
+│   Line 29   Value 29                                     │
+│                                                          │
+│ ▍What you can do now                                     │
+│   Save these choices                                     │
+│ ❯ Carry the chosen folders                               │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ move  ? help        can make changes · recorded machine

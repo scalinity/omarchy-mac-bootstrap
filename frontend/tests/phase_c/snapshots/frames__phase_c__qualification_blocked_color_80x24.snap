@@ -11,11 +11,11 @@ expression: text_of(&b)
 │  Status      ││   ✗ blocked  Shared identity unavailable                     │
 │  Health      ││              Activate Shared                                 │
 │  Logs        ││ ▍Cross-system check                                          │
-│  Plan        ││   1  macOS writes - done                                     │
-│  Op          ││   SHA-256 5f2ec1a05f2e; file written                         │
-│  Scan        ││   2  Linux checks and writes - done                          │
-│  Select      ││   SHA-256 8acb8acb8acb; digest matches                       │
-│  Items       ││   3  macOS checks - blocked                                  │
+│  Plan        ││   macOS writes - done                                        │
+│  Op          ││   SHA-256 checksum recorded; file written                    │
+│  Scan        ││   Linux checks and writes - done                             │
+│  Select      ││   SHA-256 checksum recorded; digest matches                  │
+│  Items       ││   macOS checks - blocked                                     │
 │  Review      ││   Read Linux's file and names                                │
 │  Install     ││                                                              │
 │  Progress    ││                                                              │
@@ -25,4 +25,4 @@ expression: text_of(&b)
 │              ││                                                              │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ read again  t test step (typed gate)  r refresh  ? help    may act · fixture
+ ⏎ read again  ? help                       can make changes · recorded machine

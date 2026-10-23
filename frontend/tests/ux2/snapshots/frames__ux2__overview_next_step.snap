@@ -1,0 +1,44 @@
+---
+source: tests/ux2/mod.rs
+expression: f
+---
+ ◒ Journey ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││   Model         MacBook Pro  │
+│▍ Journey             ││ Survey      Review      Asahi       Shared      Verify       ││                 (16-inch, M1 │
+│  Machine             ││       Choices     Plan        Omarchy     Restore     Done   ││                 Pro, 2021)   │
+│  Status              ││ No stage is derived yet: every station is later.             ││ Model ID MacBookPro18,2      │
+│  Health              ││                                                              ││   Platform      macOS        │
+│  Logs                ││ ▍Where it stands                                             ││   Memory        16 GB        │
+│  Plan                ││   Next: Save the plan - press Enter                          │└──────────────────────────────┘
+│  Operation           ││                                                              │
+│  Scan                ││ ▍What you can do now                                         │
+│  Selection           ││ ❯ Save the plan                                              │
+│  Inventory           ││   The text flow's own plan.save.                             │
+│  Review              ││   Launch the Asahi installer                                 │
+│  Install             ││   The text flow's own asahi.launch.                          │
+│  Progress            ││   Create Shared                                              │
+│  Restore             ││   The text flow's own shared.create.                         │
+│  Qualification       ││                                                              │
+│  Completion          ││ ▍Facts                                                       │
+│                      ││   Asahi install  none                                        │
+│                      ││   Machine        MacBook Pro (16-inch, M1 Pro, 2021)         │
+│                      ││                                                              │
+│                      ││ ▍Codes                                                       │
+│                      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
+│                      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
+│                      ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
+│                      ││                  d                                           │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit             can make changes · 3 steps offered · recorded machine

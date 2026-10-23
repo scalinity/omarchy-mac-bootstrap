@@ -144,6 +144,8 @@ fn ready() -> Model {
     assert!(bytes(&req).contains("scope\tname=journey\n"));
     let c = answer(&mut m, req, &journey(GEN));
     assert_eq!(requests(&c), 0, "nothing more is read by itself");
+    assert_eq!(m.screen, omb_tui::app::Screen::Welcome);
+    assert!(press(&mut m, KeyCode::Enter).is_empty());
     m
 }
 
@@ -166,6 +168,7 @@ fn theme(unicode: bool) -> Theme {
         depth: Depth::Full,
         unicode,
         console: false,
+        truecolor: false,
     })
 }
 
@@ -726,12 +729,7 @@ fn d55_renders_three_columns_in_order_and_expands_the_whole_row() {
         assert!(at >= previous, "producer order: {f}");
         previous = at;
     }
-    for want in [
-        "unreadable",
-        "unknown",
-        "This scope owns the record.",
-        "generation 78b203ec6845",
-    ] {
+    for want in ["unreadable", "unknown", "This scope owns the record."] {
         assert!(f.contains(want), "{want}: {f}");
     }
     assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
@@ -741,7 +739,7 @@ fn d55_renders_three_columns_in_order_and_expands_the_whole_row() {
         "State",
         "unreadable",
         "What it recorded is unknown.",
-        "value lines",
+        "from the current operation check",
     ] {
         assert!(f.contains(want), "expanded {want}: {f}");
     }
@@ -824,10 +822,7 @@ fn d55_failed_or_unavailable_answers_suppress_previous_findings_without_fallback
             status: s, code: c, text: t
         }) if s == status && c == code && t == text));
         let f = frame(&m, 200, 40);
-        assert!(
-            f.contains(status) && f.contains(code) && f.contains(text),
-            "{f}"
-        );
+        assert!(f.contains(text) && !f.contains("generation "), "{f}");
         assert!(!f.contains("What it recorded is unknown."), "{f}");
         if code == "unavailable" {
             assert!(f.contains("not available"));
@@ -1001,10 +996,10 @@ fn welcome_presents_the_machine_the_tool_and_the_session() {
         "Apple M1 Pro",
         "frontend 0.2.0",
         "protocol 1",
-        "core 0.2.0",
-        "78b203ec6845",
+        "version 0.2.0",
+        "Model ID",
         "later",
-        "recorded",
+        "saved record",
     ] {
         assert!(f.contains(want), "{want:?} on the Welcome screen:\n{f}");
     }
@@ -1015,7 +1010,7 @@ fn the_dashboard_draws_ten_later_stations_and_the_next_step() {
     let m = ready();
     let f = frame(&m, 120, 40);
     assert!(!f.contains("not derived in this build"), "{f}");
-    assert!(f.contains("survey") && f.contains("done"), "{f}");
+    assert!(f.contains("Survey") && f.contains("Done"), "{f}");
     assert!(f.contains("later"), "{f}");
     assert!(
         f.contains("Run ./omarchy-bootstrap to survey this Mac"),
@@ -1043,11 +1038,8 @@ fn machine_detail_opens_from_the_snapshot_generation() {
     );
     assert_eq!(requests(&c), 0);
     let f = frame(&m, 120, 40);
-    assert!(
-        f.contains("Architecture") && f.contains("17179869184"),
-        "{f}"
-    );
-    assert!(f.contains("1–6 of 6"), "{f}");
+    assert!(f.contains("Architecture") && f.contains("16 GB"), "{f}");
+    assert!(!f.contains("rows "), "all rows fit: {f}");
 }
 
 #[test]
@@ -1068,7 +1060,7 @@ fn status_detail_pages_by_offset_and_limit() {
         req,
         &format!("generation\tid={GEN}\ttotal=812\n{rows}{DONE}"),
     );
-    assert!(frame(&m, 120, 40).contains("1–500 of 812"));
+    assert!(frame(&m, 120, 40).contains("of 812"));
     // Past the loaded page: the next page, from the same generation.
     let c = press(&mut m, KeyCode::End);
     let c = if requests(&c) == 0 {
@@ -1181,21 +1173,21 @@ fn logs_failures_keep_their_meaning() {
             format!(
                 "generation\tid={EMPTY}\ttotal=0\nresult\tstatus=error\tcode=representation\ttext=The%20required%20logs%20metadata%20cannot%20be%20represented%20in%20Protocol%201.\tnext=\n"
             ),
-            "error · representation",
+            "The check could not finish",
             "The required logs metadata cannot be represented",
         ),
         (
             format!(
                 "generation\tid={EMPTY}\ttotal=0\nresult\tstatus=error\tcode=io\ttext=The%20logs%20response%20could%20not%20be%20prepared.\tnext=\n"
             ),
-            "error · io",
+            "The check could not finish",
             "The logs response could not be prepared.",
         ),
         (
             format!(
                 "generation\tid={EMPTY}\ttotal=0\nresult\tstatus=refused\tcode=overflow\ttext=The%20selected%20log%20window%20cannot%20be%20represented%20in%20Protocol%201.\tnext=\n"
             ),
-            "refused · overflow",
+            "Needs attention",
             "The selected log window cannot be represented",
         ),
     ] {
@@ -1250,8 +1242,8 @@ review\taction=plan.save\tbasis={}
         "New size for macOS",
         "614730MiB",
         "238419MiB",
-        "250000000000",
-        "8acb8acb",
+        "250 GB",
+        "Review ready",
     ] {
         assert!(f.contains(want), "{want:?}:\n{f}");
     }
@@ -1345,6 +1337,7 @@ fn profile(name: &str) -> Theme {
         depth,
         unicode,
         console,
+        truecolor: false,
     })
 }
 
@@ -1438,6 +1431,7 @@ fact\tscope=journey\tkey=actions\tlabel=Actions\tvalue=none%20in%20this%20sessio
 {DONE}"
         ),
     );
+    assert_eq!(m.screen, Screen::Dashboard);
     // The dashboard as frontend-check-terminal reads it, at its 120×40.
     let f = frame(&m, 120, 40);
     for want in [
@@ -1534,7 +1528,10 @@ message\tlevel=info\ttext=No%20log%20yet.
         ],
     );
     let f = frame(&partial, 120, 40);
-    assert!(f.contains("Passed 10") && f.contains("error · io"), "{f}");
+    assert!(
+        f.contains("Passed 10") && f.contains("The check could not finish"),
+        "{f}"
+    );
     assert!(
         f.contains("The health response could not be prepared."),
         "{f}"
@@ -1548,7 +1545,7 @@ message\tlevel=info\ttext=No%20log%20yet.
     );
     let f = frame(&err, 120, 40);
     assert!(
-        f.contains("error · representation") && f.contains("r tries again · L shows the log"),
+        f.contains("The check could not finish") && f.contains("r tries again · L shows the log"),
         "{f}"
     );
     // Blocked: the core's blocker and its fix, in the blocked token.
@@ -1562,6 +1559,7 @@ message\tlevel=info\ttext=No%20log%20yet.
             "generation\tid={GEN}\ttotal=0\nguide\tid=next\tstep=1\ttext=This%20Mac%20cannot%20continue.\nblocker\tid=mac.1\ttext=The%20internal%20disk%27s%20layout%20could%20not%20be%20read%20exactly.\tfix=Run%20First%20Aid.\n{DONE}"
         ),
     );
+    assert!(press(&mut b, KeyCode::Enter).is_empty());
     let t = profile("color");
     let buf = render(&b, &t, 120, 40);
     let f = text_of(&buf);
@@ -1626,15 +1624,15 @@ fn the_plan_checks_refusals_keep_their_meaning() {
     for (body, want) in [
         (
             "normal\tname=shared_size\tvalue=0\ninvalid\tname=linux_size\tcode=leading-zero\ttext=Sizes%20cannot%20have%20a%20leading%20zero.\nresult\tstatus=refused\tcode=invalid\ttext=\tnext=\n".to_string(),
-            ["refused · invalid", "✗ Linux size leading-zero", "Sizes cannot have a leading zero."],
+            ["Check the input above", "✗ Linux size", "Sizes cannot have a leading zero."],
         ),
         (
             "message\tlevel=warn\ttext=the%20stub%27s%20system%20volume%20is%20not%20mounted\nresult\tstatus=refused\tcode=unplannable\ttext=A%20trustworthy%20plan%20cannot%20be%20computed%20for%20this%20machine%20state.\tnext=\n".to_string(),
-            ["refused · unplannable", "the stub's system volume is not mounted", "A trustworthy plan cannot be computed"],
+            ["Check the input above", "the stub's system volume is not mounted", "A trustworthy plan cannot be computed"],
         ),
         (
             "result\tstatus=error\tcode=invariant\ttext=The%20planner%27s%20internal%20checks%20did%20not%20hold.\tnext=\n".to_string(),
-            ["error · invariant", "The planner's internal checks did not hold.", "For Linux 05GB"],
+            ["The check could not finish", "The planner's internal checks did not hold.", "For Linux 05GB"],
         ),
     ] {
         let mut m = ready();
@@ -1648,7 +1646,7 @@ fn the_plan_checks_refusals_keep_their_meaning() {
         for w in want {
             assert!(f.contains(w), "{w:?}:\n{f}");
         }
-        assert!(!f.contains("Review basis"), "no basis without a valid answer");
+        assert!(!f.contains("Review ready"), "no basis without a valid answer");
     }
     // A size changed after the answer: the answer says it is for the old one.
     let mut m = plan_model();
@@ -1677,7 +1675,10 @@ fn the_read_surface_offers_no_action() {
     }
     let f = frame(&ready(), 120, 40);
     assert!(f.contains("Nothing is available now."));
-    assert!(f.contains("read-only · no system changes · fixture"), "{f}");
+    assert!(
+        f.contains("read-only, no system changes · recorded machine"),
+        "{f}"
+    );
     let f = frame(&plan_model(), 120, 40);
     assert!(f.contains("saved, and no action is offered."), "{f}");
     assert!(!f.contains("Save"), "{f}");
@@ -1706,7 +1707,7 @@ fn paging_lands_the_cursor_and_never_crosses_a_generation() {
     );
     let f = frame(&m, 120, 40);
     assert!(
-        f.contains("501–812 of 812") && f.contains("Line 812"),
+        f.contains("of 812") && f.contains("Line 812"),
         "the last row, focused:\n{f}"
     );
     let first = sent(&press(&mut m, KeyCode::Home));
@@ -1736,9 +1737,10 @@ fn paging_lands_the_cursor_and_never_crosses_a_generation() {
         next,
         &format!("generation\tid={GEN2}\ttotal=812\n{}{DONE}", rows(501, 312)),
     );
+    press(&mut m, KeyCode::Home);
     let f = frame(&m, 120, 40);
     assert!(
-        f.contains("changed since you looked") && f.contains("1–500 of 812"),
+        f.contains("changed since you looked") && f.contains("of 812"),
         "{f}"
     );
     assert_eq!(
@@ -1811,7 +1813,7 @@ fn help_lists_the_keys_of_the_screen_it_was_opened_from() {
     press(&mut p, KeyCode::Char('?'));
     let f = frame(&p, 100, 30);
     assert!(
-        f.contains("type it, as 250GB, 1.5TB or 30%") && f.contains("next field"),
+        f.contains("Custom: type a number") && f.contains("next field"),
         "{f}"
     );
 }
@@ -1976,10 +1978,10 @@ row\tkind=machine\tkey=machine.long\tcol=A%20label%20much%20longer%20than%20the%
 fn the_plan_answer_scrolls_to_its_basis() {
     let mut m = plan_model();
     let f = frame(&m, 80, 24);
-    assert!(!f.contains("Review basis"), "{f}");
+    assert!(!f.contains("Review ready"), "{f}");
     assert_eq!(requests(&press(&mut m, KeyCode::PageDown)), 0);
     let f = frame(&m, 80, 24);
-    assert!(f.contains("Review basis") && f.contains("8acb8acb"), "{f}");
+    assert!(f.contains("Review ready") && !f.contains("8acb8acb"), "{f}");
     // Typing goes to the field and brings it back into view.
     press(&mut m, KeyCode::Char('0'));
     assert!(frame(&m, 80, 24).contains("Shared size  100GB0"));
@@ -2071,7 +2073,7 @@ const ENDINGS: [(&str, &str); 4] = [
     ("no answer", "no answer"),
     ("not sent", "not sent"),
     ("refused", "changed since you looked"),
-    ("error", "error · io"),
+    ("error", "The check could not finish"),
 ];
 
 /// G2-FE-002, Logs: lines of A.log (g1), then a refresh whose snapshot
@@ -2089,8 +2091,8 @@ fn logs_source_and_lines_are_always_one_generation() {
         answer(&mut m, det, &log_page(&ga, "ONLY_A"));
         let f = frame(&m, 120, 40);
         assert!(line_with(&f, "Source ").contains("A.log"), "{f}");
-        assert!(line_with(&f, "ONLY_A").contains("[SURVEY]"), "{f}");
-        assert!(line_with(&f, "rows 1").contains(&ga[..12]), "{f}");
+        assert!(f.contains("[SURVEY]"), "{f}");
+        assert!(!f.contains(&ga[..12]), "{f}");
         let req = sent(&press(&mut m, KeyCode::Char('r')));
         assert_eq!(req, Req::Snapshot(Scope::Logs));
         let page = sent(&answer(&mut m, req, &logs_snap(&gb, "B.log")));
@@ -2113,11 +2115,11 @@ fn logs_source_and_lines_are_always_one_generation() {
         assert!(line_with(&f, "Source ").contains("A.log"), "{what}:\n{f}");
         assert!(f.contains("ONLY_A"), "{what}:\n{f}");
         assert!(
-            line_with(&f, "rows 1").contains(&ga[..12]),
+            !f.contains(&ga[..12]),
             "{what}: the lines' own generation:\n{f}"
         );
         assert!(
-            line_with(&f, "shown:").contains(&ga[..12]) && f.contains(&gb[..12]),
+            f.contains("earlier read") && !f.contains(&ga[..12]) && !f.contains(&gb[..12]),
             "{what}: the frame names the read shown and the newest:\n{f}"
         );
         f
@@ -2138,12 +2140,15 @@ fn logs_source_and_lines_are_always_one_generation() {
     for (w, h) in [(120, 40), (60, 20)] {
         let f = frame(&m, w, h);
         assert!(line_with(&f, "Source ").contains("B.log"), "{w}x{h}:\n{f}");
-        assert!(
-            line_with(&f, "ONLY_B").contains("[SURVEY]"),
-            "{w}x{h}:\n{f}"
-        );
-        assert!(line_with(&f, "rows 1").contains(&gb[..12]), "{w}x{h}:\n{f}");
-        for gone in ["A.log", "ONLY_A", &ga[..12], "shown:", "changed since"] {
+        assert!(f.contains("[SURVEY]"), "{w}x{h}:\n{f}");
+        assert!(!f.contains(&gb[..12]), "{w}x{h}:\n{f}");
+        for gone in [
+            "A.log",
+            "ONLY_A",
+            &ga[..12],
+            "earlier read",
+            "changed since",
+        ] {
             assert!(!f.contains(gone), "{w}x{h}: {gone:?}:\n{f}");
         }
     }
@@ -2187,9 +2192,9 @@ fn health_counts_summarise_only_the_findings_shown() {
             "{what}:\n{f}"
         );
         assert!(f.contains("ONLY_A"), "{what}:\n{f}");
-        assert!(line_with(&f, "rows 1").contains(&ga[..12]), "{what}:\n{f}");
+        assert!(!f.contains(&ga[..12]), "{what}:\n{f}");
         assert!(
-            line_with(&f, "shown:").contains(&ga[..12]) && f.contains(&gb[..12]),
+            f.contains("earlier read") && !f.contains(&ga[..12]) && !f.contains(&gb[..12]),
             "{what}:\n{f}"
         );
         f
@@ -2208,9 +2213,9 @@ fn health_counts_summarise_only_the_findings_shown() {
         line_with(&f, "Passed ").contains("Passed 21    Warnings 4    Failures 2"),
         "{f}"
     );
-    assert!(line_with(&f, "ONLY_B").contains("warn"), "{f}");
-    assert!(line_with(&f, "rows 1").contains(&gb[..12]), "{f}");
-    for gone in ["Passed 10", "ONLY_A", &ga[..12], "shown:"] {
+    assert!(f.contains("warn"), "{f}");
+    assert!(!f.contains(&gb[..12]), "{f}");
+    for gone in ["Passed 10", "ONLY_A", &ga[..12], "earlier read"] {
         assert!(!f.contains(gone), "{gone:?}:\n{f}");
     }
 }
@@ -2273,7 +2278,10 @@ fn an_open_value_scrolls_to_its_last_character() {
         f.contains(START) && !f.contains(MARK),
         "opened at its start:\n{f}"
     );
-    assert!(line_with(&f, "value lines 1–").contains(&LGEN[..12]), "{f}");
+    assert!(
+        !f.contains("value lines") && !f.contains(&LGEN[..12]),
+        "{f}"
+    );
     // Down, one line at a time, until the suffix is drawn.
     let mut presses = 0;
     while !frame(&m, w, h).contains(MARK) {
@@ -2302,8 +2310,13 @@ fn an_open_value_scrolls_to_its_last_character() {
         h,
     ));
     assert!(frame(&m, w, h).contains(MARK));
+    let old_top = m.detail(Kind::Log).unwrap().value_top.get();
     cmds.extend(keys_drawn(&mut m, &[KeyCode::Up], w, h));
-    assert!(!frame(&m, w, h).contains(MARK), "Up leaves the end at once");
+    assert_eq!(
+        m.detail(Kind::Log).unwrap().value_top.get(),
+        old_top - 1,
+        "Up moves at once"
+    );
     // The ends, both ways, and a page.
     for (k, start, end) in [
         (KeyCode::Home, true, false),
@@ -2312,7 +2325,7 @@ fn an_open_value_scrolls_to_its_last_character() {
         (KeyCode::PageDown, false, true),
         (KeyCode::Char('g'), true, false),
         (KeyCode::Char('G'), false, true),
-        (KeyCode::Char('k'), false, false),
+        (KeyCode::Char('k'), false, true),
     ] {
         cmds.extend(keys_drawn(&mut m, &[k], w, h));
         let f = frame(&m, w, h);
@@ -2327,7 +2340,10 @@ fn an_open_value_scrolls_to_its_last_character() {
     assert_eq!(requests(&press(&mut m, KeyCode::Esc)), 0);
     assert_eq!(m.screen, Screen::Logs);
     let f = frame(&m, w, h);
-    assert!(!f.contains(MARK) && f.contains("rows 1–2 of 2"), "{f}");
+    assert!(
+        !m.detail(Kind::Log).unwrap().open && f.contains("of 2"),
+        "{f}"
+    );
     assert_eq!(requests(&press(&mut m, KeyCode::Down)), 0);
     assert_eq!(
         m.detail(Kind::Log).unwrap().cursor,
@@ -2422,7 +2438,7 @@ fn every_detail_kinds_open_value_reaches_its_end() {
             assert!(f.contains(MARK), "{kind:?} {w}x{h}:\n{f}");
             cmds.extend(keys_drawn(&mut m, &[KeyCode::Home, KeyCode::Esc], w, h));
             assert_eq!(requests(&cmds), 0, "{kind:?} {w}x{h}");
-            assert!(!frame(&m, w, h).contains(MARK), "{kind:?} {w}x{h}");
+            assert!(!m.detail(kind).unwrap().open, "{kind:?} closes at {w}x{h}");
             assert_eq!(m.screen.kind(), Some(kind));
             if kind == Kind::Status {
                 // Closed, the rows' keys are back: past the loaded page, the
@@ -2481,10 +2497,10 @@ fn a_retained_value_is_read_to_its_end_beside_a_newer_reads_refusal() {
             "{what}: B.log never heads A's line:\n{f}"
         );
         assert!(
-            line_with(f, "shown:").contains(&ga[..12]) && f.contains(&gb[..12]),
+            f.contains("earlier read") && !f.contains(&ga[..12]) && !f.contains(&gb[..12]),
             "{what}: the read shown and the newest:\n{f}"
         );
-        assert!(f.contains("refused · overflow"), "{what}:\n{f}");
+        assert!(f.contains("Needs attention"), "{what}:\n{f}");
     };
     let closed = frame(&m, w, h);
     truthful(&closed, "closed");
@@ -2493,10 +2509,7 @@ fn a_retained_value_is_read_to_its_end_beside_a_newer_reads_refusal() {
         closed.contains("The selected log window cannot be"),
         "{closed}"
     );
-    assert!(
-        line_with(&closed, "rows 1–2 of 3").contains(&ga[..12]),
-        "{closed}"
-    );
+    assert!(!closed.contains(&ga[..12]), "{closed}");
     let before = m.detail(Kind::Log).unwrap().clone();
     let read = m.logread.clone();
     // Opened: the start, then Down until the suffix is drawn.
@@ -2518,8 +2531,7 @@ fn a_retained_value_is_read_to_its_end_beside_a_newer_reads_refusal() {
     assert!(presses > 1, "the value overflowed the view: {presses}");
     truthful(&f, "open");
     assert!(
-        line_with(&f, "value lines").contains(&ga[..12])
-            && !line_with(&f, "value lines").contains(&gb[..12]),
+        !f.contains("value lines") && !f.contains(&ga[..12]) && !f.contains(&gb[..12]),
         "the value is g1's:\n{f}"
     );
     // Either end, and no key that does nothing short of one.
@@ -2529,7 +2541,7 @@ fn a_retained_value_is_read_to_its_end_beside_a_newer_reads_refusal() {
         (KeyCode::Home, true, false),
         (KeyCode::Up, true, false),
         (KeyCode::End, false, true),
-        (KeyCode::Up, false, false),
+        (KeyCode::Up, false, true),
         (KeyCode::Char('g'), true, false),
         (KeyCode::Char('G'), false, true),
     ] {

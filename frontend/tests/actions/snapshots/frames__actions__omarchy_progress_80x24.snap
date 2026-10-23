@@ -23,6 +23,6 @@ expression: "frame(m, w, h)"
 │  Qualify     ││                                                              │
 │  Completion  ││                                                              │
 │              ││                                                              │
+│              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ✓ network.connect: done
- ↑↓ scroll  r refresh  L logs  ? help  q quit     may act · 2 actions · fixture
+ ↑↓ scroll  ? help        can make changes · 2 steps offered · recorded machine

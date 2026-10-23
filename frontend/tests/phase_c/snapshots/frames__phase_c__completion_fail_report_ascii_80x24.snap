@@ -5,24 +5,24 @@ expression: text_of(&b)
  (o) Completion -------------------------------------------------------- v0.2.0
  (o) O M A R C H Y  mac bootstrap
 + Screens -----++ Completion --------------------------------------------------+
-|  Welcome     || x Report: fail                                              ^|
-|  Journey     ||   5 pass - 1 warn - 1 fail - 1 not-checked                   |
-|  Machine     ||   mac - pass: Observed by the core                           |
-|  Status      ||   disk - warn: Observed by the core                          |
-|  Health      ||   shared - fail: Observed by the core                        |
-|  Logs        ||   linux - pass: Observed by the core                         |
-|  Plan        ||   qualification - pass: Observed by the core                 |
-|  Op          ||   restore - pass: Observed by the core                       |
-|  Scan        ||   doctor - pass: Observed by the core                        |
-|  Select      ||   recovery - not-checked: Observed by the core               |
-|  Items       ||                                                              |
-|  Review      ||                                                              |
-|  Install     ||                                                              |
-|  Progress    ||                                                              |
-|  Restore     ||                                                              |
-|  Qualify     ||                                                              |
-|* Completion  ||                                                              |
-|              ||                                                              |
-|              ||                                                              |
+|  Welcome     ||   Plan storage: done                                        ^|
+|  Journey     ||   Install Asahi: done - recorded by macOS                    |
+|  Machine     ||   Install Omarchy: done                                      |
+|  Status      ||   Shared storage: done                                       |
+|  Health      ||   Restore: skipped - No bundle selected                      |
+|  Logs        ||   Verify: done                                               |
+|  Plan        ||   Complete: done                                             |
+|  Op          ||                                                              |
+|  Scan        || |Report                                                      |
+|  Select      || x Report: fail                                               |
+|  Items       ||   5 pass - 1 warn - 1 fail - 1 not checked                   |
+|  Review      ||   macOS - pass: Observed by the core                         |
+|  Install     ||   Disk - warn: Observed by the core                          |
+|  Progress    ||   Shared storage - fail: Observed by the core                |
+|  Restore     ||   Linux - pass: Observed by the core                         |
+|  Qualify     ||   Cross-system check - pass: Observed by the core            |
+|* Completion  ||   Restore - pass: Observed by the core                       |
+|              ||   Health - pass: Observed by the core                        |
+|              ||   Recovery - not checked: Observed by the core               |
 +--------------++--------------------------------------------------------------+
- up/down scroll  r refresh  L logs  ? help  q quit            may act - fixture
+ up/down scroll  r refresh  L logs  ? help  can make changes - recorded machine

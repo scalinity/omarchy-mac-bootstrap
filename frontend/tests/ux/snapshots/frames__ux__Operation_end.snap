@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Operation ─────────────────────────────────────── v0.2.0
+‹ Journey  Machine  Status  Health  Logs  Plan ▍Op  Scan ›
+┌ Operation ───────────────────────────────────────────────┐
+│   Line 33: Value 33                                     ↑│
+│     observed                                             │
+│   Line 34: Value 34                                      │
+│     observed                                             │
+│   Line 35: Value 35                                      │
+│     observed                                             │
+│   Line 36: Value 36                                      │
+│     observed                                             │
+│   Line 37: Value 37                                      │
+│     observed                                             │
+│   Line 38: Value 38                                      │
+│     observed                                             │
+│ ❯ Line 39: Value 39                                      │
+│     observed                                             │
+│ rows 34–40 of 40                                         │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ move  ? help        can make changes · recorded machine

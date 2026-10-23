@@ -1,0 +1,74 @@
+---
+source: tests/ux/mod.rs
+expression: f
+---
+ ◒ Journey ───────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││   Model ID      MacBookPro18,│
+│▍ Journey             ││ Survey      Review      Asahi       Shared      Verify       ││                 2            │
+│  Machine             ││       Choices     Plan        Omarchy     Restore     Done   │└──────────────────────────────┘
+│  Status              ││ No stage is derived yet: every station is later.             │
+│  Health              ││                                                              │
+│  Logs                ││ ▍Where it stands                                             │
+│  Plan                ││   After the shutdown, hold the power button and choose       │
+│  Operation           ││   Linux.                                                     │
+│  Scan                ││                                                              │
+│  Selection           ││ ▍What you can do now                                         │
+│  Inventory           ││ ❯ Save the plan                                              │
+│  Review              ││   The text flow's own plan.save.                             │
+│  Install             ││   Launch the Asahi installer                                 │
+│  Progress            ││   The text flow's own asahi.launch.                          │
+│  Restore             ││   Create Shared                                              │
+│  Qualification       ││   The text flow's own shared.create.                         │
+│  Completion          ││                                                              │
+│                      ││ ▍Facts                                                       │
+│                      ││   Asahi install  none                                        │
+│                      ││                                                              │
+│                      ││ ▍Codes                                                       │
+│                      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
+│                      ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
+│                      ││                  ocat,Linux=250,shared=150,dev=1,plan=1a2b3c4│
+│                      ││                  d                                           │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+│                      ││                                                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit             can make changes · 3 steps offered · recorded machine

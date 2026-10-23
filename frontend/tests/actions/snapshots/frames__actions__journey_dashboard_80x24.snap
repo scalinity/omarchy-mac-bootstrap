@@ -5,24 +5,24 @@ expression: "frame(m, w, h)"
  ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
-│  Welcome     ││                                                             ↑│
-│▍ Journey     ││ ▍Where it stands                                             │
-│  Machine     ││   After the shutdown, hold the power button and choose       │
-│  Status      ││   Linux.                                                     │
+│  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
+│  Status      ││ No stage is derived yet: every station is later.             │
 │  Health      ││                                                              │
-│  Logs        ││ ▍Facts                                                       │
-│  Plan        ││   Asahi install  none                                        │
-│  Op          ││                                                              │
-│  Scan        ││ ▍Codes                                                       │
-│  Select      ││   Resume token   omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=A│
-│  Items       ││                  merica/New_York,loc=en_US.UTF-8,ssh=0,gh=oct│
-│  Review      ││                  ocat,linux=250,shared=150,dev=1,plan=1a2b3c4│
-│  Install     ││                  d                                           │
-│  Progress    ││                                                              │
-│  Restore     ││ ▍What you can do now                                         │
-│  Qualify     ││ ❯ Save the plan                plan                         ↓│
+│  Logs        ││ ▍Where it stands                                             │
+│  Plan        ││   After the shutdown, hold the power button and choose       │
+│  Op          ││   Linux.                                                     │
+│  Scan        ││                                                              │
+│  Select      ││ ▍What you can do now                                         │
+│  Items       ││ ❯ Save the plan                                              │
+│  Review      ││   The text flow's own plan.save.                             │
+│  Install     ││   Launch the Asahi installer                                 │
+│  Progress    ││   The text flow's own asahi.launch.                          │
+│  Restore     ││   Create Shared                                              │
+│  Qualify     ││   The text flow's own shared.create.                        ↓│
 │  Completion  │└──────────────────────────────────────────────────────────────┘
 │              │┌ System Overview ─────────────────────────────────────────────┐
-│              ││ Model  MacBookPro18,2                                        │
+│              ││   Model ID      MacBookPro18,2                               │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help     may act · 3 actions · fixture
+ ⏎ select  ? help         can make changes · 3 steps offered · recorded machine

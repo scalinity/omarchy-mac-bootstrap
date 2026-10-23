@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Qualification ─────────────────────────────────── v0.2.0
+‹ Items  Review  Install  Progress  Restore ▍Qualify ›
+┌ Qualification ───────────────────────────────────────────┐
+│   core qualification result. Detailed core              ↑│
+│   qualification result. Detailed core qualification      │
+│   result. Detailed core qualification result. Detailed   │
+│   core qualification result. Detailed core               │
+│   qualification result. Detailed core qualification      │
+│   result. Detailed core qualification result. Detailed   │
+│   core qualification result. Detailed core               │
+│   qualification result. Detailed core qualification      │
+│   result. Detailed core qualification result. Detailed   │
+│   core qualification result. Detailed core               │
+│   qualification result.                                  │
+│   Linux checks and writes - done                         │
+│   SHA-256 checksum recorded; digest matches              │
+│   macOS checks - done                                    │
+│   Read Linux's file and names                            │
+└──────────────────────────────────────────────────────────┘
+ ⏎ read again  ? help   can make changes · recorded machine

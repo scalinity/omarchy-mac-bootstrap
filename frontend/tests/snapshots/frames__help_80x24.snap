@@ -25,4 +25,4 @@ expression: "text(&render(&m, &t, 80, 24))"
 │              ││   The mouse is not captured: select text as usual.           │
 │              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- esc back  ↑↓ scroll                              may act · 3 actions · fixture
+ esc back  ↑↓ scroll      can make changes · 3 steps offered · recorded machine

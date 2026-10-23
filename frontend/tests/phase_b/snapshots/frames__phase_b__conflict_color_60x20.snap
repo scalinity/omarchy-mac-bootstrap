@@ -6,8 +6,8 @@ expression: text
   Welcome  Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Conflict and diff ───────────────────────────────────────┐
 │   starship.toml - conflict 1 of 2                        │
-│   .config/starship.toml - Omarchy's default              │
-│   Now: 120 bytes; bundle: 140 bytes                      │
+│   Source: Omarchy's default                              │
+│   Now: 120 B; bundle: 140 B                              │
 │   Keep (default); this destination stays as it is.       │
 │   k keep; R replace; K keep the rest; n/p conflict; v    │
 │   layout; Esc back                                       │
@@ -21,4 +21,4 @@ expression: text
 │                                                          │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
- k R K keep, replace, keep rest  ? help   may act · fixture
+ ? help                 can make changes · recorded machine

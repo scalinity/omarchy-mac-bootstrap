@@ -5,14 +5,14 @@ expression: f
  ◒ Operation ─────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Operation ───────────────────────────────────────────────────┐
-│  Welcome     ││ ❯ Scope   journey                            This scope ow…  │
-│  Journey     ││   State   unreadable                         What it recor…  │
-│  Machine     ││   Worker  unknown                            Whether a wor…  │
-│  Status      ││   Effect  unknown                            What the oper…  │
-│  Health      ││                                                              │
-│  Logs        ││                                                              │
-│  Plan        ││                                                              │
-│▍ Op          ││                                                              │
+│  Welcome     ││ ❯ Scope: journey                                             │
+│  Journey     ││     This scope owns the record.                              │
+│  Machine     ││   State: unreadable                                          │
+│  Status      ││     What it recorded is unknown.                             │
+│  Health      ││   Worker: unknown                                            │
+│  Logs        ││     Whether a worker remains is unknown.                     │
+│  Plan        ││   Effect: unknown                                            │
+│▍ Op          ││     What the operation changed is unknown.                   │
 │  Scan        ││                                                              │
 │  Select      ││                                                              │
 │  Items       ││                                                              │
@@ -23,6 +23,6 @@ expression: f
 │  Qualify     ││                                                              │
 │  Completion  ││                                                              │
 │              ││                                                              │
-│              ││ rows 1–4 of 4 · generation 78b203ec6845                      │
+│              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ↑↓ move  / filter  r refresh  ? help   read-only · no system changes · fixture
+ ↑↓ move  / filter  ? help      read-only, no system changes · recorded machine

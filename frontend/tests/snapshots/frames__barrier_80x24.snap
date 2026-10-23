@@ -6,23 +6,23 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
 │  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
-│▍ Journey     ││ survey      resolve     asahi       shared      verify       │
-│  Machine     ││       profile     plan        omarchy     restore     done   │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
 │  Status      ││ No stage is derived yet: every station is later.             │
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   The core gave no next step for this session.               │
-│  Op          ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
-│  Scan        ││              process it started may still be running.        │
-│  Select      ││              Restart this Mac (or this Linux system), then   │
-│  Items       ││              run the tool again.                             │
+│  Op          ││                                                              │
+│  Scan        ││ ▍What you can do now                                         │
+│  Select      ││ ❯ Read the fixture (test)                                    │
+│  Items       ││   Runs the fake read child.                                  │
 │  Review      ││                                                              │
-│  Install     ││ ▍Facts                                                       │
-│  Progress    ││   Interface  the foundation: test actions over fixtures      │
-│  Restore     ││   Fixture    mac-m1pro-1tb-roomy                             │
-│  Qualify     ││   Operation  ✗ test.mutate unsupervised                      │
+│  Install     ││   ✗ blocked  The outcome of test.mutate is unknown and a     │
+│  Progress    ││              process it started may still be running.        │
+│  Restore     ││              Restart this Mac (or this Linux system), then   │
+│  Qualify     ││              run the tool again.                             │
 │  Completion  ││                                                              │
-│              ││ ▍What you can do now                                         │
-│              ││ ❯ Read the fixture (test)   read                            ↓│
+│              ││ ▍Facts                                                       │
+│              ││   Interface  the foundation: test actions over fixtures     ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help      may act · 1 action · fixture
+ ⏎ select  ? help          can make changes · 1 step offered · recorded machine

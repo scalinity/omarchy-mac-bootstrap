@@ -13,8 +13,8 @@ expression: f
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Conflict and diff ───────────────────────────────────────────────────────────────────────────┐
 │  Welcome             ││   starship.toml - conflict 1 of 2                                                            │
-│  Journey             ││   .config/starship.toml - Omarchy's default                                                  │
-│  Machine             ││   Now: 120 bytes; bundle: 140 bytes                                                          │
+│  Journey             ││   Source: Omarchy's default                                                                  │
+│  Machine             ││   Now: 120 B; bundle: 140 B                                                                  │
 │  Status              ││   Replace chosen; the core will check and back up the original.                              │
 │  Health              ││   k keep; R replace; K keep the rest; n/p conflict; v layout; Esc back                       │
 │  Logs                ││                                                                                              │
@@ -41,4 +41,4 @@ expression: f
 │                      │││                                             ││                                             ││
 │                      ││└─────────────────────────────────────────────┘└─────────────────────────────────────────────┘│
 └──────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────┘
- k R K keep, replace, keep rest  n p next, previous  r refresh  L logs  ? help  q quit                may act · fixture
+ k R K keep, replace, keep rest  n p next, previous  r refresh  L logs  ? help      can make changes · recorded machine

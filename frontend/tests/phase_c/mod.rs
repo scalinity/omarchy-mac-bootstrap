@@ -8,7 +8,7 @@ use omb_tui::read::{Kind, Page, Scope};
 use omb_tui::record::{Family, admit};
 use ratatui::crossterm::event::KeyCode;
 
-fn stages(current: &str) -> String {
+pub(super) fn stages(current: &str) -> String {
     let mut out = format!("generation\tid={GEN}\ttotal=0\n");
     for name in omb_tui::widgets::STATIONS {
         let (state, basis, by, detail) = match name {
@@ -135,7 +135,7 @@ fn steps(state: &str) -> String {
         )
     )
 }
-fn on_qualify(state: &str) -> Model {
+pub(super) fn on_qualify(state: &str) -> Model {
     let mut m = journey();
     let c = go(&mut m, Screen::Qualification);
     assert_eq!(sent(&c), Req::Snapshot(Scope::Qualify));
@@ -168,7 +168,7 @@ fn report(statuses: &[&str]) -> String {
         statuses.len()
     )
 }
-fn on_completion(statuses: &[&str]) -> Model {
+pub(super) fn on_completion(statuses: &[&str]) -> Model {
     let mut m = ready_on(
         "macos",
         &stages("done").replace("name=done\tstate=current", "name=done\tstate=done"),
@@ -189,13 +189,28 @@ fn on_completion(statuses: &[&str]) -> Model {
 fn frames(m: &Model, name: &str) {
     for (w, h) in [(80, 24), (60, 20)] {
         for profile in ["color", "ascii"] {
-            let b = render(m, &theme(profile), w, h);
-            if profile == "ascii" {
-                assert!(b.content().iter().all(|c| c.symbol().is_ascii()));
-            }
-            insta::assert_snapshot!(format!("{name}_{profile}_{w}x{h}"), text_of(&b));
+            snapshot(name, profile, w, h, render(m, &theme(profile), w, h));
         }
     }
+}
+
+/// The same frames with the page scrolled to its end: End acts on the size
+/// the page was last laid out at, so each size is laid out first.
+fn frames_at_end(m: &mut Model, name: &str) {
+    for (w, h) in [(80, 24), (60, 20)] {
+        for profile in ["color", "ascii"] {
+            render(m, &theme(profile), w, h);
+            press(m, KeyCode::End);
+            snapshot(name, profile, w, h, render(m, &theme(profile), w, h));
+        }
+    }
+}
+
+fn snapshot(name: &str, profile: &str, w: u16, h: u16, b: ratatui::buffer::Buffer) {
+    if profile == "ascii" {
+        assert!(b.content().iter().all(|c| c.symbol().is_ascii()));
+    }
+    insta::assert_snapshot!(format!("{name}_{profile}_{w}x{h}"), text_of(&b));
 }
 
 #[test]
@@ -203,10 +218,13 @@ fn rail_preserves_states_provenance_reasons_and_old_core_later() {
     let m = journey();
     let s = m.snap.as_ref().unwrap();
     assert_eq!(s.stages.len(), 10);
-    assert_eq!(s.stages[4].description(), "asahi: done - recorded by macos");
+    assert_eq!(
+        s.stages[4].description(),
+        "Install Asahi: done - recorded by macOS"
+    );
     assert_eq!(
         s.stages[6].description(),
-        "shared: blocked - Activate Shared first"
+        "Shared storage: blocked - Activate Shared first"
     );
     frames(&m, "rail");
     let old = ready_on("macos", &format!("generation\tid={GEN}\ttotal=0\n{DONE}"));
@@ -415,13 +433,15 @@ fn completion_verdict_counts_and_receipt_use_only_core_records() {
     ] {
         let mut m = on_completion(&statuses);
         frames(&m, &format!("completion_{name}_stages"));
-        m.page_scroll = 13;
+        frames_at_end(&mut m, &format!("completion_{name}_report"));
         let text = text_of(&render(&m, &theme("color"), 80, 24));
         assert!(text.contains(&format!("Report: {name}")), "{text}");
         // Full count line at 120 columns; narrow frames wrap it.
         let text = text_of(&render(&m, &theme("color"), 120, 40));
-        assert!(text.contains(counts), "{text}");
-        frames(&m, &format!("completion_{name}_report"));
+        assert!(
+            text.contains(&counts.replace("not-checked", "not checked")),
+            "{text}"
+        );
         assert!(m.completion_receipt(&theme("color")).is_none());
         assert!(matches!(
             &press(&mut m, KeyCode::Char('q'))[..],
@@ -552,9 +572,18 @@ fn station_focus_keeps_the_rail_visible_above_offered_actions() {
     press(&mut m, KeyCode::Char('['));
     let text = text_of(&render(&m, &theme("color"), 80, 24));
     assert!(
-        text.contains("restore: skipped - No bundle selected"),
+        text.contains("Restore: skipped - No bundle selected"),
         "{text}"
     );
-    assert!(text.contains("recorded by macos"));
+    assert!(text.contains("Current stage"));
     assert!(text.contains("●─────●"));
+    // Three stations earlier, the strip names Asahi and who recorded it.
+    for _ in 0..3 {
+        press(&mut m, KeyCode::Char('['));
+    }
+    let text = text_of(&render(&m, &theme("color"), 80, 24));
+    assert!(
+        text.contains("Install Asahi: done - recorded by macOS"),
+        "{text}"
+    );
 }

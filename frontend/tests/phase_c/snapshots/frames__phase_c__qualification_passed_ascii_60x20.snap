@@ -9,11 +9,11 @@ expression: text_of(&b)
 |   - Due            none                                  |
 |   + Shared         disk0s7 GUID 8F2A41C0 on this Mac     |
 | |Cross-system check                                      |
-|   1  macOS writes - done                                 |
-|   SHA-256 5f2ec1a05f2e; file written                     |
-|   2  Linux checks and writes - done                      |
-|   SHA-256 8acb8acb8acb; digest matches                   |
-|   3  macOS checks - done                                 |
+|   macOS writes - done                                    |
+|   SHA-256 checksum recorded; file written                |
+|   Linux checks and writes - done                         |
+|   SHA-256 checksum recorded; digest matches              |
+|   macOS checks - done                                    |
 |   Read Linux's file and names                            |
 |                                                          |
 |                                                          |
@@ -21,4 +21,4 @@ expression: text_of(&b)
 |                                                          |
 |                                                          |
 +----------------------------------------------------------+
- enter read again  ? help                 may act - fixture
+ ? help                 can make changes - recorded machine

@@ -419,7 +419,7 @@ fn the_review_saves_the_choices_as_one_document() {
         "6.3 MB",
         "installed with pacman",
         "Save these choices",
-        "type opaque",
+        "Carry the chosen folders",
     ] {
         assert!(f.contains(want), "{want:?}:\n{f}");
     }
@@ -483,7 +483,7 @@ fn a_refused_save_keeps_the_choices() {
     assert_eq!(m.picks.len(), 1);
     let f = frame(&m, 120, 40);
     assert!(
-        f.contains("refused · invalid") && f.contains("The profile holds no item"),
+        f.contains("Check the choices above") && f.contains("The profile holds no item"),
         "{f}"
     );
 }

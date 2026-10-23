@@ -11,6 +11,11 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │                                                          │
 │ ▍Where it stands                                         │
 │   The core gave no next step for this session.           │
+│                                                          │
+│ ▍What you can do now                                     │
+│ ❯ Read the fixture (test)                                │
+│   Runs the fake read child.                              │
+│                                                          │
 │   ✗ blocked  The outcome of test.mutate is unknown and   │
 │              a process it started may still be running.  │
 │              Restart this Mac (or this Linux system),    │
@@ -18,11 +23,6 @@ expression: "text(&render(&m, &profile(\"color\"), w, h))"
 │                                                          │
 │ ▍Facts                                                   │
 │   Interface  the foundation: test actions over fixtures  │
-│   Fixture    mac-m1pro-1tb-roomy                         │
-│   Operation  ✗ test.mutate unsupervised                  │
-│                                                          │
-│ ▍What you can do now                                     │
-│ ❯ Read the fixture (test)   read                         │
-│   Runs the fake read child.                              │
+│   Fixture    mac-m1pro-1tb-roomy                        ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture
+ ⏎ select  ? help       can make changes · recorded machine

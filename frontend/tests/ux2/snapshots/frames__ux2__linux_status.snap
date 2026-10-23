@@ -1,0 +1,28 @@
+---
+source: tests/ux2/mod.rs
+expression: f
+---
+ ◒ Status ────────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Status ──────────────────────────────────────────────────────┐
+│  Welcome     ││ ▍ Read from Linux now                                        │
+│  Journey     ││     read from the machine                                    │
+│  Machine     ││ ❯ Omarchy: installed                                         │
+│▍ Status      ││     4.0.3rc4                                                 │
+│  Health      ││ ▍ Omarchy setup status                                       │
+│  Logs        ││     Reported by Omarchy setup                                │
+│  Plan        ││   Root is encrypted.                                         │
+│  Op          ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│  Restore     ││                                                              │
+│  Qualify     ││                                                              │
+│  Completion  ││                                                              │
+│              ││                                                              │
+│              ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ↑↓ move  ? help          can make changes · 3 steps offered · recorded machine

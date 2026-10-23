@@ -6,19 +6,19 @@ expression: text_of(&b)
   Welcome ▍Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Journey ─────────────────────────────────────────────────┐
 │ ● ● ● ● ● ● ✗ ◌ ◆ ○                                      │
-│ verify: current · 9 of 10                                │
+│ Verify: current step · 9 of 10                           │
 │                                                          │
 │ ▍Where it stands                                         │
+│   Current stage  Verify: current step                    │
+│   The core gave no next step for this session.           │
+│                                                          │
+│ ▍What you can do now                                     │
+│   Nothing is available now.                              │
+│                                                          │
+│ ▍Journey stages                                          │
 │   [ ] choose a station; Enter opens it; up/down choose   │
 │   actions.                                               │
-│   survey: done                                           │
-│   profile: done                                          │
-│   resolve: done                                          │
-│   plan: done                                             │
-│   asahi: done - recorded by macos                        │
-│   omarchy: done                                          │
-│   shared: blocked - Activate Shared first                │
-│   restore: skipped - No bundle selected                  │
-│   verify: current                                       ↓│
+│   Survey: done                                           │
+│   Choose what to bring: done                            ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help     may act · fixture
+ ⏎ select  ? help       can make changes · recorded machine

@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Progress ──────────────────────────────────────── v0.2.0
+‹ Op  Scan  Select  Items  Review  Install ▍Progress ›
+┌ Omarchy progress ────────────────────────────────────────┐
+│ ○──────────────○──────────────○──────────────○           │
+│ 1 Token        2 Network      3 Omarchy Mac  4 Start     │
+│                                                          │
+│   ✓ Signal 18  observed                                 ↑│
+│   ✓ Signal 19  observed                                  │
+│   ✓ Signal 20  observed                                  │
+│   ✓ Signal 21  observed                                  │
+│   ✓ Signal 22  observed                                  │
+│   ✓ Signal 23  observed                                  │
+│   ✓ Signal 24  observed                                  │
+│   ✓ Signal 25  observed                                  │
+│   ✓ Signal 26  observed                                  │
+│   ✓ Signal 27  observed                                  │
+│   ✓ Signal 28  observed                                  │
+│   ✓ Signal 29  observed                                  │
+└──────────────────────────────────────────────────────────┘
+ ↑↓ scroll  ? help      can make changes · recorded machine

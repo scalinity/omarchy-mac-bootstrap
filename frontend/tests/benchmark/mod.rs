@@ -1611,9 +1611,8 @@ fn frontend_work(
     if loaded.items.len() != c.items || loaded.profiles.len() != c.profiles {
         return Err("invalid loaded counts".into());
     }
-    let cmds: Vec<Cmd>;
-    if c.id == "bench-nav" {
-        cmds = update(
+    let cmds: Vec<Cmd> = if c.id == "bench-nav" {
+        update(
             m,
             Msg::Key(KeyEvent::new(
                 if m.focus == 0 {
@@ -1623,7 +1622,7 @@ fn frontend_work(
                 },
                 KeyModifiers::NONE,
             )),
-        );
+        )
     } else {
         // Benchmark-only filter; no product search UI or request type is added.
         let actions = loaded
@@ -1638,8 +1637,8 @@ fn frontend_work(
         }
         m.snap.as_mut().unwrap().actions = actions;
         m.focus = 1;
-        cmds = Vec::new();
-    }
+        Vec::new()
+    };
     if !cmds.is_empty() {
         return Err("local operation emitted commands".into());
     }
@@ -1647,6 +1646,7 @@ fn frontend_work(
         depth: Depth::None,
         unicode: false,
         console: false,
+        truecolor: false,
     });
     term.draw(|f| screens::draw(f, m, &theme, 50))
         .map_err(|e| e.to_string())?;
@@ -1808,10 +1808,10 @@ impl FrontWorker {
         let (sender, rx) = std::sync::mpsc::channel();
         let reader = std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if let Some(at) = line.find("bench-worker ") {
-                    if sender.send(line[at..].to_owned()).is_err() {
-                        break;
-                    }
+                if let Some(at) = line.find("bench-worker ")
+                    && sender.send(line[at..].to_owned()).is_err()
+                {
+                    break;
                 }
             }
         });
@@ -2583,15 +2583,29 @@ fn fake_snapshot() -> (Case, Document, Vec<u8>) {
             ],
         )
     });
-    let body = facts
+    let stages = omb_tui::widgets::STATIONS.map(|name| {
+        make(
+            "stage",
+            &[
+                ("name", name),
+                ("state", "blocked"),
+                ("basis", "machine"),
+                ("by", ""),
+                ("at", ""),
+                ("detail", "not checked: startup check reads identity only"),
+            ],
+        )
+    });
+    let body = stages
         .iter()
+        .chain(facts.iter())
         .map(|r| {
             let fields = r
                 .fields
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_slice()))
                 .collect::<Vec<_>>();
-            record::line("fact", &fields)
+            record::line(&r.ty, &fields)
                 .trim_end_matches('\n')
                 .to_string()
         })
@@ -2611,6 +2625,7 @@ fn fake_snapshot() -> (Case, Document, Vec<u8>) {
         ],
     );
     let mut rows = vec![hello, generation];
+    rows.extend(stages);
     rows.extend(facts);
     rows.push(result);
     (
@@ -2647,13 +2662,13 @@ fn wrong_fixture_flag_rejected() {
 #[test]
 fn wrong_fact_count_rejected() {
     let (c, mut d, b) = fake_snapshot();
-    d.records.remove(2);
+    d.records.remove(12);
     assert!(witness(&c, &d, &b).is_err());
 }
 #[test]
 fn wrong_fact_order_rejected() {
     let (c, mut d, b) = fake_snapshot();
-    d.records.swap(2, 3);
+    d.records.swap(12, 13);
     assert!(witness(&c, &d, &b).is_err());
 }
 #[test]

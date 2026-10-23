@@ -1,0 +1,24 @@
+---
+source: tests/ux/mod.rs
+expression: bottom
+---
+ ◒ Health ────────────────────────────────────────── v0.2.0
+  Welcome  Journey  Machine  Status ▍Health  Logs  Plan ›
+┌ Health ──────────────────────────────────────────────────┐
+│   Check 25 - pass: observed                             ↑│
+│   Check 26 - pass: observed                              │
+│   Check 27 - pass: observed                              │
+│   Check 28 - pass: observed                              │
+│   Check 29 - pass: observed                              │
+│   Check 30 - pass: observed                              │
+│   Check 31 - pass: observed                              │
+│   Check 32 - pass: observed                              │
+│   Check 33 - pass: observed                              │
+│   Check 34 - pass: observed                              │
+│   Check 35 - pass: observed                              │
+│   Check 36 - pass: observed                              │
+│   Check 37 - pass: observed                              │
+│   Check 38 - pass: observed                              │
+│   > Check 39 - pass: observed                            │
+└──────────────────────────────────────────────────────────┘
+ ? help                 can make changes · recorded machine

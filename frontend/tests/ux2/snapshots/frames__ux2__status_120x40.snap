@@ -1,0 +1,44 @@
+---
+source: tests/ux2/mod.rs
+expression: f
+---
+ ◒ Status ────────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Status ──────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││ ▍ Read from this Mac now                                     ││   Model         MacBook Pro  │
+│  Journey             ││     Model ID MacBookPro18,1                                  ││                 (16-inch, M1 │
+│  Machine             ││ ❯ Machine: MacBook Pro (16-inch, M1 Pro, 2021) with a full   ││                 Pro, 2021)   │
+│▍ Status              ││            value that wraps to its END_MARK                  ││ Model ID MacBookPro18,2      │
+│  Health              ││     ✓ supported                                              ││   Platform      macOS        │
+│  Logs                ││   Asahi install: none                                        ││   Memory        16 GB        │
+│  Plan                ││   Safe Linux max: 654 GB                                     │└──────────────────────────────┘
+│  Operation           ││ ▍ Saved progress                                             │┌ Next steps ──────────────────┐
+│  Scan                ││     Saved in ~/.local/state/omarchy-bootstrap/state.env      ││ Next: Save the plan (from    │
+│  Selection           ││   Plan: not yet                                              ││ Journey)                     │
+│  Inventory           ││                                                              ││                              │
+│  Review              ││                                                              ││                              │
+│  Install             ││                                                              ││                              │
+│  Progress            ││                                                              ││                              │
+│  Restore             ││                                                              ││                              │
+│  Qualification       ││                                                              ││                              │
+│  Completion          ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
+ ↑↓ move  / filter  r refresh  L logs  ? help  q quit             can make changes · 3 steps offered · recorded machine

@@ -6,23 +6,23 @@ expression: f
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
 │  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
-│▍ Journey     ││ survey      resolve     asahi       shared      verify       │
-│  Machine     ││       profile     plan        omarchy     restore     done   │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
 │  Status      ││ No stage is derived yet: every station is later.             │
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   Run ./omarchy-bootstrap to survey this Mac and plan        │
 │  Op          ││   storage.                                                   │
 │  Scan        ││                                                              │
-│  Select      ││ ▍Facts                                                       │
-│  Items       ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)       ↓│
-│  Review      │└──────────────────────────────────────────────────────────────┘
-│  Install     │┌ System Overview ─────────────────────────────────────────────┐
-│  Progress    ││ Platform      macos                                          │
-│  Restore     ││ Architecture  arm64                                          │
-│  Qualify     ││ Model         MacBookPro18,1                                 │
-│  Completion  ││ Chip          Apple M1 Pro                                   │
-│              ││ Memory        17179869184                                    │
-│              ││ macOS         14.6                                           │
+│  Select      ││ ▍What you can do now                                         │
+│  Items       ││   Nothing is available now.                                  │
+│  Review      ││                                                              │
+│  Install     ││ ▍Facts                                                       │
+│  Progress    ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
+│  Restore     ││   Asahi install   none                                       │
+│  Qualify     ││   Safe Linux max  654 GB                                     │
+│  Completion  ││   Surveyed        not yet (saved record)                     │
+│              ││   Plan            not yet (saved record)                     │
+│              ││                                                              │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  ? help   read-only · no system changes · fixture
+ ⏎ select  ↑↓ move  ? help      read-only, no system changes · recorded machine

@@ -6,8 +6,8 @@ expression: text
  (o) O M A R C H Y  mac bootstrap
 + Screens -----++ Conflict and diff -------------------------------------------+
 |  Welcome     ||   starship.toml - conflict 1 of 2                            |
-|  Journey     ||   .config/starship.toml - Omarchy's default                  |
-|  Machine     ||   Now: 120 bytes; bundle: 140 bytes                          |
+|  Journey     ||   Source: Omarchy's default                                  |
+|  Machine     ||   Now: 120 B; bundle: 140 B                                  |
 |  Status      ||   Keep (default); this destination stays as it is.           |
 |  Health      ||   k keep; R replace; K keep the rest; n/p conflict; v        |
 |  Logs        ||   layout; Esc back                                           |
@@ -25,4 +25,4 @@ expression: text
 |              ||                                                              |
 |              ||                                                              |
 +--------------++--------------------------------------------------------------+
- k R K keep, replace, keep rest  n p next, previous  ? help   may act - fixture
+ k R K keep, replace, keep rest  ? help     can make changes - recorded machine

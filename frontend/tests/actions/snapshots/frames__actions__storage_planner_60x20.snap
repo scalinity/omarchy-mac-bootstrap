@@ -12,13 +12,13 @@ expression: "frame(m, w, h)"
 │ b Apple 6.0 GB · M macOS 400 GB · b boot 3.0 GB          │
 │ L Linux 250 GB · s Shared 100 GB · . free 241 GB         │
 │                                                          │
-│ ❯ Shared size  100GB▏                                    │
-│   Linux size   not given                                 │
-│   enc          not given                                 │
-│   user         not given                                 │
-│   host         not given                                 │
-│   kmap         not given                                 │
-│   tz           not given                                 │
-│   loc          not given                                ↓│
+│ ❯ Linux size  ○ Minimal 100  ◉ Balanced 250              │
+│   ○ Linux-heavy 500  ○ Custom                            │
+│     250 GB                                               │
+│   Shared size  ○ none  ○ 50  ○ 100  ◉ 150  ○ 250         │
+│   ○ Custom                                               │
+│     100 GB                                               │
+│ ▍The installer asks                 you type             │
+│   New size for macOS  381469MiB                         ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ check  Tab next field  esc back        may act · fixture
+ ⏎ review               can make changes · recorded machine

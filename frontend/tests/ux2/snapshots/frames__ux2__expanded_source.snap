@@ -1,0 +1,44 @@
+---
+source: tests/ux2/mod.rs
+expression: f
+---
+ ◒ Status ────────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Status ──────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││ ❯ Machine                                                    ││   Model         MacBook Pro  │
+│  Journey             ││       MacBook Pro (16-inch, M1 Pro, 2021) with a full value  ││                 (16-inch, M1 │
+│  Machine             ││       that wraps to its END_MARK                             ││                 Pro, 2021)   │
+│▍ Status              ││       read from this Mac just now                            ││ Model ID MacBookPro18,2      │
+│  Health              ││                                                              ││   Platform      macOS        │
+│  Logs                ││                                                              ││   Memory        16 GB        │
+│  Plan                ││                                                              │└──────────────────────────────┘
+│  Operation           ││                                                              │┌ Next steps ──────────────────┐
+│  Scan                ││                                                              ││ Next: Save the plan (from    │
+│  Selection           ││                                                              ││ Journey)                     │
+│  Inventory           ││                                                              ││                              │
+│  Review              ││                                                              ││                              │
+│  Install             ││                                                              ││                              │
+│  Progress            ││                                                              ││                              │
+│  Restore             ││                                                              ││                              │
+│  Qualification       ││                                                              ││                              │
+│  Completion          ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
+ ↑↓ scroll  ⏎ esc close  Home End start, end  r refresh  ? help   can make changes · 3 steps offered · recorded machine

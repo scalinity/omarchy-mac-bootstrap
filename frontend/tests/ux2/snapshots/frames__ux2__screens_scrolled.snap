@@ -1,0 +1,24 @@
+---
+source: tests/ux2/mod.rs
+expression: f
+---
+ ◒ Status ────────────────────────────────────────────────────────────── v0.2.0
+┌ Screens ─────┐┌ Status ──────────────────────────────────────────────────────┐
+│  Journey    ↑││   Not read yet: r reads it.                                  │
+│  Machine     ││                                                              │
+│▍ Status      ││                                                              │
+│  Health      ││                                                              │
+│  Logs        ││                                                              │
+│  Plan        ││                                                              │
+│  Op          ││                                                              │
+│  Scan        ││                                                              │
+│  Select      ││                                                              │
+│  Items       ││                                                              │
+│  Review      ││                                                              │
+│  Install     ││                                                              │
+│  Progress    ││                                                              │
+│  Restore     ││                                                              │
+│  Qualify     ││                                                              │
+│❯ Completion  ││                                                              │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ↑↓ choose  ? help        can make changes · 3 steps offered · recorded machine

@@ -12,24 +12,24 @@ expression: f
 │                                     M A C   B O O T S T R A P                /______________\                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ Screens ─────────────┐┌ Journey ─────────────────────────────────────────────────────┐┌ System Overview ─────────────┐
-│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││ Platform      macos          │
-│▍ Journey             ││ survey      resolve     asahi       shared      verify       ││ Architecture  arm64          │
-│  Machine             ││       profile     plan        omarchy     restore     done   ││ Model         MacBookPro18,1 │
-│  Status              ││ No stage is derived yet: every station is later.             ││ Chip          Apple M1 Pro   │
-│  Health              ││                                                              ││ Memory        17179869184    │
-│  Logs                ││ ▍Where it stands                                             ││ macOS         14.6           │
-│  Plan                ││   Run ./omarchy-bootstrap to survey this Mac and plan        │└──────────────────────────────┘
-│  Operation           ││   storage.                                                   │
-│  Scan                ││                                                              │
-│  Selection           ││ ▍Facts                                                       │
-│  Inventory           ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
-│  Review              ││   Asahi install   none                                       │
-│  Install             ││   Safe Linux max  654 GB                                     │
-│  Progress            ││   Surveyed        not yet · recorded                         │
-│  Restore             ││   Plan            not yet · recorded                         │
-│  Qualification       ││                                                              │
-│  Completion          ││ ▍What you can do now                                         │
-│                      ││   Nothing is available now.                                  │
+│  Welcome             ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      ││   Platform      macOS        │
+│▍ Journey             ││ Survey      Review      Asahi       Shared      Verify       ││   Architecture  arm64        │
+│  Machine             ││       Choices     Plan        Omarchy     Restore     Done   ││   Model         MacBook Pro  │
+│  Status              ││ No stage is derived yet: every station is later.             ││                 (16-inch, M1 │
+│  Health              ││                                                              ││                 Pro, 2021)   │
+│  Logs                ││ ▍Where it stands                                             ││ Model ID MacBookPro18,1      │
+│  Plan                ││   Run ./omarchy-bootstrap to survey this Mac and plan        ││   Chip          Apple M1 Pro │
+│  Operation           ││   storage.                                                   ││   Memory        16 GB        │
+│  Scan                ││                                                              ││   macOS         14.6         │
+│  Selection           ││ ▍What you can do now                                         │└──────────────────────────────┘
+│  Inventory           ││   Nothing is available now.                                  │
+│  Review              ││                                                              │
+│  Install             ││ ▍Facts                                                       │
+│  Progress            ││   Machine         MacBook Pro (16-inch, M1 Pro, 2021)        │
+│  Restore             ││   Asahi install   none                                       │
+│  Qualification       ││   Safe Linux max  654 GB                                     │
+│  Completion          ││   Surveyed        not yet (saved record)                     │
+│                      ││   Plan            not yet (saved record)                     │
 │                      ││                                                              │
 │                      ││                                                              │
 │                      ││                                                              │
@@ -41,4 +41,4 @@ expression: f
 │                      ││                                                              │
 │                      ││                                                              │
 └──────────────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                           read-only · no system changes · fixture
+ ⏎ select  ↑↓ move  r refresh  L logs  ? help  q quit                   read-only, no system changes · recorded machine

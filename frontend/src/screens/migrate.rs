@@ -165,8 +165,10 @@ pub fn selection(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         .max()
         .unwrap_or(0)
         .clamp(8, 20);
+    let mut anchors = Vec::new();
     for (i, (cat, fact)) in cats.iter().enumerate() {
-        let here = i == m.sel && m.region == crate::app::Region::Work;
+        anchors.push((i, lines.len(), lines.len() + 1));
+        let here = i == m.sel && m.region == crate::app::Region::Work && m.focus_visible();
         let (style, glyph) = widgets::style_of(t, &fact.state);
         let g = if matches!(fact.state.as_str(), "info" | "ok" | "") {
             " "
@@ -217,10 +219,7 @@ pub fn selection(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     ) {
         lines.push(Line::styled(format!("   {l}"), t.style(Token::Muted)));
     }
-    let room = inner.height as usize;
-    let skip = (m.sel + 4).saturating_sub(room);
-    let lines: Vec<Line> = lines.into_iter().skip(skip).collect();
-    f.render_widget(Paragraph::new(lines), inner);
+    super::draw_lines(f, inner, lines, anchors, Some(m.sel), 0, m, t);
 }
 
 fn changed_line<'a>(t: &Theme) -> Line<'a> {
@@ -337,30 +336,20 @@ pub fn inventory(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         }
     }
     if m.inv.open && side.is_none() {
-        let room = (inner.height as usize).saturating_sub(lines.len());
-        lines.extend(item_view(m, t, width, room));
-        f.render_widget(Paragraph::new(lines), inner);
+        draw_item(f, inner, lines, m, t);
         return;
     }
-    let [h, body, tail] = Layout::vertical([
-        Constraint::Length(lines.len() as u16),
-        Constraint::Min(0),
-        Constraint::Length(u16::from(d.is_some_and(|d| d.loaded || d.editing))),
-    ])
-    .areas(list);
-    f.render_widget(Paragraph::new(lines), h);
     if let Some(d) = d.filter(|d| d.loaded) {
-        rows(f, body, d, m, t);
-    }
-    if let Some(d) = d {
+        let [body, tail] =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(list);
+        rows(f, body, d, m, t, lines);
         f.render_widget(Paragraph::new(foot(d, t)), tail);
+    } else {
+        super::draw_lines(f, list, lines, Vec::new(), None, 0, m, t);
     }
     if let Some(side) = side {
         let inner = widgets::panel(f, side, "Item", t);
-        f.render_widget(
-            Paragraph::new(item_view(m, t, inner.width as usize, inner.height as usize)),
-            inner,
-        );
+        draw_item(f, inner, Vec::new(), m, t);
     }
 }
 
@@ -393,30 +382,29 @@ fn foot<'a>(d: &Detail, t: &Theme) -> Line<'a> {
 
 /// The list: a mark, the name, its source and version where there is room,
 /// what it becomes, and who chose.
-fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme) {
+fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme, mut prefix: Vec<Line<'_>>) {
     let width = area.width as usize;
     let height = area.height as usize;
     let shown = d.shown();
     if shown.is_empty() || height == 0 {
         if !d.rows.is_empty() {
-            f.render_widget(
-                Paragraph::new(Line::styled(
-                    "   No item of this category on this page matches.",
-                    t.style(Token::Muted),
-                )),
-                area,
-            );
+            prefix.push(Line::styled(
+                "   No item of this category on this page matches.",
+                t.style(Token::Muted),
+            ));
         }
+        super::draw_lines(f, area, prefix, Vec::new(), None, 0, m, t);
         return;
     }
     let wide = width >= 70;
     let cursor = d.cursor.min(shown.len() - 1);
-    let start = (cursor + 1).saturating_sub(height);
     let mark_w = if t.caps.unicode { 1 } else { 3 };
     let name_w = (width / 4).clamp(10, 24);
-    let mut lines = Vec::new();
-    for (i, r) in shown.iter().enumerate().skip(start).take(height) {
-        let here = i == cursor && m.region == crate::app::Region::Work;
+    let mut lines = prefix;
+    let mut anchors = Vec::new();
+    for (i, r) in shown.iter().enumerate() {
+        anchors.push((i, lines.len(), lines.len() + 1));
+        let here = i == cursor && m.region == crate::app::Region::Work && m.focus_visible();
         let state = select::state(r, &m.picks);
         let (g, tok) = mark(state, t);
         let who = by(r, m);
@@ -471,14 +459,21 @@ fn rows(f: &mut Frame, area: Rect, d: &Detail, m: &Model, t: &Theme) {
         ));
         lines.push(Line::from(spans));
     }
-    f.render_widget(Paragraph::new(lines), area);
+    super::draw_lines(f, area, lines, anchors, Some(cursor), 0, m, t);
 }
 
-/// The item view in HEIGHT lines: the focused choice always among them.
-fn item_view<'a>(m: &Model, t: &Theme, width: usize, height: usize) -> Vec<Line<'a>> {
-    let (lines, at) = item_lines(m, t, width);
-    let skip = at.map_or(0, |at| (at + 1).saturating_sub(height));
-    lines.into_iter().skip(skip).collect()
+fn draw_item(f: &mut Frame, area: Rect, mut prefix: Vec<Line<'_>>, m: &Model, t: &Theme) {
+    let (lines, at) = item_lines(m, t, area.width as usize);
+    let anchors = at
+        .map(|line| {
+            let first = prefix.len() + line.saturating_sub(m.inv.choice);
+            (0..m.item_choices().len())
+                .map(|i| (i, first + i, first + i + 1))
+                .collect()
+        })
+        .unwrap_or_default();
+    prefix.extend(lines);
+    super::draw_lines(f, area, prefix, anchors, at.map(|_| m.inv.choice), 0, m, t);
 }
 
 /// The focused item: its name, its choices (the one picked here marked,
@@ -548,8 +543,8 @@ fn item_lines<'a>(m: &Model, t: &Theme, width: usize) -> (Vec<Line<'a>>, Option<
                 ));
             }
             for (i, c) in choices.iter().enumerate() {
-                let here = i == m.inv.choice;
-                if here {
+                let here = i == m.inv.choice && m.focus_visible();
+                if i == m.inv.choice {
                     at = Some(out.len());
                 }
                 let on = picked.as_deref() == Some(c.col(0));
@@ -645,13 +640,25 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
                     size.unwrap_or_default()
                 );
                 let room = width.saturating_sub(cells(&left));
-                lines.push(Line::from(vec![
-                    Span::styled(left, t.style(Token::Text)),
-                    Span::styled(
-                        fit(&t.say(r.col(3)), room, t.caps.unicode),
-                        t.style(Token::Muted),
-                    ),
-                ]));
+                let notes = wrap(&t.say(r.col(3)), room);
+                let notes = if notes.is_empty() {
+                    vec![String::new()]
+                } else {
+                    notes
+                };
+                for (i, note) in notes.into_iter().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            if i == 0 {
+                                left.clone()
+                            } else {
+                                " ".repeat(cells(&left))
+                            },
+                            t.style(Token::Text),
+                        ),
+                        Span::styled(note, t.style(Token::Muted)),
+                    ]));
+                }
             }
         }
     }
@@ -668,17 +675,9 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     }
     if let Some(c) = &m.save_check {
         let (g, tok, word) = match c.status.as_str() {
-            "done" => (t.g.ok, Token::Ok, "checked".to_string()),
-            "refused" => (
-                t.g.warn,
-                Token::Warn,
-                format!("refused {} {}", t.g.dot, c.code),
-            ),
-            s => (
-                t.g.fail,
-                Token::Danger,
-                format!("{s} {} {}", t.g.dot, c.code),
-            ),
+            "done" => (t.g.ok, Token::Ok, "Checked"),
+            "refused" => (t.g.warn, Token::Warn, "Check the choices above"),
+            _ => (t.g.fail, Token::Danger, "The check could not finish"),
         };
         lines.push(Line::styled(format!(" {g} {word}"), t.style(tok)));
         let mut said = |s: &str| {
@@ -689,8 +688,8 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
         if !c.text.is_empty() {
             said(&c.text);
         }
-        for (n, code, txt) in &c.invalid {
-            said(&format!("{n} {code}: {txt}"));
+        for (_, _, txt) in &c.invalid {
+            said(txt);
         }
         for (_, txt) in &c.messages {
             said(txt);
@@ -715,14 +714,11 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
             t.style(Token::Muted),
         ));
     }
-    let first = lines.len();
+    let mut anchors = Vec::new();
     for (i, a) in actions.iter().enumerate() {
-        let here = i == m.rev && m.region == crate::app::Region::Work;
-        let mut badge = a.intent.clone();
-        if !a.gate.is_empty() {
-            badge.push_str(&format!(" {} type {}", t.g.dot, a.gate));
-        }
-        let name_w = width.saturating_sub(cells(&badge) + 8).min(36);
+        let here = i == m.rev && m.region == crate::app::Region::Work && m.focus_visible();
+        anchors.push((i, lines.len(), lines.len() + 1));
+        let name_w = width.saturating_sub(4);
         lines.push(Line::from(vec![
             Span::styled(
                 format!(" {} ", if here { t.g.pointer } else { " " }),
@@ -736,21 +732,15 @@ pub fn review(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
                     t.style(Token::Text)
                 },
             ),
-            Span::raw("   "),
-            Span::styled(badge, t.style(Token::Muted)),
         ]));
-    }
-    if let Some(a) = actions.get(m.rev).filter(|a| !a.explain.is_empty()) {
-        for l in wrap(&t.say(&a.explain), width.saturating_sub(4)) {
+        for l in wrap(&t.say(&a.explain), width.saturating_sub(4))
+            .into_iter()
+            .filter(|l| !l.is_empty())
+        {
             lines.push(Line::styled(format!("   {l}"), t.style(Token::Muted)));
         }
     }
-    // Keep the focused action on the screen.
-    let room = inner.height as usize;
-    let want = first + m.rev + 1;
-    let skip = want.saturating_sub(room);
-    let lines: Vec<Line> = lines.into_iter().skip(skip).collect();
-    f.render_widget(Paragraph::new(lines), inner);
+    super::draw_lines(f, inner, lines, anchors, Some(m.rev), 0, m, t);
 }
 
 #[cfg(test)]
@@ -763,6 +753,7 @@ mod tests {
             depth: crate::theme::Depth::None,
             unicode: false,
             console: false,
+            truecolor: false,
         });
         for s in ["include", "exclude", "decide", "never"] {
             assert!(mark(s, &t).0.is_ascii());

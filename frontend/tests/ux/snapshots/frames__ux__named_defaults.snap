@@ -1,0 +1,74 @@
+---
+source: tests/ux/mod.rs
+expression: f
+---
+ ◒ Plan ──────────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Storage planner ─────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││   The text flow's own plan.save.                             ││   Model ID      MacBookPro18,│
+│  Journey             ││                                                              ││                 2            │
+│  Machine             ││ ▕M████████████████████████████████L███████████████.        ▏ │└──────────────────────────────┘
+│  Status              ││  0                         465 GB                    929 GB  │┌ Next steps ──────────────────┐
+│  Health              ││ b Apple 6.0 GB · M macOS 520 GB · b boot 3.0 GB              ││ After the shutdown, hold the │
+│  Logs                ││ L Linux 250 GB · . free 150 GB                               ││ power button and choose      │
+│▍ Plan                ││                                                              ││ Linux.                       │
+│  Operation           ││ ❯ Linux size  ○ Minimal 100  ○ Balanced 250                  ││                              │
+│  Scan                ││   ○ Linux-heavy 500 unavailable  ◉ Custom                    ││                              │
+│  Selection           ││     ▏ GB  TB  %                                              ││                              │
+│  Inventory           ││     Linux-heavy 500 unavailable: above the snapshot's safe   ││                              │
+│  Review              ││     Linux maximum (300 GB).                                  ││                              │
+│  Install             ││     This size parameter is required.                         ││                              │
+│  Progress            ││   Shared size  ○ none  ○ 50  ○ 100  ◉ 150  ○ 250  ○ Custom   ││                              │
+│  Restore             ││   Encrypt Linux   ○ off  ◉ on                                ││                              │
+│  Qualification       ││   User name       alex                                       ││                              │
+│  Completion          ││   Host name       omarchy                                    ││                              │
+│                      ││   Keyboard layout us                                         ││                              │
+│                      ││   Time zone       America/New_York                           ││                              │
+│                      ││   Locale          en_US.UTF-8                                ││                              │
+│                      ││   SSH server      ◉ off  ○ on                                ││                              │
+│                      ││   GitHub user     octocat                                    ││                              │
+│                      ││   Developer tools ○ off  ◉ on                                ││                              │
+│                      ││   a field left empty is not sent: the core answers its       ││                              │
+│                      ││   default                                                    ││                              │
+│                      ││                                                              ││                              │
+│                      ││   Sent: Shared size 150GB · Encrypt Linux 1 · User name      ││                              │
+│                      ││   alex · Host name omarchy · Keyboard layout us · Time       ││                              │
+│                      ││   zone America/New_York · Locale en_US.UTF-8 · SSH server    ││                              │
+│                      ││   0 · GitHub user octocat · Developer tools 1                ││                              │
+│                      ││ ! Check the input above                                      ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
+ ⏎ review  Tab next field  esc back                               can make changes · 3 steps offered · recorded machine

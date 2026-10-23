@@ -1,0 +1,44 @@
+---
+source: tests/ux2/mod.rs
+expression: f
+---
+ ◒ Review ────────────────────────────────────────────────────────────────────────────────────────────────────── v0.2.0
+┌ omarchy mac bootstrap ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           ███   █   █   ███   ████    ████  █   █  █   █        /\      /\                           │
+│                          █   █  ██ ██  █   █  █   █  █      █   █   █ █        /  \ /\ /  \                          │
+│                          █   █  █ █ █  █████  ████   █      █████    █        /    V  V    \                         │
+│                          █   █  █   █  █   █  █  █   █      █   █    █        .------------.                         │
+│                           ███   █   █  █   █  █   █   ████  █   █    █        |            |                         │
+│                                     M A C   B O O T S T R A P                /______________\                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Screens ─────────────┐┌ Migration review ────────────────────────────────────────────┐┌ System Overview ─────────────┐
+│  Welcome             ││   Software      1    6.3 MB  The complete explanation remains││ This session's snapshot      │
+│  Journey             ││                              readable. The complete          ││ holds no machine facts.      │
+│  Machine             ││                              explanation remains readable.   │└──────────────────────────────┘
+│  Status              ││                              The complete explanation remains│┌ Next steps ──────────────────┐
+│  Health              ││                              readable. The complete          ││ No next step is available.   │
+│  Logs                ││                              explanation remains readable.   ││                              │
+│  Plan                ││                              END_OF_REVIEW_NOTE              ││                              │
+│  Operation           ││   Apps          0       0 B  nothing comes                   ││                              │
+│  Scan                ││                                                              ││                              │
+│  Selection           ││ ▍What you can do now                                         ││                              │
+│  Inventory           ││ ❯ Save these choices                                         ││                              │
+│▍ Review              ││   Carry the chosen folders                                   ││                              │
+│  Install             ││                                                              ││                              │
+│  Progress            ││                                                              ││                              │
+│  Restore             ││                                                              ││                              │
+│  Qualification       ││                                                              ││                              │
+│  Completion          ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+│                      ││                                                              ││                              │
+└──────────────────────┘└──────────────────────────────────────────────────────────────┘└──────────────────────────────┘
+ ↑↓ move  ⏎ go on  r refresh  L logs  ? help  q quit                                can make changes · recorded machine

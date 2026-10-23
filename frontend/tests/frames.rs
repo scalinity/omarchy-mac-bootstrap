@@ -164,6 +164,8 @@ fn dashboard(barrier: bool) -> Model {
         &mut m,
         Msg::Done(Req::Snapshot(Scope::Journey), Outcome::Answer(snap)),
     );
+    assert_eq!(m.screen, Screen::Welcome);
+    update(&mut m, key(KeyCode::Enter));
     assert_eq!(m.screen, Screen::Dashboard);
     m
 }
@@ -174,21 +176,25 @@ fn profile(name: &str) -> Theme {
             depth: Depth::Full,
             unicode: true,
             console: false,
+            truecolor: false,
         },
         "sixteen" => Caps {
             depth: Depth::Sixteen,
             unicode: true,
             console: false,
+            truecolor: false,
         },
         "nocolor" => Caps {
             depth: Depth::None,
             unicode: true,
             console: false,
+            truecolor: false,
         },
         "ascii" => Caps {
             depth: Depth::Sixteen,
             unicode: false,
             console: true,
+            truecolor: false,
         },
         _ => unreachable!(),
     };
@@ -570,3 +576,7 @@ mod review;
 mod phase_b;
 
 mod phase_c;
+
+mod ux;
+
+mod ux2;

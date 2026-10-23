@@ -47,6 +47,18 @@ fn detail<'a>(m: &'a Model, kind: Kind, v: &mut Vec<Item<'a>>) -> bool {
     true
 }
 
+fn item_name(m: &Model, key: &str) -> String {
+    if let Some(r) = m
+        .detail(Kind::RestoreReview)
+        .and_then(|d| d.rows.iter().find(|r| r.key == key))
+    {
+        return r.col(2).into();
+    }
+    key.split_once(':')
+        .map_or("Restored item", |(_, name)| name)
+        .into()
+}
+
 pub fn items(m: &Model) -> Vec<Item<'_>> {
     let mut v = Vec::new();
     if m.check {
@@ -92,13 +104,10 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     }
     if let Some(c) = &m.rest.checked {
         if c.status != "done" {
-            v.push(text(
-                format!("{} - {}: {}", c.status, c.code, c.text),
-                Token::Warn,
-            ));
+            v.push(text(c.text.clone(), Token::Warn));
         }
-        for (name, code, reason) in &c.invalid {
-            v.push(text(format!("{name}: {code} - {reason}"), Token::Warn));
+        for (_, _, reason) in &c.invalid {
+            v.push(text(reason, Token::Warn));
         }
         for (_, reason, fix) in &c.warnings {
             v.push(text(format!("{reason} {fix}"), Token::Warn));
@@ -141,7 +150,7 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     if detail(m, Kind::RestoreStatus, &mut v) {
         for r in &m.detail(Kind::RestoreStatus).expect("whole").rows {
             v.push(text(
-                format!("{}: {} - {}", r.key, r.col(0), r.col(1)),
+                format!("{}: {} - {}", item_name(m, &r.key), r.col(0), r.col(1)),
                 Token::Text,
             ));
         }
@@ -150,11 +159,16 @@ pub fn items(m: &Model) -> Vec<Item<'_>> {
     if detail(m, Kind::Bundles, &mut v) {
         for r in &m.detail(Kind::Bundles).expect("whole").rows {
             v.push(text(
-                format!("{} - {} - {}", r.key, r.col(0), r.col(1)),
+                format!("Bundle from {} - {}", r.col(0), r.col(1)),
                 Token::Text,
             ));
             v.push(text(
-                format!("{} items; {} bytes; {}", r.col(2), r.col(3), r.col(4)),
+                format!(
+                    "{} items; {}; {}",
+                    r.col(2),
+                    crate::widgets::byte_text(r.col(3)),
+                    r.col(4)
+                ),
                 Token::Muted,
             ));
         }
@@ -223,9 +237,13 @@ pub fn conflict_items(m: &Model) -> Vec<Item<'_>> {
         ),
         Token::Heading,
     ));
-    v.push(text(format!("{} - {}", r.key, r.col(2)), Token::Text));
+    v.push(text(format!("Source: {}", r.col(2)), Token::Text));
     v.push(text(
-        format!("Now: {} bytes; bundle: {} bytes", r.col(3), r.col(4)),
+        format!(
+            "Now: {}; bundle: {}",
+            crate::widgets::byte_text(r.col(3)),
+            crate::widgets::byte_text(r.col(4))
+        ),
         Token::Muted,
     ));
     v.push(text(
@@ -293,10 +311,7 @@ pub fn conflicts(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     if !side {
         // Scroll wrapped lines, so even one row taller than the body can
         // be read through to its last character at the supported floor.
-        let widths = super::Widths {
-            label: 0,
-            action: 0,
-        };
+        let widths = super::Widths { label: 0 };
         let lines: Vec<Line> = all
             .iter()
             .flat_map(|i| super::item_lines(i, m, t, inner.width as usize, &widths))

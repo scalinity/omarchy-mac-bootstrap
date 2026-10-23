@@ -9,9 +9,9 @@ mod install;
 mod journey;
 mod migrate;
 mod notes;
-mod plan;
+pub mod plan;
 mod restore;
-mod table;
+pub(crate) mod table;
 mod welcome;
 
 use crate::app::{Blocker, Fact, Level, Model, Region, Screen};
@@ -183,17 +183,16 @@ fn sidebar(f: &mut Frame, area: Rect, m: &Model, t: &Theme) {
     if rest.height >= 3 && show(&[Screen::Dashboard, Screen::Welcome]) {
         let inner = widgets::panel(f, rest, "Next steps", t);
         let mut lines = Vec::new();
-        match m.snap.as_ref().map(|s| s.guides.as_slice()).unwrap_or(&[]) {
-            [] => lines.push(Line::styled(
-                " The core gave no next step.",
+        let guides = m.guides();
+        if guides.is_empty() {
+            lines.push(Line::styled(
+                " No next step is available.",
                 t.style(Token::Muted),
-            )),
-            gs => {
-                for g in gs {
-                    for l in widgets::wrap(&t.say(g), width.saturating_sub(2)) {
-                        lines.push(Line::styled(format!(" {l}"), t.style(Token::Text)));
-                    }
-                }
+            ));
+        }
+        for g in guides {
+            for l in widgets::wrap(&t.say(&g), width.saturating_sub(2)) {
+                lines.push(Line::styled(format!(" {l}"), t.style(Token::Text)));
             }
         }
         let blocked = m.snap.as_ref().map_or(0, |s| s.blockers.len());
@@ -233,29 +232,49 @@ pub fn machine_lines<'a>(m: &Model, t: &Theme, width: usize) -> Vec<Line<'a>> {
         .map(|l| Line::styled(format!(" {l}"), t.style(Token::Muted)))
         .collect();
     }
-    let w = facts
-        .iter()
-        .map(|f| widgets::cells(&f.label))
-        .max()
-        .unwrap_or(0)
-        .min(12);
+    let name = m.snap.as_ref().and_then(|s| {
+        s.facts
+            .iter()
+            .find(|f| f.key == "status.2" && f.label == "Machine")
+    });
+    let w = 12.min(width.saturating_sub(6));
     let mut out = Vec::new();
     for fact in facts {
-        let value = widgets::fit(
-            &t.say(&fact.value),
-            width.saturating_sub(w + 3),
-            t.caps.unicode,
-        );
-        out.push(Line::from(vec![
-            Span::styled(
-                format!(
-                    " {:<w$}  ",
-                    widgets::fit(&t.say(&fact.label), w, t.caps.unicode)
-                ),
-                t.style(Token::Muted),
-            ),
-            Span::styled(value, t.style(Token::Text)),
-        ]));
+        if fact.key == "machine.model" {
+            if let Some(name) = name {
+                out.extend(widgets::pair(
+                    t,
+                    "Model",
+                    &t.say(&name.value),
+                    w,
+                    width,
+                    t.style(Token::Text),
+                ));
+                for l in widgets::wrap(&format!("Model ID {}", fact.value), width.saturating_sub(2))
+                {
+                    out.push(Line::styled(format!(" {l}"), t.style(Token::Muted)));
+                }
+            } else {
+                out.extend(widgets::pair(
+                    t,
+                    widgets::model_label(&fact.value),
+                    &fact.value,
+                    w,
+                    width,
+                    t.style(Token::Text),
+                ));
+            }
+        } else {
+            let value = widgets::fact_value(&fact.key, &fact.label, &fact.value);
+            out.extend(widgets::pair(
+                t,
+                &fact.label,
+                &t.say(&value),
+                w,
+                width,
+                t.style(Token::Text),
+            ));
+        }
     }
     out
 }
@@ -271,6 +290,7 @@ pub enum Item<'a> {
     Rail,
     /// Prose, wrapped, in a token.
     Text(String, Token),
+    Row(usize, String, Token),
     /// A label and its value; `recorded` adds the word.
     Pair {
         label: String,
@@ -330,7 +350,6 @@ fn label_width(items: &[Item]) -> usize {
 /// The widths a list of blocks aligns to: labels, and action names.
 struct Widths {
     label: usize,
-    action: usize,
 }
 
 fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -> Vec<Line<'a>> {
@@ -343,7 +362,7 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             Span::styled(*h, t.style(Token::Heading)),
         ])],
         Item::Rail => widgets::traverse(m, t, width.saturating_sub(1)),
-        Item::Text(s, tok) => widgets::wrap(&t.say(s), prose)
+        Item::Text(s, tok) | Item::Row(_, s, tok) => widgets::wrap(&t.say(s), prose)
             .into_iter()
             .map(|l| Line::styled(format!("   {l}"), t.style(*tok)))
             .collect(),
@@ -362,7 +381,7 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             }
             v.push_str(&t.say(value));
             if *recorded {
-                v.push_str(&format!(" {} recorded", t.g.dot));
+                v.push_str(" (saved record)");
             }
             let value_style = if matches!(*state, "info" | "") {
                 t.style(*token)
@@ -435,34 +454,23 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             let Some(a) = m.snap.as_ref().and_then(|s| s.actions.get(*i)) else {
                 return Vec::new();
             };
-            let focused = *i == m.focus && m.region == crate::app::Region::Work;
+            let focused =
+                *i == m.focus && m.focus_visible() && m.region == crate::app::Region::Work;
             let pointer = if focused { t.g.pointer } else { " " };
-            let mut badge = a.intent.clone();
-            if a.handoff {
-                badge.push_str(&format!(" {} handoff", t.g.dot));
-            }
-            if !a.gate.is_empty() && width >= 60 {
-                badge.push_str(&format!(" {} type {}", t.g.dot, a.gate));
-            }
-            let name_w = w
-                .action
-                .min(width.saturating_sub(widgets::cells(&badge) + 8))
-                .max(8);
-            let name = format!(
-                "{:<name_w$}",
-                widgets::fit(&t.say(&a.label), name_w, t.caps.unicode)
-            );
-            let name_style = if focused {
-                t.style(Token::Focus)
-            } else {
-                t.style(Token::Text)
-            };
-            vec![Line::from(vec![
+            let mut lines = vec![Line::from(vec![
                 Span::styled(format!(" {pointer} "), t.style(Token::Accent)),
-                Span::styled(name, name_style),
-                Span::raw("   "),
-                Span::styled(badge, t.style(Token::Muted)),
-            ])]
+                Span::styled(
+                    widgets::fit(&t.say(&a.label), width.saturating_sub(4), t.caps.unicode),
+                    t.style(if focused { Token::Focus } else { Token::Text }),
+                ),
+            ])];
+            lines.extend(
+                widgets::wrap(&t.say(&a.explain), prose)
+                    .into_iter()
+                    .filter(|l| !l.is_empty())
+                    .map(|l| Line::styled(format!("   {l}"), t.style(Token::Muted))),
+            );
+            lines
         }
         Item::Explain(s) => widgets::wrap(&t.say(s), prose)
             .into_iter()
@@ -484,93 +492,20 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
             })
             .collect(),
         Item::Fault(f) => table::fault_lines(f, t, width),
-        Item::Field(i) => {
-            // The form shown: Form's, or under a gate or help the one they
-            // were opened over; m.back means nothing anywhere else.
-            let over = matches!(m.screen, Screen::Gate | Screen::Help) && m.back == Screen::Form;
-            let p = if m.screen == Screen::Form || over {
-                &m.form
-            } else {
-                &m.plan
-            };
-            let Some(field) = p.fields.get(*i) else {
-                return Vec::new();
-            };
-            let label = plan::field_label(&field.name);
-            let value = &field.value;
-            let here = m.region == crate::app::Region::Work && p.field == *i;
-            let pointer = if here { t.g.pointer } else { " " };
-            let lw = p
-                .fields
-                .iter()
-                .map(|f| widgets::cells(&plan::field_label(&f.name)))
-                .max()
-                .unwrap_or(0)
-                .clamp(12, 18);
-            let mut spans = vec![
-                Span::styled(format!(" {pointer} "), t.style(Token::Accent)),
-                Span::styled(
-                    format!("{:<lw$} ", widgets::fit(&label, lw, t.caps.unicode)),
-                    t.style(Token::Muted),
-                ),
-            ];
-            if !field.choices.is_empty() {
-                // A choice: the core's choices, the one picked marked.
-                for c in &field.choices {
-                    let mark = if *c == *value {
-                        if t.caps.unicode { "◉" } else { "(x)" }
-                    } else if t.caps.unicode {
-                        "○"
-                    } else {
-                        "( )"
-                    };
-                    spans.push(Span::styled(
-                        format!("{mark} {}  ", t.say(c)),
-                        if *c == *value {
-                            t.style(Token::Selected)
-                        } else {
-                            t.style(Token::Text)
-                        },
-                    ));
-                }
-            } else if value.is_empty() && !here {
-                spans.push(Span::styled(
-                    if field.required {
-                        "not given (required)"
-                    } else {
-                        "not given"
-                    },
-                    t.style(Token::Pending),
-                ));
-            } else {
-                spans.push(Span::styled(
-                    widgets::fit(value, width.saturating_sub(lw + 8), t.caps.unicode),
-                    if here {
-                        t.style(Token::Gate)
-                    } else {
-                        t.style(Token::Text)
-                    },
-                ));
-            }
-            if here && field.choices.is_empty() {
-                spans.push(Span::styled(
-                    if t.caps.unicode { "▏" } else { "_" },
-                    t.style(Token::Gate),
-                ));
-            }
-            vec![Line::from(spans)]
-        }
+        Item::Field(i) => plan::field_lines(m, t, width, *i),
         Item::Check(fact) => {
             let (style, glyph) = widgets::style_of(t, &fact.state);
             let lw = w.label.max(8);
             let room = width.saturating_sub(lw + 8).max(8);
             let mut out = Vec::new();
-            for (i, l) in widgets::wrap(&t.say(&fact.value), room)
-                .into_iter()
-                .enumerate()
-            {
+            let value = widgets::fact_value(&fact.key, &fact.label, &fact.value);
+            let label = fact
+                .label
+                .strip_suffix(" bytes")
+                .map_or_else(|| fact.label.clone(), |s| format!("{s} size"));
+            for (i, l) in widgets::wrap(&t.say(&value), room).into_iter().enumerate() {
                 let (g, label) = if i == 0 {
-                    (glyph, widgets::fit(&t.say(&fact.label), lw, t.caps.unicode))
+                    (glyph, widgets::fit(&t.say(&label), lw, t.caps.unicode))
                 } else {
                     (" ", String::new())
                 };
@@ -587,8 +522,7 @@ fn item_lines<'a>(item: &Item, m: &Model, t: &Theme, width: usize, w: &Widths) -
 }
 
 /// Draw ITEMS into AREA from the block SCROLL, moved so that the block FOCUS
-/// (if any) is on the screen. Only the blocks that reach the screen are laid
-/// out: a long list costs what is visible.
+/// (if any) is on the screen. Wrapped lines share the panel's scroll bounds.
 pub fn draw_items(
     f: &mut Frame,
     area: Rect,
@@ -599,61 +533,82 @@ pub fn draw_items(
     t: &Theme,
 ) {
     let width = area.width as usize;
-    let height = area.height as usize;
     let w = Widths {
         label: label_width(items),
-        action: m
-            .snap
-            .as_ref()
-            .and_then(|s| s.actions.iter().map(|a| a.label.chars().count()).max())
-            .unwrap_or(0)
-            .min(34),
     };
-    let mut start = scroll.min(items.len().saturating_sub(1));
-    if let Some(fi) = focus {
-        if fi < start {
-            start = fi;
-        } else {
-            // Move down until the focused block ends inside the area.
-            loop {
-                let used: usize = items[start..=fi]
-                    .iter()
-                    .map(|i| item_lines(i, m, t, width, &w).len())
-                    .sum();
-                if used <= height || start == fi {
-                    break;
-                }
-                start += 1;
-            }
+    let mut lines = Vec::new();
+    let mut rows = Vec::new();
+    let mut initial = 0;
+    for (i, item) in items.iter().enumerate() {
+        if i == scroll {
+            initial = lines.len();
         }
+        let id = match item {
+            Item::Action(id) | Item::Field(id) | Item::Row(id, _, _) => Some(*id),
+            _ => (Some(i) == focus).then_some(i),
+        };
+        let block = item_lines(item, m, t, width, &w);
+        if let Some(id) = id {
+            rows.push((id, lines.len(), lines.len() + block.len()));
+        }
+        lines.extend(block);
     }
-    let mut lines: Vec<Line> = Vec::new();
-    let mut end = start.min(items.len());
-    while end < items.len() && lines.len() < height {
-        lines.extend(item_lines(&items[end], m, t, width, &w));
-        end += 1;
+    let cursor = focus.map(|i| match items.get(i) {
+        Some(Item::Action(id) | Item::Field(id) | Item::Row(id, _, _)) => *id,
+        _ => i,
+    });
+    draw_lines(f, area, lines, rows, cursor, initial, m, t);
+}
+
+/// A window over laid-out lines, shared by prose, forms and tables.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_lines(
+    f: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    rows: Vec<(usize, usize, usize)>,
+    cursor: Option<usize>,
+    initial: usize,
+    m: &Model,
+    t: &Theme,
+) {
+    let total = lines.len();
+    let height = area.height as usize;
+    let top = m
+        .viewport
+        .borrow_mut()
+        .layout(m.screen, height, total, rows, cursor, initial);
+    f.render_widget(
+        Paragraph::new(lines.into_iter().skip(top).take(height).collect::<Vec<_>>()),
+        area,
+    );
+    if area.width == 0 || area.height == 0 {
+        return;
     }
-    let more_above = start > 0;
-    let more_below = lines.len() > height || end < items.len();
-    lines.truncate(height);
-    f.render_widget(Paragraph::new(lines), area);
-    // A quiet mark on the panel's edge says there is more.
-    let at = |y: u16| Rect {
-        x: area.x + area.width.saturating_sub(1),
+    let at = |y| Rect {
+        x: area.right() - 1,
         y,
         width: 1,
         height: 1,
     };
-    if more_above && area.height > 0 {
-        let g = if t.caps.unicode { "↑" } else { "^" };
-        widgets::line(at(area.y), f, Line::styled(g, t.style(Token::Muted)));
-    }
-    if more_below && area.height > 0 {
-        let g = if t.caps.unicode { "↓" } else { "v" };
+    if top > 0 {
         widgets::line(
-            at(area.y + area.height - 1),
+            at(area.y),
             f,
-            Line::styled(g, t.style(Token::Muted)),
+            Line::styled(
+                if t.caps.unicode { "↑" } else { "^" },
+                t.style(Token::Muted),
+            ),
+        );
+    }
+    if top + height < total {
+        widgets::line(
+            at(area.bottom() - 1),
+            f,
+            Line::styled(
+                if t.caps.unicode { "↓" } else { "v" },
+                t.style(Token::Muted),
+            ),
         );
     }
 }

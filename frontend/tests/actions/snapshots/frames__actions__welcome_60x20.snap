@@ -6,19 +6,19 @@ expression: "frame(m, w, h)"
  ▍Welcome  Journey  Machine  Status  Health  Logs  Plan ›
 ┌ Welcome ─────────────────────────────────────────────────┐
 │ ▍Welcome to Omarchy Mac Bootstrap                        │
-│   This session may act: an action runs only when you     │
-│   choose it, and the core checks it again first.         │
+│   A step runs only when it is chosen; its conditions     │
+│   are checked again first.                               │
 │                                                          │
 │ ▍This machine                                            │
-│   Model      MacBookPro18,2                              │
+│   Model ID   MacBookPro18,2                              │
 │                                                          │
 │ ▍The tool and the core                                   │
 │   Interface  frontend 0.2.0, protocol 1                  │
-│   Core       core 0.2.0, commit 0123456789ab             │
-│   System     macos, arm64, user                          │
-│   Session    act ceiling, fixture                        │
-│   Read       journey generation c0dec0dec0de             │
+│   Bootstrap  version 0.2.0                               │
+│   System     macOS, arm64, user                          │
+│   Session    can make changes · 3 steps offered ·        │
+│              recorded machine                            │
 │                                                          │
 │ ▍Where the journey stands                               ↓│
 └──────────────────────────────────────────────────────────┘
- ⏎ the journey  ↑↓ scroll  ? help         may act · fixture
+ ⏎ the journey  ? help  can make changes · recorded machine

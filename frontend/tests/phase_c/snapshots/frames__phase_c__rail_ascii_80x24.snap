@@ -6,23 +6,23 @@ expression: text_of(&b)
  (o) O M A R C H Y  mac bootstrap
 + Screens -----++ Journey -----------------------------------------------------+
 |  Welcome     || *-----*-----*-----*-----*-----*-----x-----~----->-----.      |
-|* Journey     || survey      resolve     asahi       shared      verify       |
-|  Machine     ||       profile     plan        omarchy     restore     done   |
-|  Status      || verify: current - 9 of 10                                    |
+|* Journey     || Survey      Review      Asahi       Shared      Verify       |
+|  Machine     ||       Choices     Plan        Omarchy     Restore     Done   |
+|  Status      || Verify: current step - 9 of 10                               |
 |  Health      ||                                                              |
 |  Logs        || |Where it stands                                             |
-|  Plan        ||   [ ] choose a station; Enter opens it; up/down choose       |
-|  Op          ||   actions.                                                   |
-|  Scan        ||   survey: done                                               |
-|  Select      ||   profile: done                                              |
-|  Items       ||   resolve: done                                              |
-|  Review      ||   plan: done                                                 |
-|  Install     ||   asahi: done - recorded by macos                            |
-|  Progress    ||   omarchy: done                                              |
-|  Restore     ||   shared: blocked - Activate Shared first                    |
-|  Qualify     ||   restore: skipped - No bundle selected                      |
-|  Completion  ||   verify: current                                            |
-|              ||   done: todo                                                 |
-|              ||   Current stage  verify                                     v|
+|  Plan        ||   Current stage  Verify: current step                        |
+|  Op          ||   The core gave no next step for this session.               |
+|  Scan        ||                                                              |
+|  Select      || |What you can do now                                         |
+|  Items       ||   Nothing is available now.                                  |
+|  Review      ||                                                              |
+|  Install     || |Journey stages                                              |
+|  Progress    ||   [ ] choose a station; Enter opens it; up/down choose       |
+|  Restore     ||   actions.                                                   |
+|  Qualify     ||   Survey: done                                               |
+|  Completion  ||   Choose what to bring: done                                 |
+|              ||   Review choices: done                                       |
+|              ||   Plan storage: done                                        v|
 +--------------++--------------------------------------------------------------+
- enter select  up/down move  r refresh  L logs  ? help        may act - fixture
+ enter select  up/down move  ? help         can make changes - recorded machine

@@ -6,23 +6,23 @@ expression: text(&b)
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
 │  Welcome     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
-│▍ Journey     ││ survey      resolve     asahi       shared      verify       │
-│  Machine     ││       profile     plan        omarchy     restore     done   │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
 │  Status      ││ No stage is derived yet: every station is later.             │
 │  Health      ││                                                              │
 │  Logs        ││ ▍Where it stands                                             │
 │  Plan        ││   The core gave no next step for this session.               │
 │  Op          ││                                                              │
-│  Scan        ││ ▍Facts                                                       │
-│  Select      ││   Interface  the foundation: test actions over fixtures      │
-│  Items       ││   Fixture    mac-m1pro-1tb-roomy                             │
-│  Review      ││   Operation  ✓ none                                          │
-│  Install     ││                                                              │
-│  Progress    ││ ▍What you can do now                                         │
-│  Restore     ││ ❯ Read the fixture (test)         read                       │
-│  Qualify     ││   Change the fixture (test)       act · type test            │
-│  Completion  ││   Hand over the terminal (test)   act · handoff · type test  │
-│              ││   Runs the fake read child: its output is shown, its         │
-│              ││   diagnostics kept within their limits.                      │
+│  Scan        ││ ▍What you can do now                                         │
+│  Select      ││ ❯ Read the fixture (test)                                    │
+│  Items       ││   Runs the fake read child: its output is shown, its         │
+│  Review      ││   diagnostics kept within their limits.                      │
+│  Install     ││   Change the fixture (test)                                  │
+│  Progress    ││   Runs the fake mutating child under supervision.            │
+│  Restore     ││   Hand over the terminal (test)                              │
+│  Qualify     ││   Runs the fake handoff child on the real terminal.          │
+│  Completion  ││                                                              │
+│              ││ ▍Facts                                                       │
+│              ││   Interface  the foundation: test actions over fixtures     ↓│
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ⏎ select  ↑↓ move  r refresh  L logs  ? help     may act · 3 actions · fixture
+ ⏎ select  ? help         can make changes · 3 steps offered · recorded machine

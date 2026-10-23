@@ -98,6 +98,9 @@ pub fn ready_on(platform: &str, body: &str) -> Model {
     assert_eq!(req, Req::Snapshot(Scope::Journey));
     let c = answer_on(&mut m, req, body, platform);
     assert_eq!(requests(&c), 0);
+    assert_eq!(m.screen, Screen::Welcome);
+    assert_eq!(requests(&press(&mut m, KeyCode::Enter)), 0);
+    assert_eq!(m.screen, Screen::Dashboard);
     m
 }
 
@@ -265,6 +268,7 @@ pub fn theme(name: &str) -> Theme {
         depth,
         unicode,
         console,
+        truecolor: false,
     })
 }
 
@@ -391,33 +395,22 @@ fn the_generic_requests_are_data_in_the_one_schema() {
 
 /// actions-planner: the fields are the parameters plan.save declares; only
 /// what is typed is sent; the core's answer is shown as it came; Enter on that
-/// review asks, and only y sends the eleven normalised values with the
+/// review asks, and only y sends the validated size strings and other normals with the
 /// review's basis.
 #[test]
 fn the_planner_validates_what_is_typed_and_saves_the_review() {
     let mut m = ready_on("macos", &mac_journey());
     focus(&mut m, "plan.save");
-    assert_eq!(
-        requests(&press(&mut m, KeyCode::Enter)),
-        0,
-        "the form opens"
-    );
+    let req = sent(&press(&mut m, KeyCode::Enter));
     assert_eq!(m.screen, Screen::Plan);
     let names: Vec<&str> = m.plan.fields.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names, PARAMS,
         "the declared parameters, in the core's order"
     );
-    // Shared first, as declared; then Linux.
-    typed(&mut m, "100GB");
-    press(&mut m, KeyCode::Tab);
-    typed(&mut m, "250GB");
-    let req = sent(&press(&mut m, KeyCode::Enter));
     let b = bytes(&req);
     assert!(
-        b.contains("select\taction=plan.save\narg\tname=shared_size\tvalue=100GB\narg\tname=linux_size\tvalue=250GB\n")
-            && b.matches("arg\t").count() == 2,
-        "only what is typed is sent: {b}"
+        b.contains("name=shared_size\tvalue=150GB") && b.contains("name=linux_size\tvalue=250GB")
     );
     answer(&mut m, req, &plan_review());
     let f = frame(&m, 120, 70);
@@ -425,7 +418,7 @@ fn the_planner_validates_what_is_typed_and_saves_the_review() {
         "Storage planner",
         "381469MiB",
         "America/New_York",
-        "8acb8acb",
+        "Review ready",
         "⏎ Save the plan",
     ] {
         assert!(f.contains(want), "{want:?}:\n{f}");
@@ -459,7 +452,8 @@ fn the_planner_validates_what_is_typed_and_saves_the_review() {
     );
     let names: Vec<&str> = args.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, PARAMS, "the eleven normalised inputs");
-    assert_eq!(args[0].1, b"100000000000");
+    assert_eq!(args[0].1, b"150GB");
+    assert_eq!(args[1].1, b"250GB");
     assert_eq!(
         args[9].1, b"octocat",
         "a default the core answered is sent as it gave it"
@@ -475,11 +469,10 @@ fn the_planner_validates_what_is_typed_and_saves_the_review() {
 fn a_changed_field_is_checked_again_never_saved() {
     let mut m = ready_on("macos", &mac_journey());
     focus(&mut m, "plan.save");
-    press(&mut m, KeyCode::Enter);
-    typed(&mut m, "100GB");
     let req = sent(&press(&mut m, KeyCode::Enter));
     answer(&mut m, req, &plan_review());
-    typed(&mut m, "0");
+    m.plan.field = m.plan.fields.iter().position(|f| f.name == "user").unwrap();
+    typed(&mut m, "x");
     assert!(frame(&m, 120, 40).contains("the fields above changed since this answer"));
     let req = sent(&press(&mut m, KeyCode::Enter));
     assert!(matches!(req, Req::Validate { .. }), "{req:?}");
@@ -671,7 +664,7 @@ fn only_listed_actions_are_offered() {
     go(&mut m, Screen::Install);
     let f = frame(&m, 120, 70);
     assert!(
-        f.contains("does not offer asahi.launch now")
+        f.contains("does not offer the Asahi installer now")
             && f.contains("FileVault is still encrypting."),
         "{f}"
     );
@@ -745,9 +738,7 @@ fn the_welcome_dashboard_and_planner_at_the_contract_sizes() {
     );
     go(&mut m, Screen::Welcome);
     sizes(&m, "welcome");
-    go(&mut m, Screen::Plan);
-    typed(&mut m, "100GB");
-    let req = sent(&press(&mut m, KeyCode::Enter));
+    let req = sent(&go(&mut m, Screen::Plan));
     answer(&mut m, req, &plan_review());
     sizes(&m, "storage_planner");
 }

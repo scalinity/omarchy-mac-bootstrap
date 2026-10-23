@@ -1,0 +1,28 @@
+---
+source: tests/ux/mod.rs
+expression: f
+---
+ ◒ Journey ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Journey ─────────────────────────────────────────────────────┐
+│  Welcome     ││ ●─────●─────●─────◆─────●─────●─────✗─────◌─────●─────○      │
+│▍ Journey     ││ Survey      Review      Asahi       Shared      Verify       │
+│  Machine     ││       Choices     Plan        Omarchy     Restore     Done   │
+│  Status      ││ Plan storage: current step · 4 of 10                         │
+│  Health      ││                                                              │
+│  Logs        ││ ▍Where it stands                                             │
+│  Plan        ││   Current stage  Plan storage: current step                  │
+│  Op          ││   Next: Save the plan - press Enter                          │
+│  Scan        ││   After the shutdown, hold the power button and choose       │
+│  Select      ││   Linux.                                                     │
+│  Items       ││                                                              │
+│  Review      ││ ▍What you can do now                                         │
+│  Install     ││ ❯ Save the plan                                              │
+│  Progress    ││   The text flow's own plan.save.                             │
+│  Restore     ││   Launch the Asahi installer                                 │
+│  Qualify     ││   The text flow's own asahi.launch.                         ↓│
+│  Completion  │└──────────────────────────────────────────────────────────────┘
+│              │┌ System Overview ─────────────────────────────────────────────┐
+│              ││   Model ID      MacBookPro18,2                               │
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ select  ? help         can make changes · 3 steps offered · recorded machine

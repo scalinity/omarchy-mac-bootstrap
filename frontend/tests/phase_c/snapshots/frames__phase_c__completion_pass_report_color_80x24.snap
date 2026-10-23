@@ -5,24 +5,24 @@ expression: text_of(&b)
  ◒ Completion ────────────────────────────────────────────────────────── v0.2.0
  ◒ OMARCHY  mac bootstrap
 ┌ Screens ─────┐┌ Completion ──────────────────────────────────────────────────┐
-│  Welcome     ││ ✓ Report: pass                                              ↑│
-│  Journey     ││   7 pass - 0 warn - 0 fail - 1 not-checked                   │
-│  Machine     ││   mac - pass: Observed by the core                           │
-│  Status      ││   disk - pass: Observed by the core                          │
-│  Health      ││   shared - pass: Observed by the core                        │
-│  Logs        ││   linux - pass: Observed by the core                         │
-│  Plan        ││   qualification - pass: Observed by the core                 │
-│  Op          ││   restore - pass: Observed by the core                       │
-│  Scan        ││   doctor - pass: Observed by the core                        │
-│  Select      ││   recovery - not-checked: Observed by the core               │
-│  Items       ││                                                              │
-│  Review      ││                                                              │
-│  Install     ││                                                              │
-│  Progress    ││                                                              │
-│  Restore     ││                                                              │
-│  Qualify     ││                                                              │
-│▍ Completion  ││                                                              │
-│              ││                                                              │
-│              ││                                                              │
+│  Welcome     ││   Plan storage: done                                        ↑│
+│  Journey     ││   Install Asahi: done - recorded by macOS                    │
+│  Machine     ││   Install Omarchy: done                                      │
+│  Status      ││   Shared storage: done                                       │
+│  Health      ││   Restore: skipped - No bundle selected                      │
+│  Logs        ││   Verify: done                                               │
+│  Plan        ││   Complete: done                                             │
+│  Op          ││                                                              │
+│  Scan        ││ ▍Report                                                      │
+│  Select      ││ ✓ Report: pass                                               │
+│  Items       ││   7 pass - 0 warn - 0 fail - 1 not checked                   │
+│  Review      ││   macOS - pass: Observed by the core                         │
+│  Install     ││   Disk - pass: Observed by the core                          │
+│  Progress    ││   Shared storage - pass: Observed by the core                │
+│  Restore     ││   Linux - pass: Observed by the core                         │
+│  Qualify     ││   Cross-system check - pass: Observed by the core            │
+│▍ Completion  ││   Restore - pass: Observed by the core                       │
+│              ││   Health - pass: Observed by the core                        │
+│              ││   Recovery - not checked: Observed by the core               │
 └──────────────┘└──────────────────────────────────────────────────────────────┘
- ↑↓ scroll  r refresh  L logs  ? help  q quit                 may act · fixture
+ ↑↓ scroll  r refresh  L logs  ? help       can make changes · recorded machine

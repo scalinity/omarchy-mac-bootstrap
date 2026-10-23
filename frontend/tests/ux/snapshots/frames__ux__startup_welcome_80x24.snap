@@ -1,0 +1,28 @@
+---
+source: tests/ux/mod.rs
+expression: "frame(&m, w, h)"
+---
+ ◒ Welcome ───────────────────────────────────────────────────────────── v0.2.0
+ ◒ OMARCHY  mac bootstrap
+┌ Screens ─────┐┌ Welcome ─────────────────────────────────────────────────────┐
+│▍ Welcome     ││ ▍Welcome to Omarchy Mac Bootstrap                            │
+│  Journey     ││   A step runs only when it is chosen; its conditions are     │
+│  Machine     ││   checked again first.                                       │
+│  Status      ││                                                              │
+│  Health      ││ ▍This machine                                                │
+│  Logs        ││   Model ID   MacBookPro18,2                                  │
+│  Plan        ││                                                              │
+│  Op          ││ ▍The tool and the core                                       │
+│  Scan        ││   Interface  frontend 0.2.0, protocol 1                      │
+│  Select      ││   Bootstrap  version 0.2.0                                   │
+│  Items       ││   System     macOS, arm64, user                              │
+│  Review      ││   Session    can make changes · 3 steps offered · recorded   │
+│  Install     ││              machine                                         │
+│  Progress    ││                                                              │
+│  Restore     ││ ▍Where the journey stands                                    │
+│  Qualify     ││ ·─────·─────·─────·─────·─────·─────·─────·─────·─────·      │
+│  Completion  ││ Survey      Review      Asahi       Shared      Verify       │
+│              ││       Choices     Plan        Omarchy     Restore     Done   │
+│              ││ No stage is derived yet: every station is later.            ↓│
+└──────────────┘└──────────────────────────────────────────────────────────────┘
+ ⏎ the journey  ? help    can make changes · 3 steps offered · recorded machine

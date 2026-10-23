@@ -11,7 +11,6 @@ use crate::theme::{Theme, Token};
 use crate::widgets::{self, Tier, cells, fit, fit_start, wrap};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -26,14 +25,22 @@ pub fn fault_lines<'a>(f: &Fault, t: &Theme, width: usize) -> Vec<Line<'a>> {
     let mut out = Vec::new();
     let dot = t.g.dot;
     let (head, tok, body, next): (String, Token, String, String) = match f {
-        Fault::Said { status, code, text } if status == "refused" => (
-            format!("{} refused {} {code}", t.g.warn, t.g.dot),
+        Fault::Said {
+            status,
+            code: _,
+            text,
+        } if status == "refused" => (
+            format!("{} Needs attention", t.g.warn),
             Token::Warn,
             text.clone(),
             "r asks again; D debugging brief".to_string(),
         ),
-        Fault::Said { status, code, text } => (
-            format!("{} {status} {} {code}", t.g.fail, t.g.dot),
+        Fault::Said {
+            status: _,
+            code: _,
+            text,
+        } => (
+            format!("{} The check could not finish", t.g.fail),
             Token::Danger,
             text.clone(),
             format!("r tries again {dot} L shows the log {dot} D brief"),
@@ -144,17 +151,14 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             t.style(Token::Muted),
         )),
         Some(d) => {
-            if let Some(g) = newest {
-                let short = |g: &str| g.get(..12).unwrap_or(g).to_string();
+            if newest.is_some() {
                 let shown = format!(
-                    "{} shown: an earlier read, generation {}; the newest read is {}{}",
+                    "{} This is an earlier read; {}",
                     t.g.warn,
-                    short(&d.generation),
-                    short(g),
                     if reading {
-                        ", reading now"
+                        "reading the latest now"
                     } else {
-                        ", not shown"
+                        "r reads the latest"
                     }
                 );
                 for (i, l) in wrap(&shown, width.saturating_sub(4)).iter().enumerate() {
@@ -224,6 +228,28 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
             }
         }
     }
+    if !d.is_some_and(|d| d.open) {
+        if let Some(d) = d.filter(|d| d.loaded) {
+            let tail_h = u16::from(d.total > 0) + u16::from(d.editing);
+            let [body, tail] =
+                Layout::vertical([Constraint::Min(0), Constraint::Length(tail_h)]).areas(inner);
+            rows(f, body, d, newest.is_some(), m, t, tier, head);
+            let mut lines = Vec::new();
+            if d.total > 0 {
+                lines.push(foot(d, None, t, m));
+            }
+            if d.editing {
+                lines.push(Line::styled(
+                    format!(" / {}_", d.filter),
+                    t.style(Token::Gate),
+                ));
+            }
+            f.render_widget(Paragraph::new(lines), tail);
+        } else {
+            super::draw_lines(f, inner, head, Vec::new(), None, 0, m, t);
+        }
+        return;
+    }
     let footed = d.filter(|d| d.loaded && d.total > 0);
     let edit = d.filter(|d| d.editing).map(|d| {
         Line::from(vec![
@@ -251,9 +277,9 @@ pub fn draw(f: &mut Frame, area: Rect, m: &Model, t: &Theme, tier: Tier) {
     let held = newest.is_some();
     let seen = d
         .filter(|d| d.loaded)
-        .and_then(|d| rows(f, body, d, held, m, t, tier));
+        .and_then(|d| rows(f, body, d, held, m, t, tier, Vec::new()));
     let mut tl = Vec::new();
-    tl.extend(footed.map(|d| foot(d, seen, t)));
+    tl.extend(footed.map(|d| foot(d, seen, t, m)));
     tl.extend(edit);
     f.render_widget(Paragraph::new(tl), tail);
 }
@@ -379,281 +405,372 @@ fn scope_head<'a>(
 
 /// The page shown and its generation; while a value is open, SEEN — the
 /// lines of it drawn (first, last) and how many it has — in place of the rows.
-fn foot<'a>(d: &Detail, seen: Option<(usize, usize, usize)>, t: &Theme) -> Line<'a> {
-    let dash = if t.caps.unicode { "–" } else { "-" };
-    let dot = t.g.dot;
-    let a = d.offset + 1;
-    let b = d.offset + d.rows.len() as u64;
-    let mut s = if let Some((first, last, n)) = seen {
-        format!(" value lines {first}{dash}{last} of {n}")
-    } else if d.rows.is_empty() {
-        format!(" no rows past {} of {}", d.offset, d.total)
-    } else {
-        format!(" rows {a}{dash}{b} of {}", d.total)
-    };
-    s.push_str(&format!(
-        " {dot} generation {}",
-        d.generation.get(..12).unwrap_or(&d.generation)
-    ));
-    if seen.is_some() {
-        return Line::styled(s, t.style(Token::Muted));
+fn foot<'a>(d: &Detail, _seen: Option<(usize, usize, usize)>, t: &Theme, m: &Model) -> Line<'a> {
+    let v = m.viewport.borrow();
+    if !d.open && (v.total > v.height || d.offset > 0 || (d.rows.len() as u64) < d.total) {
+        let shown = d.shown();
+        let visible: Vec<_> = v
+            .rows
+            .iter()
+            .filter(|r| r.1 < v.top + v.height && r.2 > v.top)
+            .collect();
+        if let (Some(a), Some(b)) = (visible.first(), visible.last()) {
+            let first = d.offset + a.0 as u64 + 1;
+            let last = d.offset + b.0 as u64 + 1;
+            let _ = shown;
+            return Line::styled(
+                format!(
+                    " rows {first}{}{last} of {}",
+                    if t.caps.unicode { "–" } else { "-" },
+                    d.total
+                ),
+                t.style(Token::Muted),
+            );
+        }
     }
-    if b < d.total || d.offset > 0 {
-        s.push_str(&format!(" {dot} pages past either end are read on request"));
+    Line::raw("")
+}
+
+/// A home prefix is presentation, never an input to the core.
+pub fn home_path(path: &str) -> String {
+    if let Ok(home) = std::env::var("HOME")
+        && let Some(rest) = path.strip_prefix(&home)
+        && (rest.is_empty() || rest.starts_with('/'))
+    {
+        return format!("~{rest}");
     }
-    let shown = d.shown().len();
-    if !d.filter.is_empty() || d.level.is_some() {
-        let (lq, rq) = if t.caps.unicode {
-            ("“", "”")
+    path.into()
+}
+
+fn saved_path(m: &Model) -> Option<String> {
+    m.detail(Kind::Status)?
+        .rows
+        .iter()
+        .find(|r| r.col(0) == "Recorded" && !r.focusable(Kind::Status) && !r.col(3).is_empty())
+        .map(|r| home_path(r.col(3)))
+}
+
+fn source(m: &Model, kind: Kind, r: &Row) -> Option<String> {
+    let mac = m.hello.as_ref().is_some_and(|h| h.platform == "macos");
+    match kind {
+        Kind::Machine => Some(
+            if mac {
+                "read from this Mac just now"
+            } else {
+                "read from Linux just now"
+            }
+            .into(),
+        ),
+        Kind::Status if r.col(0) == "Recorded" => Some(saved_path(m).map_or_else(
+            || "from the saved record".into(),
+            |p| format!("from the saved record ({p})"),
+        )),
+        Kind::Status if r.col(0) == "omarchy-mac-setup --status" => {
+            Some("reported by Omarchy setup on Linux".into())
+        }
+        Kind::Status => Some(
+            if mac {
+                "read from this Mac just now"
+            } else {
+                "read from Linux just now"
+            }
+            .into(),
+        ),
+        Kind::Doctor => Some("reported by the system health check".into()),
+        Kind::Log => {
+            let generation = m.detail(Kind::Log).map(|d| d.generation.as_str());
+            let file = [&m.logread.snap, &m.logread.held]
+                .into_iter()
+                .flatten()
+                .find(|s| Some(s.generation.as_str()) == generation)
+                .and_then(|s| s.facts.iter().find(|f| f.key == "logs.source"))
+                .map(|f| f.value.as_str());
+            file.map(|file| format!("from the {} log", home_path(file)))
+                .or_else(|| (!r.col(2).is_empty()).then(|| format!("from the {} log", r.col(2))))
+        }
+        Kind::Operation => Some(
+            if r.key.starts_with("recorded.") {
+                "from the saved operation record"
+            } else {
+                "read from the current operation check"
+            }
+            .into(),
+        ),
+        _ => None,
+    }
+}
+
+fn value(kind: Kind, r: &Row) -> &str {
+    r.col(match kind {
+        Kind::Status | Kind::Doctor => 2,
+        Kind::Log => 3,
+        _ => 1,
+    })
+}
+
+pub fn expandable(m: &Model, kind: Kind, r: &Row) -> bool {
+    r.focusable(kind) && source(m, kind, r).is_some()
+}
+
+fn expansion(m: &Model, kind: Kind, r: &Row, t: &Theme, width: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    // The full value is useful where a table condensed it, or where display
+    // units hide its exact bytes. The row's column headings are not repeated.
+    if value(kind, r).chars().count() > 32 || value(kind, r).contains('\n') {
+        let full = if kind == Kind::Machine {
+            widgets::fact_value(&r.key, r.col(0), value(kind, r))
         } else {
-            ("\"", "\"")
+            value(kind, r).into()
         };
-        s.push_str(&format!(" {dot} "));
-        if let Some(l) = &d.level {
-            s.push_str(&format!("level {l} "));
-        }
-        if !d.filter.is_empty() {
-            s.push_str(&format!("filter {lq}{}{rq} ", d.filter));
-        }
-        s.push_str(&format!("{shown} of {} shown", d.rows.len()));
+        out.extend(wrap(&t.say(&full), width));
     }
-    Line::styled(s, t.style(Token::Muted))
-}
-
-/// The columns a kind shows at WIDTH, by priority: the lowest drop first.
-struct Cols {
-    section: bool,
-    note: bool,
-    time: bool,
-    source: bool,
-}
-
-fn cols(kind: Kind, width: usize) -> Cols {
-    Cols {
-        section: kind == Kind::Status && width >= 70,
-        note: kind == Kind::Status && width >= 56,
-        time: kind == Kind::Log && width >= 88,
-        source: kind == Kind::Log && width >= 56,
+    if kind == Kind::Operation && !r.col(2).is_empty() && value(kind, r).chars().count() > 32 {
+        out.extend(wrap(&t.say(r.col(2)), width));
     }
-}
-
-fn state_cell(word: &str, t: &Theme) -> (String, Style) {
-    let (g, tok) = match word {
-        "pass" => (t.g.ok, Token::Ok),
-        "warn" => (t.g.warn, Token::Warn),
-        "fail" => (t.g.fail, Token::Danger),
-        _ => (t.g.info, Token::Info),
-    };
-    (format!("{g} {word:<4}"), t.style(tok))
-}
-
-fn level_style(level: &str, t: &Theme) -> Style {
-    match level {
-        "warn" => t.style(Token::Warn),
-        "error" | "fail" => t.style(Token::Danger),
-        "ok" => t.style(Token::Ok),
-        _ => t.style(Token::Muted),
+    if let Some(s) = source(m, kind, r) {
+        out.extend(wrap(&t.say(&s), width));
     }
+    if out.is_empty() && expandable(m, kind, r) {
+        out.extend(wrap(&t.say(value(kind, r)), width));
+    }
+    out
 }
 
-/// One row as cells: (text, style, width or 0 for the rest).
-fn cells_of(
+fn row_lines<'a>(
+    m: &Model,
     kind: Kind,
     r: &Row,
-    c: &Cols,
-    lw: usize,
-    srcw: usize,
+    here: bool,
     t: &Theme,
-) -> Vec<(String, Style, usize)> {
-    let text = t.style(Token::Text);
-    let muted = t.style(Token::Muted);
-    match kind {
-        Kind::Machine
-        | Kind::Items
-        | Kind::Choices
-        | Kind::Review
-        | Kind::Opaque
-        | Kind::Bundles
-        | Kind::RestoreReview
-        | Kind::Conflicts
-        | Kind::Diff
-        | Kind::RestoreStatus
-        | Kind::Brief
-        | Kind::Step
-        | Kind::Report => {
-            vec![(r.col(0).into(), muted, lw), (r.col(1).into(), text, 0)]
+    width: usize,
+) -> Vec<Line<'a>> {
+    if kind == Kind::Status && !r.focusable(kind) {
+        let mac = m.hello.as_ref().is_some_and(|h| h.platform == "macos");
+        let title = match r.col(0) {
+            "Detected now" if mac => "Read from this Mac now",
+            "Detected now" => "Read from Linux now",
+            "omarchy-mac-setup --status" => "Omarchy setup status",
+            "Recorded" => "Saved progress",
+            s => s,
+        };
+        let mut out = vec![Line::styled(
+            format!(" {} {title}", t.g.bar),
+            t.style(Token::Heading),
+        )];
+        let note = if r.col(0) == "Recorded" {
+            format!("Saved in {}", home_path(r.col(3)))
+        } else if r.col(0) == "Detected now" && mac {
+            format!("Model ID {}", r.col(3))
+        } else if r.col(3) == "upstream" {
+            "Reported by Omarchy setup".into()
+        } else {
+            r.col(3).into()
+        };
+        if !r.col(3).is_empty() {
+            out.extend(
+                wrap(&t.say(&note), width.saturating_sub(6))
+                    .into_iter()
+                    .map(|l| Line::styled(format!("     {l}"), t.style(Token::Muted))),
+            );
         }
-        Kind::Operation => vec![
-            (r.col(0).into(), muted, lw),
-            (r.col(1).into(), text, 0),
-            (r.col(2).into(), muted, usize::MAX),
-        ],
-        Kind::Status => {
-            let mut v = Vec::new();
-            if c.section {
-                v.push((r.col(0).into(), t.style(Token::Heading), 14));
-            }
-            v.push((r.col(1).into(), muted, lw));
-            v.push((r.col(2).into(), text, 0));
-            if c.note && !r.col(3).is_empty() {
-                v.push((r.col(3).into(), muted, usize::MAX));
-            }
-            v
-        }
-        Kind::Doctor => {
-            let (s, st) = state_cell(r.col(0), t);
-            vec![
-                (s, st, 7),
-                (r.col(1).into(), text, lw),
-                (r.col(2).into(), muted, 0),
-            ]
-        }
-        Kind::Log => {
-            let mut v = Vec::new();
-            if c.time {
-                v.push((r.col(0).into(), muted, 20));
-            }
-            v.push((r.col(1).into(), level_style(r.col(1), t), 5));
-            if c.source {
-                v.push((r.col(2).into(), muted, srcw));
-            }
-            v.push((r.col(3).into(), text, 0));
-            v
+        return out;
+    }
+    let label = match kind {
+        Kind::Status | Kind::Doctor => r.col(1),
+        Kind::Log => r.col(1),
+        _ => r.col(0),
+    };
+    let log_label = if kind == Kind::Log && !r.col(2).is_empty() {
+        format!("{} {}", r.col(1), r.col(2))
+    } else {
+        label.into()
+    };
+    let label = log_label.as_str();
+    let label = if kind == Kind::Machine && r.key == "machine.model" {
+        widgets::model_label(value(kind, r))
+    } else {
+        label
+    };
+    let val = if kind == Kind::Machine {
+        widgets::fact_value(&r.key, label, value(kind, r))
+    } else {
+        value(kind, r).into()
+    };
+    let label = t.say(label);
+    let stacked = cells(&label) > width / 2;
+    let prefix = if stacked {
+        String::from("     ")
+    } else if label.is_empty() {
+        format!(" {} ", if here { t.g.pointer } else { " " })
+    } else {
+        format!(" {} {label}: ", if here { t.g.pointer } else { " " })
+    };
+    let mut out = Vec::new();
+    if stacked {
+        for (i, l) in wrap(&label, width.saturating_sub(4))
+            .into_iter()
+            .enumerate()
+        {
+            out.push(Line::styled(
+                format!(" {} {l}", if i == 0 && here { t.g.pointer } else { " " }),
+                t.style(if here && i == 0 {
+                    Token::Focus
+                } else {
+                    Token::Muted
+                }),
+            ));
         }
     }
+    let parts = wrap(&t.say(&val), width.saturating_sub(cells(&prefix)).max(8));
+    let parts = if parts.is_empty() {
+        vec![String::new()]
+    } else {
+        parts
+    };
+    for (i, l) in parts.into_iter().enumerate() {
+        out.push(Line::from(vec![
+            Span::styled(
+                if i == 0 {
+                    prefix.clone()
+                } else {
+                    " ".repeat(cells(&prefix).min(width.saturating_sub(8)))
+                },
+                t.style(if here && i == 0 && !stacked {
+                    Token::Focus
+                } else {
+                    Token::Muted
+                }),
+            ),
+            Span::styled(l, t.style(Token::Text)),
+        ]));
+    }
+    if kind == Kind::Status && !r.col(3).is_empty() {
+        let ok = r.col(3) == "supported";
+        out.extend(
+            wrap(&t.say(r.col(3)), width.saturating_sub(6))
+                .into_iter()
+                .map(|l| {
+                    Line::styled(
+                        format!(
+                            "     {}{l}",
+                            if ok {
+                                format!("{} ", t.g.ok)
+                            } else {
+                                String::new()
+                            }
+                        ),
+                        t.style(if ok { Token::Ok } else { Token::Muted }),
+                    )
+                }),
+        );
+    }
+    if kind == Kind::Operation && !r.col(2).is_empty() {
+        out.extend(
+            wrap(&t.say(r.col(2)), width.saturating_sub(6))
+                .into_iter()
+                .map(|l| Line::styled(format!("     {l}"), t.style(Token::Muted))),
+        );
+    }
+    if kind == Kind::Doctor {
+        out.push(Line::styled(
+            format!(
+                "     {} {}",
+                match r.col(0) {
+                    "pass" => t.g.ok,
+                    "warn" => t.g.warn,
+                    "fail" => t.g.fail,
+                    _ => t.g.info,
+                },
+                r.col(0)
+            ),
+            t.style(match r.col(0) {
+                "pass" => Token::Ok,
+                "fail" => Token::Danger,
+                "warn" => Token::Warn,
+                _ => Token::Muted,
+            }),
+        ));
+    }
+    out
 }
 
 /// The rows shown, the focused one's values under it when open; HELD when
 /// they are an earlier read's. Returns, for an open value, the lines of it
 /// drawn (first, last) and how many it has.
+#[allow(clippy::too_many_arguments)]
 fn rows(
     f: &mut Frame,
     area: Rect,
     d: &Detail,
-    held: bool,
+    _held: bool,
     m: &Model,
     t: &Theme,
     _tier: Tier,
+    mut prefix: Vec<Line<'_>>,
 ) -> Option<(usize, usize, usize)> {
     let width = area.width as usize;
     let height = area.height as usize;
     let shown = d.shown();
     if shown.is_empty() || height == 0 {
         if !d.rows.is_empty() {
-            f.render_widget(
-                Paragraph::new(Line::styled(
-                    "   No row on this page matches.",
-                    t.style(Token::Muted),
-                )),
-                area,
-            );
+            prefix.push(Line::styled(
+                "   No row on this page matches.",
+                t.style(Token::Muted),
+            ));
         }
+        super::draw_lines(f, area, prefix, Vec::new(), None, 0, m, t);
         return None;
     }
-    let c = cols(d.kind, width);
-    let label = |r: &Row| match d.kind {
-        Kind::Status | Kind::Doctor => cells(r.col(1)),
-        Kind::Log => 0,
-        _ => cells(r.col(0)),
-    };
-    let lw = shown
-        .iter()
-        .map(|r| label(r))
-        .max()
-        .unwrap_or(0)
-        .clamp(4, if d.kind == Kind::Doctor { 26 } else { 20 });
-    let srcw = shown
-        .iter()
-        .map(|r| cells(r.col(2)))
-        .max()
-        .unwrap_or(0)
-        .min(12);
-    let focused = m.region == Region::Work;
     let cursor = d.cursor.min(shown.len() - 1);
-    // The focused row's full values, wrapped beneath it when it is open.
-    let open: Vec<String> = if d.open {
-        shown[cursor]
-            .cols
-            .iter()
-            .filter(|v| !v.is_empty())
-            .flat_map(|v| wrap(&t.say(v), width.saturating_sub(8)))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    // Values longer than the room under their row are drawn a window at a
-    // time, from the line the keys reached, kept here within them: the last
-    // window is the furthest, so every key short of an end moves it.
-    let total = open.len();
-    let window = height.saturating_sub(1);
-    let top = d.value_top.get().min(total.saturating_sub(window));
-    d.value_top.set(top);
-    let open = &open[top..total.min(top + window)];
-    let room = height.saturating_sub(open.len()).max(1);
-    let start = (cursor + 1).saturating_sub(room);
-    let mut lines: Vec<Line> = Vec::new();
-    let mut last_section = String::new();
-    for (i, r) in shown.iter().enumerate().skip(start).take(room) {
-        let here = i == cursor && focused;
-        let dim = d.changed || held;
-        let pointer = if here { t.g.pointer } else { " " };
-        let mut spans = vec![Span::styled(format!(" {pointer} "), t.style(Token::Accent))];
-        let mut used = 3;
-        let parts = cells_of(d.kind, r, &c, lw, srcw, t);
-        let n = parts.len();
-        // The cell that carries the focus: the row's name, or a line's text.
-        let focus_at = match d.kind {
-            Kind::Status => usize::from(c.section),
-            Kind::Doctor => 1,
-            Kind::Log => n - 1,
-            _ => 0,
+    if d.open {
+        let r = shown[cursor];
+        let value_lines = expansion(m, d.kind, r, t, width.saturating_sub(8));
+        let label = match d.kind {
+            Kind::Status | Kind::Doctor | Kind::Log => r.col(1),
+            _ => r.col(0),
         };
-        for (j, (text, style, w)) in parts.into_iter().enumerate() {
-            let rest = width.saturating_sub(used + 2);
-            let w = match w {
-                0 => {
-                    // The rest, less what a trailing note keeps.
-                    if j + 1 < n {
-                        rest.saturating_sub((rest / 3).max(8))
-                    } else {
-                        rest
-                    }
-                }
-                usize::MAX => rest,
-                w => w.min(rest),
-            };
-            // A status section is named on its first row only.
-            let text = if d.kind == Kind::Status && j == 0 && c.section {
-                if text == last_section && i != start {
-                    String::new()
-                } else {
-                    last_section = text.clone();
-                    text
-                }
-            } else {
-                text
-            };
-            let cell = format!("{:<w$}", fit(&t.say(&text), w, t.caps.unicode), w = w);
-            let style = if dim {
-                t.style(Token::Muted)
-            } else if here && j == focus_at {
-                t.style(Token::Focus)
-            } else {
-                style
-            };
-            used += cells(&cell) + 2;
-            spans.push(Span::styled(cell, style));
-            spans.push(Span::raw("  "));
+        let mut lines = prefix;
+        if value(d.kind, r).chars().count() > 32 || value(d.kind, r).contains('\n') {
+            lines.push(Line::styled(
+                format!(" {} {}", t.g.pointer, t.say(label)),
+                t.style(Token::Focus),
+            ));
+        } else {
+            lines.extend(row_lines(m, d.kind, r, true, t, width));
         }
-        lines.push(Line::from(spans));
-        if i == cursor {
-            for l in open {
-                lines.push(Line::styled(format!("       {l}"), t.style(Token::Text)));
-            }
-        }
+        let window = height.saturating_sub(lines.len());
+        let top = d
+            .value_top
+            .get()
+            .min(value_lines.len().saturating_sub(window));
+        d.value_top.set(top);
+        lines.extend(
+            value_lines
+                .iter()
+                .skip(top)
+                .take(window)
+                .map(|l| Line::styled(format!("       {l}"), t.style(Token::Text))),
+        );
+        f.render_widget(Paragraph::new(lines), area);
+        return Some((
+            top + 1,
+            (top + window).min(value_lines.len()),
+            value_lines.len(),
+        ));
     }
-    f.render_widget(Paragraph::new(lines), area);
-    (d.open && !open.is_empty()).then(|| (top + 1, top + open.len(), total))
+    let mut lines = prefix;
+    let mut anchors = Vec::new();
+    for (i, r) in shown.iter().enumerate() {
+        let here =
+            i == cursor && m.region == Region::Work && m.focus_visible() && r.focusable(d.kind);
+        let block = row_lines(m, d.kind, r, here, t, width);
+        if r.focusable(d.kind) {
+            anchors.push((i, lines.len(), lines.len() + block.len()));
+        }
+        lines.extend(block);
+    }
+    super::draw_lines(f, area, lines, anchors, Some(cursor), 0, m, t);
+    None
 }
 
 /// The core's diagnostics kept in this session: read from the session's own
@@ -666,8 +783,7 @@ fn diagnostics(f: &mut Frame, area: Rect, mut lines: Vec<Line>, m: &Model, t: &T
             t.style(Token::Muted),
         ));
     }
-    let room = (area.height as usize).saturating_sub(lines.len());
-    for l in m.logs.iter().skip(m.scroll).take(room) {
+    for l in &m.logs {
         lines.push(Line::styled(
             format!(
                 "   {}",
@@ -676,5 +792,5 @@ fn diagnostics(f: &mut Frame, area: Rect, mut lines: Vec<Line>, m: &Model, t: &T
             t.style(Token::Text),
         ));
     }
-    f.render_widget(Paragraph::new(lines), area);
+    super::draw_lines(f, area, lines, Vec::new(), None, m.scroll, m, t);
 }
