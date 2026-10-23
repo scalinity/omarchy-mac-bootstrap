@@ -95,6 +95,21 @@ assert_eq "$bad" "" "every sys_cmd probe is on the read-only list"
 run_commands() {
   code_lines | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? [^;|&]*' | sed -E 's/^[[:space:];&|(]*run(_withheld [0-9]+)? //' | awk '{print $1}' | sort -u | tr '\n' ' '
 }
+# A literal position keeps withheld argv readable to every static scan.
+invalid_withheld() {
+  code_lines | sed 's/^[^:]*:[0-9]*: //' |
+    grep -oE '(^|[[:space:];&|(])run_withheld[[:space:]]+[^;|&]*' |
+    grep -vE 'run_withheld[[:space:]]+[0-9]+([[:space:]]|$)'
+}
+assert_eq "$(invalid_withheld)" "" safety-withheld-literal-position
+# Normalize the wrapper before the sudo-specific allowlists, just as for run.
+sudo_lines() {
+  raw_lines | sed -E 's/^[^:]*:[0-9]*: //; s/run_withheld[[:space:]]+[0-9]+[[:space:]]+/run /g'
+}
+direct_sudos() {
+  code_lines | sed -E 's/^[^:]*:[0-9]*: //; s/run_withheld[[:space:]]+[0-9]+[[:space:]]+/run /g' |
+    grep -E '(^[[:space:]]*|[;&|({!][[:space:]]*|\$\([[:space:]]*|(then|do|else|if|exec|command|env|xargs)[[:space:]]+)sudo[[:space:]]'
+}
 runs=$(run_commands)
 for cmd in $runs; do
   case "$cmd" in
@@ -116,6 +131,13 @@ CODE=$scan_tmp/planted.sh
 hits=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E "${CMDPOS}${FORBIDDEN_RE}([[:space:]]|\$)")
 assert_contains "$hits" 'run_withheld 2 dd' safety-withheld-forbidden-visible
 assert_contains "$(run_commands)" 'restore-unlisted-command' safety-withheld-unlisted-visible
+printf '%s\n' 'run_withheld 4 sudo rm -- "$HOME/.bashrc"' >"$scan_tmp/planted.sh"
+assert_contains "$(sudo_lines | grep -o 'run sudo [a-z]* [^ ]*')" 'run sudo rm --' safety-withheld-sudo-allowlist-visible
+assert_eq "$(direct_sudos)" "" safety-withheld-sudo-through-run
+printf '%s\n' 'run_withheld "$n" git config x y' >"$scan_tmp/planted.sh"
+assert_contains "$(invalid_withheld)" run_withheld safety-withheld-variable-position-refused
+printf '%s\n' 'sudo rm -- "$HOME/.bashrc"' >"$scan_tmp/planted.sh"
+assert_contains "$(direct_sudos)" 'sudo rm' safety-direct-sudo-refused
 CODE=$saved_code
 rm -rf "$scan_tmp"
 quoted=$(raw_lines | sed 's/^[^:]*:[0-9]*: //' | grep -oE '(^|[[:space:];&|(])run(_withheld [0-9]+)? "[^"]*"[^;|&]*' | sed -E 's/^[[:space:];&|(]*//; s/run_withheld [0-9]+ /run /; s/[[:space:]]+$//' | sort -u)
@@ -173,14 +195,14 @@ run_withheld 5 claude mcp add-json "$name" "$value" --scope user >/dev/null 2>&1
 run_withheld 8 git config --file "$RST_HOME/.gitconfig" --no-includes -- "$name" "$RST_SAVED_VALUE" >/dev/null 2>&1 || :
 else run git config --file "$RST_HOME/.gitconfig" --no-includes --unset-all -- "$name" >/dev/null 2>&1 || :; fi
 run_withheld 5 claude mcp add-json "$name" "$RST_SAVED_VALUE" --scope user >/dev/null 2>&1 || :' 'restore withholds every setting value'
-sudos=$(grep -ho 'run sudo [a-z]* [^ ]*' $CODE | LC_ALL=C sort -u | tr '\n' ';')
+sudos=$(sudo_lines | grep -o 'run sudo [a-z]* [^ ]*' | LC_ALL=C sort -u | tr '\n' ';')
 assert_eq "$sudos" "run sudo cp -p;run sudo install -d;run sudo install -m;run sudo localectl set-locale;run sudo mv -f;run sudo pacman -S;run sudo systemctl daemon-reload;run sudo systemctl start;run sudo timedatectl set-timezone;" "sudo is used only for packages, timezone, locale, the Shared mount, and the one Shared creation"
-assert_eq "$(grep -hoE 'run sudo (cp|mv|install) [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
+assert_eq "$(sudo_lines | grep -oE 'run sudo (cp|mv|install) [^&]*' | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
   'run sudo cp -p /etc/fstab /etc/fstab.omarchy-bootstrap.bak;run sudo install -d -m 0755 -o root -g root "$SHARED_MNT";run sudo install -m 0644 -o root -g root "$tmp" /etc/fstab.omarchy-bootstrap.new;run sudo mv -f /etc/fstab.omarchy-bootstrap.new /etc/fstab;' \
   "privileged file changes are exactly the Shared mount point and the managed fstab"
-assert_eq "$(grep -hoE 'run sudo systemctl [^&]*' $CODE | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
+assert_eq "$(sudo_lines | grep -oE 'run sudo systemctl [^&]*' | sed 's/ *$//' | LC_ALL=C sort -u | tr '\n' ';')" \
   'run sudo systemctl daemon-reload;run sudo systemctl start "$SHARED_UNIT";' "systemctl only reloads and starts the Shared automount"
-hits=$(code_lines | sed 's/^[^:]*:[0-9]*: //' | grep -E '(^[[:space:]]*|[;&|({!][[:space:]]*|\$\([[:space:]]*|(then|do|else|if|exec|command|env|xargs)[[:space:]]+)sudo[[:space:]]')
+hits=$(direct_sudos)
 assert_eq "$hits" "" "sudo only ever runs through run"
 
 # --- Dynamic: dry-run executes nothing ------------------------------------------------
