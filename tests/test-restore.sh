@@ -731,5 +731,4 @@ c_run detail "$(rec_line page scope restore kind review generation "$generation"
 assert_eq "$(c_result)" 'refused changed' restore-wire-stale-generation
 
 HOME=$REAL_HOME
-printf '%s passed, %s failed, %s skipped\n' "$T_PASS" "$T_FAIL" "$T_SKIP"
-[ "$T_FAIL" = 0 ]
+t_done test-restore
