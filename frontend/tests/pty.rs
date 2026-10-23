@@ -1516,7 +1516,16 @@ fn pty_gate2_reads_through_the_launcher() {
         p.send(b"\t");
         p.keys("100GB");
         p.send(b"\r");
-        p.wait_for("refused · unavailable");
+        // The answer, not the send: the page names the two sizes only from a
+        // check that carries them, and says what the core made of it. Without
+        // a plan.save the core refuses, and the page says to check the input
+        // and gives the core's reason.
+        p.wait_until("the two sizes checked and refused", |p| {
+            let f = p.contents();
+            f.contains("For Linux 250GB · Shared 100GB")
+                && f.contains("Check the input above")
+                && f.contains("Validation answers plan.save on macOS")
+        });
     }
     p.idle();
     p.send(b"\x1b");
