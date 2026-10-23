@@ -51,6 +51,13 @@ core_health_doctor() (
   printf '%s %s %s %s %s\n' "$__st" "$__n" "$DOC_PASS" "$DOC_WARN" "$DOC_FAIL" >"$OMB_TMP/health.counts"
 )
 
+# Report observations share Health's dataset, after the one Doctor capture.
+core_health_report() {
+  journey_read "$1" >/dev/null || return 1
+  journey_report_build || return 1
+  journey_report_records >"$OMB_TMP/health.report"
+}
+
 # Health producer status: 0 usable, 1 infrastructure failure, 2 established
 # representation invalidity. Canonical admission owns every wire/schema rule.
 core_health_capture() {
@@ -113,9 +120,7 @@ core_health_capture() {
   [ "$st" = 0 ] || return "$st"
   # Report joins this dataset, including off-page rows. Reuse the one
   # authoritative Doctor capture; do not invoke cmd_doctor a second time.
-  journey_read "$doc_counts" >/dev/null || return 1
-  journey_report_build || return 1
-  journey_report_records >"$OMB_TMP/health.report" || return 1
+  core_health_report "$doc_counts" || return 1
   core_read_rows "$OMB_TMP/health.report" "$(printf '%064d' 0)"
   st=$?
   [ "$st" = 0 ] || return "$st"

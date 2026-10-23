@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Ten stages and the final report. All observations reuse the baseline readers;
-# only the three baseline codes may establish the other system's progress.
+# the baseline codes and a checked bundle establish recorded remote progress.
 
 # shellcheck source=/dev/null # avoid recursively linting the core through its read adapter
 if ! declare -F core_mod_load >/dev/null; then
@@ -58,8 +58,8 @@ journey_qualification() {
   fi
 }
 
-# A saved plan must still fit. After the install, the Shared classifier checks
-# its saved exact extents; without that record the old layout is not recoverable.
+# Before installation the saved plan must still fit. After installation its
+# record establishes completion; the report separately checks the current disk.
 journey_mac_plan() {
   J_PLAN=todo J_PLAN_WHY='no saved plan'
   [ -n "$(state_get cfg_linux)" ] || return 0
@@ -80,11 +80,9 @@ journey_mac_plan() {
       fi
     else J_PLAN_WHY=$PLAN_ERR; fi
   else
-    case "$SHARED_STATE" in
-      awaiting-linux-completion | awaiting-macos-creation | created)
-        J_PLAN='done' J_PLAN_WHY='installed layout matches the saved Shared plan' ;;
-      *) J_PLAN_WHY='not checked: the pre-install layout is unavailable without a matching Shared plan' ;;
-    esac
+    if [ "$ASAHI_STATE" = installed ]; then
+      J_PLAN='done' J_PLAN_WHY='saved plan; Asahi installation is installed'
+    fi
   fi
 }
 
@@ -120,7 +118,8 @@ journey_profile() {
 }
 
 journey_read() {
-  local counts=${1:-} p w f n=0 pending=0 current=0 receipt token_loaded
+  local counts=${1:-} p w f n=0 pending=0 current=0 receipt token_loaded due
+  core_mod_load qualify || return 1
   journey_init
   cfg_load
   J_PLAN=todo J_PLAN_WHY='' J_RWHY='restore has not been checked'
@@ -157,20 +156,22 @@ journey_read() {
         journey_set 0 blocked machine '' 'not checked: no resume token with a plan id'
         journey_set 3 blocked machine '' 'not checked: macOS plan is unavailable'
       fi
-      journey_set 1 blocked machine '' 'not checked: the resume token carries no migration choice'
-      journey_set 2 blocked machine '' 'not checked: the resume token carries no resolution progress'
+      journey_set 1 todo machine '' 'chosen on macOS'
+      journey_set 2 todo machine '' 'chosen on macOS'
       if [ "$LX_APPLE" = 1 ] && lx_is_arch; then journey_set 4 'done'
       else journey_set 4 blocked machine '' 'Asahi Linux is not identified'; fi
       if lx_setup_complete; then journey_set 5 'done'; fi
       shared_lx_state
       if [ "$SHARED_STATE" = ready ]; then
-        shared_lx_mount
+        shared_lx_access
         if [ "$SH_MOUNT" = verified ]; then journey_set 6 'done'
         else journey_set 6 blocked machine '' "${SH_MOUNT_WHY:-Shared is not mounted and verified}"; fi
       elif [ "$SHARED_STATE" = blocked ]; then journey_set 6 blocked machine '' "$SHARED_WHY"; fi
       core_mod_load restore || return 1
       if _rst_load >/dev/null 2>&1; then
         if [ -n "$RST_BUNDLE" ]; then
+          journey_set 1 'done' recorded macos
+          journey_set 2 'done' recorded macos
           J_RWHY=${RST_WHY:-$RST_COUNTS}
           if [ "$RST_STATE" = complete ]; then journey_set 7 'done'
           elif [ "$RST_STATE" = blocked ]; then journey_set 7 blocked machine '' "${RST_WHY:-restore has blocked items}"; fi
@@ -196,20 +197,30 @@ EOF_COUNTS
       failed | blocked | unavailable) journey_set 8 blocked machine '' "${J_QWHY:-$J_QFY}" ;;
     esac
   fi
-  # Only the first unfinished, actionable stage is current. Explicit blockers
-  # remain blockers; later completed work is still shown, in rail order.
+  # The first unfinished stage due here owns current. A blocker keeps its
+  # state and stops later stages becoming current. Remote work stays todo.
   while [ "$n" -lt 9 ]; do
     case "${J_STATE[n]}" in
       done | skipped) ;;
       *)
-        if [ "$current" = 0 ] && [ "${J_STATE[n]}" = todo ]; then J_STATE[n]=current current=1; fi
+        due=0
+        case "$OMB_PLATFORM:$n" in
+          macos:0 | macos:1 | macos:2 | macos:3 | macos:4 | macos:6 | macos:7 | macos:8 | linux:5 | linux:6 | linux:7 | linux:8) due=1 ;;
+        esac
+        case "$OMB_PLATFORM:$n:$J_QFY" in macos:8:waiting-for-linux | linux:8:waiting-for-macos | linux:8:not-started) due=0 ;; esac
+        if [ "$current" = 0 ] && [ "$due" = 1 ]; then
+          if [ "${J_STATE[n]}" = todo ]; then J_STATE[n]=current; fi
+          current=1
+        fi
         pending=$((pending + 1)) ;;
     esac
-    # Done/current/todo carry no detail on the wire.
-    case "${J_STATE[n]}" in blocked | skipped) ;; *) J_DETAIL[n]='' ;; esac
+    case "${J_STATE[n]}:$OMB_PLATFORM:$n" in
+      blocked:* | skipped:* | todo:linux:1 | todo:linux:2) ;;
+      *) J_DETAIL[n]='' ;;
+    esac
     n=$((n + 1))
   done
-  if [ "$pending" = 0 ]; then journey_set 9 'done'; fi
+  if [ "$pending" = 0 ] && [ "$OMB_PLATFORM" = macos ]; then journey_set 9 'done'; fi
 }
 
 journey_records() {
@@ -262,7 +273,18 @@ journey_report_build() {
     st=warn
     case "$J_PLAN" in done) st=pass ;; blocked) st=fail ;; esac
     case "$J_PLAN_WHY" in "not checked:"*) st=not-checked ;; esac
-    journey_report_row disk "$st" disk "$J_PLAN_WHY"
+    why=$J_PLAN_WHY
+    if [ "$ASAHI_STATE" = installed ] && [ "$J_PLAN" = 'done' ]; then
+      if [ "${CFG_shared:-0}" = 0 ]; then
+        st=not-checked why='the pre-install extents are not saved without Shared'
+      else
+        case "$SHARED_STATE" in
+          awaiting-linux-completion | awaiting-macos-creation | created) st=pass why='installed layout matches the saved Shared extents' ;;
+          *) st=fail why=$SHARED_WHY ;;
+        esac
+      fi
+    fi
+    journey_report_row disk "$st" disk "$why"
   else
     journey_report_row mac not-checked 'the Mac' 'macOS and its hardware survey cannot be read from Linux'
     journey_report_row disk not-checked disk 'the saved APFS plan and its exact extents cannot be read from Linux'
@@ -272,7 +294,7 @@ journey_report_build() {
     created | ready)
       st=pass why=$SHARED_WHY
       if [ "$OMB_PLATFORM" = linux ]; then
-        shared_lx_mount
+        shared_lx_access
         if [ "$SH_MOUNT" != verified ]; then st=fail why=${SH_MOUNT_WHY:-Shared is not mounted and verified}; fi
       fi ;;
     blocked) st=fail why=$SHARED_WHY ;;

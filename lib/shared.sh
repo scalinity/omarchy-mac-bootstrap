@@ -1482,6 +1482,16 @@ EOF
   return 0
 }
 
+# Read through the configured automount, as restore does, then check the
+# kernel identity again before any qualification file or report is read.
+shared_lx_access() {
+  shared_lx_mount
+  if [ "$SH_MOUNT" = armed ]; then
+    ls -A "$(sys_path "$SHARED_MNT")" >/dev/null 2>&1
+    shared_lx_mount
+  fi
+}
+
 # shared_test — write, flush, read back and remove one uniquely named file.
 shared_test() {
   local mp dst src sum

@@ -1,7 +1,7 @@
 # Journey and qualification
 
-**Status: designed for M16; not implemented.** M17, the first real install,
-runs it on the target Mac. Baseline behaviour referred to here is the
+The journey, qualification and report are implemented for M16. M17, the
+first real install, runs them on the target Mac. Baseline behaviour referred to here is the
 accepted baseline in `MILESTONES.md`; the screens are in docs/UX.md.
 
 The install crosses at least five reboots and two operating systems that
@@ -25,13 +25,13 @@ survey · profile · resolve · plan · asahi · omarchy · shared · restore ·
 | survey | macOS | the survey read this Mac this run | no |
 | profile | macOS | a saved profile for this Mac (docs/MIGRATION.md) | yes: "no migration" |
 | resolve | macOS | every included item `resolved` or `unsupported` (docs/RESOLVER.md) | with profile |
-| plan | macOS | a saved plan whose invariants hold on a fresh read of the disk | no |
+| plan | macOS | a saved plan whose invariants hold before installation; after Asahi, a saved plan and an install classified `installed` | no |
 | asahi | macOS, then Linux | the Asahi install classified `installed` (macOS) or Asahi Linux booted (Linux) | no |
 | omarchy | Linux | Omarchy Mac finished: the baseline's marker, conf and encryption signals | no |
 | shared | macOS, then Linux | Shared `created` (macOS) / `ready` (Linux) | yes: not planned |
 | restore | macOS, then Linux | a bundle exported to a verified destination (macOS); the restore `complete` (Linux; docs/RESTORE.md → *States*) | with profile |
 | verify | both | qualification `passed` (with Shared), and doctor has no FAIL | no |
-| done | both | every stage above done or skipped | — |
+| done | macOS | every stage above done or skipped, ending with macOS qualification step 3 when Shared is planned | — |
 
 The profile comes before the plan because what is coming to Linux tells the
 planner how much room Linux needs: the plan screen shows the selection's
@@ -42,13 +42,19 @@ longer matches), while the profile can still be changed and exported.
 
 Each stage's state is `done`, `current`, `todo`, `skipped` or `blocked`, and
 says where it came from: `machine`, derived on this system this run, or
-`recorded`, the other system's progress as a typed code carried it (below).
+`recorded`, progress on the other system established by a checked code or
+bundle (below). `current` is the first unfinished stage due on this system.
+A blocked predecessor stays blocked and prevents later local work becoming
+current; stages due only on the other system stay todo. There is at most one
+current stage. Qualification waiting for Linux is due on Linux; not-started
+qualification and qualification waiting for macOS are due on macOS.
 
 ### What each system can see
 
-Each system reads only its own machine. macOS cannot read the encrypted
+Each system reads only its own machine. A checked bundle on Linux also establishes
+that a resolved macOS profile was exported. macOS cannot read the encrypted
 Linux root; Linux has no APFS access. The other system's progress comes
-only from the codes the person types, each input only:
+from the codes the person types and the checked bundle, each input only:
 
 | Code | Direction | When | Carries |
 | --- | --- | --- | --- |
@@ -72,25 +78,30 @@ read and verified again.
 
 Linux's loaded resume choices establish survey and plan as recorded by macOS
 only when the baseline recorded loading them and the token includes a plan id.
-The token contains no migration choice or profile/resolution progress; those
-two stages remain blocked with that reason. Linux restore is derived from the
-existing restore classifier and current destinations. A matching `ombdone`
-code completes only Omarchy on macOS, recorded by Linux. Shared on Linux
-requires the baseline's ready state and a verified mounted device identity;
-an `ombshare` code alone cannot complete it.
+The token contains no migration choice or profile/resolution progress.
+Linux marks profile and resolve done, recorded by macOS, only when the restore
+reader finds a bundle that passes its bundle check: export requires a resolved
+profile. Without a checked bundle they stay todo with detail `chosen on macOS`.
+Linux restore is derived from the existing restore classifier and current
+destinations. A matching `ombdone` code completes only Omarchy on macOS,
+recorded by Linux. Shared on Linux requires the baseline's ready state and a
+verified mounted device identity; an `ombshare` code alone cannot complete it.
+An armed configured automount is accessed through its directory, then the
+baseline reads the kernel mount identity again before qualification files or
+report observations are read, as restore does.
 
-The baseline has no saved exact pre-install layout without Shared. After
-Asahi changes that layout, the plan stage remains blocked unless the existing
-Shared classifier verifies the saved extents. These unavailable observations
-remain explicit; a code does not carry progress its schema cannot express.
-Consequently, Linux cannot establish the terminal done stage from the current
-codes, and a post-install macOS run without Shared cannot establish its plan.
+After Asahi, a saved plan record and an install classified `installed` complete
+the macOS plan stage, with or without Shared. The baseline refuses replanning
+against the changed disk. The report separately compares the current layout
+with the saved Shared extents; without Shared the exact pre-install extents
+are not saved, so that report row is not checked. Linux's done stage always
+stays todo: the journey ends on macOS, after qualification step 3 with Shared.
 
 Verify reads qualification only through `qfy_status_read`, if defined. With
 Shared, passed qualification and zero Doctor failures complete verify. A
 missing interface, blocked/failed qualification, or Doctor failure blocks it;
 waiting qualification remains unfinished. Without Shared, Doctor alone gates
-verify. Done requires all nine preceding stages done or skipped.
+verify. Done requires macOS and all nine preceding stages done or skipped.
 
 The startup check preserves its identity-only reads and zero actions. Its ten
 stages are blocked with `not checked: startup check reads identity only`.
@@ -314,7 +325,9 @@ Derived on every run from verified Shared and the folder on it:
 | `failed` | `result.omb` records a mismatch; the files stay until step 1 starts over |
 | `blocked` | identity, admission, binding, step order or space failed; the reason is shown |
 
-`qualify status` prints the state and writes nothing.
+`qualify status` prints the state and writes no qualification records. On Linux,
+qualification reads access the configured automount and recheck its kernel
+identity before opening the folder; an armed automount alone is not a failure.
 
 ### Without Shared
 
