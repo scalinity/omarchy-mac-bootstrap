@@ -262,10 +262,10 @@ done
 (
   t_load >/dev/null 2>&1
   OMB_FIXTURE=$FIX/linux-alarm-fresh OMB_DRY_RUN=0
-  # shellcheck disable=SC2329 # callback invoked by lx_ssh_stop
+  # shellcheck disable=SC2317,SC2329 # callback invoked by lx_ssh_stop
   run() { printf 'run %s\n' "$*" >>"$T/start.reads"; }
   eval "$(declare -f sys_cmd | sed '1s/sys_cmd/b_original_sys_cmd/')"
-  # shellcheck disable=SC2329 # callback invoked by lx_ssh_stop
+  # shellcheck disable=SC2317,SC2329 # callback invoked by lx_ssh_stop
   sys_cmd() { printf 'read %s\n' "$*" >>"$T/start.reads"; b_original_sys_cmd "$@"; }
   lx_ssh_stop >/dev/null
 )

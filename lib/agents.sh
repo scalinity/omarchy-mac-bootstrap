@@ -53,7 +53,7 @@ _agent_restore_ran() {
   want=$(printf 'agent\ttool=%s\tran=1' "$AG_ID")
   [ -n "${OMB_STATE_DIR:-}" ] || return 1
   for file in "$OMB_STATE_DIR"/restore/runs/*.log; do
-    [ -f "$file" ] && [ ! -L "$file" ] || continue
+    if [ ! -f "$file" ] || [ -L "$file" ]; then continue; fi
     while IFS= read -r line; do
       [ "$line" != "$want" ] || return 0
     done <"$file"
@@ -97,7 +97,7 @@ EOF
       case "$candidate" in /*) ;; *) continue ;; esac
       case "$candidate" in "$HOME/.local/share/mise/shims/"* | "$HOME/.local/share/mise/installs/"*) continue ;; esac
       file=$(sys_path "$candidate")
-      [ -f "$file" ] && [ -x "$file" ] || continue
+      if [ ! -f "$file" ] || [ ! -x "$file" ]; then continue; fi
       if _agent_wrapper "$file"; then continue; fi
       AG_INSTALLED=other AG_PATH=$candidate
       break

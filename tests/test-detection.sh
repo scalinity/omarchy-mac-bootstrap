@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Detection over fixtures: macOS (plist parsing needs plutil, so those cases
 # run on macOS only) and Linux (runs anywhere).
-# shellcheck disable=SC2015,SC2329 # assertions and callbacks in loaded libraries
+# shellcheck disable=SC2015,SC2317,SC2329 # assertions and callbacks in loaded libraries
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 t_load

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Static AI observations and explicit installs/handoffs; synthetic homes only.
-# shellcheck disable=SC2015,SC2016,SC2034,SC2030,SC2031,SC2329 # harness assertions; literal wrapper bytes; public hooks
+# shellcheck disable=SC2015,SC2016,SC2034,SC2030,SC2031,SC2317,SC2329 # harness assertions; literal wrapper bytes; public hooks
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh"
 echo test-agents
