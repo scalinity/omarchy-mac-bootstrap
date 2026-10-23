@@ -177,6 +177,14 @@ act_mac_plannable() {
   return 1
 }
 
+# act_layout_digest — the SHA-256 of the disk's layout on the last read:
+# every partition's offset, size and GUID, in disk order.
+act_layout_digest() {
+  local l
+  l=$(geo_canon | cut -d'|' -f1-3)
+  sha256_str "$l"
+}
+
 # act_lx_seen — what the Omarchy classifier sees, on one line.
 act_lx_seen() {
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$LX_OMARCHY_STATE" "$LX_ENC_STATE" "$LX_SETUP_CONF" "$LX_SETUP_BIN" \
@@ -438,7 +446,7 @@ act_asahi_basis() { return 1; }
 # mac_main's install path from its gates: the survey and gates (mac_start),
 # the plan saved as the review saves it, the backup gate, the handoff.
 act_asahi_run() {
-  local rc
+  local rc layout
   ACT_BEFORE=""
   mac_start
   rc=$?
@@ -448,6 +456,11 @@ act_asahi_run() {
     return 1
   fi
   [ "$rc" = 0 ] || return 1
+  # The whole layout the launch begins from (mac_handoff holds the disk to
+  # it before running the installer), recorded before anything changes, so
+  # a reconciliation after a new boot can prove the disk is as it was.
+  layout=$(act_layout_digest)
+  state_must_set asahi_prelaunch_layout "$layout" || return 1
   mac_save_plan || return 1
   mac_backup_gate || return 1
   mac_handoff
@@ -480,11 +493,11 @@ act_asahi_judge() {
           return 0
         fi
       else
-        # After a new boot: no Asahi partition, and the container is the
-        # size recorded before the launch (or no launch was recorded).
-        before=$(state_get asahi_prelaunch_macos_size)
-        if [ "$GEO_OK" = 1 ] && geo_part "$MAC_STORE_UUID" && { [ -z "$before" ] || [ "$GP_SIZE" = "$before" ]; }; then
-          act_judged no-effect "No Asahi partition is on the disk and macOS is the size it was: the installer changed nothing."
+        # After a new boot: every partition (its GUID, offset and size) is
+        # where the layout recorded before the launch had it.
+        before=$(state_get asahi_prelaunch_layout)
+        if [ "$GEO_OK" = 1 ] && [ -n "$before" ] && [ "$(act_layout_digest)" = "$before" ]; then
+          act_judged no-effect "Every partition is where it was before the launch: the installer changed nothing."
           return 0
         fi
       fi
@@ -718,14 +731,23 @@ act_create_basis() { return 1; }
 act_create_run() { shared_create ""; }
 
 # The Shared state on a fresh read: the partition the creation was allowed
-# to make (by its record or on the disk); the region still free with no
-# creation record left (nothing was created); anything else stops.
+# to make (by its record or on the disk) and its result recorded (the saved
+# shared_uuid is that partition's) is completed; the partition with its
+# result unrecorded keeps the barrier; the region still free with no
+# creation record left (nothing was created) is no effect; anything else
+# stops.
 act_create_judge() {
   SHARED_TYPED_RECEIPT=""
   act_mac_read again
   shared_mac_state
   case "$SHARED_STATE" in
-    created) act_judged completed "Shared storage is on the disk: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT." ;;
+    created)
+      if [ "$(state_get shared_uuid)" = "$SHARED_UUID" ]; then
+        act_judged completed "Shared storage is on the disk and recorded: $SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT."
+      else
+        act_judged unexpected "Shared storage is on the disk ($SHARED_ID, $(fmt_gb "$SHARED_SIZE") exFAT), but its result is not recorded; the creation record keeps what happened."
+      fi
+      ;;
     awaiting-macos-creation)
       if [ -e "$OMB_STATE_DIR/$SHARED_TXN_FILE" ] || [ -L "$OMB_STATE_DIR/$SHARED_TXN_FILE" ]; then
         act_judged unexpected "A creation record remains, and the disk does not show what it was allowed to produce."
@@ -847,6 +869,12 @@ act_start_facts() {
   fi
   act_fact omarchy.start does "Does" "sets the keymap, hostname and user, then (with encryption) moves /boot to EFI and encrypts the Linux root in place, then installs Omarchy, rebooting between steps" || return 1
   act_fact omarchy.start leaves "Leaves" "macOS, untouched" || return 1
+  act_console_fact
+}
+
+# act_console_fact — the console Omarchy Mac's setup writes to, as a fact.
+act_console_fact() {
+  rec_line fact scope omarchy key omarchy.console label "Console" value "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})" state info
 }
 
 act_start_params() { :; }
@@ -909,7 +937,7 @@ act_resume_offer() {
   fi
   case "$LX_UNIT_STATE" in
     active | activating)
-      CA_WHY="omarchy-mac-setup is running now on tty1."
+      CA_WHY="omarchy-mac-setup is running now on $OMARCHY_SETUP_TTY."
       return 1
       ;;
   esac
@@ -933,6 +961,7 @@ act_resume_facts() {
   rec_line fact scope omarchy key omarchy.encryption label "Encryption" value "$LX_ENC_STATE" state info || return 1
   rec_line fact scope omarchy key omarchy.boot label "/boot" value "${LX_BOOT_SRC:-on the root filesystem}${LX_BOOT_FS:+ ($LX_BOOT_FS)}" state info || return 1
   rec_line fact scope omarchy key omarchy.version label "Omarchy version" value "${LX_OMARCHY_VERSION:-not installed yet}" state info || return 1
+  act_console_fact || return 1
   # Upstream's own status, which only root can read (lx_upstream_status).
   if [ "$LX_SETUP_BIN" = 1 ] && [ "$OMB_UID" = 0 ]; then
     while IFS= read -r line; do
@@ -949,30 +978,77 @@ act_resume_params() { :; }
 act_resume_basis() { return 1; }
 
 act_resume_run() {
+  local seen
   ACT_PRE=$(state_get omarchy_resumed_at)
   lx_begin "" || return 1
   if [ "$LX_OMARCHY_STATE" != in-progress ]; then
     ui_fail "omarchy-mac-setup is not part-way through ($LX_OMARCHY_STATE); there is nothing to resume."
     return 1
   fi
+  # Where the setup stands before it is resumed, recorded first, so the
+  # judgement (also after a new boot) can tell whether it advanced.
+  seen=$(act_resume_seen)
+  state_must_set omarchy_resume_seen "$seen" || return 1
   lx_in_progress
 }
 
-# Omarchy's classification on a fresh read: still under way, or done, is
-# where upstream continues from; a resume never run changed nothing.
+# act_resume_seen — the SHA-256 of what shows the setup's progress: the
+# classifier's signals, its service, and upstream's own status (as root).
+act_resume_seen() {
+  local seen status=""
+  seen=$(act_lx_seen)
+  if [ "$LX_SETUP_BIN" = 1 ] && [ "$OMB_UID" = 0 ]; then status=$(lx_upstream_status_text); fi
+  sha256_str "$seen|${LX_UNIT_STATE:-}
+$status"
+}
+
+# Omarchy's classification on a fresh read. Installed is completed; still
+# under way is completed only when the machine shows the setup advanced
+# since the resume began. A setup that could not be run (exit 126 or 127,
+# or its executable gone) is never completed: no effect when nothing reads
+# otherwise than before, else unexpected; so is a resume never run.
 act_resume_judge() {
+  local before seen
   ACT_READ=""
   lx_detect
-  case "$LX_OMARCHY_STATE" in
-    installed | in-progress)
-      if [ "$1" != reconcile ] && [ "$(state_get omarchy_resumed_at)" = "${ACT_PRE:-}" ]; then
-        act_judged no-effect "omarchy-mac-setup was not resumed; nothing changed."
+  before=$(state_get omarchy_resume_seen)
+  seen=$(act_resume_seen)
+  case "$1" in
+    126 | 127)
+      if [ -n "$before" ] && [ "$seen" = "$before" ]; then
+        act_judged no-effect "omarchy-mac-setup could not be run (exit $1); nothing changed."
       else
-        act_judged completed "omarchy-mac-setup is $LX_OMARCHY_STATE."
+        act_judged unexpected "omarchy-mac-setup could not be run (exit $1), and the machine does not read as it did before."
       fi
+      return 0
       ;;
-    *) act_judged unexpected "Omarchy is $LX_OMARCHY_STATE after the resume." ;;
   esac
+  case "$LX_OMARCHY_STATE" in
+    installed)
+      act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
+      return 0
+      ;;
+    in-progress) ;;
+    *)
+      act_judged unexpected "Omarchy is $LX_OMARCHY_STATE after the resume."
+      return 0
+      ;;
+  esac
+  if [ "$1" != reconcile ] && [ "$(state_get omarchy_resumed_at)" = "${ACT_PRE:-}" ]; then
+    act_judged no-effect "omarchy-mac-setup was not resumed; nothing changed."
+  elif [ -z "$before" ]; then
+    act_judged unexpected "Where the setup stood before the resume is not recorded, so whether it advanced cannot be told."
+  elif [ "$LX_SETUP_BIN" != 1 ]; then
+    if [ "$seen" = "$before" ]; then
+      act_judged no-effect "$OMS_SELF is not there, so the setup could not resume; nothing changed."
+    else
+      act_judged unexpected "$OMS_SELF is not there, and the machine does not read as it did before."
+    fi
+  elif [ "$seen" != "$before" ]; then
+    act_judged completed "omarchy-mac-setup advanced: it is still part-way through, further than before."
+  else
+    act_judged no-effect "omarchy-mac-setup ran, and nothing it changes reads otherwise than before."
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -1120,17 +1196,33 @@ act_dev_run() {
 }
 
 # The developer outcomes, as dev_main records them: every chosen part
-# succeeded; nothing chosen; or a failure recorded.
+# succeeded; nothing chosen; or a failure recorded. After a new boot only a
+# success recorded later than this operation began counts: an earlier
+# run's success says nothing about the run that was interrupted.
 act_dev_judge() {
+  local LC_ALL=C last
+  last=$(state_get dev_last_run_at)
   if [ -n "$(state_get dev_failed)" ]; then
     act_judged unexpected "Developer setup parts failed: $(state_get dev_failed)."
-  elif [ "$1" != reconcile ] && [ "$(state_get dev_last_run_at)" = "${ACT_PRE:-}" ]; then
+  elif [ "$1" != reconcile ] && [ "$last" = "${ACT_PRE:-}" ]; then
     act_judged no-effect "Nothing was chosen; nothing changed."
-  elif [ -n "$(state_get dev_last_run_at)" ]; then
+  elif [ "$1" = reconcile ] && { ! act_op_at "$ACT_DEV_SCOPE" || [ -z "$last" ] || [[ ! $last > $ACT_OP_AT ]]; }; then
+    act_judged unexpected "No developer setup outcome is recorded after this run began${last:+ (the last success, at $last, belongs to an earlier run)}."
+  elif [ -n "$last" ]; then
     act_judged completed "The developer setup finished: $(state_get dev_modules)."
   else
     act_judged unexpected "The developer setup recorded no outcome."
   fi
+}
+
+# act_op_at SCOPE — ACT_OP_AT: when the scope's operation record was
+# written: its operation's start, for a record left running. 1 when it
+# cannot be read.
+act_op_at() {
+  ACT_OP_AT=""
+  rec_admit_file op - "$(core_op_path "$1")" || return 1
+  rec_get_into ACT_OP_AT 0 at
+  [ -n "$ACT_OP_AT" ]
 }
 
 # ---------------------------------------------------------------------------

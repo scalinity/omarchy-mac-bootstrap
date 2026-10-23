@@ -26,6 +26,9 @@ MIB=1048576
 ZERO=$(printf '%064d' 0)
 A_ALL=journey,plan,asahi,shared,network,omarchy
 REAL_SED=$(command -v sed)
+REAL_MV=$(command -v mv)
+# The console Omarchy Mac's setup writes to (lib/sources.sh).
+OMARCHY_SETUP_TTY=$(sed -n 's/^OMARCHY_SETUP_TTY=//p' "$REPO/lib/sources.sh")
 c_session
 
 # The tool under test.
@@ -510,10 +513,28 @@ if t_plutil "the macOS rows"; then
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
   assert_contains "$C_OUT" "reconciled:%20completed" "actions-asahi.launch-reconcile: the first stage done is completed"
   assert_eq "$(c_result) $(a_ops)" "refused unavailable " "actions-asahi.launch-reconcile: the record goes; no second install is offered"
-  a_use "$T/asahi-boot2" "$R"
+  # actions-asahi.launch-reconcile-layout: "nothing changed" after a new boot
+  # is the whole layout recorded before the launch, every partition's GUID,
+  # offset and size; macOS's size alone proves nothing.
+  a_plan_state "$T/asahi-boot2" "$R" 250 0
+  a_exec_tty '\nn\n\004\004\004' asahi.launch yes
+  assert_eq "$(c_result)" "failed no-effect" "actions-asahi.launch-reconcile-layout: declined at launch, nothing changed"
+  assert_contains "$(a_state)" "asahi_prelaunch_layout=" "actions-asahi.launch-reconcile-layout: the layout is recorded before the launch"
+  cp -p "$A_DIR/state/state.env" "$T/asahi-layout.env"
   a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
   a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
-  assert_contains "$C_OUT" "reconciled:%20no-effect" "actions-asahi.launch-reconcile: no Asahi partition and macOS as it was is no effect"
+  assert_contains "$C_OUT" "reconciled:%20no-effect" "actions-asahi.launch-reconcile-layout: the same layout is no effect"
+  # Recovery replaced while macOS kept its size: not the layout recorded.
+  VL=$(t_variant mac-m1pro-1tb-roomy)
+  sed -i.bak 's/4A7B1C2D-0003-4E5F-8A9B-000000000003/4A7B1C2D-0009-4E5F-8A9B-000000000009/' "$VL/cmd/diskutil_list_disk0" "$VL/cmd/diskutil_info_disk0s3" &&
+    rm -f "$VL/cmd/diskutil_list_disk0.bak" "$VL/cmd/diskutil_info_disk0s3.bak"
+  assert_eq "$(grep -c '4A7B1C2D-0009' "$VL/cmd/diskutil_list_disk0")" 1 "actions-asahi.launch-reconcile-layout: the variant replaces Recovery's partition"
+  a_use "$T/asahi-boot-layout" "$VL"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state" && cp -p "$T/asahi-layout.env" "$A_DIR/state/state.env"
+  a_plant asahi asahi.launch running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000AA"
+  a_run execute "exec	action=asahi.launch	basis=$ZERO	confirm=yes"
+  assert_eq "$(c_result)" "refused unsupervised" "actions-asahi.launch-reconcile-layout: another partition changed while macOS kept its size: unexpected"
+  [ -e "$A_DIR/state/ops/asahi.omb" ] && ok || fail "actions-asahi.launch-reconcile-layout: its record stays"
   a_use "$T/asahi-boot-resized" "$FIX/mac-asahi-resized-only"
   mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
   printf 'asahi_prelaunch_macos_size=994610155520\n' >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
@@ -605,6 +626,24 @@ sudo -n diskutil addPartition disk0s6 ExFAT Shared $SH_BYTES" "actions-shared.cr
   [ ! -e "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-success: the creation record is removed"
   assert_eq "$(a_ops)" "" "actions-shared.create-success: its operation record is removed"
   a_umask actions-shared.create-umask
+  # actions-shared.create-unrecorded: the partition made, but its result not
+  # recorded (the state disk full at shared_uuid's write): never completed.
+  a_shared_state "$T/create-unrecorded"
+  printf 'shared_linux_done=%s\n' "$CODE" >>"$A_DIR/state/state.env"
+  cat >"$A_SHIMS/mv" <<EOF
+#!/bin/sh
+last='' prev=''
+for a in "\$@"; do prev=\$last; last=\$a; done
+case "\$last" in */state.env) if grep -q '^shared_uuid=' "\$prev" 2>/dev/null; then exit 1; fi ;; esac
+exec $REAL_MV "\$@"
+EOF
+  chmod +x "$A_SHIMS/mv"
+  A_ENV="OMB_TEST_AFTER=$FIX/mac-shared-created" a_exec_tty 'create\n\004\004\004' shared.create yes
+  rm -f "$A_SHIMS/mv"
+  assert_eq "$(c_result)" "failed postcondition" "actions-shared.create-unrecorded: a partition whose result was not recorded is not completed"
+  assert_not_contains "$(a_state)" "shared_uuid=" "actions-shared.create-unrecorded: the result write failed"
+  assert_contains "$(cat "$A_DIR/state/ops/shared.omb" 2>/dev/null)" "	state=failed	finding=unexpected	" "actions-shared.create-unrecorded: the barrier stays"
+  [ -f "$A_DIR/state/shared-create.env" ] && ok || fail "actions-shared.create-unrecorded: the creation record says what happened"
   # A partition on the disk whose record was lost: recorded, with no word.
   a_shared_state "$T/create-lost"
   printf 'shared_linux_done=%s\n' "$CODE" >>"$A_DIR/state/state.env"
@@ -648,6 +687,8 @@ a_use "$T/start" "$FIX/linux-alarm-fresh"
 a_run snapshot "scope	name=journey"
 assert_contains "$C_OUT" "action	id=omarchy.start	scope=omarchy	label=Run%20omarchy-mac-setup	intent=act	gate=start	terminal=handoff	" \
   "actions-omarchy.start: scope omarchy, a handoff, word start"
+assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.console	label=Console	value=$(a_enc "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})")	state=info" \
+  "actions-omarchy-console: the console the setup will write to, before it starts"
 a_common omarchy.start start
 a_barriers omarchy.start omarchy start
 A_ENV="OMB_TEST_AFTER=$FIX/linux-setup-in-progress" a_exec_tty '\nalex\n\n\n\n\004\004\004' omarchy.start start
@@ -676,13 +717,30 @@ assert_eq "$(c_result) $(c_admits snapshot)" "done ok ok" "actions-omarchy.resum
 assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.state	label=Omarchy	value=in-progress	state=info" "actions-omarchy.resume-facts: Omarchy's state"
 assert_contains "$C_OUT" "key=omarchy.encryption	" "actions-omarchy.resume-facts: its encryption"
 assert_contains "$C_OUT" "key=omarchy.upstream.1	label=Upstream	value=" "actions-omarchy.resume-facts: upstream's own status, read as root"
+assert_contains "$C_OUT" "fact	scope=omarchy	key=omarchy.console	label=Console	value=$(a_enc "$OMARCHY_SETUP_TTY (Ctrl+Alt+F${OMARCHY_SETUP_TTY#tty})")	state=info" \
+  "actions-omarchy-console: the console the setup writes to, on its progress page"
 a_common omarchy.resume resume
 a_barriers omarchy.resume omarchy resume
-a_exec_tty '\004\004\004' omarchy.resume resume
-assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-success: resumed ($(a_text))"
+A_ENV="OMB_TEST_AFTER=$FIX/linux-omarchy-finishing" a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "done ok" "actions-omarchy.resume-success: resumed, and the machine shows it advanced ($(a_text))"
 assert_eq "$(cat "$A_DIR/record")" "/usr/local/bin/omarchy-mac-setup --resume" "actions-omarchy.resume-success: upstream's resume runs"
 assert_contains "$(a_state)" "omarchy_resumed_at=" "actions-omarchy.resume-success: recorded first"
 a_umask actions-omarchy.resume-umask
+# actions-omarchy.resume-not-run: the setup could not be run (exit 127), or
+# its executable is gone: never completed, whatever was stamped.
+a_use "$T/resume-127" "$FIX/linux-setup-in-progress"
+A_ENV="OMB_TEST_RC=127" a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: exit 127 is not completed"
+assert_contains "$(a_state)" "omarchy_resumed_at=" "actions-omarchy.resume-not-run: though the resume was stamped"
+VR=$(t_variant linux-setup-in-progress)
+rm -f "$VR/root/usr/local/bin/omarchy-mac-setup"
+a_use "$T/resume-gone" "$VR"
+a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: no executable is not completed"
+# Ran, and nothing the classifier or upstream's status reads moved: no effect.
+a_use "$T/resume-same" "$FIX/linux-setup-in-progress"
+a_exec_tty '\004\004\004' omarchy.resume resume
+assert_eq "$(c_result)" "failed no-effect" "actions-omarchy.resume-not-run: nothing advanced is not completed"
 a_unavailable omarchy.resume resume "$FIX/linux-setup-active"
 a_unavailable omarchy.resume resume "$FIX/linux-alarm-fresh"
 
@@ -759,6 +817,21 @@ a_use "$T/dev-none" "$FIX/linux-omarchy-installed"
 A_WAIT="Choose what to set up" a_exec_tty ' \n\004\004\004' dev ""
 assert_eq "$(c_result)" "failed no-effect" "actions-dev-noeffect: nothing chosen, nothing changed"
 assert_empty_file "$A_DIR/record" "actions-dev-noeffect: nothing ran"
+# actions-dev-reconcile-older: after a new boot, an older run's success never
+# completes an operation that began after it; one recorded after it does.
+for case in "older|2026-01-01T00:00:00Z" "later|2026-12-01T00:00:00Z"; do
+  a_use "$T/dev-boot-${case%%|*}" "$FIX/linux-omarchy-installed"
+  mkdir -p "$A_DIR/state" && chmod 700 "$A_DIR/state"
+  printf 'dev_last_run_at=%s\ndev_modules=core\n' "${case#*|}" >"$A_DIR/state/state.env" && chmod 600 "$A_DIR/state/state.env"
+  a_plant omarchy dev running 1 x "5E1D0B00-7A3C-4F21-9D6E-0000000000BB"
+  a_run execute "exec	action=dev	basis=$ZERO	confirm="
+  if [ "${case%%|*}" = older ]; then
+    assert_eq "$(c_result)" "refused unsupervised" "actions-dev-reconcile-older: a success older than the operation does not complete it"
+    [ -e "$A_DIR/state/ops/omarchy.omb" ] && ok || fail "actions-dev-reconcile-older: the record stays"
+  else
+    assert_contains "$C_OUT" "reconciled:%20completed" "actions-dev-reconcile-older: a success recorded after the operation began completes it"
+  fi
+done
 a_unavailable dev "" "$FIX/linux-alarm-fresh"
 a_unavailable dev "" "$FIX/linux-setup-in-progress"
 
@@ -772,6 +845,9 @@ a_unavailable dev "" "$FIX/linux-setup-in-progress"
 #     is the run's narration, never state a decision reads.
 #   - ops/: the core's operation records live there and each is removed when
 #     its action ends; the folder stays, empty.
+#   - asahi_prelaunch_layout and omarchy_resume_seen in state.env: what the
+#     launch and the resume began from, recorded before either runs, so a
+#     reconciliation after a new boot can prove what changed.
 # ---------------------------------------------------------------------------
 mkdir -p "$T/base"
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
@@ -830,7 +906,8 @@ e_norm() {
     -e 's/[0-9]{8}T[0-9]{6}Z/STAMP/g' \
     -e 's/(omarchy-bootstrap|\.state\.env|downloads\/[a-z-]+\.sh-STAMP|shared-[a-z-]+\.env)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(-STAMP)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
-    -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g'
+    -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g' \
+    -e '/^asahi_prelaunch_layout=/d' -e '/^omarchy_resume_seen=/d'
 }
 
 # e_agree ID — the baseline's side and the core's side left the same.
