@@ -824,7 +824,7 @@ _bndl_report() {
 # bndl_cmd_export [DIR] — `export [DIR]` in the text interface.
 bndl_cmd_export() {
   OMB_PHASE=macos
-  ui_header "macos $G_DOT export"
+  ui_header "macOS $G_DOT export"
   if ! _bndl_dest "${1:-}" || ! bndl_prepare; then
     ui_fail "$BNDL_WHY"
     return 1

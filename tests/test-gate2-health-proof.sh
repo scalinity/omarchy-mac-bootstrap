@@ -46,7 +46,15 @@ p_linux_owner "$REPO" >"$T/lx.current"
 p_linux_owner "$T/base" >"$T/lx.base"
 assert_eq "$(grep -c '^    doc_ssh;$' "$T/lx.current")" 1 'doctor-ssh-findings: exactly one added owner call'
 sed '/^    doc_ssh;$/d' "$T/lx.current" >"$T/lx.less"
-if cmp -s "$T/lx.less" "$T/lx.base"; then ok; else fail 'doctor-ssh-findings: all other lx_doctor bytes equal BASE'; fi
+# M16-system-names: BASE's header draws the protocol value, the candidate's the
+# name a person reads. That one word of that one line is the only other byte.
+# shellcheck disable=SC2016 # BASE's source text, not an expansion
+assert_eq "$(grep -c '^    ui_header "linux \$G_DOT doctor";$' "$T/lx.base")" 1 'M16-system-names: BASE draws the Linux Doctor header with the protocol value'
+# shellcheck disable=SC2016 # BASE's source text, not an expansion
+assert_eq "$(grep -c '^    ui_header "Linux \$G_DOT doctor";$' "$T/lx.less")" 1 'M16-system-names: the candidate draws it as Linux'
+# shellcheck disable=SC2016 # BASE's source text, not an expansion
+sed 's/^    ui_header "linux \$G_DOT doctor";$/    ui_header "Linux $G_DOT doctor";/' "$T/lx.base" >"$T/lx.base.names"
+if cmp -s "$T/lx.less" "$T/lx.base.names"; then ok; else fail 'doctor-ssh-findings: all other lx_doctor bytes equal BASE'; fi
 
 # p_oracle TREE MODE NAME [ARGS] — tests/gate2-doctor-oracle.sh over $fixture.
 p_oracle() {

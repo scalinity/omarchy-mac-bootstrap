@@ -378,7 +378,10 @@ paths could agree with each other and share a regression.
   Codex npm flows including the Claude provenance record, and OpenCode is
   selectable; `start-disable-ssh`: one exact disable command and its active
   and enablement reads; `doctor-ssh-findings`: SSH policy and image-account
-  findings; `debug-implemented`: the fixed brief is a read command).
+  findings; `debug-implemented`: the fixed brief is a read command;
+  `M16-system-names`: a header line's first label word is `macOS` or `Linux`
+  where the baseline's is the protocol value `macos` or `linux`, and no other
+  byte of any line differs).
   Operation records are removed when their action ends, so the final state
   directory is compared whole.
 

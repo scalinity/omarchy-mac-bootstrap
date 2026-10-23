@@ -141,6 +141,17 @@ _rep() {
 
 ui_rule() { printf ' %s%s%s\n' "$C_FAINT" "$(_rep "$G_RULE" "$UI_W")" "$C_RESET"; }
 
+# system_name PLATFORM — the platform as a person reads it: macOS or Linux.
+# OMB_PLATFORM (macos, linux) is a protocol value and stays in paths, records
+# and comparisons; text printed for the owner goes through this.
+system_name() {
+  case "$1" in
+    macos) printf 'macOS' ;;
+    linux) printf 'Linux' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 # ui_header RIGHT-LABEL
 ui_header() {
   local right=$1 title="omarchy${G_DOT}mac bootstrap" pad

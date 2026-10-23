@@ -295,9 +295,7 @@ cmd_journey_status() {
   for name in $J_NAMES; do
     by='' detail=''
     if [ "${J_BASIS[n]}" = recorded ]; then
-      by=${J_BY[n]}
-      [ "$by" != macos ] || by=macOS
-      by=" (recorded by $by)"
+      by=" (recorded by $(system_name "${J_BY[n]}"))"
     fi
     [ -z "${J_DETAIL[n]}" ] || detail=": ${J_DETAIL[n]}"
     _p '   %s: %s%s%s\n' "$name" "${J_STATE[n]}" "$by" "$detail"

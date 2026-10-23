@@ -140,6 +140,31 @@ t_load() {
 # for asserting on a sentence however the terminal width wrapped it.
 t_flat() { printf '%s' "$1" | sed -E 's/^ *(┃|\|) //' | tr '\n' ' ' | tr -s ' '; }
 
+# t_system_names — a filter for an older tree's text output: the named delta
+# M16-system-names (docs/TESTING.md → Equivalence with the accepted baseline).
+# That tree's header label starts with the platform's protocol value
+# (`linux · doctor`), the candidate's with the name a person reads
+# (`Linux · doctor`). Only that first word of a header line (the mark, the
+# title, the padding, then the label, with or without colour) changes; the
+# label keeps its length, so the padding before it is the same. Every other
+# line, and every other word of a header, passes through byte for byte.
+t_system_names() {
+  sed -E \
+    -e 's/^( [^ ]+  [^ ]*omarchy[^ ]*mac bootstrap[^ ]* +[^ ]*)linux ((·|-) )/\1Linux \2/' \
+    -e 's/^( [^ ]+  [^ ]*omarchy[^ ]*mac bootstrap[^ ]* +[^ ]*)macos ((·|-) )/\1macOS \2/'
+}
+
+# t_names_only_headers OLD NEW — NEW is OLD after t_system_names and nothing
+# more: every line that differs is a header line, and differs from its
+# counterpart in case alone.
+t_names_only_headers() {
+  local changed
+  changed=$(diff "$1" "$2" | grep -c '^[<>]')
+  [ "$(diff "$1" "$2" | grep '^<' | sed 's/^< //' | tr '[:upper:]' '[:lower:]')" = \
+    "$(diff "$1" "$2" | grep '^>' | sed 's/^> //' | tr '[:upper:]' '[:lower:]')" ] || return 1
+  [ "$changed" = "$(diff "$1" "$2" | grep '^[<>]' | grep -c 'mac bootstrap')" ]
+}
+
 # t_plan_answers FIXTURE LINUX_GB SHARED_GB — what the planner tells the
 # installer for a macOS fixture: "RESIZE_ANSWER OS_ANSWER" ("-" for no
 # resize). The answers themselves are proved in tests/test-storage.sh; CLI

@@ -20,7 +20,7 @@ dbg_facts() (
   # Their painted text is discarded; upstream status is not even run.
   lx_upstream_status() { :; }
   cmd_status >/dev/null 2>&1 || return 1
-  dbg_line status "System: $OMB_PLATFORM"
+  dbg_line status "System: $(system_name "$OMB_PLATFORM")"
   case "$OMB_PLATFORM" in
     macos)
       dbg_enum 'Asahi install' "$ASAHI_STATE" none installed pending-first-boot installed-unverified resized-only early-partial partitioned-incomplete first-stage-incomplete unknown

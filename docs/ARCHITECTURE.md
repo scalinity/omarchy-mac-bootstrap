@@ -26,7 +26,7 @@ flowchart LR
 | Module | Holds |
 | --- | --- |
 | `common.sh` | the system seam, `run`, logging, downloads, the per-run scratch directory, version compare |
-| `ui.sh` | palette, glyph sets, header, journey rail, disk strip, answer card, menus, typed gates |
+| `ui.sh` | palette, glyph sets, `system_name` (macOS or Linux for text a person reads; `OMB_PLATFORM` stays the protocol value), header, journey rail, disk strip, answer card, menus, typed gates |
 | `state.sh` | the state directory's checks, `state.env` (one checked writer), whole-file records, the run lock, choices (`CFG_*`), validators, the resume token |
 | `sources.sh` | upstream URLs, branches, verified versions, installer constants, the storage contract, device table, `sources` |
 | `storage.sh` | pure geometry (extents, gaps, the byte-for-byte walk) and the planner (regions, answers, invariants), checked size input |

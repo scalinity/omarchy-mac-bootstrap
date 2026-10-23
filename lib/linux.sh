@@ -197,7 +197,7 @@ lx_rail() {
 }
 
 lx_screen() {
-  ui_header "linux $G_DOT phase 2$([ "$OMB_DRY_RUN" = 1 ] && printf ' %s dry run' "$G_DOT")"
+  ui_header "Linux $G_DOT phase 2$([ "$OMB_DRY_RUN" = 1 ] && printf ' %s dry run' "$G_DOT")"
   lx_rail "$1"
 }
 

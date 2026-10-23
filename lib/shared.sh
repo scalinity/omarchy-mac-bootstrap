@@ -1198,7 +1198,7 @@ shared_activate() {
   if [ -z "${CFG_user:-}" ] && [ -f "$STATE_SYSTEM_FILE" ]; then
     cfg_load "$STATE_SYSTEM_FILE"
   fi
-  ui_header "linux $G_DOT shared storage$([ "$OMB_DRY_RUN" = 1 ] && printf ' %s dry run' "$G_DOT")"
+  ui_header "Linux $G_DOT shared storage$([ "$OMB_DRY_RUN" = 1 ] && printf ' %s dry run' "$G_DOT")"
   shared_activate_flow "${1:-}"
 }
 
@@ -1495,7 +1495,7 @@ shared_lx_access() {
 # shared_test — write, flush, read back and remove one uniquely named file.
 shared_test() {
   local mp dst src sum
-  ui_header "$OMB_PLATFORM $G_DOT shared storage test"
+  ui_header "$(system_name "$OMB_PLATFORM") $G_DOT shared storage test"
   if [ "$OMB_PLATFORM" = macos ]; then
     mac_survey
     shared_mac_state
@@ -1596,7 +1596,7 @@ shared_status_rows() {
 
 # shared_status — read-only: where Shared stands on this system.
 shared_status() {
-  ui_header "$OMB_PLATFORM $G_DOT shared storage"
+  ui_header "$(system_name "$OMB_PLATFORM") $G_DOT shared storage"
   if [ "$OMB_PLATFORM" = macos ]; then
     mac_detect
     cfg_load

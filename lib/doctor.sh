@@ -216,7 +216,7 @@ lx_doctor() {
   lx_online
   cfg_load
   [ -z "${CFG_user:-}" ] && [ -f "$STATE_SYSTEM_FILE" ] && cfg_load "$STATE_SYSTEM_FILE"
-  ui_header "linux $G_DOT doctor"
+  ui_header "Linux $G_DOT doctor"
   ui_section "Omarchy Mac Doctor" "read-only"
 
   if [ "$LX_ARCH" = aarch64 ]; then doc pass "aarch64" "$LX_KERNEL"; else doc fail "aarch64" "${LX_ARCH:-unknown}"; fi

@@ -114,7 +114,10 @@ normal() {
 agree() {
   local tree=${4:-$T/base} what="the accepted baseline"
   [ "$tree" = "$T/pre" ] && what="$PRE_ROUTE, before frontend-check's route (frontend-check-default-unchanged)"
-  normal "$tree" "$2" >"$2.norm"
+  normal "$tree" "$2" >"$2.raw"
+  # M16-system-names: the older tree's header words, and nothing else.
+  t_system_names <"$2.raw" >"$2.norm"
+  t_names_only_headers "$2.raw" "$2.norm" || fail "$1: M16-system-names changed more than header lines"
   normal "$REPO" "$3" >"$3.norm"
   case "${B_DELTA:-}" in
     M16-status-report)
@@ -193,6 +196,55 @@ run_one "$REPO" "$T/runs/cand-$N" "" "" --help
 normal "$T/base" "$T/runs/base-$N" >"$T/runs/base-$N.norm"
 normal "$REPO" "$T/runs/cand-$N" >"$T/runs/cand-$N.norm"
 if cmp -s "$T/runs/base-$N.norm" "$T/runs/cand-$N.norm"; then fail "the comparison cannot tell --version from --help"; else ok; fi
+
+# M16-system-names (docs/TESTING.md → Equivalence with the accepted baseline):
+# the text interface writes macOS and Linux where an older tree wrote the
+# protocol values macos and linux. The filter that maps the older headers to
+# the new ones changes the header lines ui_header draws, in colour and plain,
+# in Unicode and ASCII, and nothing else.
+sn_headers() {
+  (
+    t_load >/dev/null 2>&1
+    OMB_COLOR=$1 OMB_ASCII=$2 LC_ALL=en_US.UTF-8
+    ui_init
+    ui_header "$3 $G_DOT doctor"
+    ui_header "$3 $G_DOT phase 2 $G_DOT dry run"
+    ui_header "$4 $G_DOT export"
+    ui_header "v0.2.0"
+    ui_header "sources"
+  )
+}
+for sn in never-0 always-0 never-1 always-1; do
+  sn_headers "${sn%-*}" "${sn#*-}" linux macos >"$T/sn.old"
+  sn_headers "${sn%-*}" "${sn#*-}" Linux macOS >"$T/sn.new"
+  t_system_names <"$T/sn.old" >"$T/sn.mapped"
+  assert_eq "$(grep -c 'mac bootstrap' "$T/sn.old")" 5 "M16-system-names ($sn): five headers drawn"
+  if cmp -s "$T/sn.mapped" "$T/sn.new"; then ok; else fail "M16-system-names ($sn): the older headers do not map to the new ones"; fi
+  if t_names_only_headers "$T/sn.old" "$T/sn.mapped"; then ok; else fail "M16-system-names ($sn): more than header lines changed"; fi
+  if cmp -s "$T/sn.old" "$T/sn.mapped"; then fail "M16-system-names ($sn): nothing changed"; else ok; fi
+  t_system_names <"$T/sn.new" >"$T/sn.again"
+  if cmp -s "$T/sn.new" "$T/sn.again"; then ok; else fail "M16-system-names ($sn): the new headers are changed again"; fi
+done
+# Lines that are not headers keep the older spelling.
+{
+  printf '%s\n' \
+    '                    linux · doctor' \
+    ' prose that says linux · doctor in the middle' \
+    '2026-09-21T14:13:20Z [linux] start  omarchy-bootstrap 0.2.0 cmd=doctor intent=read os=Linux uid=0 dry_run=0' \
+    '-- /state/macos.omb' \
+    'platform=macos' \
+    ' ◒  omarchy·mac bootstrap  linux' \
+    ' ◒  omarchy·mac bootstrap  v0.2.0 linux · x' \
+    ' ◒  mac bootstrap  linux · doctor' \
+    'macos · export'
+} >"$T/sn.other"
+t_system_names <"$T/sn.other" >"$T/sn.other.mapped"
+if cmp -s "$T/sn.other" "$T/sn.other.mapped"; then ok; else fail 'M16-system-names: a line that is not a header was changed'; diff "$T/sn.other" "$T/sn.other.mapped" | head -10; fi
+# The check that only headers changed can fail.
+{ cat "$T/sn.mapped"; echo 'extra line'; } >"$T/sn.extra"
+if t_names_only_headers "$T/sn.old" "$T/sn.extra"; then fail 'M16-system-names: an added line passed the headers-only check'; else ok; fi
+sed 's/^ prose/ Prose/' "$T/sn.other" >"$T/sn.case"
+if t_names_only_headers "$T/sn.other" "$T/sn.case"; then fail 'M16-system-names: a changed non-header line passed the headers-only check'; else ok; fi
 
 # --- Everywhere: the command surface -------------------------------------------------------
 # --help: the two listed deltas, frontend-check's row (docs/FRONTEND.md →
