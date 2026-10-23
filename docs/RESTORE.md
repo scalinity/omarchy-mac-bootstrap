@@ -83,17 +83,18 @@ completed rerun with nothing to place performs no check or mutation.
    destination, inside this run's backup folder. `D` is renamed into it,
    and what moved is compared with the review; if it
    differs, it is renamed back and the item stops as a conflict.
-5. **Place** at exactly `D` with forms that fail if anything has appeared
-   there: a file by `ln -T -- <stage> D`, then the stage name removed; a
-   link by `ln -s -T -- <text> D`; a folder by
+5. **Place** at exactly `D`: a regular or generated Bash file uses
+   `ln -T -- <stage> D`, then removes the stage name; a symbolic link uses
+   `ln -s -T -- <text> D`, then removes its stage; a folder uses
    `mv -T --update=none-fail -- <stage> D` (GNU coreutils 9.5 and later).
    `-T` is always given, so a folder that appeared at `D` is never taken as
-   a place to put the new name inside. If something appeared, the item
-   is `blocked`. If the destination is still free, the original is moved
-   back with the same no-clobber move. If something appeared, the original
-   remains in its named backup; the next review names that location, and
-   undo returns it once the destination is free. The run log binds the
-   original before it moves, including a stop before placement.
+   a place to put the new name inside.
+   If something appeared, the item is `blocked`. If the destination is
+   still free, the original is moved back with the same no-clobber move.
+   Otherwise the original remains in its named backup; the next review
+   names that location, and undo returns it once the destination is free.
+   The run log binds the original before it moves, including a stop before
+   placement.
 6. **Read back** `D` (digest, mode or link text): the item is `placed`.
 
 Folder units (Neovim's folder, a skill folder) and generated files — the
@@ -141,10 +142,9 @@ result. Undo can return that original too. An occupied destination is
 left alone; a refused placement is `blocked`, with the backup location
 shown in the next review. An intervening destination blocks that unfinished
 placement, so a later default Keep cannot erase its recovery record. A
-completed stage name left behind is removed by apply
-only when its journal, bytes and placed destination agree. Undo compares
-finished stages with the retained backup or the freshly reviewed desired
-bytes before removing them. A matched redundant folder stage is made
+completed stage name left behind is removed by apply only when its journal,
+bytes and current destination agree. Undo compares finished stages with the
+retained backup or the freshly reviewed desired bytes before removing them. A matched redundant folder stage is made
 writable for removal; its source and retained backup keep their modes.
 Undo retries this cleanup even when its completion was already recorded.
 A partial or
@@ -173,10 +173,13 @@ the generation of the review it printed too.
 
 If a second Replace finds the original's backup name occupied, it keeps
 both copies and names that backup. When the current destination has been
-edited, the hint says to move it to a safe name, copy the original from its
-backup back to the destination while retaining the backup, run `restore undo`,
-then review another Replace. The copy lets undo recognize the returned original
-even when the previous placement completed.
+edited, the hint says to move it to a safe name, copy the original back with
+`cp -a -T BACKUP DEST` to preserve its type and mode while retaining the
+backup, run `restore undo`, then review another Replace. The copy lets undo
+recognize the returned original when the previous placement was recorded.
+For an unfinished replacement without a placement record, the hint instead
+says to move the current destination to a safe name and run `restore undo`
+while the destination is free, so the pending original can return.
 
 Omarchy's seeded files in `~/.config` are the person's after the install: a
 conflict with one is labelled "Omarchy's default", and OpenCode's file is
@@ -211,8 +214,9 @@ folder is `unverified`: installed according to the command, with a warning
 that the installation was not verified. It never blocks later layers and
 is not installed again on a rerun of that bundle. Status counts it as
 pending, rather than verified; a matching version folder clears that state.
-When apply completes with unverified items, its final message gives their
-count and says nothing showed them installed.
+When apply completes with unverified items, including a completed no-op
+rerun, its final message gives their count and says nothing showed them
+installed.
 
 ## Undo
 
@@ -223,28 +227,48 @@ can be read, undo refuses and its judge cannot report completion. A readable
 run whose items are blocked can still undo its actual changes or finish
 without changing items never placed.
 
-For each restored file, folder or link, undo moves the destination aside
-first and compares the bytes that actually moved. If they differ from the
-placement, it puts them back with a no-clobber move and refuses that item.
-An unchanged placement returns its original from the backup, or leaves the
-destination absent if it was new. The displaced restored bytes remain at
-`<backup>.placed`; earlier copies are preserved with fresh suffixes. A
-refused item does not stop independent items, and kept conflicts and items
-with no change on the machine are skipped. Even without a completed placement
-event, a destination or setting matching the recorded after and differing
-from the before needs undo. A recorded interrupted backup move still needs
-recovery; a retained backup from an already undone cycle alone does not. A
-refused or failed undo removes its finished
-`.omb-undo-` copy only when its bytes match the retained original backup.
-Undo of a stopped restore also removes a finished `.omb-new-` stage when
-it matches the recorded and freshly reviewed desired bytes. Partial undo
-stages are preserved before retrying. An original
-moved aside by an interrupted placement can return once its destination is
-free.
+The current cycle is the item's events after its last `undone`. A recorded
+placement in that cycle permits undo only while the current destination
+still matches the placement. A backup retained from an already undone cycle
+alone does not require another undo.
 
-Git settings and MCP definitions return from their private `.setting`
-backups only when the current setting still matches the placement. Their
-values are never shown or logged. Packages, sign-ins and what an external
+Without a placement record in the current cycle, undo never moves, removes
+or replaces a destination. If it matches the recorded after and differs from
+the before, undo names it, explains that it matches what restore places but
+no placement was recorded, and leaves it as is. It names the original's
+backup, or says there was no original. Its judge reports `unexpected`, naming
+the destination. This includes a stop after placement but before the journal
+append. Neither matching bytes nor the presence or absence of a stage proves
+who placed it. With no pending original, an absent destination, the recorded
+before or any third state is skipped silently. An old after from an undone
+cycle never authorizes another undo.
+
+The one automatic recovery without a placement record returns a pending
+original from its checked backup to a free destination with a no-clobber
+move. An occupied destination is refused, even if it matches the before or
+after; undo names the backup and leaves the occupant alone. A missing or
+changed pending backup is refused when its original needs to return. Skipped
+or refused items are not recorded as undone. A silently skipped item can
+still have a completed, redundant private stage cleaned up under the existing
+byte checks; its destination stays untouched.
+
+For a recorded placement, undo moves the destination aside and checks the bytes
+that actually moved. An intervening edit is put back with a no-clobber move
+and the item is refused. An unchanged placement returns its original from
+the backup, or leaves the destination absent if it was new. Displaced bytes
+remain at `<backup>.placed`; earlier copies keep fresh suffixes. Independent
+items continue after a refusal. Completed undo stages are removed only when
+they match the retained backup. Completed new stages are removed only when
+they match the recorded and freshly reviewed desired bytes; partial or
+unexpected stages remain available for recovery.
+
+Git settings and MCP definitions revert from their private `.setting`
+backups only with a `placed` event in the current cycle and a matching
+current value. Without that event, undo never changes the setting. It names
+the setting, explains that restore cannot tell whether it set the current
+value, and names the saved previous value's private backup. The judge reports
+`unexpected`, naming the setting. Values are never shown or logged.
+Packages, sign-ins and what an external
 installer changed are not reversible. Backups stay until the person removes
 them; `restore status` shows their size.
 
