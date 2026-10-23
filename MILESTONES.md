@@ -247,7 +247,13 @@ install on the M1.
 - **Verification:** `tests/test-restore.sh`, `tests/test-debug.sh`; frames.
 - **Exit:** never as root; no replacement without a backup; no path escape;
   an interrupted run resumes and a finished one changes nothing on rerun.
-- **Status:** not started.
+- **Status:** done in phase B, merged to `main` at `b293419` (FULL
+  39974757925; the first FULL, 39970360486, failed once on a spinner timing
+  difference in test-baseline and was rerun). Restore runs as the everyday
+  user with Keep by default and a backup before every replacement, proves
+  the no-clobber primitives on the target before placing anything (also
+  run under GNU coreutils 9.7 at `9575849`), and undoes only what its log
+  records it placed. `debug` prints the fixed brief and facts only.
 
 ### M15-B — Packages and AI providers
 
@@ -260,7 +266,10 @@ install on the M1.
 - **Verification:** `tests/test-agents.sh`, `tests/test-dev.sh`; frames.
 - **Exit:** no check runs a wrapper, shim, mise or agent; every outcome is
   what the machine shows.
-- **Status:** not started.
+- **Status:** done in phase B, merged at `b293419` (FULL 39974757925).
+  Claude Code, Codex and OpenCode are observed from files only, installed
+  once each with `mise use -g`, and judged by what the machine shows; `dev`
+  no longer counts Omarchy's lazy wrappers as installed tools.
 
 ### M15-C — SSH safety and recovery help
 
@@ -274,7 +283,10 @@ install on the M1.
 - **Verification:** `tests/test-detection.sh` (the SSH classification, and
   disable-then-check in `start`).
 - **Exit:** no password SSH is left listening once `start` has run.
-- **Status:** not started.
+- **Status:** done in phase B, merged at `b293419` (FULL 39974757925).
+  `start` disables the image's sshd and checks it stayed off; `doctor`
+  classifies SSH from one private copy of each configuration file, and
+  names the image's `alarm` account with the command that locks it.
 
 ## M16 — The full journey through the frontend, and qualification
 
