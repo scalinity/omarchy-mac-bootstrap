@@ -1007,39 +1007,42 @@ act_resume_params() { :; }
 act_resume_basis() { return 1; }
 
 act_resume_run() {
-  local rc
-  # A reboot's judgement must never reuse another attempt's exit status.
-  state_must_set omarchy_resume_rc "" || return 1
   lx_begin "" || return 1
   if [ "$LX_OMARCHY_STATE" != in-progress ]; then
     ui_fail "omarchy-mac-setup is not part-way through ($LX_OMARCHY_STATE); there is nothing to resume."
     return 1
   fi
   lx_in_progress
-  rc=$?
-  state_must_set omarchy_resume_rc "$rc" || return 1
-  return "$rc"
 }
 
-# Only installed proves completion. Only a failure to execute, corroborated
-# by the executable's fresh absence or mode, proves no effect. The saved
-# status lets reconciliation apply that same rule after a new boot.
+# Only installed proves completion. Only this run's own failure to execute
+# (status 126 or 127), with the executable cleanly absent or not an
+# executable file on a fresh read, proves no effect. A reconcile after a new
+# boot has no status of the run it can trust: there only installed settles.
 act_resume_judge() {
-  local rc=$1 f
+  local rc=$1 f st
   ACT_READ=""
   lx_detect
   if [ "$LX_OMARCHY_STATE" = installed ]; then
     act_judged completed "omarchy-mac-setup has finished: Omarchy is installed."
     return 0
   fi
-  [ "$rc" != reconcile ] || rc=$(state_get omarchy_resume_rc)
   case "$rc" in
     126 | 127)
       f=$(sys_path "$OMS_SELF")
-      if [ ! -f "$f" ] || [ ! -x "$f" ]; then
-        act_judged no-effect "omarchy-mac-setup could not be executed; $OMS_SELF is missing or not executable."
-        return 0
-      fi ;;
+      # One stat, following a link as exec does: 1 cleanly absent (ENOENT),
+      # 2 there but not an executable regular file, 0 executable, 3 the
+      # lookup itself failed. Only 1 and 2 show the command could not run.
+      # shellcheck disable=SC2016 # Perl source: perl expands its own variables
+      LC_ALL=C perl -e 'my @s = stat($ARGV[0]); exit($!{ENOENT} ? 1 : 3) unless @s; exit((-f _ && ($s[2] & 0111)) ? 0 : 2)' -- "$f"
+      st=$?
+      case "$st" in
+        1 | 2)
+          act_judged no-effect "omarchy-mac-setup could not be executed; $OMS_SELF is missing or not executable."
+          return 0
+          ;;
+      esac
+      ;;
   esac
   act_judged unexpected "The resume ended and Omarchy Mac setup is not yet installed. Setup resumes by itself on the console after a restart; this tool's resume is held until then. Upstream's own command is: sudo $OMS_SELF --resume"
 }

@@ -40,8 +40,8 @@ A_TOOL=$REPO
 # replaced, so no installer or host command runs.
 # shellcheck disable=SC2329 # mocks are invoked by the sourced functions
 a_resume_observe() (
-  local before_fixture=$1 after_fixture=$2 status=$3 fault=$4 save_fail=${5:-0}
-  local saved_rc=127 saves=0 ran=0 cleared=0 offered run_rc run_finding run_text prior_enc migrate_lookups=0
+  local before_fixture=$1 after_fixture=$2 status=$3 fault=$4
+  local ran=0 offered run_rc run_finding run_text prior_enc migrate_lookups=0
   t_load >/dev/null 2>&1
   OMB_HOME=$REPO
   # shellcheck source=lib/actions.sh
@@ -69,6 +69,11 @@ a_resume_observe() (
     case "$fault:$*" in setup-read:*/etc/omarchy-mac-setup.conf) return 1 ;; esac
     command cat "$@"
   }
+  # The executable's lookup itself failing (an I/O error): status 3.
+  perl() {
+    case "$fault" in self-lookup) return 3 ;; esac
+    command perl "$@"
+  }
   lx_detect() {
     migrate_lookups=0
     if [ "$fault" = migrate-second ]; then
@@ -79,18 +84,10 @@ a_resume_observe() (
     fi
     a_resume_detect
   }
-  state_get() { [ "$1" != omarchy_resume_rc ] || printf '%s' "$saved_rc"; }
-  state_must_set() {
-    saves=$((saves + 1))
-    [ "$saves" != "$save_fail" ] || return 1
-    [ "$1" = omarchy_resume_rc ] || return 1
-    saved_rc=$2
-  }
   act_lx_read() { lx_detect; }
   lx_begin() { lx_detect; }
   lx_in_progress() {
     ran=$((ran + 1))
-    [ -n "$saved_rc" ] || cleared=1
     prior_enc=$LX_ENC_STATE
     return "$status"
   }
@@ -103,7 +100,7 @@ a_resume_observe() (
   # Deliberately leave a stale installed value: reconciliation must read now.
   ACT_READ=linux LX_OMARCHY_STATE=installed
   act_resume_judge reconcile
-  printf '%s\n' "offer=$offered" "status=$run_rc" "saved=$saved_rc" "ran=$ran" "cleared=$cleared" \
+  printf '%s\n' "offer=$offered" "status=$run_rc" "ran=$ran" \
     "run=$run_finding" "reconcile=$CORE_FINDING" "before-encryption=${prior_enc:-}" "after-encryption=$LX_ENC_STATE" \
     "text=$run_text"
   # A later boot may finish upstream's automatic resume. The same record
@@ -114,7 +111,7 @@ a_resume_observe() (
 )
 
 a_resume_claims() {
-  local present missing nonexec fallback runtime staged_luks row label prior after status fault want got p=$T_PASS f=$T_FAIL
+  local present missing nonexec fallback runtime staged_luks row label prior after status fault want rwant got p=$T_PASS f=$T_FAIL
   present=$(t_variant linux-setup-in-progress)
   chmod +x "$present/root/usr/local/bin/omarchy-mac-setup"
   missing=$(t_variant linux-setup-in-progress)
@@ -148,17 +145,20 @@ a_resume_claims() {
     "luks-failed-staged-conf|$staged_luks|$staged_luks|0|luks|unexpected" \
     "boot-fstype-failed|$present|$present|0|boot-fstype|unexpected" \
     "setup-conf-unreadable|$present|$present|0|setup-read|unexpected" \
-    "setup-conf-unreadable-127|$present|$present|127|setup-read|unexpected"; do
+    "setup-conf-unreadable-127|$present|$present|127|setup-read|unexpected" \
+    "present-127-lookup-fails|$present|$present|127|self-lookup|unexpected" \
+    "missing-127-lookup-fails|$present|$missing|127|self-lookup|unexpected"; do
     IFS='|' read -r label prior after status fault want <<EOF
 $row
 EOF
     got=$(a_resume_observe "$prior" "$after" "$status" "$fault")
     assert_contains "$got" "offer=0" "actions-omarchy.resume-claims: $label: classifier offers in-progress"
     assert_contains "$got" "status=$status" "actions-omarchy.resume-claims: $label: run preserves status"
-    assert_contains "$got" "saved=$status" "actions-omarchy.resume-claims: $label: status saved for a new boot"
-    assert_contains "$got" "cleared=1" "actions-omarchy.resume-claims: $label: old status cleared before running"
     assert_contains "$got" "run=$want" "actions-omarchy.resume-claims: $label: run"
-    assert_contains "$got" "reconcile=$want" "actions-omarchy.resume-claims: $label: new-boot reconcile reads again"
+    # After a new boot no status of the run is trusted: only installed settles.
+    rwant=$want
+    [ "$want" != no-effect ] || rwant=unexpected
+    assert_contains "$got" "reconcile=$rwant" "actions-omarchy.resume-claims: $label: new-boot reconcile reads again"
     assert_contains "$got" "later=completed" "actions-omarchy.resume-claims: $label: upstream finishes after a restart"
     if [ "$want" = unexpected ]; then
       assert_contains "$got" "resume ended" "actions-omarchy.resume-claims: $label: the command ended"
@@ -170,19 +170,6 @@ EOF
     if [ "$label" = migration-second-lookup ]; then
       assert_contains "$got" "before-encryption=none" "actions-omarchy.resume-claims: second migration lookup failed"
       assert_contains "$got" "after-encryption=migrating" "actions-omarchy.resume-claims: recovery alone changed the classification"
-    fi
-  done
-  # Both status-write failures stay safe: failure to clear stops the command;
-  # failure to save leaves no old status for reconciliation to reuse.
-  for status in 1 2; do
-    got=$(a_resume_observe "$present" "$missing" 127 '' "$status")
-    assert_contains "$got" "status=1" "actions-omarchy.resume-claims: write $status fails the run"
-    assert_contains "$got" "run=unexpected" "actions-omarchy.resume-claims: write $status never proves no effect"
-    if [ "$status" = 1 ]; then
-      assert_contains "$got" "ran=0" "actions-omarchy.resume-claims: failed clear stops before upstream"
-    else
-      assert_contains "$got" "saved=" "actions-omarchy.resume-claims: failed save leaves the cleared status"
-      assert_contains "$got" "reconcile=unexpected" "actions-omarchy.resume-claims: failed save cannot clear the barrier"
     fi
   done
   # A root-only conf's unreadable content must not erase its presence. This
@@ -1111,8 +1098,6 @@ a_unavailable dev "" "$FIX/linux-setup-in-progress"
 #   - asahi_prelaunch_layout and asahi_prelaunch_resized in state.env: what
 #     the launch began from, recorded before it runs, so a reconciliation
 #     after a new boot can prove what changed.
-#   - omarchy_resume_rc in state.env: the resume command's exit status, so
-#     reconciliation can corroborate a failure to execute after a new boot.
 # ---------------------------------------------------------------------------
 mkdir -p "$T/base"
 if git -C "$REPO" cat-file -e "$BASELINE^{commit}" 2>/dev/null; then
@@ -1172,7 +1157,7 @@ e_norm() {
     -e 's/(omarchy-bootstrap|\.state\.env|downloads\/[a-z-]+\.sh-STAMP|shared-[a-z-]+\.env)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(-STAMP)\.[A-Za-z0-9]{6}/\1.XXXXXX/g' \
     -e 's/(\.omarchy-bootstrap-test-STAMP)-[0-9]+/\1-PID/g' \
-    -e '/^asahi_prelaunch_layout=/d' -e '/^asahi_prelaunch_resized=/d' -e '/^omarchy_resume_rc=/d'
+    -e '/^asahi_prelaunch_layout=/d' -e '/^asahi_prelaunch_resized=/d'
 }
 
 # e_agree ID — the baseline's side and the core's side left the same.
