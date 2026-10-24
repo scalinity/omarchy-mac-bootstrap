@@ -924,12 +924,49 @@ EOF
   assert_eq "$(a_ops)" "" "actions-shared.code-free-success: its record is removed"
   a_run snapshot "scope	name=journey"
   case " $(a_actions)" in *" shared.code "*) fail "actions-shared.code-free: not offered once recorded" ;; *) ok ;; esac
-  # Not before the install, and not with no saved plan to name.
+  # Not before the install, and not with no saved plan to name, each with its
+  # own reason.
   a_use "$T/free-early" "$R"
   mkdir -p "$A_DIR/state"
   cp -p "$T/plan0/state/state.env" "$A_DIR/state/"
   a_run snapshot "scope	name=journey"
   case " $(a_actions)" in *" shared.code "*) fail "actions-shared.code-free: not before Asahi is installed" ;; *) ok ;; esac
+  a_run validate "select	action=shared.code" "$(a_arg code "$FCODE")"
+  assert_eq "$(c_result)" "refused unavailable" "actions-shared.code-free-early: refused"
+  assert_contains "$C_OUT" "Linux%20is%20not%20installed%20yet" "actions-shared.code-free-early: says Linux is not installed yet, not that Shared is off"
+  a_use "$T/free-noplan" "$FIX/mac-asahi-installed"
+  a_run validate "select	action=shared.code" "$(a_arg code "$FCODE")"
+  assert_contains "$C_OUT" "No%20plan%20is%20saved%20here" "actions-shared.code-free-noplan: says no plan is saved"
+  # The stub's system volume not mounted (installed-unverified, the common
+  # state): offered, validated, and run through the core like `installed`.
+  mkdir -p "$T/free-unv/state"
+  chmod 700 "$T/free-unv/state"
+  cp -p "$T/plan0/state/state.env" "$T/free-unv/state/"
+  a_use "$T/free-unv" "$FIX/mac-asahi-installed"
+  a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" shared.code "*) ok ;; *) fail "actions-shared.code-free-unverified: installed-unverified offers it" ;; esac
+  for pair in "other-plan|$FOTHER_PLAN" "other-root|$FOTHER_ROOT"; do
+    a_run validate "select	action=shared.code" "$(a_arg code "${pair#*|}")"
+    assert_contains "$C_OUT" "invalid	name=code	code=${pair%%|*}	" "actions-shared.code-free-unverified-validate: ${pair%%|*} named"
+  done
+  a_exec shared.code "" "$(a_arg code "$FCODE")"
+  assert_eq "$(c_result) $(c_admits execute)" "done ok ok" "actions-shared.code-free-unverified-success: recorded ($(a_text))"
+  assert_contains "$(a_state)" "shared_linux_done=$FCODE" "actions-shared.code-free-unverified-success: Linux's code is recorded"
+  assert_eq "$(a_ops)" "" "actions-shared.code-free-unverified-success: its record is removed"
+  a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" shared.code "*) fail "actions-shared.code-free-unverified: not offered once recorded" ;; *) ok ;; esac
+  # Before the first boot: not offered, and told to boot Linux first.
+  mkdir -p "$T/free-pend/state"
+  chmod 700 "$T/free-pend/state"
+  cp -p "$T/plan0/state/state.env" "$T/free-pend/state/"
+  a_use "$T/free-pend" "$FIX/mac-asahi-pending"
+  a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" shared.code "*) fail "actions-shared.code-free-pending: pending-first-boot must not offer it" ;; *) ok ;; esac
+  a_run validate "select	action=shared.code" "$(a_arg code "$FCODE")"
+  assert_eq "$(c_result)" "refused unavailable" "actions-shared.code-free-pending: refused"
+  assert_contains "$C_OUT" "Linux%20has%20not%20finished%20its%20first%20boot" "actions-shared.code-free-pending: told to boot Linux first"
+  a_run execute "exec	action=shared.code	basis=$ZERO	confirm=" "$(a_arg code "$FCODE")"
+  assert_eq "$(c_result) $(a_ops)" "refused unavailable " "actions-shared.code-free-pending: execute refused, no record"
 fi
 
 # ---------------------------------------------------------------------------

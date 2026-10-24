@@ -88,8 +88,13 @@ saved, and Linux from the token it loaded, keeping it as loaded
 (`phase1_plan_id`), so choices changed on Linux afterwards do not change it.
 Linux shows the code under the same conditions as for Shared (Omarchy Mac
 finished and its encryption positively finished); macOS takes it in the guided
-run after the install, or through `shared.code`, and checks it against the
-saved choices and this disk's Linux root before recording it. A code for
+run after the install, or through `shared.code`, once Asahi's partitions are in
+place (`installed`, or `installed-unverified` where macOS does not mount the
+stub's system volume, as for Shared), and checks it against the saved choices
+and this disk's Linux root before recording it. In `pending-first-boot` it is
+not asked for: the Mac is told to boot Linux first. A refusal for another plan
+says that a token typed on Linux by hand is re-read by running
+`./omarchy-bootstrap resume <the exact token>` there again. A code for
 another plan or another root, a mistyped one and an absent or empty one prove
 nothing, and a Mac with no saved plan has no plan for a code to match.
 

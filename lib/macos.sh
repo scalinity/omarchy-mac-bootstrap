@@ -1226,14 +1226,25 @@ mac_shared_step() {
   shared_create_flow
 }
 
-# mac_linux_done_step MODE — no Shared planned, Asahi installed: macOS cannot
-# read the Linux root, so that Omarchy has finished comes from Linux's
-# completion code, checked against the saved plan and this disk's Linux root
-# and recorded (docs/SHARED.md → The codes). Enter leaves it for later.
+# mac_linux_done_step MODE — no Shared planned, Asahi's partitions in place
+# (installed, or installed-unverified where the stub's volume is not mounted):
+# macOS cannot read the Linux root, so that Omarchy has finished comes from
+# Linux's completion code, checked against the saved plan and this disk's
+# Linux root and recorded (docs/SHARED.md → The codes). Before the first boot
+# there is nothing to take yet. Enter leaves it for later.
 mac_linux_done_step() {
-  if [ "$1" = plan ] || [ "${ASAHI_STATE:-}" != installed ]; then return 0; fi
+  if [ "$1" = plan ]; then return 0; fi
   shared_mac_state
   if [ -z "$SHARED_DIGEST" ]; then return 0; fi
+  case "${ASAHI_STATE:-}" in
+    installed | installed-unverified) ;;
+    pending-first-boot)
+      ui_note "Linux's completion code is asked for here once Linux has finished: boot it, let Omarchy Mac finish, then come back here with the code it shows."
+      printf '\n'
+      return 0
+      ;;
+    *) return 0 ;;
+  esac
   if shared_receipt_ok "$(state_get shared_linux_done)"; then
     ui_ok "Linux has finished: its completion code is recorded."
     printf '\n'

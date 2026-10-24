@@ -335,7 +335,9 @@ journey_report_build() {
     case "$J_PLAN" in done) st=pass ;; blocked) st=fail ;; esac
     case "$J_PLAN_WHY" in "not checked:"*) st=not-checked ;; esac
     why=$J_PLAN_WHY
-    if [ "$ASAHI_STATE" = installed ] && [ "$J_PLAN" = 'done' ]; then
+    # The partitions in place (installed, installed-unverified,
+    # pending-first-boot) are what the saved extents are compared with.
+    if [ "$J_PLAN" = 'done' ] && { [ "$ASAHI_STATE" = installed ] || [ "$ASAHI_STATE" = installed-unverified ] || [ "$ASAHI_STATE" = pending-first-boot ]; }; then
       if [ "${CFG_shared:-0}" = 0 ]; then
         st=not-checked why='the pre-install extents are not saved without Shared'
       else

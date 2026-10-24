@@ -568,7 +568,10 @@ act_code_offer() {
       case "$SHARED_STATE" in
         awaiting-linux-completion) return 0 ;;
         blocked) [ "$SHARED_NEED_RECEIPT" = 1 ] && return 0 ;;
-        off) act_code_free_due && return 0 ;;
+        off)
+          if act_code_free_due; then return 0; fi
+          return 1
+          ;;
       esac
       CA_WHY="Shared storage does not wait for Linux's code here (${SHARED_STATE})."
       ;;
@@ -583,11 +586,36 @@ act_code_offer() {
   return 1
 }
 
-# act_code_free_due — no Shared planned, Asahi installed, a saved plan to name
-# and no valid code recorded yet (after shared_mac_state).
+# act_code_free_due — no Shared planned: Linux's code is due once a plan is
+# saved, Asahi's partitions are in place and no valid code is recorded (after
+# shared_mac_state). `installed-unverified` counts, as it does for Shared:
+# where macOS does not mount the stub's system volume the code is what says
+# Linux finished. Otherwise CA_WHY says why not, for the state it is.
 act_code_free_due() {
-  if [ -z "$SHARED_DIGEST" ] || [ "${ASAHI_STATE:-}" != installed ]; then return 1; fi
-  ! shared_receipt_ok "$(state_get shared_linux_done)"
+  if [ -z "$SHARED_DIGEST" ]; then
+    CA_WHY="No plan is saved here, so there is no plan for Linux's code to name."
+    return 1
+  fi
+  case "${ASAHI_STATE:-}" in
+    installed | installed-unverified) ;;
+    pending-first-boot)
+      CA_WHY="Linux has not finished its first boot: boot it, let Omarchy Mac finish, then come back with the code it shows."
+      return 1
+      ;;
+    none | resized-only)
+      CA_WHY="Linux is not installed yet, so there is no code to take."
+      return 1
+      ;;
+    *)
+      CA_WHY="The Asahi install is ${ASAHI_STATE:-unknown}, not complete: Linux cannot have finished."
+      return 1
+      ;;
+  esac
+  if shared_receipt_ok "$(state_get shared_linux_done)"; then
+    CA_WHY="Linux's completion code is already recorded."
+    return 1
+  fi
+  return 0
 }
 
 act_code_facts() {

@@ -892,6 +892,11 @@ shared_receipt_check() {
     SHARED_CODE_ERR=mistyped SHARED_CODE_WHY="That is not a completion code, or a character was mistyped."
   elif [ -z "${SHARED_DIGEST:-}" ] || [ "$CODE_PLAN" != "$SHARED_DIGEST" ]; then
     SHARED_CODE_ERR=other-plan SHARED_CODE_WHY="That code belongs to a different plan ($CODE_PLAN, this one is ${SHARED_DIGEST:-not saved here})."
+    # With no Shared planned the plan is the typed token's own digest: one
+    # mistyped character in it names another plan.
+    if [ "${SHARED_STATE:-}" = off ]; then
+      SHARED_CODE_WHY="$SHARED_CODE_WHY If the resume token was typed on Linux by hand, run ./omarchy-bootstrap resume <the exact token> there again: it takes the plan from the token you type this time."
+    fi
   elif [ "$CODE_ID12" != "$(guid12 "$ASAHI_ROOT_UUID")" ]; then
     SHARED_CODE_ERR=other-root SHARED_CODE_WHY="That code was made on a different Linux partition than the one on this disk."
   else
