@@ -280,7 +280,10 @@ fn put_back(saved: &Saved) {
     if let Ok(g) = saved.lock()
         && let Some(t) = g.as_ref()
     {
-        let _ = tcsetattr(io::stdin(), OptionalActions::Now, t);
+        // Flush, so keys typed ahead are discarded with the mode: queued input
+        // at a switch back to canonical mode leaves the kernel's PENDIN bit
+        // set, and the launcher compares the settings it saved with these.
+        let _ = tcsetattr(io::stdin(), OptionalActions::Flush, t);
     }
 }
 
