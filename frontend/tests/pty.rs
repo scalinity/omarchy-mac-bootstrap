@@ -1418,7 +1418,12 @@ fn pty_gate2_reads_through_the_launcher() {
     };
     p.wait_for("Welcome to Omarchy Mac Bootstrap");
     p.send(b"\r");
-    p.wait_for(row);
+    // The sidebar's Next steps names the row on every screen: only Journey's
+    // own heading says the page has been reached.
+    p.wait_until("Journey", |p| {
+        let f = p.contents();
+        f.contains("What you can do now") && f.contains(row)
+    });
     p.idle();
     let trace = std::fs::read_to_string(p.dir.join("trace")).unwrap();
     let stages = trace.matches("ty: \"stage\"").count();
@@ -1529,7 +1534,10 @@ fn pty_gate2_reads_through_the_launcher() {
     }
     p.idle();
     p.send(b"\x1b");
-    p.wait_for(row);
+    p.wait_until("Journey again", |p| {
+        let f = p.contents();
+        f.contains("What you can do now") && f.contains(row)
+    });
     p.keys("q");
     assert_eq!(p.wait_exit(), 0);
     assert!(p.restored(), "the terminal came back");
