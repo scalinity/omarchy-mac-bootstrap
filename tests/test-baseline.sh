@@ -32,6 +32,9 @@ PRE_ROUTE=569d67e728d4cee1f345134724e259e52d702af5
 mkdir -p "$T/pre"
 if git -C "$REPO" cat-file -e "$PRE_ROUTE^{commit}" 2>/dev/null; then
   git -C "$REPO" archive "$PRE_ROUTE" | tar -x -C "$T/pre" || fail "$PRE_ROUTE could not be extracted"
+  # Its code is frozen; its lock is data. The bare command prints the lock's
+  # URL, version, size and digest, so both trees carry the current lock.
+  cp "$REPO/release/frontend.lock" "$T/pre/release/frontend.lock" || fail "the current lock could not be copied into $T/pre"
 else
   fail "$PRE_ROUTE, the commit before frontend-check's route, is not in this clone"
 fi

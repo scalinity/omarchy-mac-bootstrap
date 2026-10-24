@@ -1028,12 +1028,14 @@ for e in "OMB_TEST_FUTURE=" "OMB_TESTING=x" "OMB_TEST=x" "SOME_OMB_TEST_X=x"; do
   assert_eq "$(c_result)" "done ok" "frontend-check-purpose-env: $e is not a seam the rule refuses"
 done
 
-# frontend-check-snapshot: the check's journey snapshot, exactly.
-ck hello
+# frontend-check-snapshot: the check's journey snapshot, exactly. The corpus
+# (tests/proto/corpus.sh) states it for frontend 0.1.0, so the check runs
+# against the synthetic 0.1.0 lock above, never the checkout's own release.
+C_HOME=$LT ck hello
 assert_eq "$(c_result)" "done ok" "frontend-check-read-session: hello answered"
 hello=$(printf '%s\n' "$C_OUT" | sed -n 2p)
 assert_contains "$hello" "	ceiling=read	dry_run=0	fixture=0" "frontend-check-no-fixture: the hello says read, not a dry run, no fixture"
-ck snapshot "scope	name=journey"
+C_HOME=$LT ck snapshot "scope	name=journey"
 assert_eq "$(c_admits snapshot)" ok "frontend-check-snapshot: admitted by the Bash admission"
 assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | tr '\n' ' ')" "omb-res 1 hello generation stage stage stage stage stage stage stage stage stage stage fact fact fact fact result " "M16-stage-records: frontend-check-snapshot: hello, generation, ten stages, four facts, result"
 assert_eq "$(grep '^stage	' "$C_EV")" "$(cat "$TESTS_DIR/cp1/startup-check.stages")" "M16-stage-records: frontend-check-snapshot: exact fixed blocked stages"
@@ -1045,10 +1047,10 @@ assert_eq "$ck_first" "$(sed -n '3,$p' "$ck_corpus/frontend-check-snapshot.doc")
 facts=$(awk -F '\t' '$1 == "stage" || $1 == "fact"' "$C_EV")
 assert_eq "$(sed -n 3p "$C_EV")" "generation	id=$( (printf '%s' "$facts") | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-64)	total=0" \
   "M16-stage-records: frontend-check-snapshot: the generation is the SHA-256 of the stage and fact lines"
-ck snapshot "scope	name=journey"
+C_HOME=$LT ck snapshot "scope	name=journey"
 assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-snapshot: a refresh is byte-identical after hello"
 c_session
-ck snapshot "scope	name=journey"
+C_HOME=$LT ck snapshot "scope	name=journey"
 assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-snapshot: and so is another session of the same checkout"
 
 [ ! -e "$CK_STATE" ] && ok || fail "frontend-check-no-state: no check request made the state folder"
@@ -1070,7 +1072,7 @@ mkdir -p "$CK_STATE/ops"
   omb_cleanup
 )
 ck_before=$(t_snapshot "$CK_STATE")
-ck snapshot "scope	name=journey"
+C_HOME=$LT ck snapshot "scope	name=journey"
 assert_eq "$(sed -n '3,$p' "$C_EV")" "$ck_first" "frontend-check-zero-actions: the same snapshot whatever operation records exist"
 assert_eq "$(printf '%s\n' "$C_OUT" | cut -f1 | grep -cE '^(action|param|blocker|warning)$')" 0 "M16-stage-records: frontend-check-zero-actions: no action, param, blocker or warning"
 assert_eq "$(grep '^stage	' "$C_EV")" "$(cat "$TESTS_DIR/cp1/startup-check.stages")" "M16-stage-records: frontend-check-zero-actions: exactly the ten fixed blocked stages"

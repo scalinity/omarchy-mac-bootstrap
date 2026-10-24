@@ -100,7 +100,7 @@ lock() {
     f=$TOOL/release/frontend.lock
     {
       printf 'omb-frontend-lock 1\n'
-      rec_line frontend version 0.1.0 proto 1 source_commit "$(printf '%040d' 0)" inputs_digest "$(printf '%064d' 0)" rust 1.88.0
+      rec_line frontend version "${4:-0.1.0}" proto 1 source_commit "$(printf '%040d' 0)" inputs_digest "$(printf '%064d' 0)" rust 1.88.0
       rec_line artifact target "$1" url "https://example.invalid/omb-tui-0.1.0-$1" size "$3" sha256 "$2" minos "" glibc_max "" interp "" align_min ""
     } >"$f"
     rec_seal_write "$f"
@@ -203,6 +203,17 @@ mv "$T/lock.aside" "$TOOL/release/frontend.lock"
 printf 'x' >>"$TOOL/release/frontend.lock"
 r=$(fe_call 'y\n' fe_select act)
 assert_contains "$r" "is not admissible" "a lock that fails admission is refused"
+lock "$TARGET" "$FAKE_SHA" "$FAKE_SIZE"
+# A real machine's interactive commands open the interface only from the first
+# release that runs the core's actions: older and absent locks keep them in text.
+for v in 0.1.0:1 0.2.0:0 0.10.0:0; do
+  lock "$TARGET" "$FAKE_SHA" "$FAKE_SIZE" "${v%:*}"
+  r=$(fe_call '' fe_releases_actions)
+  assert_eq "${r%%|*}" "${v#*:}" "fe_releases_actions with a lock pinning ${v%:*}"
+done
+rm -f "$TOOL/release/frontend.lock"
+r=$(fe_call '' fe_releases_actions)
+assert_eq "${r%%|*}" 1 "fe_releases_actions with no lock"
 lock "$TARGET" "$FAKE_SHA" "$FAKE_SIZE"
 
 # --- frontend-unrunnable -------------------------------------------------------------------

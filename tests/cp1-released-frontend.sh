@@ -23,7 +23,10 @@ if ! fe_lock_read; then
   t_done cp1-released-frontend
   exit 1
 fi
-assert_eq "$FE_VERSION" 0.1.0 "CP1 published version"
+case $FE_URL in
+  */frontend-v"$FE_VERSION"/omb-tui-"$FE_VERSION"-"$FE_TARGET") ok ;;
+  *) fail "CP1 published URL does not name the lock's own release $FE_VERSION for $FE_TARGET: $FE_URL" ;;
+esac
 assert_eq "$FE_PROTO" 1 "CP1 published protocol"
 if [ "$T_FAIL" != 0 ]; then t_done cp1-released-frontend; exit 1; fi
 printf 'CP1 published artifact: target=%s version=%s proto=%s\nURL=%s\nsize=%s SHA-256=%s\n' \
