@@ -107,10 +107,13 @@ qualification*); until then `./omarchy-bootstrap` is the text installer:
 
 ### On the fresh Asahi system
 
-`resume` takes the route below from the same release, which exposes its
-flow (network and the Omarchy handoff); until then `resume` is the text
-flow, and `frontend-check` is the only command that opens the frontend
-here.
+A bare `resume` takes the route below from the same release, which exposes
+its flow (network and the Omarchy handoff). `resume TOKEN`, the form Phase 1
+prints, carries an argument and stays text, so the fresh Asahi system runs
+the text flow from the fetch to the completion code; the frontend opens there
+for a bare `./omarchy-bootstrap` or `resume`, and for the everyday user. Until
+a release pins at least 0.2.0, `frontend-check` is the only command that opens
+the frontend here.
 
 The earliest the frontend can draw is the first run of this tool, which
 needs the repository, which needs the network:
@@ -118,7 +121,7 @@ needs the repository, which needs the network:
 ```text
 boot → log in as root → nmtui (upstream's own interface)
      → the Phase 1 guide's fetch command, pinned to a full commit
-     → ./omarchy-bootstrap resume <token>
+     → ./omarchy-bootstrap resume          (bare; `resume <token>` stays text)
      → launcher (text): network present, frontend not cached
      → acquire: URL, version, expected SHA-256 from the lock, size; [Y/n]
      → verified → omb-tui on the console (TERM=linux: ASCII, 16 colours)
