@@ -13,6 +13,9 @@ zero=$(printf '%064d' 0)
 mkdir "$T/tool" "$T/closeout"
 cp -R "$REPO/omarchy-bootstrap" "$REPO/lib" "$REPO/data" "$REPO/release" "$T/tool/"
 git -C "$REPO" archive deaa62c62348ecd4274b74b6b3a00f506c9f243d | tar -x -C "$T/closeout" || exit 1
+# The oracle's code is frozen; its lock is data. It carries the current lock, so
+# the startup-check facts both cores print agree whichever release is pinned.
+cp "$REPO/release/frontend.lock" "$T/closeout/release/frontend.lock" || exit 1
 # M16-stage-records: the frozen closeout oracle gains ONLY the ten fixed
 # stage lines. Its own dataset hasher binds those lines; every prior payload,
 # projection, refusal and CP1-PLIST-M01 negative control remains unchanged.

@@ -474,7 +474,7 @@ jobs:
         if: matrix.steps
         run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui tests/frontend-check.sh
       - id: unit-cp1-released
-        name: CP1 actual published 0.1.0 from the production lock, native startup-check
+        name: CP1 actual published release from the production lock, native startup-check
         if: matrix.steps
         run: tests/cp1-released-frontend.sh
       - name: Evidence of the steps
@@ -581,7 +581,7 @@ jobs:
         if: matrix.steps
         run: OMB_TEST_ARTIFACT=$CARGO_TARGET_DIR/release/omb-tui tests/frontend-check.sh
       - id: unit-cp1-released
-        name: CP1 actual published 0.1.0 from the production lock, native startup-check
+        name: CP1 actual published release from the production lock, native startup-check
         if: matrix.steps
         run: tests/cp1-released-frontend.sh
       - name: Evidence of the steps

@@ -37,16 +37,23 @@ c_conf() {
 }
 
 # c_prepare OP RECORD... — the next request's spool (created with its header,
-# as the frontend does) and its request file, $T/request-N.
+# as the frontend does) and its request file, $T/request-N. The request names
+# the frontend version C_FE, else the one the home's release/frontend.lock
+# pins (a home with no release/ is a 0.1.0 tree), so a production-lock case
+# never depends on which release the lock holds.
 c_prepare() {
-  local op=$1 r
+  local op=$1 r fe=${C_FE:-}
   shift
+  if [ -z "$fe" ]; then
+    fe=$(awk -F'\t' '$1 == "frontend" { for (i = 2; i <= NF; i++) if (index($i, "version=") == 1) { print substr($i, 9); exit } }' "${C_HOME:-$REPO}/release/frontend.lock" 2>/dev/null)
+  fi
+  fe=${fe:-0.1.0}
   C_N=$((C_N + 1))
   C_EV=$SESS/req-$C_N.events
   printf 'omb-res 1\n' >"$C_EV"
   chmod 600 "$C_EV"
   {
-    printf 'omb-req 1\nreq\top=%s\tproto=1\tfrontend=%s\tsession=%s\n' "$op" "${C_FE:-0.1.0}" "$S"
+    printf 'omb-req 1\nreq\top=%s\tproto=1\tfrontend=%s\tsession=%s\n' "$op" "$fe" "$S"
     for r in "$@"; do printf '%s\n' "$r"; done
   } >"$T/request-$C_N"
 }
