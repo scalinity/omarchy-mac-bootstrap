@@ -25,8 +25,8 @@ survey · profile · resolve · plan · asahi · omarchy · shared · restore ·
 | survey | macOS | the survey read this Mac this run | no |
 | profile | macOS | a saved profile for this Mac (docs/MIGRATION.md) | yes: "no migration" |
 | resolve | macOS | every included item `resolved` or `unsupported` (docs/RESOLVER.md) | with profile |
-| plan | macOS | a saved plan whose invariants hold before installation; after Asahi, a saved plan and an install classified `installed` | no |
-| asahi | macOS, then Linux | the Asahi install classified `installed` (macOS) or Asahi Linux booted (Linux) | no |
+| plan | macOS | a saved plan whose invariants hold before installation; after Asahi, a saved plan and Asahi's three partitions in place (`installed`, `installed-unverified` or `pending-first-boot`) | no |
+| asahi | macOS, then Linux | the Asahi install classified `installed`, or `installed-unverified` where the stub's system volume is not mounted in macOS (macOS), or Asahi Linux booted (Linux) | no |
 | omarchy | Linux | Omarchy Mac finished: the baseline's marker, conf and encryption signals | no |
 | shared | macOS, then Linux | Shared `created` (macOS) / `ready` (Linux) | yes: not planned |
 | restore | macOS, then Linux | a bundle exported to a verified destination (macOS); the restore `complete` (Linux; docs/RESTORE.md → *States*) | with profile |
@@ -77,21 +77,34 @@ resolve. Export completes only after the recorded destination's bundle is
 read and verified again.
 
 Linux's loaded resume choices establish survey and plan as recorded by macOS
-only when the baseline recorded loading them and the token includes a plan id.
+only when the baseline recorded loading them and the token includes a plan id
+(with no Shared planned, the digest of the token that Linux keeps as loaded:
+docs/SHARED.md → *The codes*).
 The token contains no migration choice or profile/resolution progress.
 Linux marks profile and resolve done, recorded by macOS, only when the restore
 reader finds a bundle that passes its bundle check: export requires a resolved
 profile. Without a checked bundle they stay todo with detail `chosen on macOS`.
 Linux restore is derived from the existing restore classifier and current
 destinations. A matching `ombdone` code completes only Omarchy on macOS,
-recorded by Linux. Shared on Linux requires the baseline's ready state and a
+recorded by Linux, with or without Shared: without Shared the code names the
+plan by the token's digest, so the journey reaches `done` on macOS once
+that code is recorded. Shared on Linux requires the baseline's ready state and a
 verified mounted device identity; an `ombshare` code alone cannot complete it.
 An armed configured automount is accessed through its directory, then the
 baseline reads the kernel mount identity again before qualification files or
 report observations are read, as restore does.
 
-After Asahi, a saved plan record and an install classified `installed` complete
-the macOS plan stage, with or without Shared. The baseline refuses replanning
+After Asahi, a saved plan record and Asahi's stub, EFI and Linux partitions in
+place, in order, complete the macOS plan stage, with or without Shared: the
+three classifications `installed`, `installed-unverified` and
+`pending-first-boot` all say that. The asahi stage is done for `installed` and
+for `installed-unverified` (macOS cannot read whether the first boot finished
+where it does not mount the stub's system volume, and Linux's completion code
+is what settles Omarchy); in `pending-first-boot` the first stage is complete
+and the first boot has not run, so asahi is the current stage and its
+guidance is the boot steps. A stop in the first stage (`early-partial`,
+`partitioned-incomplete`, `first-stage-incomplete`, `unknown`) blocks plan and
+asahi with the classification's own reason, never "does not match the disk". The baseline refuses replanning
 against the changed disk. The report separately compares the current layout
 with the saved Shared extents; without Shared the exact pre-install extents
 are not saved, so that report row is not checked. Linux's done stage always
@@ -184,7 +197,7 @@ takes no file argument, so there it is a whole-system `sync`.
 | Record | Written by | Schema |
 | --- | --- | --- |
 | `macos` (`macos.omb`) | macOS, step 1 | `schema:uint plan:hex64 shared_guid:bytes os:enum(macos) commit:hex40? at:utc bytes:uint sha256:hex64 name:bytes*` |
-| `linux` (`linux.omb`) | Linux, step 2 | `schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:id dirty:enum(0\|1\|unknown)` |
+| `linux` (`linux.omb`) | Linux, step 2 | `schema:uint previous:hex64 partuuid:bytes majmin:id os:enum(linux) commit:hex40? at:utc read_sha256:hex64 bytes:uint sha256:hex64 name_seen:bytes* name_written:bytes* name_collision:bytes* kernel:bytes dirty:enum(0\|1\|unknown)` |
 | `result` (`result.omb`) | macOS, step 3 | `schema:uint previous:hex64 os:enum(macos) commit:hex40? at:utc data_ok:bool return_ok:bool names_ok:bool verdict:enum(passed\|failed) reason:id?` |
 
 `plan` retains the full SHA-256 of the baseline Shared intent body,
@@ -252,9 +265,14 @@ exists (on case-insensitive exFAT, the second of the case pair) is recorded
 as a collision and never overwritten. The macOS `name` list holds successful
 creations; a collision is shown and
 that spelling is absent from the list. Linux records its successful
-creations, what it sees from macOS and its collisions, byte for byte. A
-collision does not itself fail the round trip: the successful spellings
-must survive on the other system.
+creations, which of the fixed names it sees in macOS's folder and its
+collisions, byte for byte. A collision does not itself fail the round trip:
+the successful spellings must survive on the other system. The comparison
+asks only whether every name a step created is listed exactly as written
+(case and normalisation included, so a folded or altered spelling fails);
+entries the test did not create (a `.DS_Store` Finder adds, a file the owner
+dropped there) are never recorded, never counted for the verdict, and shown
+once as "other entries" (counted to 64).
 
 ### The round trip
 
@@ -287,15 +305,24 @@ sequenceDiagram
 - **Rerunning step 1 starts over.** It first removes from the folder only
   the names this design fixes (the three step records and their fixed
   `.tmp` names, the two data files, the two names folders and the fixed test names in them), after showing
-  them; anything else found there is reported and left.
+  them; anything else found there is reported and left. The records go last
+  link first (`result.omb`, `linux.omb`, then `macos.omb`, each with its
+  `.tmp` name), so a stop or a failed removal between two of them leaves a
+  prefix of the chain, a state some step is offered from, never a record
+  whose predecessor is gone.
 - **Nothing is written before the checks.** A side that cannot verify the
   identity or the binding writes nothing on Shared, not even a failure
   record; it reports on screen and in its own log.
 - **A step writes its record last.** A step that stops part-way (a command
   failed, the size is short) leaves no record, so the step is still due:
   the next `qualify` repeats it from its first check, first removing that
-  side's own data file and names. A digest or a name that does not read back
-  does not stop a step: it is recorded, and the result says `failed`.
+  side's own data file and names. A digest that does not read back does not
+  stop a step: it is recorded and the result says `failed`, with the reason
+  in its `reason` field. Linux's step 2 records an unreadable `data.macos.bin`
+  as an empty `read_sha256` (and says so) and goes on, so the round trip
+  ends; macOS's step 3 records `macos-data-unreadable` for that,
+  `data-unreadable` for a missing or unreadable `data.linux.bin`, and
+  `mismatch` for bytes or names that differ. Step 1 is then offered.
 - **A pass removes the data files.** After writing a passing result, macOS
   removes the two data files and the two names folders; the three step
   records stay for `report`. After a failure everything stays until step 1
@@ -327,11 +354,43 @@ Derived on every run from verified Shared and the folder on it:
 | `waiting-for-macos` | a `linux.omb`, no `result.omb` |
 | `passed` | `result.omb` records a pass |
 | `failed` | `result.omb` records a mismatch; the files stay until step 1 starts over |
-| `blocked` | identity, admission, binding, step order or space failed; the reason is shown |
+| `blocked` | identity, admission, binding or step order failed, or the due step does not fit; the reason is shown |
+
+A recorded verdict stays whatever the free space later: `passed` and `failed`
+are read from `result.omb` alone, and only the offer to run again (macOS
+step 1, optional after a verdict) carries the space refusal. A blocked record
+names its file and how to clear it: delete that one file from
+`omarchy-mac-bootstrap/qualify` on Shared and run `qualify` again. Which
+states block does not change, and no step runs from `blocked`.
 
 `qualify status` prints the state and writes no qualification records. On Linux,
 qualification reads access the configured automount and recheck its kernel
 identity before opening the folder; an armed automount alone is not a failure.
+
+### Judging a step
+
+The frontend runs a step through the core, which records the run, then judges
+what it left by reading Shared again (docs/PROTOCOL.md → *The action table*,
+`CA_FN_judge`). The step's exit status is not read: its record is written
+last, so the record being there is its effect, and a step that stopped or
+failed before that left the folder in a state its own offer starts from
+again. That is judged `no-effect`: the operation record goes, the result says
+the step stopped before it saved its record, and the next `qualify` repeats
+the step that is due. The read leaves free space out, since whether the next
+step fits is not what this one left (a Shared too small for the stream, found
+after step 1 cleared the folder, is a refusal to repeat, not a barrier).
+
+| Step | Effect | `completed` | `no-effect` |
+| --- | --- | --- | --- |
+| 1 (macOS) | a new `macos.omb` | `waiting-for-linux`, with a record other than the one the step started from | `not-started`; `waiting-for-macos`, `passed` or `failed` (the clearing stopped part-way or never began); `waiting-for-linux` with the record it started from |
+| 2 (Linux) | `linux.omb` | `waiting-for-macos` | any other readable state |
+| 3 (macOS) | `result.omb` | `passed` or `failed` | any other readable state |
+| after a restart, step not known | — | macOS: `waiting-for-linux`, `passed`, `failed`; Linux: `waiting-for-macos`, `passed`, `failed` | the other readable states |
+
+`blocked` is the one state that needs the person (`unexpected`): a record no
+step leaves, or a Shared that cannot be read. The operation record stays,
+the scope refuses to run, and a restart reconciles it on what Shared then
+shows.
 
 ### Without Shared
 

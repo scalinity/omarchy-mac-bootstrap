@@ -79,6 +79,20 @@ catch a mistyped character. A code is input, never permission: each side
 checks the disk itself, and a code for another plan or another partition is
 refused.
 
+With no Shared storage planned there is no plan record to name the plan, and
+the resume token carries no plan field. The completion code is still made and
+still checked, and macOS still cannot learn that Linux has finished any other
+way. Its plan field is then the first 8 hex digits of the SHA-256 of the
+resume token the saved choices make: macOS builds it from the choices it
+saved, and Linux from the token it loaded, keeping it as loaded
+(`phase1_plan_id`), so choices changed on Linux afterwards do not change it.
+Linux shows the code under the same conditions as for Shared (Omarchy Mac
+finished and its encryption positively finished); macOS takes it in the guided
+run after the install, or through `shared.code`, and checks it against the
+saved choices and this disk's Linux root before recording it. A code for
+another plan or another root, a mistyped one and an absent or empty one prove
+nothing, and a Mac with no saved plan has no plan for a code to match.
+
 ## The plan record
 
 `shared-intent.env` in macOS's state directory: a versioned, digested record

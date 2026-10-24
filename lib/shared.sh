@@ -374,7 +374,13 @@ shared_mac_state() {
   SHARED_STATE=off SHARED_WHY="" SHARED_GAP_START=0 SHARED_GAP_END=0 SHARED_PRED_ID="" SHARED_PRED_UUID=""
   SHARED_SUCC_ID="" SHARED_UUID="" SHARED_ID="" SHARED_SIZE=0 SHARED_MOUNT="" SHARED_DIGEST="" TXN_RESULT=""
   SHARED_NEED_RECEIPT=0
-  [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ] || return 0
+  if [ ! -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ]; then
+    # No Shared planned: only a code can say Linux has finished, and it is
+    # checked against this disk's Linux root.
+    shared_free_digest
+    if [ -n "$SHARED_DIGEST" ]; then asahi_classify; fi
+    return 0
+  fi
   if ! shared_intent_load; then
     _blocked "$INT_ERR"
     return 0
@@ -638,10 +644,33 @@ EOF
   return 0
 }
 
+# shared_free_digest — SHARED_DIGEST for a plan with no Shared storage, which
+# has no plan record to name it: the first 8 hex digits of the SHA-256 of the
+# resume token its saved choices make, which is what Linux loads and keeps as
+# loaded (shared_lx_free_plan). Both are built from the choices alone, in a
+# subshell, so neither side's globals shape the other's. Empty without a saved
+# plan, and an empty plan matches no code.
+shared_free_digest() {
+  local tok
+  SHARED_DIGEST=""
+  if [ "$(state_get cfg_shared)" != 0 ] || [ -z "$(state_get cfg_linux)" ]; then return 0; fi
+  tok=$(shared_free_token)
+  SHARED_DIGEST=$(sha256_str "$tok" | cut -c1-8)
+}
+
+# shared_free_token — the canonical token of the choices saved here.
+shared_free_token() {
+  local k
+  for k in $CFG_KEYS; do unset "CFG_$k"; done
+  cfg_load
+  token_encode
+}
+
 # shared_receipt_ok CODE — a completion code from Linux for this plan and
 # this disk's Linux root.
 shared_receipt_ok() {
   [ -n "$1" ] || return 1
+  [ -n "${SHARED_DIGEST:-}" ] || return 1
   code_parse ombdone "$1" || return 1
   [ "$CODE_PLAN" = "$SHARED_DIGEST" ] && [ "$CODE_ID12" = "$(guid12 "$ASAHI_ROOT_UUID")" ]
 }
@@ -826,7 +855,11 @@ shared_create_flow() {
 # finished; recorded only when it names this plan and this Linux root.
 shared_take_receipt() {
   local code=$1
-  ui_section "Linux first" "Shared is created once Linux has completely finished"
+  if [ "$SHARED_STATE" = off ]; then
+    ui_section "Linux first" "Linux's word that Omarchy has completely finished"
+  else
+    ui_section "Linux first" "Shared is created once Linux has completely finished"
+  fi
   ui_note "When Omarchy is installed and its encryption has finished, ./omarchy-bootstrap on Linux shows a completion code (ombdone-...). Type it here."
   while :; do
     if [ -z "$code" ]; then
@@ -840,7 +873,7 @@ shared_take_receipt() {
     if shared_receipt_check "$code"; then
       state_must_set shared_linux_done "$code" || return 1
       SHARED_TYPED_RECEIPT=$code
-      SHARED_STATE=awaiting-macos-creation
+      [ "$SHARED_STATE" = off ] || SHARED_STATE=awaiting-macos-creation
       ui_ok "Linux's completion code matches this disk."
       return 0
     fi
@@ -857,8 +890,8 @@ shared_receipt_check() {
   SHARED_CODE_ERR="" SHARED_CODE_WHY=""
   if ! code_parse ombdone "$1"; then
     SHARED_CODE_ERR=mistyped SHARED_CODE_WHY="That is not a completion code, or a character was mistyped."
-  elif [ "$CODE_PLAN" != "$SHARED_DIGEST" ]; then
-    SHARED_CODE_ERR=other-plan SHARED_CODE_WHY="That code belongs to a different plan ($CODE_PLAN, this one is $SHARED_DIGEST)."
+  elif [ -z "${SHARED_DIGEST:-}" ] || [ "$CODE_PLAN" != "$SHARED_DIGEST" ]; then
+    SHARED_CODE_ERR=other-plan SHARED_CODE_WHY="That code belongs to a different plan ($CODE_PLAN, this one is ${SHARED_DIGEST:-not saved here})."
   elif [ "$CODE_ID12" != "$(guid12 "$ASAHI_ROOT_UUID")" ]; then
     SHARED_CODE_ERR=other-root SHARED_CODE_WHY="That code was made on a different Linux partition than the one on this disk."
   else
@@ -1181,9 +1214,37 @@ shared_fstab_scan() {
 }
 
 # shared_completion_code — what macOS needs to know Linux has finished.
-# Needs the plan's digest from the resume token (CFG_plan).
+# Needs the plan's digest from the resume token (CFG_plan), or with no Shared
+# planned the token's own (shared_lx_free_plan).
 shared_completion_code() {
-  code_make ombdone "$CFG_plan" "$SH_ROOT_PARTUUID"
+  code_make ombdone "${CFG_plan:-$(shared_lx_free_plan)}" "$SH_ROOT_PARTUUID"
+}
+
+# shared_lx_stamp_plan TOKEN — with no Shared planned, remember which plan the
+# token loaded here names, as shared_free_digest names it on macOS: the first
+# 8 hex digits of the SHA-256 of the token's canonical form. It is taken when
+# the token is loaded, so choices changed here afterwards do not change it.
+shared_lx_stamp_plan() {
+  local tok
+  tok=$(shared_lx_canon "$1")
+  # A token that plans Shared carries the record's digest (plan=), not this.
+  case ",$tok," in *,shared=*) return 0 ;; esac
+  state_set phase1_plan_id "$(sha256_str "$tok" | cut -c1-8)"
+}
+shared_lx_canon() {
+  local k
+  for k in $CFG_KEYS; do unset "CFG_$k"; done
+  token_decode "$1"
+  token_encode
+}
+
+# shared_lx_free_plan — what shared_lx_stamp_plan kept ("" when no token was
+# loaded here, so no code can be made).
+shared_lx_free_plan() {
+  local id
+  id=$(state_get phase1_plan_id)
+  [ -n "$id" ] || id=$(state_get phase1_plan_id "" "$STATE_SYSTEM_FILE")
+  printf '%s' "$id"
 }
 
 # ---------------------------------------------------------------------------
@@ -1385,8 +1446,8 @@ EOF
 }
 
 shared_lx_macos_next() {
-  if [ -z "${CFG_plan:-}" ]; then
-    ui_warn "This system does not know the Shared plan's code. On macOS, ./omarchy-bootstrap resume shows the resume token; run ./omarchy-bootstrap resume <token> here once to load it."
+  if [ -z "${CFG_plan:-}" ] && [ -z "$(shared_lx_free_plan)" ]; then
+    ui_warn "This system does not know the $([ "${CFG_shared:-0}" = 0 ] || printf 'Shared ')plan's code. On macOS, ./omarchy-bootstrap resume shows the resume token; run ./omarchy-bootstrap resume <token> here once to load it."
     printf '\n'
     return 0
   fi

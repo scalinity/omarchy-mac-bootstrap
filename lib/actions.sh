@@ -568,6 +568,7 @@ act_code_offer() {
       case "$SHARED_STATE" in
         awaiting-linux-completion) return 0 ;;
         blocked) [ "$SHARED_NEED_RECEIPT" = 1 ] && return 0 ;;
+        off) act_code_free_due && return 0 ;;
       esac
       CA_WHY="Shared storage does not wait for Linux's code here (${SHARED_STATE})."
       ;;
@@ -580,6 +581,13 @@ act_code_offer() {
       ;;
   esac
   return 1
+}
+
+# act_code_free_due — no Shared planned, Asahi installed, a saved plan to name
+# and no valid code recorded yet (after shared_mac_state).
+act_code_free_due() {
+  if [ -z "$SHARED_DIGEST" ] || [ "${ASAHI_STATE:-}" != installed ]; then return 1; fi
+  ! shared_receipt_ok "$(state_get shared_linux_done)"
 }
 
 act_code_facts() {
@@ -656,6 +664,7 @@ act_code_run() {
       shared_status_rows
       case "$SHARED_STATE" in
         awaiting-linux-completion) shared_take_receipt "$code" ;;
+        off) act_code_free_due || return 1; shared_take_receipt "$code" ;;
         blocked)
           [ "$SHARED_NEED_RECEIPT" = 1 ] || return 1
           shared_take_receipt "$code" || return 1
@@ -689,7 +698,7 @@ act_code_judge() {
       rec=$(state_get shared_linux_done)
       if [ -z "$rec" ]; then
         act_judged no-effect "No completion code is recorded; nothing changed."
-      elif shared_receipt_ok "$rec" && { [ "$SHARED_STATE" = awaiting-macos-creation ] || [ "$SHARED_STATE" = created ]; }; then
+      elif shared_receipt_ok "$rec" && { [ "$SHARED_STATE" = awaiting-macos-creation ] || [ "$SHARED_STATE" = created ] || [ "$SHARED_STATE" = off ]; }; then
         act_judged completed "Linux's completion code is recorded; Shared storage is $SHARED_STATE."
       else
         act_judged unexpected "A completion code is recorded, but Shared storage is $SHARED_STATE: $SHARED_WHY."

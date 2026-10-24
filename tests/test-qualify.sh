@@ -52,7 +52,7 @@ q_setup() {
   mkdir -p "$OMB_TMP" "$OMB_STATE_DIR"
   OMB_INTENT=act OMB_PERSIST=1 OMB_DRY_RUN=0 OMB_TEST_QUAL_BYTES=4097
   unset OMB_TEST_RECORD OMB_TEST_FAIL_AT OMB_TEST_STOP_AT
-  Q_COLLIDE=0 Q_BROKEN=''
+  Q_COLLIDE=0 Q_BROKEN='' Q_FORCE_RC='' Q_BREAK=''
   platform_init
   state_init
   if [ "$1" = linux ]; then
@@ -93,6 +93,68 @@ q_change() {
   cp "$F/body" "$1"
   q_reseal "$1"
 }
+# q_core — qualify.run through the core's own row execution (core_execute_row),
+# as the frontend's route runs it: the row's offer, the operation record the
+# core writes before the run, the run, the judge and the record's fate. It runs
+# in a subshell. QCORE is the result ("status code"), QOP the operation record
+# left behind ("none" or "state finding"). Q_FORCE_RC replaces the status the
+# step returns (a judge never reads it); Q_BREAK leaves a torn macOS record
+# behind the step (something no step leaves).
+q_core() {
+  local basis
+  basis=$(printf '%064d' 0)
+  : >"$F/events"
+  (
+    CORE_EVENTS=$F/events CORE_OP=execute CORE_CANCEL=0 CORE_SESSION=qrun CORE_BOOT=boot-run
+    if ! core_action_info qualify.run || ! qfy_action_offer || ! core_op_write qualify qualify.run "$basis" running; then exit 90; fi
+    qfy_action_run() {
+      local rc
+      qfy_run
+      rc=$?
+      if [ -n "$Q_BREAK" ]; then printf torn >"$Q/macos.omb"; fi
+      return "${Q_FORCE_RC:-$rc}"
+    }
+    core_execute_row qualify.run "$basis" qualify test
+  ) >"$F/core.out" 2>&1
+  QCORE=$(awk -F'\t' '$1 == "result" { s = $2; c = $3; sub(/^status=/, "", s); sub(/^code=/, "", c); print s " " c }' "$F/events")
+  QOP=none
+  if core_op_read qualify; then :; else QOP="$CO_STATE $CO_FINDING"; fi
+}
+# q_core_expect LABEL RESULT OP STATE DUE — what q_core left: the result, the
+# operation record, the qualification state, and (DUE not '-') the step the
+# next offer is, which proves the scope is not barred.
+q_core_expect() {
+  assert_eq "$QCORE" "$2" "$1: result"
+  assert_eq "$QOP" "$3" "$1: operation record"
+  q_status "$4" "$1: state after"
+  if [ "$5" != - ]; then
+    qfy_action_offer
+    assert_rc $? 0 "$1: the next step is offered"
+    assert_eq "$QFY_DUE" "$5" "$1: the step offered"
+  fi
+}
+# q_reconcile — the operation record an earlier boot left running, reconciled
+# on this boot as the text barrier and the core do. QREC is "rc finding op".
+q_reconcile() {
+  (
+    CORE_SESSION=qold CORE_BOOT=boot-old
+    if ! core_action_info qualify.run || ! core_op_write qualify qualify.run "$(printf '%064d' 0)" running; then exit 90; fi
+  ) >"$F/rec.out" 2>&1
+  q_reconcile_now
+}
+q_reconcile_now() {
+  (
+    CORE_SESSION=qnew CORE_BOOT=boot-new
+    core_barrier qualify
+    [ "$CORE_BAR" = stale ] || { echo "bar=$CORE_BAR"; exit 91; }
+    core_reconcile qualify
+    echo "$? $CORE_FINDING"
+  ) >"$F/rec.out" 2>&1
+  QREC=$(tail -n 1 "$F/rec.out")
+  QOP=none
+  if core_op_read qualify; then :; else QOP="$CO_STATE $CO_FINDING"; fi
+  QREC="$QREC $QOP"
+}
 # Child for real stop-at-boundary cases: no parent PID or unrelated process
 # is signalled. The seam kills only the fresh shell executing this script.
 if [ "${1:-}" = child ]; then
@@ -102,6 +164,11 @@ if [ "${1:-}" = child ]; then
   OMB_TEST_QUAL_BYTES=4097 OMB_INTENT=act OMB_PERSIST=1 OMB_DRY_RUN=0
   unset OMB_TEST_RECORD
   platform_init; state_init
+  # The core's record of a run in progress, as a killed run leaves it.
+  if [ -n "${Q_CHILD_OP:-}" ]; then
+    CORE_SESSION=qold CORE_BOOT=boot-old
+    core_op_write qualify qualify.run "$(printf '%064d' 0)" running || exit 90
+  fi
   qfy_run <<<test
   exit $?
 fi
@@ -188,6 +255,8 @@ for bad in schema plan guid bytes seal admission; do
     admission) printf '\000' >>"$Q/macos.omb" ;;
   esac
   q_refuse "qualify-$bad"
+  assert_contains "$QOUT" 'macos.omb' "qualify-$bad-names-the-file"
+  assert_contains "$QOUT" 'Delete macos.omb from omarchy-mac-bootstrap/qualify on Shared, then run qualify again.' "qualify-$bad-says-how-to-clear"
 done
 cp "$FIX/qualify-records/macos.omb" "$Q/macos.omb"
 printf 'torn\n' >>"$Q/macos.omb"
@@ -196,10 +265,25 @@ q_status blocked qualify-torn-seal
 q_setup linux
 cp "$FIX/qualify-records/linux.omb" "$Q/"
 q_refuse qualify-order-no-macos
+assert_contains "$QOUT" 'Delete linux.omb from omarchy-mac-bootstrap/qualify' qualify-order-no-macos-says-how-to-clear
 q_setup linux; q_import
 cp "$FIX/qualify-records/linux.omb" "$Q/"
 q_change "$Q/linux.omb" 's/previous=./previous=f/'
 q_refuse qualify-order-previous
+assert_contains "$QOUT" 'linux.omb does not continue macos.omb' qualify-order-previous-names-the-file
+assert_contains "$QOUT" 'Delete linux.omb from omarchy-mac-bootstrap/qualify' qualify-order-previous-says-how-to-clear
+q_setup linux; q_import
+cp "$FIX/qualify-records/linux.omb" "$Q/"
+printf 'torn' >>"$Q/linux.omb"
+q_refuse qualify-torn-linux
+assert_contains "$QOUT" 'linux.omb refused' qualify-torn-linux-names-the-file
+assert_contains "$QOUT" 'Delete linux.omb from omarchy-mac-bootstrap/qualify' qualify-torn-linux-says-how-to-clear
+q_setup linux; q_import
+cp "$FIX/qualify-records/linux.omb" "$Q/"
+printf 'torn' >"$Q/result.omb"
+q_refuse qualify-torn-result
+assert_contains "$QOUT" 'result.omb refused' qualify-torn-result-names-the-file
+assert_contains "$QOUT" 'Delete result.omb from omarchy-mac-bootstrap/qualify' qualify-torn-result-says-how-to-clear
 q_setup linux; q_import
 cp "$FIX/qualify-records/linux.omb" "$Q/"
 q_change "$Q/linux.omb" 's/majmin=259:7/majmin=259:8/'
@@ -208,6 +292,13 @@ assert_empty_file "$F/writes" qualify-recorded-device-never-authority
 q_setup linux; q_import
 ln -s "$F" "$Q/names-linux"
 q_refuse qualify-linked-folder
+assert_contains "$QOUT" 'qualify/names-linux is a link or not a folder' qualify-linked-folder-names-it
+assert_contains "$QOUT" 'names-linux is a link or not a folder. Delete it from Shared, then run qualify again.' qualify-linked-folder-says-how-to-clear
+q_setup linux; q_import
+rm "$Q/data.macos.bin"; ln -s "$F" "$Q/data.macos.bin"
+q_refuse qualify-linked-file
+assert_contains "$QOUT" 'data.macos.bin is a link or not a plain file' qualify-linked-file-names-it
+assert_contains "$QOUT" 'Delete data.macos.bin from omarchy-mac-bootstrap/qualify' qualify-linked-file-says-how-to-clear
 q_setup linux
 q_refuse qualify-linux-order-step1
 q_setup linux; q_import
@@ -368,6 +459,112 @@ for unavailable in space kernel hash; do
   q_refuse "qualify-unavailable-$unavailable"
 done
 
+# The real Asahi release string has capitals (62 repository fixtures record
+# it); the lower-case id type refused it and step 2 stopped without a word.
+# Any printable release is recorded as bytes; what is no release is refused
+# with its reason before anything is written.
+for release in 6.16.8-asahi-1-1-ARCH 6.12.0_1 7.0.0-rc1+; do
+  q_setup linux; q_import
+  printf '%s\n' "$release" >"$F/cmd/qualify_kernel"
+  q_go
+  assert_rc "$QRC" 0 "qualify-kernel-release-$release"
+  assert_contains "$(cat "$Q/linux.omb")" "kernel=$release" "qualify-kernel-release-$release-recorded"
+  q_status waiting-for-macos "qualify-kernel-release-$release-state"
+done
+for release in empty spaces long; do
+  q_setup linux; q_import
+  case "$release" in
+    empty) printf '\n' >"$F/cmd/qualify_kernel" ;;
+    spaces) printf '6.1 asahi\n' >"$F/cmd/qualify_kernel" ;;
+    long) printf '%0129d\n' 0 >"$F/cmd/qualify_kernel" ;;
+  esac
+  q_refuse "qualify-kernel-release-$release"
+  assert_contains "$QOUT" 'kernel release' "qualify-kernel-release-$release-says-why"
+done
+q_setup linux; q_import
+rm "$F/cmd/qualify_kernel"
+q_refuse qualify-kernel-release-unreadable
+assert_contains "$QOUT" 'could not be read' qualify-kernel-release-unreadable-says-why
+# A macOS file that cannot be read back is recorded, said, and the round trip
+# goes on (an empty digest in the record); step 3 then says failed, below.
+q_setup linux; q_import
+rm "$Q/data.macos.bin"
+q_go
+assert_rc "$QRC" 0 qualify-step2-no-data-goes-on
+assert_contains "$QOUT" 'data.macos.bin could not be read back' qualify-step2-no-data-says-why
+q_status waiting-for-macos qualify-step2-no-data-state
+assert_eq "$(grep -c $'read_sha256=\tbytes=' "$Q/linux.omb")" 1 qualify-step2-no-data-recorded-empty
+# Entries the test did not write (a Finder .DS_Store, a dropped file, a crowd
+# of them) are not recorded and do not stop the step; only the fixed names are.
+q_setup linux; q_import
+: >"$Q/names-macos/.DS_Store"; : >"$Q/names-macos/foreign"
+for i in $(seq 1 65); do : >"$Q/names-macos/extra-$i"; done
+q_go
+assert_rc "$QRC" 0 qualify-step2-foreign-names-pass
+assert_contains "$QOUT" 'names-macos also holds 64 or more entries this test did not write' qualify-step2-foreign-names-counted
+assert_contains "$(cat "$Q/linux.omb")" 'name_seen=ascii.txt' qualify-step2-foreign-names-saw-its-own
+assert_not_contains "$(cat "$Q/linux.omb")" 'DS_Store' qualify-step2-foreign-names-not-recorded
+assert_not_contains "$(cat "$Q/linux.omb")" 'foreign' qualify-step2-foreign-names-not-recorded-either
+assert_eq "$(grep -o 'name_seen=' "$Q/linux.omb" | wc -l | tr -d ' ')" 1 qualify-step2-only-the-fixed-names-seen
+
+# Step 2 through the core. The record is a step's effect and is written last,
+# so a step that stopped or failed before it left step 2 due again: the
+# judgement is no-effect, the operation record goes, and nothing bars the next
+# run. The exit status is not read (a forced 130 judges the same); only a chain
+# no step leaves (a torn record) is a barrier.
+q_setup linux; q_import
+q_core
+q_core_expect qualify-core-step2-success 'done ok' none waiting-for-macos -
+q_setup linux; q_import
+Q_FORCE_RC=130
+q_core
+q_core_expect qualify-core-step2-success-130 'done ok' none waiting-for-macos -
+for seam in qualify.stream qualify.linux; do
+  q_setup linux; q_import
+  OMB_TEST_FAIL_AT=$seam
+  q_core
+  q_core_expect "qualify-core-step2-fail-$seam" 'failed no-effect' none waiting-for-linux 2
+  assert_contains "$(cat "$F/events")" 'stopped%20before%20it%20saved%20its%20record' "qualify-core-step2-fail-$seam-says-so"
+  unset OMB_TEST_FAIL_AT
+  q_go
+  assert_rc "$QRC" 0 "qualify-core-step2-fail-$seam-retry"
+  q_status waiting-for-macos "qualify-core-step2-fail-$seam-retry-state"
+  q_setup linux; q_import
+  OMB_TEST_FAIL_AT=$seam Q_FORCE_RC=130
+  q_core
+  q_core_expect "qualify-core-step2-fail-$seam-130" 'failed no-effect' none waiting-for-linux 2
+  unset OMB_TEST_FAIL_AT
+done
+q_setup linux; q_import
+Q_BREAK=1
+q_core
+q_core_expect qualify-core-step2-torn 'failed postcondition' 'failed unexpected' blocked -
+# A run killed mid-step leaves its record running; after the next boot it is
+# reconciled on what the machine shows, and the step is simply due again.
+q_setup linux; q_import
+env Q_CHILD_F="$F" Q_CHILD_STATE="$OMB_STATE_DIR" Q_CHILD_OP=1 OMB_TEST_STOP_AT=qualify.stream \
+  "$T_BASH" "$0" child >"$F/child.out" 2>&1
+assert_rc $? 137 qualify-core-step2-killed
+q_reconcile_now
+assert_eq "$QREC" '0 no-effect none' qualify-reconcile-linux-killed-step2
+q_status waiting-for-linux qualify-reconcile-linux-killed-state
+q_go
+assert_rc "$QRC" 0 qualify-reconcile-linux-killed-retry
+# The same record reconciled on each state Linux can find (the others are
+# below, with the chains they need): the platform's own effect state is
+# completed, the states a step is offered from are no-effect, a torn chain
+# needs the person and keeps its record.
+q_setup linux
+q_reconcile
+assert_eq "$QREC" '0 no-effect none' qualify-reconcile-linux-not-started
+q_setup linux; q_import
+q_reconcile
+assert_eq "$QREC" '0 no-effect none' qualify-reconcile-linux-waiting-for-linux
+q_setup linux; q_import
+printf torn >"$Q/macos.omb"
+q_reconcile
+assert_eq "$QREC" '1 unexpected running ' qualify-reconcile-linux-blocked
+
 # The current-shell read interface is pure even in an act caller with an
 # invalid saved choice (cfg_load would otherwise log its refusal).
 q_setup linux; q_import
@@ -396,6 +593,7 @@ assert_rc "$T_RC" 2 qualify-command-admission
 
 if t_plutil 'qualification macOS steps'; then
   MAC_SEED=$(t_tmp)
+  CH=$(t_tmp)
   T_ENV="OMB_STATE_DIR=$MAC_SEED" t_cli mac-m1pro-1tb-roomy '\n4\n\n\n\n\n\n\n\n\n\n\n\n\n\n' plan
   assert_rc "$T_RC" 0 qualify-macos-plan-seed
   OMB_STATE_DIR=$MAC_SEED
@@ -412,6 +610,7 @@ if t_plutil 'qualification macOS steps'; then
   assert_rc "$QRC" 0 qualify-step1-success
   assert_contains "$QOUT" 'Shut down fully' qualify-shutdown-guide
   q_status waiting-for-linux qualify-step1-state
+  mkdir -p "$CH/waiting-for-linux"; cp -R "$Q/." "$CH/waiting-for-linux/"
   rec_admit_file qmac - "$Q/macos.omb"
   assert_rc $? 0 qualify-step1-sealed
   full_plan=''
@@ -430,6 +629,7 @@ if t_plutil 'qualification macOS steps'; then
   q_go
   assert_rc "$QRC" 0 qualify-round-trip-step2
   assert_contains "$(cat "$Q/linux.omb")" 'dirty=unknown' qualify-round-trip-dirty-unknown
+  mkdir -p "$CH/waiting-for-macos"; cp -R "$Q/." "$CH/waiting-for-macos/"
   LINUX_Q=$Q
   # Finish on the original Mac and plan; no manually copied digest.
   F=$MAC_RUN Q=$MAC_Q OMB_FIXTURE=$MAC_RUN OMB_STATE_DIR=$MAC_STATE REC_TMP=''
@@ -440,6 +640,7 @@ if t_plutil 'qualification macOS steps'; then
   assert_rc "$QRC" 0 qualify-step3-success
   assert_contains "$QOUT" 'Qualification passed; Linux exFAT dirty flag: unknown.' qualify-dirty-unknown-verdict
   q_status passed qualify-passed
+  mkdir -p "$CH/passed"; cp -R "$Q/." "$CH/passed/"
   for file in macos.omb linux.omb result.omb; do if [ -f "$Q/$file" ]; then ok; else fail "qualify-keeps-$file"; fi; done
   for file in data.macos.bin data.linux.bin names-macos names-linux; do if [ ! -e "$Q/$file" ]; then ok; else fail "qualify-pass-removes-$file"; fi; done
   # Passed step 1 rerun preserves foreign entries, including inside names.
@@ -476,6 +677,7 @@ if t_plutil 'qualification macOS steps'; then
   assert_contains "$CORE_JUDGE_TEXT" failed qualify-failed-result-stays-failed
   qfy_action_judge reconcile
   assert_eq "$CORE_FINDING" completed qualify-failed-result-reconciles
+  mkdir -p "$CH/failed"; cp -R "$Q/." "$CH/failed/"
   if [ -f "$Q/data.linux.bin" ]; then ok; else fail qualify-failed-keeps-data; fi
   printf keep >"$Q/foreign"
   q_go
@@ -532,6 +734,244 @@ if t_plutil 'qualification macOS steps'; then
   assert_rc "$QRC" 1 qualify-macos-space
   assert_contains "$QOUT" 'bytes free' qualify-macos-space-numbers
   if [ ! -e "$Q/macos.omb" ]; then ok; else fail qualify-macos-space-no-record; fi
+
+  # q_chain PLATFORM NAME — a fixture holding a chain captured from the round
+  # trip above (Linux knows the plan by the token's first eight digits).
+  q_chain() {
+    q_setup "$1"
+    if [ "$2" = none ]; then return 0; fi
+    cp -R "$CH/$2/." "$Q/"
+    if [ "$1" = linux ]; then state_set cfg_plan "${mac_plan:0:8}"; fi
+  }
+
+  # Finding: step 3 records a check it cannot read as a failed result, with
+  # its reason, instead of returning without one (a deadlock: macOS kept step
+  # 3 due, Linux had nothing to run). The next offered step is then step 1.
+  for lost in missing unreadable truncated; do
+    q_chain macos waiting-for-macos
+    reason=''
+    case "$lost" in
+      missing) rm "$Q/data.linux.bin"; reason=data-unreadable ;;
+      unreadable) reason=data-unreadable ;;
+      truncated) head -c 100 "$Q/data.linux.bin" >"$F/short"; cp "$F/short" "$Q/data.linux.bin"; reason=mismatch ;;
+    esac
+    if [ "$lost" = unreadable ]; then
+      # A read that fails although the file is there (an I/O error).
+      (
+        eval "$(declare -f _qfy_sha | sed '1s/_qfy_sha/q_real_sha/')"
+        _qfy_sha() { case "$1" in */data.linux.bin) return 1 ;; esac; q_real_sha "$1"; }
+        q_go
+        printf '%s' "$QRC" >"$F/rc"
+      )
+      QRC=$(cat "$F/rc") QOUT=$(cat "$F/output")
+    else q_go; fi
+    assert_rc "$QRC" 1 "qualify-step3-$lost-fails"
+    assert_contains "$QOUT" "Qualification failed ($reason)" "qualify-step3-$lost-says-why"
+    q_status failed "qualify-step3-$lost-state"
+    assert_contains "$(cat "$Q/result.omb")" "verdict=failed" "qualify-step3-$lost-recorded"
+    assert_contains "$(cat "$Q/result.omb")" "reason=$reason" "qualify-step3-$lost-reason"
+    qfy_action_offer
+    assert_rc $? 0 "qualify-step3-$lost-offers"
+    assert_eq "$QFY_DUE" 1 "qualify-step3-$lost-offers-step-1"
+  done
+  # Before a failed check there are no leftovers of the old stream's reason.
+  q_chain macos waiting-for-macos
+  q_go
+  assert_rc "$QRC" 0 qualify-step3-readable-passes
+  assert_eq "$(grep -c $'verdict=passed\treason=$' "$Q/result.omb")" 1 qualify-step3-readable-no-reason
+  # Linux could not read macOS's data back: the Linux record says so by an
+  # empty digest, and the result is failed with that reason.
+  q_chain macos waiting-for-macos
+  q_change "$Q/linux.omb" 's/read_sha256=[0-9a-f]*/read_sha256=/'
+  q_status waiting-for-macos qualify-step3-empty-read-digest-admitted
+  q_go
+  assert_rc "$QRC" 1 qualify-step3-linux-could-not-read
+  assert_contains "$QOUT" 'Qualification failed (macos-data-unreadable)' qualify-step3-linux-could-not-read-says-why
+  assert_contains "$(cat "$Q/result.omb")" 'data_ok=0' qualify-step3-linux-could-not-read-data
+  q_status failed qualify-step3-linux-could-not-read-state
+  # Entries the test did not write are ignored in both folders, at step 3 and
+  # at the restart of step 1, however many: a .DS_Store, a dropped file, a crowd.
+  for folder in names-linux names-macos; do
+    q_chain macos waiting-for-macos
+    : >"$Q/$folder/.DS_Store"; : >"$Q/$folder/foreign"
+    for i in $(seq 1 65); do : >"$Q/$folder/extra-$i"; done
+    q_go
+    assert_rc "$QRC" 0 "qualify-step3-foreign-$folder-passes"
+    assert_contains "$QOUT" "$folder also holds 64 or more entries this test did not write" "qualify-step3-foreign-$folder-counted"
+    q_status passed "qualify-step3-foreign-$folder-state"
+    if [ -e "$Q/$folder/foreign" ] && [ -e "$Q/$folder/.DS_Store" ]; then ok; else fail "qualify-step3-foreign-$folder-kept"; fi
+  done
+  # A created name that is missing, mangled or folded still fails; so does one
+  # spelled in another case, byte for byte.
+  for damage in missing-linux missing-macos case-linux case-macos; do
+    q_chain macos waiting-for-macos
+    case "$damage" in
+      missing-linux) rm "$Q/names-linux/ascii.txt" ;;
+      missing-macos) rm "$Q/names-macos/ascii.txt" ;;
+      case-linux) mv "$Q/names-linux/ascii.txt" "$Q/names-linux/ASCII.TXT" ;;
+      case-macos) mv "$Q/names-macos/ascii.txt" "$Q/names-macos/Ascii.txt" ;;
+    esac
+    : >"$Q/names-linux/.DS_Store"
+    q_go
+    assert_rc "$QRC" 1 "qualify-step3-$damage-fails"
+    assert_contains "$(cat "$Q/result.omb")" 'names_ok=0' "qualify-step3-$damage-names-not-ok"
+    assert_contains "$(cat "$Q/result.omb")" $'verdict=failed\treason=mismatch' "qualify-step3-$damage-mismatch"
+  done
+  # A verdict stays whatever the free space later (the rerun's own refusal
+  # is separate): passed and failed read from result.omb alone.
+  for verdict in passed failed; do
+    q_chain macos "$verdict"
+    q_status "$verdict" "qualify-verdict-$verdict-roomy"
+    qfy_status_read
+    qfy_action_offer
+    assert_rc $? 0 "qualify-verdict-$verdict-rerun-offered-with-room"
+    printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nx 999999999 0 1 0%% /Volumes/Shared\n' >"$F/cmd/qualify_space"
+    q_status "$verdict" "qualify-verdict-$verdict-stays-when-space-is-short"
+    assert_contains "$QFY_RERUN_WHY" 'Shared needs' "qualify-verdict-$verdict-rerun-carries-the-refusal"
+    qfy_action_offer
+    assert_rc $? 1 "qualify-verdict-$verdict-rerun-not-offered"
+    assert_contains "$CA_WHY" 'Shared needs' "qualify-verdict-$verdict-offer-says-why"
+    before=$(t_snapshot "$Q")
+    q_go
+    assert_rc "$QRC" 1 "qualify-verdict-$verdict-rerun-refused"
+    assert_contains "$QOUT" 'a new run cannot start' "qualify-verdict-$verdict-rerun-refused-says-why"
+    assert_eq "$(t_snapshot "$Q")" "$before" "qualify-verdict-$verdict-rerun-refusal-writes-nothing"
+    assert_empty_file "$F/writes" "qualify-verdict-$verdict-rerun-refusal-never-reaches-run"
+  done
+  # Not a verdict: a due step that does not fit is still blocked.
+  q_chain macos waiting-for-linux
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nx 999999999 0 1 0%% /Volumes/Shared\n' >"$F/cmd/qualify_space"
+  q_status blocked qualify-space-still-blocks-a-due-step
+
+  # Finding: step 1 removes the chain last link first (result, linux, macos,
+  # each with its .tmp name), so a stop or a failed removal after any one
+  # leaves a prefix of the chain, and the next offered action, run until step
+  # 1 does, ends in a fresh step 1 record. The expectations are those after
+  # each removal; a failed removal is the state after the one before.
+  q_cleanup_points='result.omb.tmp|1 result.omb|3_1 linux.omb.tmp|3_1 linux.omb|1 macos.omb.tmp|1 macos.omb|1 data.macos.bin|1 data.linux.bin|1'
+  for mode in stop fail; do
+    prior=1
+    for point in $q_cleanup_points; do
+      name=${point%%|*} want=${point#*|}
+      want=${want//_/ }
+      q_chain macos failed
+      : >"$Q/result.omb.tmp"; : >"$Q/linux.omb.tmp"; : >"$Q/macos.omb.tmp"
+      if [ "$mode" = stop ]; then
+        env Q_CHILD_F="$F" Q_CHILD_STATE="$OMB_STATE_DIR" OMB_TEST_STOP_AT="qualify.rm.$name" \
+          "$T_BASH" "$0" child >"$F/child.out" 2>&1
+        assert_rc $? 137 "qualify-cleanup-stop-$name"
+        expect=$want
+      else
+        OMB_TEST_FAIL_AT=qualify.rm.$name
+        q_go
+        assert_rc "$QRC" 1 "qualify-cleanup-fail-$name"
+        unset OMB_TEST_FAIL_AT
+        expect=$prior
+      fi
+      prior=$want
+      ran=''
+      n=0
+      while [ "$n" -lt 4 ]; do
+        qfy_status_read
+        if [ "$QFY_STATE" = blocked ]; then ran="$ran blocked"; break; fi
+        qfy_action_offer || { ran="$ran none-offered"; break; }
+        step=$QFY_DUE
+        q_go
+        ran="$ran${ran:+ }$step"
+        [ "$step" != 1 ] || break
+        n=$((n + 1))
+      done
+      assert_eq "$ran" "$expect" "qualify-cleanup-$mode-$name: steps offered until step 1 runs"
+      assert_rc "$QRC" 0 "qualify-cleanup-$mode-$name: step 1 completes"
+      q_status waiting-for-linux "qualify-cleanup-$mode-$name: a fresh step 1 record"
+      for file in linux.omb result.omb data.linux.bin; do
+        if [ ! -e "$Q/$file" ]; then ok; else fail "qualify-cleanup-$mode-$name-removes-$file"; fi
+      done
+    done
+  done
+
+  # Finding: the judge. qualify.run through the core's row execution; the
+  # record is the effect (written last), a step that stopped before it left
+  # a state its own offer starts from again (no-effect, no barrier), and the
+  # exit status is never read. Rows: LABEL CHAIN FAULT-SEAM EXIT RESULT
+  # OPERATION-RECORD STATE-AFTER NEXT-STEP.
+  q_mrow() {
+    q_chain macos "$2"
+    OMB_TEST_FAIL_AT=$3 Q_FORCE_RC=$4
+    q_core
+    unset OMB_TEST_FAIL_AT
+    Q_FORCE_RC=''
+    q_core_expect "$1" "$5" "$6" "$7" "$8"
+  }
+  q_mrow qualify-core-step1-success none '' '' 'done ok' none waiting-for-linux -
+  q_mrow qualify-core-step1-success-130 none '' 130 'done ok' none waiting-for-linux -
+  q_mrow qualify-core-step1-stream-fails none qualify.stream '' 'failed no-effect' none not-started 1
+  q_mrow qualify-core-step1-stream-fails-130 none qualify.stream 130 'failed no-effect' none not-started 1
+  q_mrow qualify-core-step1-record-fails none qualify.macos '' 'failed no-effect' none not-started 1
+  q_mrow qualify-core-step1-record-fails-130 none qualify.macos 130 'failed no-effect' none not-started 1
+  if [ -f "$Q/data.macos.bin" ]; then ok; else fail qualify-core-step1-record-fails-leaves-its-own-stream-for-the-next-cleanup; fi
+  q_mrow qualify-core-step1-over-waiting-before-clean waiting-for-linux qualify.rm.macos.omb '' 'failed no-effect' none waiting-for-linux 1
+  q_mrow qualify-core-step1-over-waiting waiting-for-linux '' '' 'done ok' none waiting-for-linux -
+  q_mrow qualify-core-step1-over-failed-midway failed qualify.rm.linux.omb '' 'failed no-effect' none waiting-for-macos 3
+  q_mrow qualify-core-step1-over-failed-stream failed qualify.stream '' 'failed no-effect' none not-started 1
+  q_mrow qualify-core-step1-over-passed-before-clean passed qualify.rm.result.omb '' 'failed no-effect' none passed 1
+  q_mrow qualify-core-step3-success waiting-for-macos '' '' 'done ok' none passed -
+  q_mrow qualify-core-step3-success-130 waiting-for-macos '' 130 'done ok' none passed -
+  q_mrow qualify-core-step3-save-fails waiting-for-macos qualify.result '' 'failed no-effect' none waiting-for-macos 3
+  q_mrow qualify-core-step3-save-fails-130 waiting-for-macos qualify.result 130 'failed no-effect' none waiting-for-macos 3
+  # A failed verdict is step 3's effect too (its exit status is 1).
+  q_chain macos waiting-for-macos
+  printf corrupt >>"$Q/data.linux.bin"
+  q_core
+  q_core_expect qualify-core-step3-mismatch 'done ok' none failed 1
+  # Space that runs out after the cleanup is a refusal to repeat, not a chain
+  # no step leaves: the read for the judgement leaves the free-space preview out.
+  q_chain macos waiting-for-linux
+  qfy_status_read
+  K=$(((QFY_REQUIRED - 1) / 1024))
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nx 999999999 0 %s 0%% /Volumes/Shared\n' "$K" >"$F/cmd/qualify_space"
+  q_status waiting-for-linux qualify-core-space-preview-credits-own-files
+  q_core
+  assert_eq "$QCORE" 'failed no-effect' qualify-core-space-result
+  assert_eq "$QOP" none qualify-core-space-no-barrier
+  q_status blocked qualify-core-space-state
+  assert_contains "$QFY_WHY" 'Shared needs' qualify-core-space-reason
+  # Something no step leaves (a torn record behind the step) is the one barrier.
+  q_chain macos none
+  Q_BREAK=1
+  q_core
+  Q_BREAK=''
+  q_core_expect qualify-core-torn 'failed postcondition' 'failed unexpected' blocked -
+
+  # A run killed mid-step leaves its record running; after the restart the
+  # record is reconciled on what the machine shows, and the step is due again.
+  for point in qualify.stream qualify.macos qualify.rm.result.omb; do
+    q_chain macos failed
+    env Q_CHILD_F="$F" Q_CHILD_STATE="$OMB_STATE_DIR" Q_CHILD_OP=1 OMB_TEST_STOP_AT="$point" \
+      "$T_BASH" "$0" child >"$F/child.out" 2>&1
+    assert_rc $? 137 "qualify-killed-$point"
+    q_reconcile_now
+    assert_eq "$QREC" '0 no-effect none' "qualify-reconcile-killed-$point"
+    qfy_action_offer
+    assert_rc $? 0 "qualify-reconcile-killed-$point-offers"
+  done
+  # Every state the macOS side can find, after a restart. The states a step is
+  # offered from are no-effect, the states a step leaves are completed; a
+  # chain nothing leaves keeps the record and needs the person.
+  for row in none:no-effect waiting-for-linux:completed waiting-for-macos:no-effect passed:completed failed:completed; do
+    q_chain macos "${row%%:*}"
+    q_reconcile
+    assert_eq "$QREC" "0 ${row#*:} none" "qualify-reconcile-macos-${row%%:*}"
+  done
+  q_chain macos none
+  printf torn >"$Q/macos.omb"
+  q_reconcile
+  assert_eq "$QREC" '1 unexpected running ' qualify-reconcile-macos-blocked
+  for row in waiting-for-macos:completed passed:completed failed:completed; do
+    q_chain linux "${row%%:*}"
+    q_reconcile
+    assert_eq "$QREC" "0 ${row#*:} none" "qualify-reconcile-linux-${row%%:*}"
+  done
 fi
 
 # Real core route, whole response admission, scope-first refusal and paging.
@@ -582,5 +1022,26 @@ qfy_row qualify.run
 assert_eq "$CA_SCOPE:$CA_TERMINAL:$CA_GATE:$CA_CANCEL" qualify:handoff:test:0 qualify-action-row
 # Entry-point ownership keeps the launcher route here, with the exact scopes.
 assert_contains "$(cat "$REPO/omarchy-bootstrap")" 'FE_SCOPES=journey,qualify FE_INTENT=act' qualify-launcher-scopes
+
+# The qualification read ends in an error result when it cannot be prepared,
+# as the other modules' reads do, never in a response with no result at all.
+q_setup linux; q_import
+for fail in tmp rows prefix stage-io stage-repr; do
+  : >"$F/ev"
+  (
+    CORE_EVENTS=$F/ev CORE_OP=snapshot CORE_RESULT=0 CORE_RECS=0 CORE_BYTES=0 CORE_SUPPRESSED=0
+    case "$fail" in
+      tmp) omb_tmp_init() { return 1; } ;;
+      rows) core_rows_snapshot() { return 1; } ;;
+      prefix) core_read_prefix() { return 1; } ;;
+      stage-io) core_read_stage() { return 1; } ;;
+      stage-repr) core_read_stage() { return 2; } ;;
+    esac
+    qfy_core_op snapshot
+  ) >"$F/core.out" 2>&1
+  want='error io'
+  [ "$fail" != stage-repr ] || want='error representation'
+  assert_eq "$(awk -F'\t' '$1 == "result" { s = $2; c = $3; sub(/^status=/, "", s); sub(/^code=/, "", c); print s " " c }' "$F/ev")" "$want" "qualify-read-$fail-ends-in-an-error-result"
+done
 
 t_done test-qualify
