@@ -410,7 +410,8 @@ Detailed in `docs/SHARED.md`. Summary:
   Omarchy Mac has finished: marker, no conf or unit, nothing running, no
   migration staged, encryption positively finished — § Linux phase) and `ombshare-<plan>-<shared>-<check>`
   (macOS → Linux). A GUID prefix, the plan, check digits. Input, never
-  permission.
+  permission. With no Shared planned only `ombdone` is used, and its plan is
+  the digest of the resume token (docs/SHARED.md → *The codes*).
 - **Creation (macOS)** from `awaiting-macos-creation` only: the plan's disk,
   positively this Mac's internal disk (the whole disk and macOS's physical
   store both report `Internal`, one physical store, macOS running from the

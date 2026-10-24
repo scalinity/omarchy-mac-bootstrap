@@ -382,7 +382,10 @@ paths could agree with each other and share a regression.
   findings; `debug-implemented`: the fixed brief is a read command;
   `M16-system-names`: a header line's first label word is `macOS` or `Linux`
   where the baseline's is the protocol value `macos` or `linux`, and no other
-  byte of any line differs).
+  byte of any line differs; `free-plan-id`: a token loaded with no Shared
+  planned leaves one more state line, `phase1_plan_id=` and the first 8 hex
+  digits of the SHA-256 of the token's canonical form, and the log's record of
+  that write; it names the plan in the completion code Linux shows (docs/SHARED.md → *The codes*)).
   Operation records are removed when their action ends, so the final state
   directory is compared whole.
 

@@ -1208,7 +1208,10 @@ mac_existing_install() {
 # step. plan only shows it; the guided flow continues into it, through the
 # same gates as `shared create`.
 mac_shared_step() {
-  [ -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ] || return 0
+  if [ ! -e "$OMB_STATE_DIR/$SHARED_INTENT_FILE" ]; then
+    mac_linux_done_step "$1"
+    return
+  fi
   shared_mac_state
   shared_status_rows
   if [ "$1" = plan ] || [ "$SHARED_STATE" = reserved ] || [ "$SHARED_STATE" = off ]; then
@@ -1221,6 +1224,23 @@ mac_shared_step() {
     return 0
   fi
   shared_create_flow
+}
+
+# mac_linux_done_step MODE — no Shared planned, Asahi installed: macOS cannot
+# read the Linux root, so that Omarchy has finished comes from Linux's
+# completion code, checked against the saved plan and this disk's Linux root
+# and recorded (docs/SHARED.md → The codes). Enter leaves it for later.
+mac_linux_done_step() {
+  if [ "$1" = plan ] || [ "${ASAHI_STATE:-}" != installed ]; then return 0; fi
+  shared_mac_state
+  if [ -z "$SHARED_DIGEST" ]; then return 0; fi
+  if shared_receipt_ok "$(state_get shared_linux_done)"; then
+    ui_ok "Linux has finished: its completion code is recorded."
+    printf '\n'
+    return 0
+  fi
+  shared_take_receipt "" || :
+  printf '\n'
 }
 
 mac_resume() {

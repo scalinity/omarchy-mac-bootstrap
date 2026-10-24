@@ -896,6 +896,40 @@ EOF
   assert_contains "$(a_state)" "shared_uuid=4A7B1C2D-0007-4E5F-8A9B-000000000007" "actions-shared.create-record: the partition is recorded"
   a_unavailable shared.code "" "$R" "$(a_arg code "$CODE")"
   a_unavailable shared.create yes "$R"
+
+  # --- shared.code with no Shared planned: Linux's word that Omarchy finished,
+  # which macOS cannot read for itself. The plan is named by its token's digest.
+  a_plan_state "$T/plan0" "$R" 250 0
+  free=$( (t_load >/dev/null 2>&1; OMB_STATE_DIR=$T/plan0/state; platform_init; state_init; shared_free_digest; printf '%s' "$SHARED_DIGEST"))
+  FCODE=$( (t_load >/dev/null 2>&1 && code_make ombdone "$free" 4A7B1C2D-0006-4E5F-8A9B-000000000006))
+  FOTHER_PLAN=$( (t_load >/dev/null 2>&1 && code_make ombdone 0badc0de 4A7B1C2D-0006-4E5F-8A9B-000000000006))
+  FOTHER_ROOT=$( (t_load >/dev/null 2>&1 && code_make ombdone "$free" 4A7B1C2D-0009-4E5F-8A9B-000000000009))
+  assert_eq "${#free}" 8 "actions-shared.code-free: a plan without Shared is named by 8 digits"
+  mkdir -p "$T/free/state"
+  chmod 700 "$T/free/state"
+  cp -p "$T/plan0/state/state.env" "$T/free/state/"
+  a_use "$T/free" "$FIX/mac-asahi-complete"
+  a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" shared.code "*) ok ;; *) fail "actions-shared.code-free: installed with no Shared and no code, the snapshot offers it" ;; esac
+  case " $(a_actions)" in *" shared.create "*) fail "actions-shared.code-free: nothing is created without Shared" ;; *) ok ;; esac
+  for pair in "other-plan|$FOTHER_PLAN" "other-root|$FOTHER_ROOT"; do
+    a_run validate "select	action=shared.code" "$(a_arg code "${pair#*|}")"
+    assert_eq "$(c_result) $(c_admits validate)" "refused invalid ok" "actions-shared.code-free-validate: ${pair%%|*}"
+    assert_contains "$C_OUT" "invalid	name=code	code=${pair%%|*}	" "actions-shared.code-free-validate: ${pair%%|*} named"
+  done
+  a_exec shared.code "" "$(a_arg code "$FCODE")"
+  assert_eq "$(c_result) $(c_admits execute)" "done ok ok" "actions-shared.code-free-success: recorded ($(a_text))"
+  assert_contains "$(a_state)" "shared_linux_done=$FCODE" "actions-shared.code-free-success: Linux's code is recorded"
+  assert_empty_file "$A_DIR/record" "actions-shared.code-free-success: nothing runs"
+  assert_eq "$(a_ops)" "" "actions-shared.code-free-success: its record is removed"
+  a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" shared.code "*) fail "actions-shared.code-free: not offered once recorded" ;; *) ok ;; esac
+  # Not before the install, and not with no saved plan to name.
+  a_use "$T/free-early" "$R"
+  mkdir -p "$A_DIR/state"
+  cp -p "$T/plan0/state/state.env" "$A_DIR/state/"
+  a_run snapshot "scope	name=journey"
+  case " $(a_actions)" in *" shared.code "*) fail "actions-shared.code-free: not before Asahi is installed" ;; *) ok ;; esac
 fi
 
 # ---------------------------------------------------------------------------

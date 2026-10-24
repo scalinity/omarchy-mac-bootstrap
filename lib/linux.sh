@@ -473,7 +473,12 @@ lx_installed() {
 # lx_shared_step — once Omarchy is installed: Shared storage's next step.
 lx_shared_step() {
   shared_lx_state
-  [ "$SHARED_STATE" = off ] && return 0
+  if [ "$SHARED_STATE" = off ]; then
+    # No Shared planned: macOS still needs Linux's word that it finished,
+    # once Omarchy and its encryption have, as for Shared.
+    if lx_setup_complete && shared_lx_scan; then shared_lx_macos_next; fi
+    return 0
+  fi
   shared_status_rows
   case "$SHARED_STATE" in
     awaiting-macos-creation) shared_lx_macos_next ;;
@@ -572,6 +577,7 @@ EOF
       ui_ok "Phase 1 choices loaded: ${CFG_user:-?}@${CFG_host:-?}, encryption $([ "${CFG_enc:-1}" = 1 ] && echo on || echo off), Linux ${CFG_linux:-?} GB$([ "${CFG_shared:-0}" -gt 0 ] && printf ', Shared %s GB' "$CFG_shared")."
       cfg_save
       state_stamp phase1_choices_loaded_at
+      shared_lx_stamp_plan "$token"
     else
       ui_warn "Token not usable; you will be asked instead."
     fi

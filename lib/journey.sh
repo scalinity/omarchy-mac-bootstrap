@@ -128,9 +128,16 @@ journey_mac_plan() {
       fi
     else J_PLAN_WHY=$PLAN_ERR; fi
   else
-    if [ "$ASAHI_STATE" = installed ]; then
-      J_PLAN='done' J_PLAN_WHY='saved plan; Asahi installation is installed'
-    fi
+    # The plan was carried out once the stub, EFI and Linux partitions are in
+    # place, in order: macOS reads that from the disk in three states, and
+    # the first boot's progress (installed, pending-first-boot) or its
+    # unreadability from here (installed-unverified) is the asahi stage's.
+    # Any other state is a stop in the installer's first stage, said as it is.
+    case "$ASAHI_STATE" in
+      installed | installed-unverified | pending-first-boot)
+        J_PLAN='done' J_PLAN_WHY="saved plan; Asahi's partitions are in place ($ASAHI_STATE)" ;;
+      *) J_PLAN_WHY="the Asahi install is $ASAHI_STATE: ${ASAHI_WHY:-its state could not be read}" ;;
+    esac
   fi
 }
 
@@ -181,8 +188,8 @@ journey_read() {
       journey_mac_plan
       journey_set 3 "$J_PLAN" machine '' "$J_PLAN_WHY"
       case "$ASAHI_STATE" in
-        installed) journey_set 4 'done' ;;
-        none | resized-only | pending-first-boot | installed-unverified) ;;
+        installed | installed-unverified) journey_set 4 'done' ;;
+        none | resized-only | pending-first-boot) ;;
         *) journey_set 4 blocked machine '' "${ASAHI_WHY:-the Asahi installation cannot be classified}" ;;
       esac
       receipt=${SHARED_TYPED_RECEIPT:-$(state_get shared_linux_done)}
@@ -197,7 +204,7 @@ journey_read() {
       # establishes the macOS survey/plan only, never a profile or a restore.
       token_loaded=$(state_get phase1_choices_loaded_at)
       [ -n "$token_loaded" ] || token_loaded=$(state_get phase1_choices_loaded_at '' "$STATE_SYSTEM_FILE")
-      if [ -n "$token_loaded" ] && [ -n "${CFG_plan:-}" ]; then
+      if [ -n "$token_loaded" ] && { [ -n "${CFG_plan:-}" ] || [ -n "$(shared_lx_free_plan)" ]; }; then
         journey_set 0 'done' recorded macos
         journey_set 3 'done' recorded macos
       else

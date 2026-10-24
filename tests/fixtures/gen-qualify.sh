@@ -16,7 +16,7 @@ put qualify-linux/cmd/qualify_space 'Filesystem 1024-blocks Used Available Capac
 cp qualify-linux/cmd/qualify_space qualify-macos/cmd/qualify_space
 put qualify-linux/cmd/qualify_journal 'kernel: exFAT-fs (nvme0n1p7): mounted filesystem'
 put qualify-linux/cmd/qualify_dirty 'exfat: mounted cleanly'
-put qualify-linux/cmd/qualify_kernel 6.18.0-asahi
+put qualify-linux/cmd/qualify_kernel 6.16.8-asahi-1-1-ARCH
 put qualify-linux/cmd/qualify_commit 0123456789012345678901234567890123456789
 cp qualify-linux/cmd/qualify_commit qualify-macos/cmd/qualify_commit
 put qualify-linux/root/proc/self/mountinfo "$MOUNTINFO_BASE
@@ -33,7 +33,7 @@ printf 'omb-qualify 1\nmacos\tschema=1\tplan=%s\tshared_guid=%s\tos=macos\tcommi
   "$qfy_fixture_plan" "$U_SHARED" "$qfy_fixture_data" >qualify-records/macos.omb
 qfy_fixture_seal qualify-records/macos.omb
 qfy_fixture_previous=$(shasum -a 256 qualify-records/macos.omb)
-printf 'omb-qualify 1\nlinux\tschema=1\tprevious=%s\tpartuuid=%s\tmajmin=259:7\tos=linux\tcommit=\tat=2026-10-23T12:00:00Z\tread_sha256=%s\tbytes=4097\tsha256=%s\tname_seen=ascii.txt\tname_written=ascii.txt\tkernel=6.18.0-asahi\tdirty=0\n' \
+printf 'omb-qualify 1\nlinux\tschema=1\tprevious=%s\tpartuuid=%s\tmajmin=259:7\tos=linux\tcommit=\tat=2026-10-23T12:00:00Z\tread_sha256=%s\tbytes=4097\tsha256=%s\tname_seen=ascii.txt\tname_written=ascii.txt\tkernel=6.16.8-asahi-1-1-ARCH\tdirty=0\n' \
   "${qfy_fixture_previous%% *}" "$(lower "$U_SHARED")" "$qfy_fixture_data" "$qfy_fixture_data" >qualify-records/linux.omb
 qfy_fixture_seal qualify-records/linux.omb
 mkdir -p qualify-records/names-macos qualify-records/names-linux

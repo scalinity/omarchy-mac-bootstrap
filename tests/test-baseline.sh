@@ -163,6 +163,18 @@ agree() {
       mv "$3.delta" "$3.norm"
       ;;
   esac
+  # free-plan-id: loading a token with no Shared planned keeps the digest that
+  # names the plan (docs/SHARED.md → The codes) in one more state line, and the
+  # log's record of that write: the SHA-256 prefix of the canonical token
+  # B_FREE_PLAN. Nothing else differs.
+  if [ -n "${B_FREE_PLAN:-}" ]; then
+    free_line="phase1_plan_id=$(printf '%s' "$B_FREE_PLAN" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)"
+    assert_eq "$(grep -cx "$free_line" "$3.norm")" 1 'free-plan-id: exactly one kept digest, of the canonical token'
+    assert_eq "$(grep -cx "TIME \[linux\] record $free_line" "$3.norm")" 1 'free-plan-id: and one log line for that write'
+    assert_eq "$(grep -c 'phase1_plan_id' "$2.norm")" 0 'free-plan-id: BASE kept none'
+    grep -vx -e "$free_line" -e "TIME \[linux\] record $free_line" "$3.norm" >"$3.delta"
+    mv "$3.delta" "$3.norm"
+  fi
   if cmp -s "$2.norm" "$3.norm"; then
     ok
   else
@@ -419,8 +431,10 @@ for fx in linux-alarm-fresh linux-alarm-offline linux-setup-in-progress linux-om
   same "install on $fx" "$fx" '\n\nstart\nq\n' install
   same "a dry run on $fx" "$fx" '\n\nstart\nq\n' --dry-run
 done
+B_FREE_PLAN='omb2:enc=1,user=alex,host=omarchy,kmap=us'
 B_DELTA=start-disable-ssh same "resume with a token" linux-alarm-fresh '\n\nstart\n' resume 'omb2:enc=1,user=alex,host=omarchy,kmap=us'
 same "resume refusing upstream drift" linux-upstream-drift '\n\nstart\n' resume 'omb1:enc=1,user=alex,host=omarchy,kmap=us'
+B_FREE_PLAN=''
 same "dev, previewed" linux-omarchy-installed '1 2 3\n1\n2\n\n' dev --dry-run
 same "shared activate refusing without a code" linux-shared-present '\n' shared activate
 same "shared test" linux-shared-ready 'test\n' shared test

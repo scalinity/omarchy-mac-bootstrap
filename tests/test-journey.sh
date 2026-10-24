@@ -230,7 +230,7 @@ if t_plutil 'journey across macOS and Linux'; then
     OMB_STATE_DIR=$C_STATE OMB_INTENT=act OMB_PERSIST=1 OMB_DRY_RUN=0
     state_init
     OMB_FIXTURE=$C_FIX; platform_init; lx_detect
-    shared_take_share_code "$sharecode" >/dev/null
+    shared_take_share_code "$sharecode" >/dev/null </dev/null
   )
   j_qualification_fixture
   mkdir -p "$C_FIX/root/mnt/shared/omarchy-mac-bootstrap/qualify"
@@ -288,6 +288,22 @@ if t_plutil 'journey across macOS and Linux'; then
   j_snapshot J-RERUN 'done done done done done done done done done done' 0
   assert_eq "$(j_stages)" "$body" 'J-RERUN: stage states and provenance unchanged'
   assert_eq "$(t_snapshot "$C_STATE")" "$before" 'J-RERUN: no writes'
+  # A recorded verdict stays whatever the free space later: the journey, the
+  # qualification scope, the report, Health and `qualify status` all read
+  # passed, and done is kept; only the optional rerun carries the refusal.
+  cp "$C_FIX/cmd/qualify_space" "$T/space.roomy"
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nx 999999999 0 1 0%% /Volumes/Shared\n' >"$C_FIX/cmd/qualify_space"
+  j_snapshot J-PASSED-LOW-SPACE 'done done done done done done done done done done' 0
+  j_result passed J-PASSED-LOW-SPACE
+  j_report J-PASSED-LOW-SPACE-REPORT
+  assert_contains "$C_OUT" $'key=qualification\tcol=pass' 'J-PASSED-LOW-SPACE: the report still passes qualification'
+  T_ENV="OMB_STATE_DIR=$C_STATE OMB_TEST_QUAL_BYTES=4097" t_cli "$C_FIX" '' qualify status
+  assert_contains "$T_OUT" passed 'J-PASSED-LOW-SPACE: qualify status reads passed'
+  assert_not_contains "$T_OUT" 'Shared needs' 'J-PASSED-LOW-SPACE: qualify status does not report the space'
+  T_ENV="OMB_STATE_DIR=$C_STATE OMB_TEST_QUAL_BYTES=4097" t_cli "$C_FIX" '' status
+  assert_contains "$T_OUT" 'done: done' 'J-PASSED-LOW-SPACE: status keeps done'
+  cp "$T/space.roomy" "$C_FIX/cmd/qualify_space"
+  j_snapshot J-DONE-ROOMY-AGAIN 'done done done done done done done done done done' 0
   # The due verify stage ignores network failures, while Health/report keep
   # the full Doctor and therefore still report that failed reachability.
   offline_gen=$(j_gen)
@@ -334,6 +350,11 @@ if t_plutil 'journey across macOS and Linux'; then
   assert_eq "$(awk -F '\t' '$1 == "row" { n++ } END { print n+0 }' "$C_EV")" 0 'J-REPORT-GENERATION: no mixed row'
   j_report J-REPORT-FAILED
   assert_contains "$C_OUT" $'key=qualification\tcol=fail' 'J-REPORT-FAILED: failed qualification fails its row'
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nx 999999999 0 1 0%% /Volumes/Shared\n' >"$C_FIX/cmd/qualify_space"
+  j_result failed 'J-FAILED-LOW-SPACE'
+  j_report J-FAILED-LOW-SPACE-REPORT
+  assert_contains "$C_OUT" $'key=qualification\tcol=fail' 'J-FAILED-LOW-SPACE: a failed verdict is not hidden behind the space'
+  cp "$T/space.roomy" "$C_FIX/cmd/qualify_space"
   printf 'corrupt\n' >>"$macqualify/result.omb"
   j_snapshot J-QFY-BLOCKED 'done done done done done done done done blocked todo' 0
   cp "$T/passed.omb" "$macqualify/result.omb"
@@ -351,6 +372,8 @@ if t_plutil 'journey across macOS and Linux'; then
   j_snapshot J-BAD-CODE 'done done done done done todo blocked done todo todo' 0
   assert_eq "$(j_stages | awk '$3 == "recorded"')" '' 'J-BAD-CODE: invalid code establishes nothing'
   # The saved-plan completion rule also holds without Shared after Asahi.
+  # Omarchy stays todo here on purpose: macOS cannot read the Linux root, and
+  # until Linux's completion code is recorded nothing says Linux has finished.
   C_FIX=$(t_variant mac-asahi-complete)
   C_STATE=$T/no-shared-state
   mkdir -p "$C_STATE"; chmod 700 "$C_STATE"
@@ -361,6 +384,115 @@ if t_plutil 'journey across macOS and Linux'; then
   j_snapshot J-INSTALLED-NO-SHARED 'done skipped skipped done done todo skipped skipped todo todo' 0
   j_report J-NO-SHARED-REPORT
   assert_contains "$C_OUT" $'key=disk\tcol=not-checked' 'J-NO-SHARED: plan completion does not invent saved disk extents'
+
+  # Every Asahi state after the install, with a saved plan and no Shared. The
+  # three partitions in place complete the plan; asahi is done where macOS
+  # reads the first boot (installed) or cannot (installed-unverified, the
+  # stub's system volume not mounted), and is the current stage while the
+  # first boot has not run; a stop in the first stage blocks both with the
+  # installer's own reason, never "does not match the disk".
+  for row in 'mac-asahi-installed|done skipped skipped done done todo skipped skipped todo todo|0|asahi: done' \
+    'mac-asahi-pending|done skipped skipped done current todo skipped skipped todo todo|1|asahi: current' \
+    'mac-asahi-stub-only|done skipped skipped blocked blocked todo skipped skipped todo todo|0|asahi: blocked'; do
+    fx=${row%%|*}; rest=${row#*|}
+    states=${rest%%|*}; rest=${rest#*|}
+    count=${rest%%|*}; line=${rest#*|}
+    C_FIX=$(t_variant "$fx")
+    C_STATE=$T/no-shared-state
+    J_EXPECT_REC=''
+    j_snapshot "J-ASAHI-$fx" "$states" "$count"
+    T_ENV="OMB_STATE_DIR=$C_STATE" t_cli "$C_FIX" '' status
+    assert_contains "$T_OUT" "$line" "J-ASAHI-$fx: status says $line"
+    assert_not_contains "$T_OUT" 'does not match the disk' "J-ASAHI-$fx: no false reason"
+    j_report "J-ASAHI-$fx-REPORT"
+  done
+  assert_contains "$C_OUT" $'key=disk\tcol=fail' 'J-ASAHI-stub-only: the report fails the disk row'
+  assert_contains "$C_OUT" 'the%20Asahi%20install%20is%20early-partial' 'J-ASAHI-stub-only: with the installer'"'"'s own reason'
+  C_FIX=$(t_variant mac-asahi-installed)
+  j_report J-ASAHI-installed-unverified-REPORT
+  assert_not_contains "$C_OUT" $'key=disk\tcol=fail' 'J-ASAHI-installed-unverified: the report does not fail a correct install'
+  # With Shared planned: the plan record holds, and the stage after is Shared's.
+  nsd=$T/asahi-shared-state
+  mkdir -p "$nsd"; chmod 700 "$nsd"
+  T_ENV="OMB_STATE_DIR=$nsd" t_cli mac-m1pro-1tb-roomy "\n4\n\n$choices" plan
+  C_FIX=$(t_variant mac-shared-reserved)
+  C_STATE=$nsd
+  J_EXPECT_REC=''
+  j_snapshot J-ASAHI-SHARED-UNVERIFIED 'done skipped skipped done done todo current skipped todo todo'
+
+  # An install without Shared, from the plan to done on both systems. The
+  # plan has no record to name it, so a code names it by the digest of the
+  # resume token its choices make (docs/SHARED.md → The codes). Linux makes
+  # the code from the token it loaded; macOS checks it against the same
+  # choices and this disk's Linux root, exactly as for Shared.
+  C_FIX=$(t_variant mac-m1pro-1tb-roomy)
+  cp "$FIX/mig-mac-home/cmd/hardware_plist" "$C_FIX/cmd/hardware_plist"
+  nsstate=$T/ns-mac-state
+  mkdir -p "$nsstate"; chmod 700 "$nsstate"
+  T_ENV="OMB_STATE_DIR=$nsstate" t_cli "$C_FIX" '\n\n\n\n\nm1pro\n\n\n\n\n\n\n\n' plan
+  assert_contains "$T_OUT" 'Plan saved' 'J-NS-PLAN: actual text plan, no Shared'
+  assert_contains "$(cat "$nsstate/state.env")" 'cfg_shared=0' 'J-NS-PLAN: no Shared planned'
+  if [ ! -e "$nsstate/shared-intent.env" ]; then ok; else fail 'J-NS-PLAN: no plan record'; fi
+  C_STATE=$nsstate
+  C_ENV='OMB_SESSION_SCOPES=journey,health,qualify OMB_TEST_QUAL_BYTES=4097'
+  J_EXPECT_REC=''
+  j_snapshot J-NS-PLAN 'done skipped skipped done current todo skipped skipped todo todo'
+  nstoken=$(awk -F '\t' '$1 == "code" { sub(/^value=/,"",$3); print $3 }' "$C_EV")
+  _rec_dec_into nstoken "$nstoken"
+  assert_contains "$nstoken" 'omb2:' 'J-NS-PLAN: the real resume token'
+  assert_not_contains "$nstoken" 'plan=' 'J-NS-PLAN: a plan without Shared has no plan field'
+  nsplan=$(sha256_str "$nstoken" | cut -c1-8)
+
+  # Linux loads the token, finishes Omarchy, and shows the code.
+  nslx=$(t_variant linux-shared-absent)
+  printf 'cfg_user=alex\ncfg_host=m1pro\ncfg_enc=1\ncfg_linux=250\n' >"$nslx/root/var/lib/omarchy-mac-bootstrap/state.env"
+  nslxstate=$nslx/root/home/alex/.local/state/omarchy-bootstrap
+  mkdir -p "$nslxstate"; chmod 700 "$nslxstate"
+  T_ENV="OMB_STATE_DIR=$nslxstate HOME=/home/alex" t_cli "$nslx" '' resume "$nstoken"
+  assert_rc "$T_RC" 0 'J-NS-LINUX: resume with the token'
+  assert_contains "$T_OUT" 'Phase 1 choices loaded' 'J-NS-LINUX: the token is loaded'
+  nscode=$(printf '%s\n' "$T_OUT" | grep -o 'ombdone-[0-9a-f]\{8\}-[0-9a-f]\{12\}-[0-9a-f]\{4\}' | head -1)
+  assert_contains "$nscode" "ombdone-$nsplan-4a7b1c2d0006-" 'J-NS-LINUX: the code names the token'"'"'s plan and this Linux root'
+  assert_contains "$T_OUT" 'type this code' 'J-NS-LINUX: and says where it goes'
+  assert_not_contains "$T_OUT" 'Shared storage' 'J-NS-LINUX: no Shared is mentioned'
+  C_FIX=$nslx C_STATE=$nslxstate
+  C_ENV='OMB_SESSION_SCOPES=journey,health,qualify HOME=/home/alex OMB_TEST_QUAL_BYTES=4097'
+  J_EXPECT_REC=$(printf 'survey macos\nplan macos')
+  j_snapshot J-NS-LINUX-DONE 'done todo todo done done done skipped current todo todo'
+  # The plan the token named is kept: a later run, with choices changed here, shows the same code.
+  sed 's/^cfg_host=.*/cfg_host=other/' "$nslxstate/state.env" >"$T/ns-lx-state"; cp "$T/ns-lx-state" "$nslxstate/state.env"
+  T_ENV="OMB_STATE_DIR=$nslxstate HOME=/home/alex" t_cli "$nslx" '' resume
+  assert_contains "$T_OUT" "$nscode" 'J-NS-LINUX: the same code on every run'
+
+  # macOS, installed: wrong codes establish nothing; the right one is taken.
+  C_FIX=$(t_variant mac-asahi-complete)
+  cp "$FIX/mig-mac-home/cmd/hardware_plist" "$C_FIX/cmd/hardware_plist"
+  C_STATE=$nsstate
+  C_ENV='OMB_SESSION_SCOPES=journey,health,qualify OMB_TEST_QUAL_BYTES=4097'
+  J_EXPECT_REC=''
+  j_snapshot J-NS-INSTALLED 'done skipped skipped done done todo skipped skipped todo todo' 0
+  other_plan=$(code_make ombdone 00000000 4A7B1C2D-0006-4E5F-8A9B-000000000006)
+  other_root=$(code_make ombdone "$nsplan" 4A7B1C2D-0009-4E5F-8A9B-000000000009)
+  for bad in "$other_plan:different plan" "$other_root:different Linux partition" "ombdone-$nsplan-4a7b1c2d0006-0000:mistyped" "$nscode.x:mistyped"; do
+    T_ENV="OMB_STATE_DIR=$nsstate" t_cli "$C_FIX" "${bad%%:*}\n\n"
+    assert_contains "$T_OUT" "${bad#*:}" "J-NS-CODE: ${bad#*:} is refused"
+    assert_not_contains "$(cat "$nsstate/state.env")" shared_linux_done "J-NS-CODE: ${bad#*:} records nothing"
+  done
+  T_ENV="OMB_STATE_DIR=$nsstate" t_cli "$C_FIX" '\n'
+  assert_contains "$T_OUT" 'Stopped. Nothing changed.' 'J-NS-CODE: no code is not a receipt'
+  assert_not_contains "$(cat "$nsstate/state.env")" shared_linux_done 'J-NS-CODE: no code records nothing'
+  j_snapshot J-NS-NO-RECEIPT 'done skipped skipped done done todo skipped skipped todo todo' 0
+  T_ENV="OMB_STATE_DIR=$nsstate" t_cli "$C_FIX" "$nscode\n"
+  assert_contains "$T_OUT" "matches this disk" 'J-NS-CODE: Linux'"'"'s own code is taken'
+  assert_contains "$(cat "$nsstate/state.env")" "shared_linux_done=$nscode" 'J-NS-CODE: and recorded'
+  J_EXPECT_REC='omarchy linux'
+  j_snapshot J-NS-DONE 'done skipped skipped done done done skipped skipped done done' 0
+  T_ENV="OMB_STATE_DIR=$nsstate" t_cli "$C_FIX" ''
+  assert_contains "$T_OUT" 'completion code is recorded' 'J-NS-CODE: a recorded code is not asked for again'
+  # An empty or absent code is no proof, nor is one for another plan.
+  sed 's/^shared_linux_done=.*/shared_linux_done=/' "$nsstate/state.env" >"$T/ns-state"; cp "$T/ns-state" "$nsstate/state.env"
+  J_EXPECT_REC=''
+  j_snapshot J-NS-EMPTY-CODE 'done skipped skipped done done todo skipped skipped todo todo' 0
 fi
 
 # J-STARTUP: the actual production check route keeps its identity-only

@@ -43,6 +43,80 @@ token_decode "omb2:user=alex,plan=NOTHEX00,shared=010"
 assert_contains "$TOKEN_WARNINGS" "ignored plan" "a malformed plan digest is ignored"
 assert_contains "$TOKEN_WARNINGS" "ignored shared" "a leading-zero size is ignored"
 
+# --- With no Shared planned the token's digest names the plan --------------------------
+# macOS builds it from the choices it saved, Linux from the token it loaded;
+# an empty plan matches no code, and a Shared plan keeps its record's digest.
+ns_counts=$(t_tmp)/counts
+(
+  nsd=$(t_tmp)
+  printf 'cfg_enc=1\ncfg_user=alex\ncfg_host=m1pro\ncfg_kmap=us\ncfg_tz=UTC\ncfg_loc=en_US.UTF-8\ncfg_ssh=0\ncfg_linux=250\ncfg_shared=0\ncfg_dev=1\n' >"$nsd/state.env"
+  OMB_STATE_DIR=$nsd OMB_PERSIST=1 OMB_INTENT=act
+  platform_init; state_init
+  want=$(sha256_str "omb2:enc=1,user=alex,host=m1pro,kmap=us,tz=UTC,loc=en_US.UTF-8,ssh=0,linux=250,dev=1" | cut -c1-8)
+  CFG_gh=stale CFG_plan=deadbeef
+  shared_free_digest
+  assert_eq "$SHARED_DIGEST" "$want" "no-Shared plan: macOS names the plan by its token's digest, whatever is loaded"
+  ASAHI_ROOT_UUID=$U_ROOT
+  good=$(code_make ombdone "$want" "$U_ROOT")
+  shared_receipt_ok "$good"
+  assert_rc $? 0 "no-Shared plan: Linux's code for this plan and root is a receipt"
+  shared_receipt_check "$good"
+  assert_rc $? 0 "no-Shared plan: and passes the typed check"
+  shared_receipt_ok "$(code_make ombdone 00000000 "$U_ROOT")"
+  assert_rc $? 1 "no-Shared plan: a code for another plan is no receipt"
+  shared_receipt_ok "$(code_make ombdone "$want" 4A7B1C2D-0009-4E5F-8A9B-000000000009)"
+  assert_rc $? 1 "no-Shared plan: a code for another Linux root is no receipt"
+  shared_receipt_ok ""
+  assert_rc $? 1 "no-Shared plan: an absent code is no receipt"
+  # Linux keeps the digest of the token as loaded, in any field order, whatever
+  # choices it held before; macOS and Linux name the plan alike.
+  lxd=$(t_tmp)
+  OMB_STATE_DIR=$lxd; state_init
+  CFG_gh=old CFG_host=old CFG_shared=0
+  shared_lx_stamp_plan "omb2:dev=1,linux=250,ssh=0,loc=en_US.UTF-8,tz=UTC,kmap=us,host=m1pro,user=alex,enc=1"
+  assert_eq "$(shared_lx_free_plan)" "$want" "no-Shared plan: Linux names the plan as macOS does"
+  # One token string, both systems, including a user named linux (the plan id
+  # is read from the decoded choices, never matched in the text): the digest
+  # macOS builds from the saved choices is the one Linux keeps from the token,
+  # in the old omb1 form too.
+  tokl='omb2:enc=1,user=linux,host=m1pro,kmap=us,tz=UTC,loc=en_US.UTF-8,ssh=0,linux=250,dev=1'
+  wantl=$(sha256_str "$tokl" | cut -c1-8)
+  macd=$(t_tmp)
+  printf 'cfg_enc=1\ncfg_user=linux\ncfg_host=m1pro\ncfg_kmap=us\ncfg_tz=UTC\ncfg_loc=en_US.UTF-8\ncfg_ssh=0\ncfg_linux=250\ncfg_shared=0\ncfg_dev=1\n' >"$macd/state.env"
+  OMB_STATE_DIR=$macd; state_init
+  shared_free_digest
+  assert_eq "$SHARED_DIGEST" "$wantl" "no-Shared plan, user=linux: macOS names the plan by the token's digest"
+  for t in "$tokl" 'omb1:enc=1,user=linux,host=m1pro,kmap=us,tz=UTC,loc=en_US.UTF-8,ssh=0,linux=250,dev=1' 'omb2:linux=250,dev=1,loc=en_US.UTF-8,ssh=0,tz=UTC,kmap=us,host=m1pro,user=linux,enc=1,shared=0'; do
+    lxd=$(t_tmp)
+    OMB_STATE_DIR=$lxd; state_init
+    shared_lx_stamp_plan "$t"
+    assert_eq "$(shared_lx_free_plan)" "$wantl" "no-Shared plan, user=linux: Linux names it alike from ${t:0:30}"
+  done
+  # A token that carries a Shared plan is named by its record, so nothing is kept.
+  lxd=$(t_tmp)
+  OMB_STATE_DIR=$lxd; state_init
+  CFG_shared=150
+  shared_lx_stamp_plan 'omb2:enc=1,user=alex,linux=250,shared=150,plan=1a2b3c4d'
+  assert_eq "$(shared_lx_free_plan)" "" "a Shared plan keeps no token digest"
+  # An empty plan: no saved plan, or a Shared plan (named by its record).
+  SHARED_DIGEST=""
+  shared_receipt_ok "$good"
+  assert_rc $? 1 "an empty plan matches no code"
+  shared_receipt_check "$good"
+  assert_rc $? 1 "an empty plan fails the typed check"
+  assert_contains "$SHARED_CODE_WHY" "different plan" "and says the code belongs to another plan"
+  OMB_STATE_DIR=$nsd
+  sed 's/^cfg_linux=.*//' "$nsd/state.env" >"$nsd/state.new"; cp "$nsd/state.new" "$nsd/state.env"
+  shared_free_digest
+  assert_eq "$SHARED_DIGEST" "" "no saved plan: no digest"
+  printf 'cfg_linux=250\n' >>"$nsd/state.env"
+  sed 's/^cfg_shared=.*/cfg_shared=150/' "$nsd/state.env" >"$nsd/state.new"; cp "$nsd/state.new" "$nsd/state.env"
+  shared_free_digest
+  assert_eq "$SHARED_DIGEST" "" "a Shared plan is named by its record, never by this digest"
+  printf '%s %s\n' "$T_PASS" "$T_FAIL" >"$ns_counts"
+)
+read -r T_PASS T_FAIL <"$ns_counts"
+
 if t_plutil "the macOS Shared plan and creation"; then
   # --- The plan record ---------------------------------------------------------------------
   sd=$(t_tmp)
