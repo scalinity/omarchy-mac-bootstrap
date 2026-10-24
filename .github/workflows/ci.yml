@@ -295,8 +295,10 @@ jobs:
     env:
       CARGO_TERM_COLOR: never
       INSTA_UPDATE: "no"
-      # The unreleased frontend this branch builds, named on purpose: the
+      # The frontend version this branch builds, named on purpose: the
       # number is edited by hand, never read from Cargo.toml (docs/DECISIONS.md → D49).
+      # While the lock pins it the lock check passes and `candidate` does not
+      # run; the next unreleased version is named here when it starts.
       FRONTEND_CANDIDATE_VERSION: "0.2.0"
       OMB_CI_MODE: ${{ needs.plan.outputs.mode }}
       SHARD: ${{ matrix.shard }}

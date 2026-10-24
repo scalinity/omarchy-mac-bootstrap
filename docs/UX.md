@@ -1,6 +1,6 @@
 # The interface
 
-**Status: built in the unreleased 0.2.0 frontend (screens 1–4, 5–9 and 11
+**Status: built in the released 0.2.0 frontend (screens 1–4, 5–9 and 11
 as tabs, the Migration Review, 12–15 and 18–25).** How the frontend
 (docs/FRONTEND.md) looks and behaves. Everything on screen comes from the
 core's records (docs/PROTOCOL.md); this document decides how it is shown.

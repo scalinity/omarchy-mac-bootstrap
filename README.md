@@ -100,7 +100,7 @@ Nothing to install first: it runs on stock macOS (`/bin/bash` 3.2) and on the
 minimal Asahi Alarm image. Start it as `./omarchy-bootstrap` or
 `bash ./omarchy-bootstrap`; started with `sh` (on macOS, bash in POSIX mode)
 it starts itself again under `bash`, in bash's own mode, before loading
-anything. The interface is the one download, a few megabytes taken once and
+anything. The interface is the one download, about 1.6 MB taken once and
 checked against `release/frontend.lock` (size and SHA-256) before it starts; if
 it cannot be, the text interface runs the same steps.
 

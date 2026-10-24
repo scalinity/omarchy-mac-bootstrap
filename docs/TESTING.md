@@ -67,7 +67,7 @@ phase that writes them. `docs-test-ids` reads this table.
 | `frontend-*` | the lock, acquisition and cache, intent, the build's inputs and closure, the artifact checks | `tests/test-frontend.sh`, `tests/test-frontend-inputs.sh`, `tests/frontend-inputs.sh`; the artifact checks are steps of the frontend jobs in `tests/ci-manifest.tsv` | in CI |
 | `frontend-check-*` | the startup check, through its production route | `tests/test-frontend-check.sh`, `tests/frontend-check.sh`, `tests/frontend-check-lib.sh`, `tests/test-core.sh`, `frontend/tests/pty.rs` | in CI |
 | `gen-*` | the Gate 2 reads' generations and paging | `tests/test-gate2-paging.sh`, beside the other Gate 2 read suites (*Gate 2 read tests*) | in CI |
-| `cp1-*` | the health and logs scopes in the record language, every older document unchanged | `tests/test-cp1.sh`, `tests/cp1-released-frontend.sh`, `tests/proto/corpus.sh` | in CI |
+| `cp1-*` | the health and logs scopes in the record language, every older document unchanged; the release the lock pins, downloaded, verified against the lock and started against the current core (`cp1-released-frontend.sh`, which follows the lock's version) | `tests/test-cp1.sh`, `tests/cp1-released-frontend.sh`, `tests/proto/corpus.sh` | in CI |
 | `bench-*` | the O1 benchmark's harness; timing runs only by hand | `tests/test-benchmark.sh`, `frontend/tests/benchmark/` | in CI |
 | `docs-*` | the documentation checks | `tests/test-docs.sh` | in CI |
 | `actions-*` | the core's action table through `execute`, and `operation clear` | `tests/test-actions.sh`, `tests/test-operation.sh`; frames and contract cases for screens 1, 2, 12–15 and 18 in `frontend/tests/` | planned: Phase A |
@@ -248,7 +248,7 @@ a run whose dashboard was not seen.
 | `frontend-check-early-quit-late-snapshot`, `frontend-check-refresh-failure`, `frontend-check-no-render-claim`, `frontend-check-termios`, `frontend-check-completion-order`, `frontend-check-cleanup` | `completed` needs every exchange `done`, the settings restored and read back equal, and the scratch confirmed gone, and claims no drawing |
 | `frontend-check-ineligible-terminal`, `frontend-check-dry-run-ineligible`, `frontend-check-dry-run` | `--no-tui`, a pipe, `TERM` unset or `dumb`: `not-performed`, with no lock read and no cache inspected; `--dry-run` reports what would run and starts nothing |
 | `frontend-check-terminal` | rendering evidence, on a real PTY on both arm64 runners: the dashboard with its four facts and "Nothing is available now.", a key answered, `q` leaves, the terminal as before |
-| `frontend-check-production-mac` | by hand on this Mac for each release: the committed production lock's macOS artifact, no seam set; what `frontend-check-terminal` shows, with nothing of the session left, recorded with the cache path and digest and the core's `hello` |
+| `frontend-check-production-mac` | by hand on this Mac for each pinned release (`frontend-v0.2.0` now): the committed production lock's macOS artifact, no seam set; what `frontend-check-terminal` shows, with nothing of the session left, recorded with the cache path and digest and the core's `hello` |
 
 **Effects.** Around each case the test snapshots the temporary `HOME`,
 cache, state folder and `TMPDIR` (type, mode, size and digest of every

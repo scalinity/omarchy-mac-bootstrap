@@ -2,9 +2,10 @@
 
 **Status: built for M14's Gate 1 (distribution, lifecycle, fallback, the
 startup check), Gate 2's reads, actions and the migration, restore,
-qualification and completion screens in the unreleased 0.2.0 candidate;
-release integration follows MILESTONES.md → *The finish*.** Library and
-platform facts: docs/UPSTREAM.md → *Ratatui and distribution*.
+qualification and completion screens, all in the released 0.2.0 frontend
+(`frontend-v0.2.0`, source `eea4076`), which `release/frontend.lock`
+pins.** Library and platform facts: docs/UPSTREAM.md → *Ratatui and
+distribution*.
 
 The product's interface is a compiled Rust program built with Ratatui,
 `omb-tui`. It is the product's interface on both systems. The Bash core
@@ -51,11 +52,11 @@ to the core unchanged, and the restore module checks it again. Bare
 in text; status and debug are read-only, undo has act intent. Other commands
 given an argument (`resume TOKEN`, `export DIR`, `shared create CODE`) stay
 in text, where the argument is read and checked. The frontend routes are
-active over fixtures; on a real machine they open only once
-`release/frontend.lock` pins a release at least 0.2.0, the first
-whose frontend runs the core's actions (`FE_ACTIONS_VERSION`), so no
-command opens a frontend that cannot finish it. An unreleased build runs
-only against fixtures (docs/DECISIONS.md, D16).
+active over fixtures, and on a real machine whenever `release/frontend.lock`
+pins a release at least 0.2.0, the first whose frontend runs the core's
+actions (`FE_ACTIONS_VERSION`), so no command opens a frontend that cannot
+finish it. The lock pins 0.2.0, so these routes are open. An unreleased
+build runs only against fixtures (docs/DECISIONS.md, D16).
 
 `frontend-check` meets the same rule rather than bending it: its whole flow
 is starting the interface — acquire or verify it, reach the core, show the
@@ -64,11 +65,10 @@ It is an additional, explicit command and never becomes a default.
 
 ## Starting
 
-Until a pinned release exposes another command's flow, the one production
-route to the frontend is `frontend-check` (the first diagram). The diagrams
-after it are the normal commands' routes: each becomes active once its
-command moves to the frontend (*When the frontend runs*); until then that
-command runs in text.
+`frontend-check` is the explicit route to the frontend (the first diagram):
+it starts the interface and nothing else. The diagrams after it are the
+normal commands' routes, which open the frontend on a real machine because
+the pinned release exposes their flows (*When the frontend runs*).
 
 ### The startup check (M14 gate 1)
 
@@ -111,9 +111,7 @@ A bare `resume` takes the route below from the same release, which exposes
 its flow (network and the Omarchy handoff). `resume TOKEN`, the form Phase 1
 prints, carries an argument and stays text, so the fresh Asahi system runs
 the text flow from the fetch to the completion code; the frontend opens there
-for a bare `./omarchy-bootstrap` or `resume`, and for the everyday user. Until
-a release pins at least 0.2.0, `frontend-check` is the only command that opens
-the frontend here.
+for a bare `./omarchy-bootstrap` or `resume`, and for the everyday user.
 
 The earliest the frontend can draw is the first run of this tool, which
 needs the repository, which needs the network:
@@ -285,16 +283,16 @@ Then, and only then, `completed` (status 0). A step that does not hold
 ends the check as `not-completed`, after the lifecycle steps that still
 apply, never by skipping them.
 
-**An early quit can still read as completed.** The released frontend exits
-0 when the person leaves its connecting screen, and a snapshot it had
-already asked for can then still be answered by a core that finishes
-afterwards. The spools of that run are the same as those of a run whose
-dashboard was drawn, and the launcher cannot tell the two apart from them,
-so such a run may be `completed`. The command's result therefore never
-claims that the dashboard was drawn, and such a run is never rendering
-evidence: `frontend-check-terminal` and `frontend-check-production-mac`
-each require the dashboard to have been seen. No acknowledgement record,
-timing rule or frontend change is added to tell the two apart.
+**An early quit can still read as completed.** When the person leaves the
+frontend's connecting screen, a snapshot it had already asked for can still
+be answered by a core that finishes afterwards. The spools of that run are
+the same as those of a run whose dashboard was drawn, and the launcher
+cannot tell the two apart from them, so such a run may be `completed`. The
+command's result therefore never claims that the dashboard was drawn, and
+such a run is never rendering evidence: `frontend-check-terminal` and
+`frontend-check-production-mac` each require the dashboard to have been
+seen. No acknowledgement record, timing rule or frontend change is added to
+tell the two apart.
 
 ### Outcomes
 
@@ -318,7 +316,7 @@ launcher's state (`missing`, `mismatch`, `unrunnable`, `fallback`,
 them, and names any residual file of *Effects*; `not-performed` says which
 condition stopped it and that the interactive check was not performed.
 None of them says it continues in text: there is nothing to continue, and
-no outcome enters another command's flow. The released frontend may print,
+no outcome enters another command's flow. The frontend may print,
 on its own fallback path, that it continues in the text interface; the
 check's launcher takes neither those words nor the frontend's status 10 as
 leave to route anywhere, and reports its own result instead. A session not
@@ -445,14 +443,15 @@ build (docs/TESTING.md → `frontend-input-*`):
 | no Cargo configuration from elsewhere | no `.cargo/` directory elsewhere in the repository; the release job starts with an empty `CARGO_HOME`; the release workflow sets none of `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`, `CARGO_BUILD_*` or `CARGO_PROFILE_*` (a static check of the workflow file) |
 
 **The lock is not a build input.** It is `release/frontend.lock`, outside
-`frontend/`, so changing it cannot change the digest it records:
+`frontend/`, so changing it cannot change the digest it records. At
+`frontend-v0.2.0` it reads:
 
 ```text
 omb-frontend-lock 1
-frontend	version=0.1.0	proto=1	source_commit=<40 hex>	inputs_digest=<64 hex>	rust=1.88.0
-artifact	target=aarch64-apple-darwin	url=https://github.com/scalinity/omarchy-mac-bootstrap/releases/download/frontend-v0.1.0/omb-tui-0.1.0-aarch64-apple-darwin	size=3145728	sha256=<64 hex>	minos=13.5	glibc_max=	interp=	align_min=
-artifact	target=aarch64-unknown-linux-gnu	url=…/omb-tui-0.1.0-aarch64-unknown-linux-gnu	size=3407872	sha256=<64 hex>	minos=	glibc_max=2.39	interp=/lib/ld-linux-aarch64.so.1	needed=libc.so.6	needed=libgcc_s.so.1	needed=libm.so.6	align_min=65536
-seal	sha256=<64 hex>
+frontend	version=0.2.0	proto=1	source_commit=eea4076a9b90217d202bfdb7373076891a245614	inputs_digest=57d6d1c3ec914b5e9ddf62b8dd0da118cd7096410c231e1948d6fd7d1da2715b	rust=1.88.0
+artifact	target=aarch64-apple-darwin	url=https://github.com/scalinity/omarchy-mac-bootstrap/releases/download/frontend-v0.2.0/omb-tui-0.2.0-aarch64-apple-darwin	size=1591248	sha256=d348f19409a87245f9d665655d0f81602a0086188f9c44126fa4536448560b68	minos=13.5	glibc_max=	interp=	align_min=
+artifact	target=aarch64-unknown-linux-gnu	url=https://github.com/scalinity/omarchy-mac-bootstrap/releases/download/frontend-v0.2.0/omb-tui-0.2.0-aarch64-unknown-linux-gnu	size=1577712	sha256=11e1a8929f5dac8c3a504bd6099c845f4b7e5270e7d087e611d6310bc20112e1	minos=	glibc_max=2.39	interp=/lib/ld-linux-aarch64.so.1	needed=libgcc_s.so.1	needed=libm.so.6	needed=libc.so.6	align_min=65536
+seal	sha256=e7dcb747220d5bf3fe3fa66b156ea5c8b05e0b8a007b22da08a1c8a5f293c6c5
 ```
 
 Schema (docs/PROTOCOL.md → §1): `frontend` 1 — `version:id proto:uint

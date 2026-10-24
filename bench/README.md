@@ -59,7 +59,7 @@ the interval. Deadline enforcement is 30 seconds. Only the process group this
 controller creates is terminated on timeout, then reaped and its reader joined.
 
 bench-snapshot follows the independent ruling in docs/TESTING.md: fixture-free
-frontend-check, read/journey, dry=0, request frontend=0.1.0, no frontend executable.
+frontend-check, read/journey, dry=0, request frontend=<the lock's version>, no frontend executable.
 Cold's first core request is the measured snapshot. Warm has one verified
 untimed snapshot then fresh Bash requests in the same session. Require exact
 native hello identity, four ordered facts, generation total=0 with SHA-256 of

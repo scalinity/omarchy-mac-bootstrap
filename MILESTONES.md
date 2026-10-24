@@ -86,9 +86,10 @@ install on the M1.
   (lock, acquisition, cache, intent, fallback), `frontend-check`, the
   build-input closure and the release workflow.
 - **Status:** done. Accepted implementation `548de43`; `frontend-v0.1.0`
-  (source `54c3770`) is published, and `release/frontend.lock` (`569d67e`)
-  pins it. `./omarchy-bootstrap frontend-check` started it on this Mac and
-  drew the action-free dashboard.
+  (source `54c3770`) was published, `release/frontend.lock` (`569d67e`)
+  pinned it, and `./omarchy-bootstrap frontend-check` started it on this Mac
+  and drew the action-free dashboard. The lock now pins `frontend-v0.2.0`
+  (source `eea4076`; M16).
 
 ### Gate 2 — Read-only equivalence
 
@@ -300,9 +301,11 @@ install on the M1.
   journey simulation over fixtures, macOS → reboot → Linux → back. A new
   frontend release through `release.yml`, pinned in the production
   `release/frontend.lock`, acquired and verified by the launcher and
-  started by `frontend-check` on this Mac; the checks that drive the old
-  `0.1.0` retire with its pin. `README.md` → *Install, step by step* as the
-  owner's guide for the one run on the M1.
+  started by `frontend-check` on this Mac. The suites follow the lock's
+  version rather than a `0.1.0` literal, and `tests/cp1-released-frontend.sh`
+  still downloads, verifies and starts the published bytes the lock pins.
+  `README.md` → *Install, step by step* as the owner's guide for the one run
+  on the M1.
 - **Verification:** `tests/test-journey.sh`, `tests/test-qualify.sh`; the
   PTY journey; FULL on `main`.
 - **Exit:** the simulation passes on both systems; FULL is green on `main`;

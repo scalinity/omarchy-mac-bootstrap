@@ -370,7 +370,8 @@ on purpose, never read from `Cargo.toml`. Every other difference stays a
 failure, and the release workflow never runs `candidate` and stays exact.
 Gate 2 publishes nothing: a manual look starts a build of the candidate as
 `OMB_FRONTEND_DEV` over a fixture, as D16 requires, and no command exists
-only to show it. `0.2.0` becomes a release in M16.
+only to show it. `0.2.0` is that release: tag `frontend-v0.2.0`, source
+`eea4076`.
 *Set aside:* letting `lock` accept a larger version, which turns a failure of
 the exact oracle into a success; changing the lock so CI passes; a preview
 release; a production command for viewing an unfinished interface.
@@ -773,7 +774,7 @@ After CP1, the ordinary fixture-only producers are built: Logs at
 `a0ba61c`, Health (Doctor) at `27f79d6` and Validate at
 `b01610e69a2eef6e5a52f5ede18236210699704e`. O1 is signed off with
 O1-LOGS-P01 recorded (D6), and the frontend's read-surface integration, in
-the unreleased 0.2.0, is built at
+the 0.2.0 frontend, is built at
 `c855f6197be86e90f5fb833f7faec0d0f6372794`, which closes Gate 2
 (MILESTONES.md → *Gate 2 — Read-only equivalence*).
 

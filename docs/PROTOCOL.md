@@ -830,8 +830,8 @@ result	status=done	code=ok	text=	next=
   are byte-identical, on every refresh and every run. The `hello` record is
   not held to that across commits: it names the executing core, whose
   `commit` and `source` truthfully change in a later Bash-only commit while
-  the lock and the artifact stay those of `54c3770` (docs/DECISIONS.md,
-  D10).
+  the lock and the artifact stay those of the pinned release (`eea4076`
+  for 0.2.0; docs/DECISIONS.md, D10).
 
 ### The Gate 2 read surface
 
