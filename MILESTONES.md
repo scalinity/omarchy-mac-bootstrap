@@ -310,7 +310,13 @@ install on the M1.
   PTY journey; FULL on `main`.
 - **Exit:** the simulation passes on both systems; FULL is green on `main`;
   the release is pinned and verified; `sources --check` passes.
-- **Status:** not started.
+- **Status:** done in phase C, merged to `main` at `781024d` (FULL
+  40065932366). `frontend-v0.2.0` (tag on `eea4076`, release run
+  40065380000) is pinned in `release/frontend.lock`;
+  `tests/cp1-released-frontend.sh` and the real `frontend-check` downloaded,
+  verified and started it on the Mac. Read by Claude and GPT-6.1 Sol
+  reviewers (shell core, frontend, adversarial), their fixes read again, and
+  every high and medium finding fixed. `sources --check` passes.
 
 ## M17 — Real-hardware qualification: the first real install
 
