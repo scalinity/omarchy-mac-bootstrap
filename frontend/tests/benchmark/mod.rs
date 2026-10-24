@@ -30,6 +30,17 @@ fn root() -> PathBuf {
         .unwrap()
         .to_path_buf()
 }
+// The version the production lock pins: bench-snapshot runs the production
+// core, which refuses any other.
+fn lock_version() -> String {
+    let lock = fs::read_to_string(root().join("release/frontend.lock")).expect("production lock");
+    lock.lines()
+        .filter(|l| l.split('\t').next() == Some("frontend"))
+        .flat_map(|l| l.split('\t'))
+        .find_map(|f| f.strip_prefix("version="))
+        .expect("production lock version")
+        .to_owned()
+}
 fn host() -> (&'static str, &'static str) {
     let os = if cfg!(target_os = "macos") {
         "macos"
@@ -829,9 +840,9 @@ impl Context {
             "detail"
         };
         let version = if c.id == "bench-snapshot" {
-            "0.1.0"
+            lock_version()
         } else {
-            "0.2.0"
+            "0.2.0".to_owned()
         };
         let mut bytes =
             format!("omb-req 1\nreq\top={op}\tproto=1\tfrontend={version}\tsession={SESSION}\n");
@@ -1390,6 +1401,7 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
         }) {
             return bad("startup stages");
         }
+        let interface = format!("frontend {} as the lock pins, protocol 1", lock_version());
         let expected = [
             (
                 "check",
@@ -1397,12 +1409,7 @@ fn witness(c: &Case, d: &Document, bytes: &[u8]) -> Fallible<()> {
                 "frontend startup check (frontend-check)",
                 "info",
             ),
-            (
-                "interface",
-                "Interface",
-                "frontend 0.1.0 as the lock pins, protocol 1",
-                "ok",
-            ),
+            ("interface", "Interface", interface.as_str(), "ok"),
             (
                 "session",
                 "Session",
@@ -1749,10 +1756,12 @@ impl Provenance {
     fn fields(&self) -> String {
         let (os, arch) = host();
         format!(
-            "\"source_git_sha\":{},\"production_lock_digest\":{},\"production_release\":\"frontend-v0.1.0\",\"frontend_candidate_inputs_digest\":{},\"frontend_candidate_version\":\"0.2.0-unreleased\",\"harness_digest\":{},\"os\":{},\"architecture\":{},\"system\":{},\"machine_label\":{},\"bash_version\":{},\"benchmark_executable_sha256\":{},\"benchmark_profile\":{},\"release_strip_override\":{},\"toolchain_config_sha256\":{}",
+            "\"source_git_sha\":{},\"production_lock_digest\":{},\"production_release\":{},\"frontend_candidate_inputs_digest\":{},\"frontend_candidate_version\":{},\"harness_digest\":{},\"os\":{},\"architecture\":{},\"system\":{},\"machine_label\":{},\"bash_version\":{},\"benchmark_executable_sha256\":{},\"benchmark_profile\":{},\"release_strip_override\":{},\"toolchain_config_sha256\":{}",
             json(&self.sha),
             json(&self.lock),
+            json(&format!("frontend-v{}", lock_version())),
             json(&self.frontend),
+            json(env!("CARGO_PKG_VERSION")),
             json(&self.harness),
             json(os),
             json(arch),
@@ -2169,12 +2178,12 @@ fn result(
             "fixture-backed-core"
         }),
         native_probe,
-        json(if c.items > 0 {
-            "not_applicable"
+        json(&if c.items > 0 {
+            "not_applicable".to_owned()
         } else if c.id == "bench-snapshot" {
-            "0.1.0"
+            lock_version()
         } else {
-            "0.2.0"
+            "0.2.0".to_owned()
         }),
         samples.core_requests,
         c.items,
@@ -2550,6 +2559,7 @@ fn fake_snapshot() -> (Case, Document, Vec<u8>) {
             ("source", &executed_source_digest()),
         ],
     );
+    let interface = format!("frontend {} as the lock pins, protocol 1", lock_version());
     let facts = [
         (
             "check",
@@ -2557,12 +2567,7 @@ fn fake_snapshot() -> (Case, Document, Vec<u8>) {
             "frontend startup check (frontend-check)",
             "info",
         ),
-        (
-            "interface",
-            "Interface",
-            "frontend 0.1.0 as the lock pins, protocol 1",
-            "ok",
-        ),
+        ("interface", "Interface", interface.as_str(), "ok"),
         (
             "session",
             "Session",
